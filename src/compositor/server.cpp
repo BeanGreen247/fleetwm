@@ -152,13 +152,14 @@ void server_new_layer_surface(wl_listener* listener, void* data) {
   wl_signal_add(&layer_surface->events.destroy, &ls->destroy);
   ls->new_popup.notify = layer_surface_new_popup;
   wl_signal_add(&layer_surface->events.new_popup, &ls->new_popup);
-  // The initial configure() must wait for the surface's initial commit
-  // (wlroots rejects an earlier configure -- confirmed via real testing)
-  // -- see layer_surface_surface_commit, gated on
-  // wlr_layer_surface_v1::initial_commit.
-  ls->surface_commit.notify = layer_surface_surface_commit;
-  wl_signal_add(&layer_surface->surface->events.commit, &ls->surface_commit);
-
+  // No manual configure here: wlr_scene_layer_surface_v1_create already
+  // installs its own commit listener that auto-configures the surface
+  // (sizing it to the output's usable area) once the client's initial
+  // commit lands. A second, independent configure from us races that
+  // internal one and violates the protocol -- wlroots rejects the
+  // surface with a bare "error in client communication" / EPROTO and no
+  // descriptive wlr_log line, since the rejection is a raw
+  // wl_resource_post_error, confirmed via real testing.
   server->layer_surfaces.push_front(std::move(ls));
 }
 
@@ -352,7 +353,7 @@ bool Server::init() {
   new_xdg_toplevel_.notify = server_new_xdg_toplevel;
   wl_signal_add(&xdg_shell_->events.new_toplevel, &new_xdg_toplevel_);
 
-  layer_shell_ = wlr_layer_shell_v1_create(display_, 3);
+  layer_shell_ = wlr_layer_shell_v1_create(display_, 4);
   new_layer_surface_.notify = server_new_layer_surface;
   wl_signal_add(&layer_shell_->events.new_surface, &new_layer_surface_);
 
