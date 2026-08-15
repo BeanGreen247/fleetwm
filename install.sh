@@ -49,8 +49,10 @@ echo "Run 'fleetwm update' at any time to pull and rebuild the latest version."
 if [[ -x "${BUILD_DIR}/src/greeter/fleetwm-greet" ]]; then
   echo
   echo "Fleetwm greeter (fleetwm-greet) installed but NOT enabled. To use it"
-  echo "instead of a display manager on, e.g., tty2:"
-  echo "  sudo systemctl disable --now getty@tty2.service"
-  echo "  sudo systemctl enable --now fleetwm-greeter@tty2.service"
-  echo "Then switch to that VT (Ctrl+Alt+F2) to see the login prompt."
+  echo "instead of a display manager on your main console (tty1):"
+  echo "  sudo systemctl disable --now getty@tty1.service"
+  echo "  sudo systemctl enable --now fleetwm-greeter@tty1.service"
+  echo "Then switch to that VT (Ctrl+Alt+F1) to see the login prompt."
+  echo "(Use a different ttyN above if you'd rather leave tty1's normal"
+  echo "login console alone.)"
 fi

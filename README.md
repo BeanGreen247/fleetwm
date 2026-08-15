@@ -65,13 +65,16 @@ Log out and select **Fleetwm** as your session to start using it.
 
 `fleetwm-greet` is a minimal PAM+TTY login prompt bundled with fleetwm, for
 anyone who'd rather not run a full display manager. It's installed but not
-enabled by default; `install.sh` prints the exact commands to opt in on a
-spare VT, e.g.:
+enabled by default; `install.sh` prints the exact commands to opt in on
+your main console (tty1):
 
 ```sh
-sudo systemctl disable --now getty@tty2.service
-sudo systemctl enable --now fleetwm-greeter@tty2.service
+sudo systemctl disable --now getty@tty1.service
+sudo systemctl enable --now fleetwm-greeter@tty1.service
 ```
+
+Swap `tty1` for another VT (e.g. `tty2`) if you'd rather leave your normal
+login console untouched and just try the greeter alongside it.
 
 Switch to that VT (`Ctrl+Alt+F2`) to see the prompt. See
 [ADR 0006](docs/adr/0006-custom-pam-tty-greeter-vs-display-manager.md) for
