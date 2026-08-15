@@ -10,7 +10,10 @@ extern "C" {
 #include <wlr/types/wlr_seat.h>
 }
 
+#include <cerrno>
+#include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 #include "server.hpp"
 
@@ -28,8 +31,17 @@ constexpr xkb_keysym_t kSpawnTerminalKey = XKB_KEY_Return;
 constexpr const char* kTerminalCommand = "foot";  // lightweight Wayland-native terminal
 
 void spawn_terminal() {
-  if (fork() == 0) {
+  pid_t pid = fork();
+  if (pid < 0) {
+    std::fprintf(stderr, "fleetwm: fork for terminal spawn failed: %s\n", std::strerror(errno));
+    return;
+  }
+  if (pid == 0) {
     execlp(kTerminalCommand, kTerminalCommand, nullptr);
+    // execlp only returns on failure -- log why before the child dies, since
+    // this failure would otherwise be completely silent.
+    std::fprintf(stderr, "fleetwm: failed to exec '%s': %s\n", kTerminalCommand,
+                 std::strerror(errno));
     _exit(1);
   }
 }
@@ -51,6 +63,11 @@ void keyboard_key(wl_listener* listener, void* data) {
 
   bool alt_held = (wlr_keyboard_get_modifiers(keyboard->wlr_keyboard_ptr) & WLR_MODIFIER_ALT) != 0;
   bool handled = false;
+
+  if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
+    std::fprintf(stderr, "fleetwm: key press keycode=%u alt_held=%d nsyms=%d\n", keycode,
+                 alt_held, nsyms);
+  }
 
   if (alt_held && event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
     for (int i = 0; i < nsyms; ++i) {
