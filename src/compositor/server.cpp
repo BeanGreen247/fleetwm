@@ -301,7 +301,11 @@ Server::~Server() {
 }
 
 bool Server::init() {
-  wlr_log_init(WLR_INFO, nullptr);
+  // TEMPORARY: bumped to WLR_DEBUG to diagnose the "error in client
+  // communication" / "Lost connection to Wayland compositor" failure
+  // seen when fleetwm-launcher connects -- revert to WLR_INFO once
+  // root-caused.
+  wlr_log_init(WLR_DEBUG, nullptr);
 
   display_ = wl_display_create();
 
