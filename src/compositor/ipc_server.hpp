@@ -57,6 +57,7 @@ class IpcServer {
 
   friend int ipc_server_handle_accept(int fd, uint32_t mask, void* data);
   friend int ipc_server_handle_client(int fd, uint32_t mask, void* data);
+  friend int ipc_server_handle_client_impl(IpcServer* self, int fd, uint32_t mask);
 };
 
 }  // namespace fleetwm
