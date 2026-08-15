@@ -352,7 +352,7 @@ bool Server::init() {
   new_xdg_toplevel_.notify = server_new_xdg_toplevel;
   wl_signal_add(&xdg_shell_->events.new_toplevel, &new_xdg_toplevel_);
 
-  layer_shell_ = wlr_layer_shell_v1_create(display_, 4);
+  layer_shell_ = wlr_layer_shell_v1_create(display_, 3);
   new_layer_surface_.notify = server_new_layer_surface;
   wl_signal_add(&layer_shell_->events.new_surface, &new_layer_surface_);
 
