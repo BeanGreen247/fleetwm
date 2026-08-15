@@ -34,6 +34,25 @@ sudo ninja -C "${BUILD_DIR}" install
 echo "==> Recording source checkout path for 'fleetwm update'"
 echo "${SCRIPT_DIR}" | sudo tee /etc/fleetwm-source-path >/dev/null
 
+echo "==> Adding $(whoami) to device-access groups (input/video/render/audio)"
+# The compositor needs libinput device access (input), DRM/GPU access
+# (video, and render on distros that split it out), and PipeWire/audio
+# device access (audio) to function -- without these, keyboard/mouse
+# events or rendering can silently fail with no visible error, since
+# open() on a permission-denied /dev node just makes libinput/wlroots see
+# no device rather than raising an obvious error. plugdev covers some
+# USB peripherals (e.g. certain webcams/removable media) on Debian-family
+# systems that gate them separately from video. Only add groups that
+# actually exist on this system -- not all of these exist on every distro
+# or hardware configuration.
+for group in input video render audio plugdev; do
+  if getent group "${group}" >/dev/null 2>&1; then
+    sudo usermod -aG "${group}" "$(whoami)"
+  fi
+done
+echo "(If any of these groups were newly added, log out and back in --"
+echo "or reboot -- for group membership to take effect.)"
+
 if [[ -x "${BUILD_DIR}/src/greeter/fleetwm-greet" ]]; then
   echo "==> Installing greeter PAM config and systemd unit"
   sudo install -m 644 "${SCRIPT_DIR}/packaging/fleetwm-greeter-pam.conf" /etc/pam.d/fleetwm-greeter

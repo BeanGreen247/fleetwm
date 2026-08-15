@@ -63,6 +63,15 @@ installs:
 - The `fleetwm-greet` PAM config and systemd unit (not enabled by
   default -- see [Greeter](#greeter))
 
+It also adds your user to the `input`, `video`, `render`, `audio`, and
+`plugdev` groups (whichever exist on your system) -- the compositor needs
+these for keyboard/mouse (`input`), GPU/DRM (`video`/`render`), and audio
+device access. **Log out and back in (or reboot) after installing**, so
+this group membership actually takes effect -- if you skip this, input or
+rendering can fail silently with no error message, since a
+permission-denied device node just looks like "no device" to
+libinput/wlroots.
+
 Log out and select **Fleetwm** as your session to start using it.
 
 ## Greeter
