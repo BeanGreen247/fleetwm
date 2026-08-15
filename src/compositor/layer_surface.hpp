@@ -39,17 +39,15 @@ class LayerSurface {
   wl_listener unmap{};
   wl_listener destroy{};
   wl_listener new_popup{};
-  wl_listener surface_commit{};
 
   wlr_surface* surface() const { return layer_surface->surface; }
 };
 
-// Registered on LayerSurface::map/unmap/destroy/new_popup/surface_commit
-// by server_new_layer_surface() (server.cpp). Defined in layer_surface.cpp.
+// Registered on LayerSurface::map/unmap/destroy/new_popup by
+// server_new_layer_surface() (server.cpp). Defined in layer_surface.cpp.
 void layer_surface_map(wl_listener* listener, void* data);
 void layer_surface_unmap(wl_listener* listener, void* data);
 void layer_surface_destroy(wl_listener* listener, void* data);
 void layer_surface_new_popup(wl_listener* listener, void* data);
-void layer_surface_surface_commit(wl_listener* listener, void* data);
 
 }  // namespace fleetwm

@@ -152,12 +152,22 @@ void server_new_layer_surface(wl_listener* listener, void* data) {
   wl_signal_add(&layer_surface->events.destroy, &ls->destroy);
   ls->new_popup.notify = layer_surface_new_popup;
   wl_signal_add(&layer_surface->events.new_popup, &ls->new_popup);
-  // The initial configure() must wait for the surface's initial commit
-  // (wlroots rejects an earlier configure -- confirmed via real testing)
-  // -- see layer_surface_surface_commit, gated on
-  // wlr_layer_surface_v1::initial_commit.
-  ls->surface_commit.notify = layer_surface_surface_commit;
-  wl_signal_add(&layer_surface->surface->events.commit, &ls->surface_commit);
+
+  // Must configure before the client's first commit, not on/after it:
+  // wlroots (layer_surface_role_client_commit in wlr_layer_shell_v1.c)
+  // rejects any client commit that already carries a buffer while
+  // wlr_layer_surface_v1::configured is still false, and that check runs
+  // before our commit listener could ever see the surface -- there is no
+  // "first commit" event we can safely defer to. Configure with the
+  // output's full effective box. No exclusive-zone accumulation across
+  // sibling layer surfaces yet (see docs/adr/0008) -- an unanchored
+  // surface like the launcher is centered automatically by
+  // wlr_scene_layer_surface_v1's own commit handling, so the full box is
+  // already correct for that case.
+  wlr_box box{};
+  wlr_output_layout_get_box(server->output_layout_, layer_surface->output, &box);
+  wlr_layer_surface_v1_configure(layer_surface, static_cast<uint32_t>(box.width),
+                                  static_cast<uint32_t>(box.height));
 
   server->layer_surfaces.push_front(std::move(ls));
 }
