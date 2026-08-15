@@ -38,6 +38,9 @@ subdir('src/common')
 subdir('src/compositor')
 subdir('src/bar')
 subdir('src/settings')
+if get_option('greeter')
+  subdir('src/greeter')
+endif
 
 install_data(
   'packaging/fleetwm.desktop',

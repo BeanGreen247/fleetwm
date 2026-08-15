@@ -1,0 +1,22 @@
+[Unit]
+Description=Fleetwm minimal TTY greeter on %I
+Conflicts=getty@%i.service
+After=systemd-user-sessions.service plymouth-quit-wait.service getty@%i.service
+Before=graphical.target
+
+[Service]
+ExecStart=/usr/local/bin/fleetwm-greet %I
+Type=simple
+Restart=always
+RestartSec=1
+UtmpIdentifier=%I
+TTYPath=/dev/%I
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+StandardInput=tty
+StandardOutput=tty
+StandardError=journal
+
+[Install]
+WantedBy=graphical.target

@@ -22,6 +22,12 @@ is realistically 15-30MB -- a real cost against the "minimal" goal, but
 outweighed by the build-velocity win for v1.
 
 ## Consequences
+- The settings app's scope (Phase 6, not yet built) includes a Default
+  Apps section (per-category app picker backed by `xdg-mime`/
+  `mimeapps.list`) and an About section (hardware summary + project info,
+  KDE/XFCE-style) alongside the theming controls -- see README.md
+  "Features" for the full list. Both are GTK4 pages within the same
+  one-shot `fleetwm-settings` process, not separate binaries.
 - The bar and settings app are two separate GTK4 processes (see
   `src/bar/meson.build`, `src/settings/meson.build`), not one, so the
   always-resident bar's binary and resident set stay free of the settings

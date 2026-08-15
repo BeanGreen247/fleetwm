@@ -4,3 +4,10 @@ option(
   value: true,
   description: 'Build with XWayland support for X11 app compatibility (nearly free via wlroots; disable for a marginally smaller/simpler compositor binary)',
 )
+
+option(
+  'greeter',
+  type: 'boolean',
+  value: true,
+  description: 'Build fleetwm-greet, a minimal PAM+TTY login greeter (requires libpam)',
+)

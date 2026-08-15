@@ -22,6 +22,13 @@ is being built against.
 - Settings app: rounded/sharp corner toggle, 5 themes (Dark, Catppuccin,
   Dracula, OLED Black, Light), custom or wallpaper-auto-extracted accent
   color, Windows-style or Vim-style window navigation
+- Settings app -- Default Apps: per-category default application picker
+  (browser, terminal, file manager, image viewer, etc.), backed by
+  standard `xdg-mime`/`mimeapps.list` associations so OS-level and other
+  XDG-aware apps see the same defaults fleetwm sets
+- Settings app -- About: hardware summary (CPU, GPU, RAM, disk, kernel)
+  and project info (fleetwm version, license, links), in the spirit of
+  KDE's/XFCE's/Windows' "About This System" pages
 - Power menu: Settings, Sleep, Reboot, Poweroff
 - XWayland support for legacy X11 apps
 - `fleetwm-update`: pulls and rebuilds the latest version in place
@@ -30,7 +37,8 @@ is being built against.
 
 - Debian 13.6 (Trixie) or Ubuntu/Kubuntu 26.04 LTS
 - A display manager that lists Wayland sessions (GDM, SDDM, LightDM all
-  work) -- or launch directly from a TTY
+  work) -- or the bundled minimal `fleetwm-greet` TTY login, see
+  [Greeter](#greeter) below
 
 ## Install
 
@@ -43,12 +51,33 @@ cd fleetwm
 This installs build dependencies via `apt`, builds with Meson/Ninja, and
 installs:
 
-- `fleetwm`, `fleetwm-bar`, `fleetwm-settings` to `/usr/local/bin`
+- `fleetwm`, `fleetwm-bar`, `fleetwm-settings`, `fleetwm-greet` to
+  `/usr/local/bin`
 - A `Fleetwm` session entry to `/usr/share/wayland-sessions/` (log out and
   pick it from your display manager's session list)
 - Default theme files and `theme.toml` to `/etc/xdg/fleetwm/`
+- The `fleetwm-greet` PAM config and systemd unit (not enabled by
+  default -- see [Greeter](#greeter))
 
 Log out and select **Fleetwm** as your session to start using it.
+
+## Greeter
+
+`fleetwm-greet` is a minimal PAM+TTY login prompt bundled with fleetwm, for
+anyone who'd rather not run a full display manager. It's installed but not
+enabled by default; `install.sh` prints the exact commands to opt in on a
+spare VT, e.g.:
+
+```sh
+sudo systemctl disable --now getty@tty2.service
+sudo systemctl enable --now fleetwm-greeter@tty2.service
+```
+
+Switch to that VT (`Ctrl+Alt+F2`) to see the prompt. See
+[ADR 0006](docs/adr/0006-custom-pam-tty-greeter-vs-display-manager.md) for
+why this exists alongside the display-manager path rather than replacing
+it. Build with `-Dgreeter=false` to skip it (and its `libpam` dependency)
+entirely.
 
 ## Updating
 
@@ -104,22 +133,28 @@ libinput-dev libdrm-dev libxkbcommon-dev libpixman-1-dev
 libegl1-mesa-dev libgles2-mesa-dev
 libgtk-4-dev libgtk4-layer-shell-dev
 libpipewire-0.3-dev
+libpam0g-dev
 xwayland
 foot
 ```
 
 Build with `-Dxwayland=false` to disable XWayland support and drop the
-`libxcb-dev` dependency.
+`libxcb-dev` dependency. Build with `-Dgreeter=false` to skip
+`fleetwm-greet` and its `libpam` dependency.
 
 ## Architecture
 
-Four processes, communicating over a Unix domain socket and a signal/pidfile
+Five processes, communicating over a Unix domain socket and a signal/pidfile
 mechanism -- see [docs/adr](docs/adr) for the reasoning behind each:
 
 - **`fleetwm`** -- the wlroots-based compositor and window manager
 - **`fleetwm-bar`** -- the always-resident GTK4 top bar
 - **`fleetwm-settings`** -- the settings/power-menu app, spawned on demand
 - **`fleetwm-update`** -- the update script
+- **`fleetwm-greet`** -- the optional minimal PAM+TTY login greeter, an
+  alternative to running a full display manager (see
+  [Greeter](#greeter)); not part of the IPC socket/signal mechanism since
+  it runs before any session exists
 
 ## License
 
