@@ -99,7 +99,7 @@ Build dependencies (apt package names):
 
 ```
 build-essential meson ninja-build pkg-config
-libwlroots-dev wayland-protocols libwayland-dev
+libwlroots-0.18-dev wayland-protocols libwayland-dev
 libinput-dev libdrm-dev libxkbcommon-dev libpixman-1-dev
 libegl1-mesa-dev libgles2-mesa-dev
 libgtk-4-dev libgtk4-layer-shell-dev
