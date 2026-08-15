@@ -47,4 +47,27 @@ void layer_surface_new_popup(wl_listener* listener, void* data) {
   wlr_scene_xdg_surface_create(ls->scene_layer_surface->tree, popup->base);
 }
 
+void layer_surface_surface_commit(wl_listener* listener, void*) {
+  LayerSurface* ls = wl_container_of(listener, ls, surface_commit);
+  // wlroots only flips wlr_layer_surface_v1::initialized once the
+  // surface's initial commit has been processed -- configure() before
+  // that point is rejected with "A configure is sent to an uninitialized
+  // wlr_layer_surface_v1", confirmed via real testing. initial_commit is
+  // wlroots' own flag for exactly this moment, so gate on it directly
+  // rather than tracking a separate "have we configured yet" bool.
+  if (!ls->layer_surface->initial_commit) {
+    return;
+  }
+
+  // Configure with the output's full effective box. No exclusive-zone
+  // accumulation across sibling layer surfaces yet (see docs/adr/0008)
+  // -- an unanchored surface like the launcher is centered automatically
+  // by wlr_scene_layer_surface_v1's own commit handling, so the full box
+  // is already correct for that case.
+  wlr_box box{};
+  wlr_output_layout_get_box(ls->server->output_layout(), ls->layer_surface->output, &box);
+  wlr_layer_surface_v1_configure(ls->layer_surface, static_cast<uint32_t>(box.width),
+                                  static_cast<uint32_t>(box.height));
+}
+
 }  // namespace fleetwm
