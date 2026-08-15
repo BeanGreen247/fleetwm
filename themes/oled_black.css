@@ -1,0 +1,8 @@
+/* True black backgrounds for OLED power savings on per-pixel-lit panels. */
+@define-color bg_primary #000000;
+@define-color bg_secondary #0a0a0a;
+@define-color fg_primary #e0e0e0;
+@define-color fg_secondary #808080;
+@define-color accent_color #4d9dfa;
+
+@import url("base.css");

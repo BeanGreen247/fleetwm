@@ -1,0 +1,6 @@
+build/
+subprojects/tomlplusplus/
+subprojects/packagecache/
+*.o
+*.swp
+.cache/

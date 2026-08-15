@@ -1,0 +1,7 @@
+@define-color bg_primary #f5f5f5;
+@define-color bg_secondary #e8e8e8;
+@define-color fg_primary #1a1a1a;
+@define-color fg_secondary #555555;
+@define-color accent_color #3366cc;
+
+@import url("base.css");

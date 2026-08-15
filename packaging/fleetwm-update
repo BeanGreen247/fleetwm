@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# fleetwm-update -- pulls the latest source and rebuilds/reinstalls.
+#
+# v1 update path: git pull + rebuild from the checkout install.sh recorded.
+# Planned v2 path (not yet implemented): check GitHub Releases for a
+# prebuilt .deb matching the running distro/arch and `apt install` it,
+# falling back to this source-build path if no matching release exists.
+# Not worth building until the project has actual tagged releases.
+set -euo pipefail
+
+SOURCE_PATH_FILE=/etc/fleetwm-source-path
+if [[ ! -f "${SOURCE_PATH_FILE}" ]]; then
+  echo "error: ${SOURCE_PATH_FILE} not found -- was fleetwm installed via install.sh?" >&2
+  exit 1
+fi
+
+SOURCE_DIR="$(cat "${SOURCE_PATH_FILE}")"
+cd "${SOURCE_DIR}"
+
+OLD_REV="$(git rev-parse --short HEAD)"
+git fetch
+git pull
+
+NEW_REV="$(git rev-parse --short HEAD)"
+if [[ "${OLD_REV}" == "${NEW_REV}" ]]; then
+  echo "Already up to date (${OLD_REV})."
+  exit 0
+fi
+
+meson setup build "${SOURCE_DIR}" --prefix=/usr/local --buildtype=release --reconfigure
+ninja -C build
+sudo ninja -C build install
+
+echo "Updated fleetwm: ${OLD_REV} -> ${NEW_REV}"

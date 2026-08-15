@@ -1,0 +1,122 @@
+#include "theme.hpp"
+
+#include <toml++/toml.h>
+
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <stdexcept>
+
+namespace fleetwm {
+
+namespace fs = std::filesystem;
+
+namespace {
+
+fs::path config_home() {
+  if (const char* xdg = std::getenv("XDG_CONFIG_HOME"); xdg && *xdg) {
+    return fs::path(xdg);
+  }
+  const char* home = std::getenv("HOME");
+  if (!home) {
+    throw std::runtime_error("HOME is not set; cannot resolve config path");
+  }
+  return fs::path(home) / ".config";
+}
+
+}  // namespace
+
+std::string user_config_path() {
+  return (config_home() / "fleetwm" / "theme.toml").string();
+}
+
+std::string system_default_config_path() {
+  return "/etc/xdg/fleetwm/theme.toml";
+}
+
+std::string theme_name_to_string(ThemeName theme) {
+  switch (theme) {
+    case ThemeName::Dark: return "dark";
+    case ThemeName::Catppuccin: return "catppuccin";
+    case ThemeName::Dracula: return "dracula";
+    case ThemeName::OledBlack: return "oled_black";
+    case ThemeName::Light: return "light";
+  }
+  return "dark";
+}
+
+ThemeName theme_name_from_string(const std::string& s) {
+  if (s == "catppuccin") return ThemeName::Catppuccin;
+  if (s == "dracula") return ThemeName::Dracula;
+  if (s == "oled_black") return ThemeName::OledBlack;
+  if (s == "light") return ThemeName::Light;
+  return ThemeName::Dark;
+}
+
+std::string theme_css_filename(ThemeName theme) {
+  return theme_name_to_string(theme) + ".css";
+}
+
+std::string nav_mode_to_string(NavMode mode) {
+  return mode == NavMode::Vim ? "vim" : "windows";
+}
+
+NavMode nav_mode_from_string(const std::string& s) {
+  return s == "vim" ? NavMode::Vim : NavMode::Windows;
+}
+
+ThemeConfig load_theme_config() {
+  ThemeConfig config;
+
+  fs::path path = user_config_path();
+  if (!fs::exists(path)) {
+    path = system_default_config_path();
+    if (!fs::exists(path)) {
+      // No config anywhere yet (packaging step hasn't run, or this is a
+      // dev build run out-of-tree) -- ship sane defaults rather than fail.
+      return config;
+    }
+  }
+
+  toml::table table = toml::parse_file(path.string());
+
+  if (auto v = table["corner_style"].value<std::string>()) {
+    config.corner_style = (*v == "sharp") ? CornerStyle::Sharp : CornerStyle::Rounded;
+  }
+  if (auto v = table["theme"].value<std::string>()) {
+    config.theme = theme_name_from_string(*v);
+  }
+  if (auto v = table["nav_mode"].value<std::string>()) {
+    config.nav_mode = nav_mode_from_string(*v);
+  }
+  if (auto v = table["accent"].value<std::string>()) {
+    if (*v == "auto") {
+      config.accent.auto_extract = true;
+    } else {
+      config.accent.auto_extract = false;
+      config.accent.hex = *v;
+    }
+  }
+
+  return config;
+}
+
+void save_theme_config(const ThemeConfig& config) {
+  fs::path path = user_config_path();
+  fs::create_directories(path.parent_path());
+
+  toml::table table;
+  table.insert_or_assign(
+      "corner_style", config.corner_style == CornerStyle::Sharp ? "sharp" : "rounded");
+  table.insert_or_assign("theme", theme_name_to_string(config.theme));
+  table.insert_or_assign("nav_mode", nav_mode_to_string(config.nav_mode));
+  table.insert_or_assign("accent", config.accent.auto_extract ? "auto" : config.accent.hex);
+
+  std::ofstream out(path);
+  if (!out) {
+    throw std::runtime_error("failed to open " + path.string() + " for writing");
+  }
+  out << table << "\n";
+}
+
+}  // namespace fleetwm

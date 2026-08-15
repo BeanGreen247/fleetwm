@@ -1,0 +1,52 @@
+/*
+ * Shared structural rules for the bar and settings window, imported by
+ * every theme file before its color overrides. Corner style is applied
+ * separately as a class toggle (see corners-rounded.css / corners-sharp.css)
+ * so it composes independently of which color theme is active.
+ */
+
+window.fleetwm-bar {
+  background-color: @bg_primary;
+  color: @fg_primary;
+}
+
+.fleetwm-workspace-button {
+  min-width: 28px;
+  min-height: 22px;
+  padding: 2px 6px;
+  background-color: transparent;
+  color: @fg_secondary;
+}
+
+.fleetwm-workspace-button.active {
+  background-color: @accent_color;
+  color: @bg_primary;
+}
+
+.fleetwm-clock {
+  font-weight: 600;
+  color: @fg_primary;
+}
+
+.fleetwm-stat {
+  color: @fg_secondary;
+  padding: 0 4px;
+}
+
+.fleetwm-power-icon {
+  color: @fg_secondary;
+}
+
+.fleetwm-power-icon:hover {
+  color: @accent_color;
+}
+
+.fleetwm-power-menu {
+  background-color: @bg_secondary;
+  color: @fg_primary;
+}
+
+.fleetwm-power-menu-item:hover {
+  background-color: @accent_color;
+  color: @bg_primary;
+}

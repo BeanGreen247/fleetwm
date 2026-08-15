@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Fleetwm
+Comment=Minimal, fast Wayland window manager and desktop shell
+Exec=fleetwm
+Type=Application
+DesktopNames=fleetwm

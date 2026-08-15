@@ -1,0 +1,9 @@
+# Fleetwm theme configuration.
+# Installed to /etc/xdg/fleetwm/theme.toml as the system default; copied to
+# ~/.config/fleetwm/theme.toml on first run if the user has no config yet.
+# Edited directly here (Phase 5) or via fleetwm-settings (Phase 6).
+
+corner_style = "rounded"   # "rounded" | "sharp"
+theme = "dark"             # "dark" | "catppuccin" | "dracula" | "oled_black" | "light"
+accent = "auto"            # "auto" | "#RRGGBB"
+nav_mode = "windows"       # "windows" | "vim"

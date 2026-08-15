@@ -1,0 +1,8 @@
+/* Catppuccin Mocha palette (https://github.com/catppuccin/catppuccin) */
+@define-color bg_primary #1e1e2e;
+@define-color bg_secondary #181825;
+@define-color fg_primary #cdd6f4;
+@define-color fg_secondary #bac2de;
+@define-color accent_color #cba6f7;
+
+@import url("base.css");

@@ -1,0 +1,8 @@
+/* Dracula palette (https://draculatheme.com) */
+@define-color bg_primary #282a36;
+@define-color bg_secondary #21222c;
+@define-color fg_primary #f8f8f2;
+@define-color fg_secondary #6272a4;
+@define-color accent_color #bd93f9;
+
+@import url("base.css");
