@@ -64,9 +64,8 @@ AppIndex::AppIndex() {
     const char* description = g_app_info_get_description(info);
     entry.secondary_text = description != nullptr ? description : "";
 
-    gchar* categories = g_desktop_app_info_get_categories(desktop_info);
+    const char* categories = g_desktop_app_info_get_categories(desktop_info);
     entry.category_hint = category_hint_from(categories);
-    g_free(categories);
 
     entry.info = desktop_info;  // ownership transferred to entries_
     if (!entry.name.empty()) {
