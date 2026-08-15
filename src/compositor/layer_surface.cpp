@@ -47,4 +47,24 @@ void layer_surface_new_popup(wl_listener* listener, void* data) {
   wlr_scene_xdg_surface_create(ls->scene_layer_surface->tree, popup->base);
 }
 
+void layer_surface_surface_commit(wl_listener* listener, void*) {
+  LayerSurface* ls = wl_container_of(listener, ls, surface_commit);
+  if (ls->configured) {
+    return;
+  }
+  // wlroots rejects wlr_layer_surface_v1_configure() until the surface's
+  // first commit has happened (it establishes pending.layer/anchors/size
+  // internally) -- this is that first commit, so it's now safe to send
+  // the initial configure. Configure with the output's full effective
+  // box; no exclusive-zone accumulation across sibling layer surfaces yet
+  // (see docs/adr/0008) -- an unanchored surface like the launcher is
+  // centered automatically by wlr_scene_layer_surface_v1's own commit
+  // handling, so the full box is already correct for that case.
+  wlr_box box{};
+  wlr_output_layout_get_box(ls->server->output_layout(), ls->layer_surface->output, &box);
+  wlr_layer_surface_v1_configure(ls->layer_surface, static_cast<uint32_t>(box.width),
+                                  static_cast<uint32_t>(box.height));
+  ls->configured = true;
+}
+
 }  // namespace fleetwm
