@@ -152,14 +152,21 @@ void server_new_layer_surface(wl_listener* listener, void* data) {
   wl_signal_add(&layer_surface->events.destroy, &ls->destroy);
   ls->new_popup.notify = layer_surface_new_popup;
   wl_signal_add(&layer_surface->events.new_popup, &ls->new_popup);
-  // No manual configure here: wlr_scene_layer_surface_v1_create already
-  // installs its own commit listener that auto-configures the surface
-  // (sizing it to the output's usable area) once the client's initial
-  // commit lands. A second, independent configure from us races that
-  // internal one and violates the protocol -- wlroots rejects the
-  // surface with a bare "error in client communication" / EPROTO and no
-  // descriptive wlr_log line, since the rejection is a raw
-  // wl_resource_post_error, confirmed via real testing.
+
+  // wlr_scene_layer_surface_v1_create() does NOT configure the surface --
+  // per its own header doc, that's wlr_scene_layer_surface_v1_configure(),
+  // a separate call the compositor must make itself (verified by reading
+  // wlr_scene.h on fleetwm-dev: struct wlr_scene_layer_surface_v1 has no
+  // commit listener at all). wlr_layer_shell_v1's new_surface doc says to
+  // do this synchronously here, since by this point the client has
+  // already sent its desired anchors/size as layer_surface->pending.
+  // full_area == usable_area for now (no exclusive-zone accumulation
+  // across sibling layer surfaces yet, see docs/adr/0008).
+  wlr_box full_area{};
+  wlr_output_layout_get_box(server->output_layout_, layer_surface->output, &full_area);
+  wlr_box usable_area = full_area;
+  wlr_scene_layer_surface_v1_configure(ls->scene_layer_surface, &full_area, &usable_area);
+
   server->layer_surfaces.push_front(std::move(ls));
 }
 
