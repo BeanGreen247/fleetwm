@@ -42,8 +42,35 @@ class View {
   Kind kind;
   Workspace* workspace = nullptr;
 
+  // container_tree_ is the outer wrapper: it holds the four border rects
+  // plus scene_tree (the actual surface content) as a child, offset by
+  // border_thickness so the border frames the content rather than
+  // overlapping it. Positioning/reparenting-for-pin acts on
+  // container_tree_; hit-testing and focus-raise still act on scene_tree,
+  // since that's what carries the SceneNodeOwner tag (see
+  // scene_node_at() in server.cpp, which walks up past untagged
+  // ancestors like container_tree_ to find it).
+  wlr_scene_tree* container_tree = nullptr;
   wlr_scene_tree* scene_tree = nullptr;
+  wlr_scene_rect* border_top = nullptr;
+  wlr_scene_rect* border_bottom = nullptr;
+  wlr_scene_rect* border_left = nullptr;
+  wlr_scene_rect* border_right = nullptr;
   wlr_xdg_toplevel* xdg_toplevel = nullptr;
+
+  // Whether this view is pinned always-on-top (PowerToys-style): its
+  // container_tree lives in Server's layer_pinned_ tree instead of
+  // layer_toplevels_ while pinned, so it stays visible and on top across
+  // every workspace switch, not just within its own workspace -- see
+  // Output::switch_workspace(), which never touches layer_pinned_.
+  bool pinned = false;
+
+  // Sets/clears the border color and thickness used to indicate pinned
+  // state. Safe to call before the view has mapped (border rects exist
+  // from construction; resize_border() below applies real dimensions
+  // once the surface's actual size is known at map time).
+  void set_pinned(bool pinned);
+  void resize_border();
 
   wl_listener map{};
   wl_listener unmap{};

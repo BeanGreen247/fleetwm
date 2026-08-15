@@ -16,6 +16,7 @@ extern "C" {
 #include <cstring>
 
 #include "server.hpp"
+#include "view.hpp"
 
 namespace fleetwm {
 
@@ -35,6 +36,36 @@ constexpr const char* kTerminalCommand = "foot";  // lightweight Wayland-native 
 constexpr xkb_keysym_t kSpawnLauncherKey = XKB_KEY_d;
 
 constexpr const char* kLauncherCommand = "fleetwm-launcher";
+
+// Alt+Shift+Q: closest available match to i3's default Mod+Shift+kill
+// bind, since Phase 0 has no Super/Mod4 support yet (same Alt-only
+// convention as the spawn binds above). xkb_state_key_get_syms already
+// resolves Shift into the keysym itself (Shift+q -> XKB_KEY_Q), so no
+// separate shift_held check is needed here.
+constexpr xkb_keysym_t kCloseWindowKey = XKB_KEY_Q;
+
+// Alt+Shift+P: toggles PowerToys-style always-on-top pinning for the
+// focused window. Same Shift-resolved-into-keysym note as
+// kCloseWindowKey above applies.
+constexpr xkb_keysym_t kTogglePinKey = XKB_KEY_P;
+
+// Finds the View owning the seat's currently keyboard-focused surface, if
+// any -- the seat only tracks a wlr_surface*, not the owning View, so
+// keybinds that need "the focused window" (e.g. kCloseWindowKey) look it
+// up by scanning views the same way focus_view()'s callers already assume
+// is cheap (Phase 0 view counts are small).
+View* focused_view(Server* server) {
+  wlr_surface* focused_surface = server->seat()->keyboard_state.focused_surface;
+  if (!focused_surface) {
+    return nullptr;
+  }
+  for (const std::unique_ptr<View>& view : server->views) {
+    if (view->surface() == focused_surface) {
+      return view.get();
+    }
+  }
+  return nullptr;
+}
 
 void spawn(const char* cmd) {
   pid_t pid = fork();
@@ -134,6 +165,18 @@ bool Keyboard::handle_keybind(xkb_keysym_t sym) {
   }
   if (sym == kSpawnLauncherKey) {
     spawn(kLauncherCommand);
+    return true;
+  }
+  if (sym == kCloseWindowKey) {
+    if (View* view = focused_view(server)) {
+      view->close();
+    }
+    return true;
+  }
+  if (sym == kTogglePinKey) {
+    if (View* view = focused_view(server)) {
+      view->set_pinned(!view->pinned);
+    }
     return true;
   }
   if (sym == XKB_KEY_Escape) {

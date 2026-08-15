@@ -16,6 +16,7 @@ extern "C" {
 #include <wlr/types/wlr_seat.h>
 #include <wlr/types/wlr_subcompositor.h>
 #include <wlr/types/wlr_xcursor_manager.h>
+#include <wlr/types/wlr_xdg_decoration_v1.h>
 #include <wlr/types/wlr_xdg_output_v1.h>
 #include <wlr/types/wlr_xdg_shell.h>
 }
@@ -65,6 +66,13 @@ class Server {
   wlr_output_layout* output_layout() const { return output_layout_; }
   wlr_seat* seat() const { return seat_; }
   wlr_cursor* cursor() const { return cursor_; }
+  wlr_scene_tree* layer_toplevels() const { return layer_toplevels_; }
+  // Always-enabled, above layer_toplevels_ but below layer_top_/
+  // layer_overlay_ -- pinned views live here instead, so they're never
+  // touched by Output::switch_workspace() (visible across every
+  // workspace) while still sitting under layer-shell popups like the
+  // launcher. See View::set_pinned().
+  wlr_scene_tree* layer_pinned() const { return layer_pinned_; }
 
   // Focuses `view`, raising it in the scene graph and handing keyboard
   // focus to its surface. Passing nullptr clears focus.
@@ -111,14 +119,17 @@ class Server {
   wlr_output_layout* output_layout_ = nullptr;
 
   // Always-enabled z-order layers, bottom to top; child of scene_->tree in
-  // this creation order. layer_toplevels_ hosts every View's scene_tree
-  // (see server_new_xdg_toplevel); the other four correspond 1:1 to the
-  // wlr-layer-shell-v1 protocol layers and are never touched by
+  // this creation order. layer_toplevels_ hosts every View's
+  // container_tree (see server_new_xdg_toplevel); layer_pinned_ hosts
+  // pinned views' container_tree instead (see View::set_pinned) so they
+  // survive Output::switch_workspace(); the other four correspond 1:1 to
+  // the wlr-layer-shell-v1 protocol layers and are never touched by
   // Output::switch_workspace() -- layer surfaces persist across workspace
   // switches by construction.
   wlr_scene_tree* layer_background_ = nullptr;
   wlr_scene_tree* layer_bottom_ = nullptr;
   wlr_scene_tree* layer_toplevels_ = nullptr;
+  wlr_scene_tree* layer_pinned_ = nullptr;
   wlr_scene_tree* layer_top_ = nullptr;
   wlr_scene_tree* layer_overlay_ = nullptr;
 
@@ -126,6 +137,15 @@ class Server {
 
   wlr_xdg_shell* xdg_shell_ = nullptr;
   wl_listener new_xdg_toplevel_{};
+
+  // xdg-decoration-unstable-v1: tells clients to use server-side
+  // decorations instead of drawing their own CSDs. fleetwm draws no
+  // decorations at all (no titlebar, no buttons) -- forcing SERVER_SIDE
+  // mode means "compositor is responsible for decorations" is true in
+  // the protocol sense, and since the compositor draws none, the net
+  // result is borderless windows without patching every client.
+  wlr_xdg_decoration_manager_v1* decoration_manager_ = nullptr;
+  wl_listener new_toplevel_decoration_{};
 
   wlr_layer_shell_v1* layer_shell_ = nullptr;
   wl_listener new_layer_surface_{};
@@ -163,6 +183,7 @@ class Server {
   friend void server_new_output(wl_listener* listener, void* data);
   friend void server_new_xdg_toplevel(wl_listener* listener, void* data);
   friend void server_new_layer_surface(wl_listener* listener, void* data);
+  friend void server_new_toplevel_decoration(wl_listener* listener, void* data);
   friend void server_new_input(wl_listener* listener, void* data);
   friend void server_cursor_motion(wl_listener* listener, void* data);
   friend void server_cursor_motion_absolute(wl_listener* listener, void* data);

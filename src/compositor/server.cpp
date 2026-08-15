@@ -59,6 +59,11 @@ void server_new_output(wl_listener* listener, void* data) {
 static void xdg_toplevel_map(wl_listener* listener, void*) {
   View* view = wl_container_of(listener, view, map);
 
+  // Border rects are sized off the surface's real geometry, only known
+  // once the client has actually mapped (it picks its own size -- see
+  // xdg_toplevel_surface_commit's size-0,0 "client decides" configure).
+  view->resize_border();
+
   if (!view->server->outputs.empty()) {
     Output* output = view->server->outputs.front().get();
     Workspace& workspace = output->active_workspace();
@@ -67,7 +72,7 @@ static void xdg_toplevel_map(wl_listener* listener, void*) {
 
     wlr_box box{};
     wlr_output_layout_get_box(view->server->output_layout(), output->wlr_output_ptr, &box);
-    wlr_scene_node_set_position(&view->scene_tree->node, box.x, box.y);
+    wlr_scene_node_set_position(&view->container_tree->node, box.x, box.y);
   }
 
   view->server->focus_view(view);
@@ -75,15 +80,43 @@ static void xdg_toplevel_map(wl_listener* listener, void*) {
 
 static void xdg_toplevel_unmap(wl_listener* listener, void*) {
   View* view = wl_container_of(listener, view, unmap);
+  Server* server = view->server;
+  bool was_focused = server->seat()->keyboard_state.focused_surface == view->surface();
+
   if (view->workspace) {
     view->workspace->remove_view(view);
     view->workspace = nullptr;
   }
+
+  if (!was_focused) {
+    return;
+  }
+
+  // i3/dwm-style focus-on-close: hand focus to the next visible view in
+  // stacking order (server->views is already front-to-back, topmost
+  // first -- see focus_view()'s splice-to-front). "Visible" means
+  // pinned (always shown) or still enabled on its own workspace's
+  // current output -- container_tree->node.enabled already encodes
+  // that (see Output::switch_workspace).
+  for (const std::unique_ptr<View>& candidate : server->views) {
+    if (candidate.get() != view &&
+        (candidate->pinned || candidate->container_tree->node.enabled)) {
+      server->focus_view(candidate.get());
+      return;
+    }
+  }
+  server->focus_view(nullptr);
 }
 
 static void xdg_toplevel_destroy(wl_listener* listener, void*) {
   View* view = wl_container_of(listener, view, destroy);
   Server* server = view->server;
+  // container_tree is a plain wlr_scene_tree_create(), unlike scene_tree
+  // (owned/auto-destroyed by wlr_scene_xdg_surface_create alongside the
+  // xdg_surface) -- nothing else destroys it, so it would otherwise leak
+  // an empty tree (plus its border-rect children) on every toplevel
+  // close. Safe to call even if scene_tree already self-destroyed first.
+  wlr_scene_node_destroy(&view->container_tree->node);
   server->views.remove_if(
       [view](const std::unique_ptr<View>& v) { return v.get() == view; });
 }
@@ -123,9 +156,24 @@ void server_new_xdg_toplevel(wl_listener* listener, void* data) {
 
   auto view = std::make_unique<View>(server, View::Kind::XdgToplevel);
   view->xdg_toplevel = toplevel;
-  view->scene_tree = wlr_scene_xdg_surface_create(server->layer_toplevels_, toplevel->base);
+
+  // container_tree wraps the actual surface content (scene_tree) plus
+  // four border rects framing it -- see view.hpp for why positioning/
+  // pin-reparenting acts on container_tree while hit-testing still
+  // targets scene_tree. Border rects start fully transparent
+  // (kNoBorderColor) and zero-sized; View::resize_border() gives them
+  // real dimensions once the surface's actual size is known at map time,
+  // and View::set_pinned() is what makes them visible.
+  view->container_tree = wlr_scene_tree_create(server->layer_toplevels());
+  view->scene_tree = wlr_scene_xdg_surface_create(view->container_tree, toplevel->base);
   view->scene_tree->node.data = view.get();
   toplevel->base->data = view->scene_tree;
+
+  constexpr float kTransparent[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+  view->border_top = wlr_scene_rect_create(view->container_tree, 0, 0, kTransparent);
+  view->border_bottom = wlr_scene_rect_create(view->container_tree, 0, 0, kTransparent);
+  view->border_left = wlr_scene_rect_create(view->container_tree, 0, 0, kTransparent);
+  view->border_right = wlr_scene_rect_create(view->container_tree, 0, 0, kTransparent);
 
   view->map.notify = xdg_toplevel_map;
   wl_signal_add(&toplevel->base->surface->events.map, &view->map);
@@ -141,6 +189,20 @@ void server_new_xdg_toplevel(wl_listener* listener, void* data) {
   wl_signal_add(&toplevel->base->surface->events.commit, &view->surface_commit);
 
   server->views.push_front(std::move(view));
+}
+
+// -- xdg-decoration -----------------------------------------------------
+
+void server_new_toplevel_decoration(wl_listener*, void* data) {
+  auto* decoration = static_cast<wlr_xdg_toplevel_decoration_v1*>(data);
+  // fleetwm draws no decorations of its own -- forcing SERVER_SIDE here
+  // just tells the client not to draw its own CSDs (titlebar, buttons),
+  // since as far as the protocol is concerned the compositor is now
+  // responsible for them. No request_mode listener needed: we always
+  // force this regardless of what the client requests, so there's
+  // nothing to react to.
+  wlr_xdg_toplevel_decoration_v1_set_mode(decoration,
+                                           WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
 }
 
 // -- layer-shell surfaces ---------------------------------------------------
@@ -371,6 +433,7 @@ bool Server::init() {
   layer_background_ = wlr_scene_tree_create(&scene_->tree);
   layer_bottom_ = wlr_scene_tree_create(&scene_->tree);
   layer_toplevels_ = wlr_scene_tree_create(&scene_->tree);
+  layer_pinned_ = wlr_scene_tree_create(&scene_->tree);
   layer_top_ = wlr_scene_tree_create(&scene_->tree);
   layer_overlay_ = wlr_scene_tree_create(&scene_->tree);
 
@@ -380,6 +443,11 @@ bool Server::init() {
   xdg_shell_ = wlr_xdg_shell_create(display_, 3);
   new_xdg_toplevel_.notify = server_new_xdg_toplevel;
   wl_signal_add(&xdg_shell_->events.new_toplevel, &new_xdg_toplevel_);
+
+  decoration_manager_ = wlr_xdg_decoration_manager_v1_create(display_);
+  new_toplevel_decoration_.notify = server_new_toplevel_decoration;
+  wl_signal_add(&decoration_manager_->events.new_toplevel_decoration,
+                &new_toplevel_decoration_);
 
   layer_shell_ = wlr_layer_shell_v1_create(display_, 4);
   new_layer_surface_.notify = server_new_layer_surface;
@@ -474,7 +542,7 @@ void Server::focus_view(View* view) {
   if (it != views.end() && it != views.begin()) {
     views.splice(views.begin(), views, it);  // move to front (topmost) without destroying
   }
-  wlr_scene_node_raise_to_top(&view->scene_tree->node);
+  wlr_scene_node_raise_to_top(&view->container_tree->node);
 
   if (view->kind == View::Kind::XdgToplevel && view->xdg_toplevel) {
     wlr_xdg_toplevel_set_activated(view->xdg_toplevel, true);

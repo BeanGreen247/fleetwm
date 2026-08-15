@@ -65,14 +65,24 @@ void Output::switch_workspace(int index) {
     return;
   }
 
+  // Pinned views skip this enable/disable entirely -- they live in
+  // Server's layer_pinned_ tree (always enabled) and are meant to stay
+  // visible across every workspace switch, not just their own (see
+  // View::set_pinned). They're still tracked in workspaces[] like any
+  // other view for bookkeeping (add_view/remove_view), just not toggled
+  // here.
   for (View* view : workspaces[active_workspace_index].views()) {
-    wlr_scene_node_set_enabled(&view->scene_tree->node, false);
+    if (!view->pinned) {
+      wlr_scene_node_set_enabled(&view->container_tree->node, false);
+    }
   }
 
   active_workspace_index = index;
 
   for (View* view : workspaces[active_workspace_index].views()) {
-    wlr_scene_node_set_enabled(&view->scene_tree->node, true);
+    if (!view->pinned) {
+      wlr_scene_node_set_enabled(&view->container_tree->node, true);
+    }
   }
 }
 
