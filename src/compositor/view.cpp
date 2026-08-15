@@ -9,7 +9,7 @@ View::View(Server* server_, Kind kind_) : server(server_), kind(kind_) {}
 
 View::~View() = default;
 
-wlr_surface* View::wlr_surface() const {
+wlr_surface* View::surface() const {
   if (kind == Kind::XdgToplevel) {
     return xdg_toplevel ? xdg_toplevel->base->surface : nullptr;
   }

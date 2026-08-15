@@ -17,7 +17,11 @@ extern "C" {
 
 namespace fleetwm {
 
-namespace {
+// These trampolines are declared as friends of Server (see server.hpp) so
+// they must live directly in the fleetwm namespace, not a nested anonymous
+// namespace -- friend declarations name fleetwm::server_new_output etc.
+// exactly, and an anonymous-namespace definition is a distinct entity that
+// friendship would not reach.
 
 // -- output ------------------------------------------------------------
 
@@ -50,7 +54,7 @@ void server_new_output(wl_listener* listener, void* data) {
 
 // -- xdg toplevels -------------------------------------------------------
 
-void xdg_toplevel_map(wl_listener* listener, void*) {
+static void xdg_toplevel_map(wl_listener* listener, void*) {
   View* view = wl_container_of(listener, view, map);
 
   if (!view->server->outputs.empty()) {
@@ -67,7 +71,7 @@ void xdg_toplevel_map(wl_listener* listener, void*) {
   view->server->focus_view(view);
 }
 
-void xdg_toplevel_unmap(wl_listener* listener, void*) {
+static void xdg_toplevel_unmap(wl_listener* listener, void*) {
   View* view = wl_container_of(listener, view, unmap);
   if (view->workspace) {
     view->workspace->remove_view(view);
@@ -75,18 +79,18 @@ void xdg_toplevel_unmap(wl_listener* listener, void*) {
   }
 }
 
-void xdg_toplevel_destroy(wl_listener* listener, void*) {
+static void xdg_toplevel_destroy(wl_listener* listener, void*) {
   View* view = wl_container_of(listener, view, destroy);
   Server* server = view->server;
   server->views.remove_if(
       [view](const std::unique_ptr<View>& v) { return v.get() == view; });
 }
 
-void xdg_toplevel_request_move(wl_listener* listener, void*) {
+static void xdg_toplevel_request_move(wl_listener* listener, void*) {
   (void)listener;  // Phase 1 scope: floating drag-move.
 }
 
-void xdg_toplevel_request_resize(wl_listener* listener, void*) {
+static void xdg_toplevel_request_resize(wl_listener* listener, void*) {
   (void)listener;  // Phase 1 scope: floating interactive resize.
 }
 
@@ -126,18 +130,12 @@ void server_new_input(wl_listener* listener, void* data) {
   } else if (device->type == WLR_INPUT_DEVICE_POINTER) {
     wlr_cursor_attach_input_device(server->cursor_, device);
   }
-
-  uint32_t caps = WL_SEAT_CAPABILITY_POINTER;
-  if (!wl_list_empty(&server->seat_->keyboards)) {
-    caps |= WL_SEAT_CAPABILITY_KEYBOARD;
-  }
-  wlr_seat_set_capabilities(server->seat_, caps);
 }
 
 // -- cursor ------------------------------------------------------------
 
-View* view_at(Server* server, double lx, double ly, wlr_surface** surface, double* sx,
-              double* sy) {
+static View* view_at(Server* server, double lx, double ly, wlr_surface** surface, double* sx,
+                      double* sy) {
   wlr_scene_node* node =
       wlr_scene_node_at(&server->scene()->tree.node, lx, ly, sx, sy);
   if (!node || node->type != WLR_SCENE_NODE_BUFFER) {
@@ -151,17 +149,17 @@ View* view_at(Server* server, double lx, double ly, wlr_surface** surface, doubl
     return nullptr;
   }
   auto* view = static_cast<View*>(tree->node.data);
-  *surface = view->wlr_surface();
+  *surface = view->surface();
   return view;
 }
 
-void process_cursor_motion(Server* server, uint32_t time_msec) {
+static void process_cursor_motion(Server* server, uint32_t time_msec) {
   double sx, sy;
   wlr_surface* surface = nullptr;
   View* view = view_at(server, server->cursor()->x, server->cursor()->y, &surface, &sx, &sy);
 
   if (!view) {
-    wlr_xcursor_manager_set_cursor_image(server->cursor_mgr_, "default", server->cursor());
+    server->set_default_cursor_image();
   }
 
   if (surface) {
@@ -229,8 +227,6 @@ void server_request_set_selection(wl_listener* listener, void* data) {
   auto* event = static_cast<wlr_seat_request_set_selection_event*>(data);
   wlr_seat_set_selection(server->seat(), event->source, event->serial);
 }
-
-}  // namespace
 
 Server::Server() = default;
 
@@ -347,7 +343,7 @@ void Server::focus_view(View* view) {
   }
 
   wlr_surface* prev_surface = seat_->keyboard_state.focused_surface;
-  wlr_surface* surface = view->wlr_surface();
+  wlr_surface* surface = view->surface();
   if (prev_surface == surface) {
     return;
   }
@@ -375,6 +371,28 @@ void Server::focus_view(View* view) {
     wlr_seat_keyboard_notify_enter(seat_, surface, keyboard->keycodes, keyboard->num_keycodes,
                                     &keyboard->modifiers);
   }
+}
+
+void Server::set_default_cursor_image() {
+  wlr_cursor_set_xcursor(cursor_, cursor_mgr_, "left_ptr");
+}
+
+void Server::notify_keyboard_added() {
+  ++keyboard_count_;
+  uint32_t caps = WL_SEAT_CAPABILITY_POINTER;
+  if (keyboard_count_ > 0) {
+    caps |= WL_SEAT_CAPABILITY_KEYBOARD;
+  }
+  wlr_seat_set_capabilities(seat_, caps);
+}
+
+void Server::notify_keyboard_removed() {
+  --keyboard_count_;
+  uint32_t caps = WL_SEAT_CAPABILITY_POINTER;
+  if (keyboard_count_ > 0) {
+    caps |= WL_SEAT_CAPABILITY_KEYBOARD;
+  }
+  wlr_seat_set_capabilities(seat_, caps);
 }
 
 Workspace* Server::active_workspace_for_focused_output() {

@@ -94,12 +94,15 @@ Keyboard::Keyboard(Server* server_, wlr_keyboard* wlr_keyboard_ptr_)
 
   destroy.notify = keyboard_destroy;
   wl_signal_add(&wlr_keyboard_ptr->base.events.destroy, &destroy);
+
+  server->notify_keyboard_added();
 }
 
 Keyboard::~Keyboard() {
   wl_list_remove(&modifiers.link);
   wl_list_remove(&key.link);
   wl_list_remove(&destroy.link);
+  server->notify_keyboard_removed();
 }
 
 bool Keyboard::handle_keybind(xkb_keysym_t sym) {

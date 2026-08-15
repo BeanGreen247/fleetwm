@@ -12,6 +12,7 @@ extern "C" {
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_seat.h>
+#include <wlr/types/wlr_subcompositor.h>
 #include <wlr/types/wlr_xcursor_manager.h>
 #include <wlr/types/wlr_xdg_shell.h>
 }
@@ -65,6 +66,17 @@ class Server {
   // focus to its surface. Passing nullptr clears focus.
   void focus_view(View* view);
 
+  // Sets the cursor to the default ("left_ptr") xcursor image. Called when
+  // the pointer moves over no view (e.g. bare background).
+  void set_default_cursor_image();
+
+  // Called by Keyboard's constructor/destructor (input.cpp) to keep the
+  // seat's advertised capabilities in sync with whether any keyboard is
+  // currently attached -- wlr_seat itself doesn't track this, unlike
+  // earlier wlroots versions' tinywl.c example server struct.
+  void notify_keyboard_added();
+  void notify_keyboard_removed();
+
   // Looks up the Workspace object for `output`'s currently-active
   // workspace slot (1-9, 0 -> index 9). Per the per-output workspace model
   // (ADR 0002), each Output owns its own set of 10 Workspace objects, so
@@ -93,6 +105,7 @@ class Server {
   wlr_cursor* cursor_ = nullptr;
   wlr_xcursor_manager* cursor_mgr_ = nullptr;
   wlr_seat* seat_ = nullptr;
+  int keyboard_count_ = 0;
 
   wl_listener new_output_{};
   wl_listener new_input_{};

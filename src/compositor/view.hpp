@@ -51,7 +51,7 @@ class View {
   wl_listener request_configure{};
 #endif
 
-  wlr_surface* wlr_surface() const;
+  wlr_surface* surface() const;
   void focus();
   void close();
 };
