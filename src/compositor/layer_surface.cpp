@@ -47,4 +47,30 @@ void layer_surface_new_popup(wl_listener* listener, void* data) {
   wlr_scene_xdg_surface_create(ls->scene_layer_surface->tree, popup->base);
 }
 
+void layer_surface_surface_commit(wl_listener* listener, void*) {
+  LayerSurface* ls = wl_container_of(listener, ls, surface_commit);
+  // wlroots only flips wlr_layer_surface_v1::initialized to true inside
+  // its own surface-commit handling (types/wlr_layer_shell_v1.c,
+  // layer_surface_role_commit -- read directly from wlroots 0.18.2
+  // source on fleetwm-dev). Any configure before that point
+  // unconditionally fails with "A configure is sent to an uninitialized
+  // wlr_layer_surface_v1", regardless of what wlr_layer_shell_v1.h's
+  // doc comment implies about configuring during new_surface.
+  // initial_commit is wlroots' own flag for exactly this moment.
+  if (!ls->layer_surface->initial_commit) {
+    return;
+  }
+
+  // wlr_scene_layer_surface_v1_configure() (not the raw
+  // wlr_layer_surface_v1_configure) so the scene helper also positions
+  // the node per the client's now-populated anchors/margins in
+  // layer_surface->current. No exclusive-zone accumulation across
+  // sibling layer surfaces yet (see docs/adr/0008), so full_area ==
+  // usable_area.
+  wlr_box full_area{};
+  wlr_output_layout_get_box(ls->server->output_layout(), ls->layer_surface->output, &full_area);
+  wlr_box usable_area = full_area;
+  wlr_scene_layer_surface_v1_configure(ls->scene_layer_surface, &full_area, &usable_area);
+}
+
 }  // namespace fleetwm

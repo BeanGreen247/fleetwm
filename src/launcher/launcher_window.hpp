@@ -29,6 +29,7 @@ class LauncherWindow {
 
   static void on_search_changed(GtkEditable* editable, gpointer user_data);
   static void on_row_activated(GtkListBox* box, GtkListBoxRow* row, gpointer user_data);
+  static void on_entry_activate(GtkEntry* entry, gpointer user_data);
   static gboolean on_key_pressed(GtkEventControllerKey* controller, guint keyval,
                                   guint keycode, GdkModifierType state, gpointer user_data);
 

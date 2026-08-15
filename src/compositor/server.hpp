@@ -12,9 +12,11 @@ extern "C" {
 #include <wlr/types/wlr_layer_shell_v1.h>
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_scene.h>
+#include <wlr/types/wlr_screencopy_v1.h>
 #include <wlr/types/wlr_seat.h>
 #include <wlr/types/wlr_subcompositor.h>
 #include <wlr/types/wlr_xcursor_manager.h>
+#include <wlr/types/wlr_xdg_output_v1.h>
 #include <wlr/types/wlr_xdg_shell.h>
 }
 
@@ -127,6 +129,15 @@ class Server {
 
   wlr_layer_shell_v1* layer_shell_ = nullptr;
   wl_listener new_layer_surface_{};
+
+  // wlr-screencopy-unstable-v1: lets clients like grim capture the
+  // screen. No manual wiring needed beyond creation -- wlroots handles
+  // the whole protocol internally via the scene graph.
+  wlr_screencopy_manager_v1* screencopy_manager_ = nullptr;
+  // xdg-output-unstable-v1: lets clients (grim included) query real
+  // output geometry -- without it grim can't determine capture
+  // dimensions at all and fails outright.
+  wlr_xdg_output_manager_v1* xdg_output_manager_ = nullptr;
 
   wlr_cursor* cursor_ = nullptr;
   wlr_xcursor_manager* cursor_mgr_ = nullptr;

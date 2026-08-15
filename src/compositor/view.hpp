@@ -50,6 +50,7 @@ class View {
   wl_listener destroy{};
   wl_listener request_move{};
   wl_listener request_resize{};
+  wl_listener surface_commit{};
 
 #if FLEETWM_XWAYLAND
   wlr_xwayland_surface* xwayland_surface = nullptr;

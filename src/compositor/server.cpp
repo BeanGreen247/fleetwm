@@ -88,6 +88,27 @@ static void xdg_toplevel_destroy(wl_listener* listener, void*) {
       [view](const std::unique_ptr<View>& v) { return v.get() == view; });
 }
 
+static void xdg_toplevel_surface_commit(wl_listener* listener, void*) {
+  View* view = wl_container_of(listener, view, surface_commit);
+  // wlroots never auto-sends a toplevel's first configure -- every
+  // wlr_xdg_toplevel_set_*() setter schedules one as a side effect, but
+  // nothing calls any of them for a brand new toplevel unless the
+  // compositor does (read directly from wlroots 0.18.2 source on
+  // fleetwm-dev: wlr_xdg_toplevel.c has no such call; only setters that
+  // forward to wlr_xdg_surface_schedule_configure()). Spec-compliant
+  // clients like foot wait for that first configure before attaching a
+  // buffer, so without this they create a surface and then hang forever
+  // -- confirmed via real testing: xdg_toplevel_map never fired, no
+  // errors logged anywhere, foot just sat there. initial_commit is
+  // wlroots' flag for "the surface just initialized, safe to configure
+  // now" (same gate as the layer-shell path, see layer_surface.cpp).
+  // Size (0, 0) tells the client to pick its own natural size.
+  if (!view->xdg_toplevel->base->initial_commit) {
+    return;
+  }
+  wlr_xdg_toplevel_set_size(view->xdg_toplevel, 0, 0);
+}
+
 static void xdg_toplevel_request_move(wl_listener* listener, void*) {
   (void)listener;  // Phase 1 scope: floating drag-move.
 }
@@ -116,6 +137,8 @@ void server_new_xdg_toplevel(wl_listener* listener, void* data) {
   wl_signal_add(&toplevel->events.request_move, &view->request_move);
   view->request_resize.notify = xdg_toplevel_request_resize;
   wl_signal_add(&toplevel->events.request_resize, &view->request_resize);
+  view->surface_commit.notify = xdg_toplevel_surface_commit;
+  wl_signal_add(&toplevel->base->surface->events.commit, &view->surface_commit);
 
   server->views.push_front(std::move(view));
 }
@@ -153,19 +176,17 @@ void server_new_layer_surface(wl_listener* listener, void* data) {
   ls->new_popup.notify = layer_surface_new_popup;
   wl_signal_add(&layer_surface->events.new_popup, &ls->new_popup);
 
-  // wlr_scene_layer_surface_v1_create() does NOT configure the surface --
-  // per its own header doc, that's wlr_scene_layer_surface_v1_configure(),
-  // a separate call the compositor must make itself (verified by reading
-  // wlr_scene.h on fleetwm-dev: struct wlr_scene_layer_surface_v1 has no
-  // commit listener at all). wlr_layer_shell_v1's new_surface doc says to
-  // do this synchronously here, since by this point the client has
-  // already sent its desired anchors/size as layer_surface->pending.
-  // full_area == usable_area for now (no exclusive-zone accumulation
-  // across sibling layer surfaces yet, see docs/adr/0008).
-  wlr_box full_area{};
-  wlr_output_layout_get_box(server->output_layout_, layer_surface->output, &full_area);
-  wlr_box usable_area = full_area;
-  wlr_scene_layer_surface_v1_configure(ls->scene_layer_surface, &full_area, &usable_area);
+  // Cannot configure yet: read from wlroots 0.18.2 source on fleetwm-dev
+  // (types/wlr_layer_shell_v1.c) -- wlr_layer_surface_v1_configure()
+  // asserts surface->initialized, which layer_surface_role_commit() only
+  // sets to true from inside the surface's own first wl_surface.commit
+  // handler. At new_surface time (here) it is always still false, so any
+  // configure call in this function unconditionally hits "A configure is
+  // sent to an uninitialized wlr_layer_surface_v1" -- the header doc's
+  // "configure it here" is aspirational, not literal. Must defer to
+  // layer_surface_surface_commit, gated on initial_commit.
+  ls->surface_commit.notify = layer_surface_surface_commit;
+  wl_signal_add(&layer_surface->surface->events.commit, &ls->surface_commit);
 
   server->layer_surfaces.push_front(std::move(ls));
 }
@@ -363,6 +384,9 @@ bool Server::init() {
   layer_shell_ = wlr_layer_shell_v1_create(display_, 4);
   new_layer_surface_.notify = server_new_layer_surface;
   wl_signal_add(&layer_shell_->events.new_surface, &new_layer_surface_);
+
+  screencopy_manager_ = wlr_screencopy_manager_v1_create(display_);
+  xdg_output_manager_ = wlr_xdg_output_manager_v1_create(display_, output_layout_);
 
   cursor_ = wlr_cursor_create();
   wlr_cursor_attach_output_layout(cursor_, output_layout_);
