@@ -152,20 +152,12 @@ void server_new_layer_surface(wl_listener* listener, void* data) {
   wl_signal_add(&layer_surface->events.destroy, &ls->destroy);
   ls->new_popup.notify = layer_surface_new_popup;
   wl_signal_add(&layer_surface->events.new_popup, &ls->new_popup);
-
-  // Per wlr_layer_shell_v1.h's own documented usage: the compositor reads
-  // the client's desired anchors/margins (already in `pending` at this
-  // point) and calls configure() here, directly in response to
-  // new_surface -- before the client attaches a buffer and commits, not
-  // after. Configure with the output's full effective box; no
-  // exclusive-zone accumulation across sibling layer surfaces yet (see
-  // docs/adr/0008) -- an unanchored surface like the launcher is centered
-  // automatically by wlr_scene_layer_surface_v1's own commit handling, so
-  // the full box is already correct for that case.
-  wlr_box box{};
-  wlr_output_layout_get_box(server->output_layout_, layer_surface->output, &box);
-  wlr_layer_surface_v1_configure(layer_surface, static_cast<uint32_t>(box.width),
-                                  static_cast<uint32_t>(box.height));
+  // The initial configure() must wait for the surface's initial commit
+  // (wlroots rejects an earlier configure -- confirmed via real testing)
+  // -- see layer_surface_surface_commit, gated on
+  // wlr_layer_surface_v1::initial_commit.
+  ls->surface_commit.notify = layer_surface_surface_commit;
+  wl_signal_add(&layer_surface->surface->events.commit, &ls->surface_commit);
 
   server->layer_surfaces.push_front(std::move(ls));
 }
