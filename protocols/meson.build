@@ -12,10 +12,10 @@
 #
 # wayland-scanner's generated header for this specific protocol declares a
 # `const char *namespace` parameter (from the XML's <arg name="namespace">)
-# -- valid C, a hard parse error under a C++ compiler. Patched below (sed
-# rewrite of the generated header, run as a second custom_target chained
-# on the first), same C-vs-C++ workaround already used for wlroots' own
-# headers in scripts/patch-wlroots-cpp-headers.py.
+# -- valid C, a hard parse error under a C++ compiler. Patched below via
+# scripts/patch-layer-shell-namespace.py, run as a second custom_target
+# chained on the first, same C-vs-C++ workaround already used for
+# wlroots' own headers in scripts/patch-wlroots-cpp-headers.py.
 
 wl_protocol_dir_local = meson.current_source_dir()
 
@@ -51,12 +51,9 @@ foreach p : protocols
       input: raw_header,
       output: name + '-protocol.h',
       command: [
-        'sh', '-c',
-        # Only rewrite the identifier itself (always "*namespace" in this
-        # generated header -- a pointer parameter/field name), not the
-        # word "namespace" if it ever appears in a comment.
-        'sed "s/\\*namespace\\b/*namespace_/g" "$1" > "$2"',
-        'sed-namespace-patch', '@INPUT@', '@OUTPUT@',
+        find_program('python3'),
+        meson.project_source_root() / 'scripts' / 'patch-layer-shell-namespace.py',
+        '@INPUT@', '@OUTPUT@',
       ],
     )
   else
