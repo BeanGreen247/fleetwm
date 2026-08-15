@@ -9,6 +9,7 @@ extern "C" {
 #include <wlr/types/wlr_compositor.h>
 #include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_data_device.h>
+#include <wlr/types/wlr_layer_shell_v1.h>
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_seat.h>
@@ -34,6 +35,7 @@ namespace fleetwm {
 
 class Output;
 class View;
+class LayerSurface;
 class IpcServer;
 
 // Server owns every long-lived wlroots object and drives the whole
@@ -66,6 +68,12 @@ class Server {
   // focus to its surface. Passing nullptr clears focus.
   void focus_view(View* view);
 
+  // Grants seat keyboard focus to a layer-shell surface that requested
+  // keyboard interactivity (e.g. a launcher popup). Unlike focus_view,
+  // this does not raise/activate/reorder anything -- layer surfaces are
+  // already top of their own layer.
+  void focus_layer_surface(LayerSurface* layer_surface);
+
   // Sets the cursor to the default ("left_ptr") xcursor image. Called when
   // the pointer moves over no view (e.g. bare background).
   void set_default_cursor_image();
@@ -85,6 +93,7 @@ class Server {
   Workspace* active_workspace_for_focused_output();
 
   std::list<std::unique_ptr<View>> views;  // stacking order: front = topmost
+  std::list<std::unique_ptr<LayerSurface>> layer_surfaces;
   std::vector<std::unique_ptr<Output>> outputs;
 
   std::unique_ptr<IpcServer> ipc_server;
@@ -99,8 +108,25 @@ class Server {
   wlr_scene_output_layout* scene_layout_ = nullptr;
   wlr_output_layout* output_layout_ = nullptr;
 
+  // Always-enabled z-order layers, bottom to top; child of scene_->tree in
+  // this creation order. layer_toplevels_ hosts every View's scene_tree
+  // (see server_new_xdg_toplevel); the other four correspond 1:1 to the
+  // wlr-layer-shell-v1 protocol layers and are never touched by
+  // Output::switch_workspace() -- layer surfaces persist across workspace
+  // switches by construction.
+  wlr_scene_tree* layer_background_ = nullptr;
+  wlr_scene_tree* layer_bottom_ = nullptr;
+  wlr_scene_tree* layer_toplevels_ = nullptr;
+  wlr_scene_tree* layer_top_ = nullptr;
+  wlr_scene_tree* layer_overlay_ = nullptr;
+
+  wlr_scene_tree* layer_tree_for(zwlr_layer_shell_v1_layer layer);
+
   wlr_xdg_shell* xdg_shell_ = nullptr;
   wl_listener new_xdg_toplevel_{};
+
+  wlr_layer_shell_v1* layer_shell_ = nullptr;
+  wl_listener new_layer_surface_{};
 
   wlr_cursor* cursor_ = nullptr;
   wlr_xcursor_manager* cursor_mgr_ = nullptr;
@@ -125,6 +151,7 @@ class Server {
 
   friend void server_new_output(wl_listener* listener, void* data);
   friend void server_new_xdg_toplevel(wl_listener* listener, void* data);
+  friend void server_new_layer_surface(wl_listener* listener, void* data);
   friend void server_new_input(wl_listener* listener, void* data);
   friend void server_cursor_motion(wl_listener* listener, void* data);
   friend void server_cursor_motion_absolute(wl_listener* listener, void* data);

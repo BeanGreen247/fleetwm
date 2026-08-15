@@ -12,7 +12,9 @@ extern "C" {
 
 #include "input.hpp"
 #include "ipc_server.hpp"
+#include "layer_surface.hpp"
 #include "output.hpp"
+#include "scene_node_owner.hpp"
 #include "view.hpp"
 
 namespace fleetwm {
@@ -100,7 +102,7 @@ void server_new_xdg_toplevel(wl_listener* listener, void* data) {
 
   auto view = std::make_unique<View>(server, View::Kind::XdgToplevel);
   view->xdg_toplevel = toplevel;
-  view->scene_tree = wlr_scene_xdg_surface_create(&server->scene_->tree, toplevel->base);
+  view->scene_tree = wlr_scene_xdg_surface_create(server->layer_toplevels_, toplevel->base);
   view->scene_tree->node.data = view.get();
   toplevel->base->data = view->scene_tree;
 
@@ -116,6 +118,53 @@ void server_new_xdg_toplevel(wl_listener* listener, void* data) {
   wl_signal_add(&toplevel->events.request_resize, &view->request_resize);
 
   server->views.push_front(std::move(view));
+}
+
+// -- layer-shell surfaces ---------------------------------------------------
+
+void server_new_layer_surface(wl_listener* listener, void* data) {
+  Server* server = wl_container_of(listener, server, new_layer_surface_);
+  auto* layer_surface = static_cast<wlr_layer_surface_v1*>(data);
+
+  // No output requested -> pick the first output, matching the existing
+  // "first output" convention used for View placement (xdg_toplevel_map
+  // above). Genuine multi-output targeting is Phase 1+ scope.
+  if (!layer_surface->output) {
+    if (server->outputs.empty()) {
+      wlr_layer_surface_v1_destroy(layer_surface);
+      return;
+    }
+    layer_surface->output = server->outputs.front()->wlr_output_ptr;
+  }
+
+  wlr_scene_tree* parent = server->layer_tree_for(layer_surface->pending.layer);
+
+  auto ls = std::make_unique<LayerSurface>(server, layer_surface);
+  ls->scene_layer_surface = wlr_scene_layer_surface_v1_create(parent, layer_surface);
+  ls->scene_layer_surface->tree->node.data = ls.get();
+  layer_surface->data = ls.get();
+
+  ls->map.notify = layer_surface_map;
+  wl_signal_add(&layer_surface->surface->events.map, &ls->map);
+  ls->unmap.notify = layer_surface_unmap;
+  wl_signal_add(&layer_surface->surface->events.unmap, &ls->unmap);
+  ls->destroy.notify = layer_surface_destroy;
+  wl_signal_add(&layer_surface->events.destroy, &ls->destroy);
+  ls->new_popup.notify = layer_surface_new_popup;
+  wl_signal_add(&layer_surface->events.new_popup, &ls->new_popup);
+
+  // Configure with the output's full effective box. No exclusive-zone
+  // accumulation across sibling layer surfaces yet (Phase 1+ scope, once
+  // a client actually requests one, e.g. the future bar) -- an unanchored
+  // surface like the launcher is centered automatically by
+  // wlr_scene_layer_surface_v1's internal commit handling, so the full
+  // box is already correct for that case.
+  wlr_box box{};
+  wlr_output_layout_get_box(server->output_layout_, layer_surface->output, &box);
+  wlr_layer_surface_v1_configure(layer_surface, static_cast<uint32_t>(box.width),
+                                  static_cast<uint32_t>(box.height));
+
+  server->layer_surfaces.push_front(std::move(ls));
 }
 
 // -- input devices ---------------------------------------------------------
@@ -134,36 +183,61 @@ void server_new_input(wl_listener* listener, void* data) {
 
 // -- cursor ------------------------------------------------------------
 
-static View* view_at(Server* server, double lx, double ly, wlr_surface** surface, double* sx,
-                      double* sy) {
-  wlr_scene_node* node =
-      wlr_scene_node_at(&server->scene()->tree.node, lx, ly, sx, sy);
+// Walks up from a wlr_scene_node_at() hit to the nearest scene-tree
+// ancestor with non-null node.data, and reports which kind of object
+// owns it (SceneNodeOwner tag, see scene_node_owner.hpp) without
+// reinterpreting the pointer -- callers cast to the right type themselves
+// based on `owner`.
+struct SceneHit {
+  SceneNodeOwner owner;
+  void* data;
+  wlr_surface* surface;
+};
+
+static bool scene_node_at(Server* server, double lx, double ly, double* sx, double* sy,
+                           SceneHit* out) {
+  wlr_scene_node* node = wlr_scene_node_at(&server->scene()->tree.node, lx, ly, sx, sy);
   if (!node || node->type != WLR_SCENE_NODE_BUFFER) {
-    return nullptr;
+    return false;
   }
   wlr_scene_tree* tree = node->parent;
   while (tree && !tree->node.data) {
     tree = tree->node.parent;
   }
   if (!tree) {
+    return false;
+  }
+  out->owner = *static_cast<SceneNodeOwner*>(tree->node.data);
+  out->data = tree->node.data;
+  if (out->owner == SceneNodeOwner::View) {
+    out->surface = static_cast<View*>(tree->node.data)->surface();
+  } else {
+    out->surface = static_cast<LayerSurface*>(tree->node.data)->surface();
+  }
+  return true;
+}
+
+static View* view_at(Server* server, double lx, double ly, wlr_surface** surface, double* sx,
+                      double* sy) {
+  SceneHit hit{};
+  if (!scene_node_at(server, lx, ly, sx, sy, &hit) || hit.owner != SceneNodeOwner::View) {
     return nullptr;
   }
-  auto* view = static_cast<View*>(tree->node.data);
-  *surface = view->surface();
-  return view;
+  *surface = hit.surface;
+  return static_cast<View*>(hit.data);
 }
 
 static void process_cursor_motion(Server* server, uint32_t time_msec) {
   double sx, sy;
-  wlr_surface* surface = nullptr;
-  View* view = view_at(server, server->cursor()->x, server->cursor()->y, &surface, &sx, &sy);
+  SceneHit hit{};
+  bool hit_something = scene_node_at(server, server->cursor()->x, server->cursor()->y, &sx, &sy, &hit);
 
-  if (!view) {
+  if (!hit_something || hit.owner != SceneNodeOwner::View) {
     server->set_default_cursor_image();
   }
 
-  if (surface) {
-    wlr_seat_pointer_notify_enter(server->seat(), surface, sx, sy);
+  if (hit_something) {
+    wlr_seat_pointer_notify_enter(server->seat(), hit.surface, sx, sy);
     wlr_seat_pointer_notify_motion(server->seat(), time_msec, sx, sy);
   } else {
     wlr_seat_pointer_clear_focus(server->seat());
@@ -193,11 +267,17 @@ void server_cursor_button(wl_listener* listener, void* data) {
     return;
   }
   double sx, sy;
-  wlr_surface* surface = nullptr;
-  View* view = view_at(server, server->cursor()->x, server->cursor()->y, &surface, &sx, &sy);
-  if (view) {
-    server->focus_view(view);
+  SceneHit hit{};
+  if (scene_node_at(server, server->cursor()->x, server->cursor()->y, &sx, &sy, &hit) &&
+      hit.owner == SceneNodeOwner::View) {
+    server->focus_view(static_cast<View*>(hit.data));
   }
+  // LayerSurface: no click-to-raise/activate needed -- it's already top
+  // of its own layer, and keyboard focus (if requested) was already
+  // granted on map (see layer_surface_map in layer_surface.cpp), not on
+  // click. Pointer button events themselves are already forwarded to the
+  // focused client above via wlr_seat_pointer_notify_button regardless of
+  // owner kind.
 }
 
 void server_cursor_axis(wl_listener* listener, void* data) {
@@ -267,12 +347,25 @@ bool Server::init() {
   scene_ = wlr_scene_create();
   scene_layout_ = wlr_scene_attach_output_layout(scene_, output_layout_);
 
+  // Always-enabled z-order layers, bottom to top -- see server.hpp for the
+  // full rationale. Creation order alone establishes correct paint order
+  // (wlr_scene_tree_create appends to its parent's child list).
+  layer_background_ = wlr_scene_tree_create(&scene_->tree);
+  layer_bottom_ = wlr_scene_tree_create(&scene_->tree);
+  layer_toplevels_ = wlr_scene_tree_create(&scene_->tree);
+  layer_top_ = wlr_scene_tree_create(&scene_->tree);
+  layer_overlay_ = wlr_scene_tree_create(&scene_->tree);
+
   new_output_.notify = server_new_output;
   wl_signal_add(&backend_->events.new_output, &new_output_);
 
   xdg_shell_ = wlr_xdg_shell_create(display_, 3);
   new_xdg_toplevel_.notify = server_new_xdg_toplevel;
   wl_signal_add(&xdg_shell_->events.new_toplevel, &new_xdg_toplevel_);
+
+  layer_shell_ = wlr_layer_shell_v1_create(display_, 4);
+  new_layer_surface_.notify = server_new_layer_surface;
+  wl_signal_add(&layer_shell_->events.new_surface, &new_layer_surface_);
 
   cursor_ = wlr_cursor_create();
   wlr_cursor_attach_output_layout(cursor_, output_layout_);
@@ -371,6 +464,28 @@ void Server::focus_view(View* view) {
     wlr_seat_keyboard_notify_enter(seat_, surface, keyboard->keycodes, keyboard->num_keycodes,
                                     &keyboard->modifiers);
   }
+}
+
+void Server::focus_layer_surface(LayerSurface* layer_surface) {
+  wlr_surface* surface = layer_surface->surface();
+  wlr_keyboard* keyboard = wlr_seat_get_keyboard(seat_);
+  wlr_seat_keyboard_notify_enter(seat_, surface, keyboard ? keyboard->keycodes : nullptr,
+                                  keyboard ? keyboard->num_keycodes : 0,
+                                  keyboard ? &keyboard->modifiers : nullptr);
+}
+
+wlr_scene_tree* Server::layer_tree_for(zwlr_layer_shell_v1_layer layer) {
+  switch (layer) {
+    case ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND:
+      return layer_background_;
+    case ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM:
+      return layer_bottom_;
+    case ZWLR_LAYER_SHELL_V1_LAYER_TOP:
+      return layer_top_;
+    case ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY:
+      return layer_overlay_;
+  }
+  return layer_overlay_;
 }
 
 void Server::set_default_cursor_image() {

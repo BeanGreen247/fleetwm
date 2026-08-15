@@ -82,6 +82,7 @@ executable(
     'server.cpp',
     'output.cpp',
     'view.cpp',
+    'layer_surface.cpp',
     'input.cpp',
     'workspace.cpp',
     'ipc_server.cpp',

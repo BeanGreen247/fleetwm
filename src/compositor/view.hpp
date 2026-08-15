@@ -8,6 +8,7 @@ extern "C" {
 }
 
 #include "config.h"
+#include "scene_node_owner.hpp"
 
 #if FLEETWM_XWAYLAND
 extern "C" {
@@ -32,6 +33,10 @@ class View {
 
   View(Server* server, Kind kind);
   ~View();
+
+  // Must stay first: hit-testing (server.cpp) reads a scene node's
+  // node.data as SceneNodeOwner* before reinterpreting further.
+  SceneNodeOwner scene_node_owner = SceneNodeOwner::View;
 
   Server* server;
   Kind kind;
