@@ -31,6 +31,9 @@ PATCHED_FILES = {
     "wlr/xwayland/xwayland.h": [
         (re.compile(r"\bchar \*class;"), "char *class_;"),
     ],
+    "wlr/types/wlr_layer_shell_v1.h": [
+        (re.compile(r"\bchar \*namespace;"), "char *namespace_;"),
+    ],
 }
 
 
