@@ -217,16 +217,6 @@ static bool scene_node_at(Server* server, double lx, double ly, double* sx, doub
   return true;
 }
 
-static View* view_at(Server* server, double lx, double ly, wlr_surface** surface, double* sx,
-                      double* sy) {
-  SceneHit hit{};
-  if (!scene_node_at(server, lx, ly, sx, sy, &hit) || hit.owner != SceneNodeOwner::View) {
-    return nullptr;
-  }
-  *surface = hit.surface;
-  return static_cast<View*>(hit.data);
-}
-
 static void process_cursor_motion(Server* server, uint32_t time_msec) {
   double sx, sy;
   SceneHit hit{};

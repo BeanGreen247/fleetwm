@@ -16,7 +16,7 @@ LayerSurface::~LayerSurface() = default;
 void layer_surface_map(wl_listener* listener, void*) {
   LayerSurface* ls = wl_container_of(listener, ls, map);
   if (ls->layer_surface->current.keyboard_interactive !=
-      ZWLR_LAYER_SHELL_V1_KEYBOARD_INTERACTIVITY_NONE) {
+      ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE) {
     ls->server->focus_layer_surface(ls);
   }
 }
