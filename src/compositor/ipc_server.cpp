@@ -15,16 +15,12 @@
 
 namespace fleetwm {
 
-namespace {
-
 // wl_event_loop_add_fd callbacks are plain C function pointers with a
 // void* userdata slot, same shape as wl_listener trampolines elsewhere in
 // this compositor -- kept as free functions (declared friends in
 // ipc_server.hpp) rather than member functions for that reason.
 
 int ipc_server_handle_client_impl(IpcServer* self, int fd, uint32_t mask);
-
-}  // namespace
 
 int ipc_server_handle_accept(int fd, uint32_t mask, void* data) {
   (void)fd;
@@ -36,8 +32,6 @@ int ipc_server_handle_accept(int fd, uint32_t mask, void* data) {
 int ipc_server_handle_client(int fd, uint32_t mask, void* data) {
   return ipc_server_handle_client_impl(static_cast<IpcServer*>(data), fd, mask);
 }
-
-namespace {
 
 int ipc_server_handle_client_impl(IpcServer* self, int fd, uint32_t mask) {
   if (mask & (WL_EVENT_HANGUP | WL_EVENT_ERROR)) {
@@ -51,8 +45,6 @@ int ipc_server_handle_client_impl(IpcServer* self, int fd, uint32_t mask) {
   }
   return 0;
 }
-
-}  // namespace
 
 IpcServer::IpcServer(Server* server) : server_(server) {}
 
