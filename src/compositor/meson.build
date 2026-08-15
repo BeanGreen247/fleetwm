@@ -49,6 +49,10 @@ executable(
     'ipc_server.cpp',
   ),
   include_directories: include_directories('.'),
+  # wlroots headers gate their (still-evolving) API behind this define and
+  # #error out otherwise -- required by every wlroots-based compositor.
+  cpp_args: ['-DWLR_USE_UNSTABLE'],
+  c_args: ['-DWLR_USE_UNSTABLE'],
   dependencies: [
     wayland_server,
     wlroots_dep,
