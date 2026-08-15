@@ -2,8 +2,20 @@
 # standard wlroots/Sway/Wayfire idiom for Meson-based protocol codegen.
 #
 # wlr-layer-shell-unstable-v1 is vendored here (not in wayland-protocols
-# upstream — it's a wlroots-maintained protocol) since the bar and
-# settings-app popovers are layer-shell clients.
+# upstream — it's a wlroots-maintained protocol). wlroots' own installed
+# wlr_layer_shell_v1.h unconditionally #includes
+# "wlr-layer-shell-unstable-v1-protocol.h", which our -Iprotocols include
+# path resolves to this generated header -- so it must exist and be
+# discoverable even though libwlroots itself links its own copy of the
+# protocol *implementation* internally (this generated copy only supplies
+# the type/constant declarations wlr_layer_shell_v1.h needs).
+#
+# wayland-scanner's generated header for this specific protocol declares a
+# `const char *namespace` parameter (from the XML's <arg name="namespace">)
+# -- valid C, a hard parse error under a C++ compiler. Patched below (sed
+# rewrite of the generated header, run as a second custom_target chained
+# on the first), same C-vs-C++ workaround already used for wlroots' own
+# headers in scripts/patch-wlroots-cpp-headers.py.
 
 wl_protocol_dir_local = meson.current_source_dir()
 
@@ -23,12 +35,38 @@ foreach p : protocols
   name = p[0]
   xml = p[1]
 
-  protocol_headers += custom_target(
-    name + '-protocol-header',
-    input: xml,
-    output: name + '-protocol.h',
-    command: [wayland_scanner, 'server-header', '@INPUT@', '@OUTPUT@'],
-  )
+  if name == 'wlr-layer-shell-unstable-v1'
+    # Generate to a temp name, then patch `namespace` (a C++ keyword used
+    # as a plain identifier by this protocol's `namespace` argument) to
+    # `namespace_` before it lands at the real output path -- see the
+    # rationale comment above this protocols array.
+    raw_header = custom_target(
+      name + '-protocol-header-raw',
+      input: xml,
+      output: name + '-protocol-raw.h',
+      command: [wayland_scanner, 'server-header', '@INPUT@', '@OUTPUT@'],
+    )
+    protocol_headers += custom_target(
+      name + '-protocol-header',
+      input: raw_header,
+      output: name + '-protocol.h',
+      command: [
+        'sh', '-c',
+        # Only rewrite the identifier itself (always "*namespace" in this
+        # generated header -- a pointer parameter/field name), not the
+        # word "namespace" if it ever appears in a comment.
+        'sed "s/\\*namespace\\b/*namespace_/g" "$1" > "$2"',
+        'sed-namespace-patch', '@INPUT@', '@OUTPUT@',
+      ],
+    )
+  else
+    protocol_headers += custom_target(
+      name + '-protocol-header',
+      input: xml,
+      output: name + '-protocol.h',
+      command: [wayland_scanner, 'server-header', '@INPUT@', '@OUTPUT@'],
+    )
+  endif
 
   protocol_sources += custom_target(
     name + '-protocol-source',
