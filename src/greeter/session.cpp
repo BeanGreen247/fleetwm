@@ -1,5 +1,6 @@
 #include "session.hpp"
 
+#include <fcntl.h>
 #include <grp.h>
 #include <pwd.h>
 #include <unistd.h>
@@ -59,6 +60,22 @@ std::vector<std::string> build_env(const passwd* pw,
     // Non-fatal: fall back to running from wherever we are (e.g. "/") if
     // the user's home directory is missing or inaccessible.
     std::perror("fleetwm-greet: chdir to home failed, continuing");
+  }
+
+  // The compositor's stderr/stdout otherwise go straight to the raw TTY
+  // device fleetwm-greet was launched on, where wlroots' startup log gets
+  // overwritten the moment the compositor takes DRM master -- redirect to
+  // a file instead so it survives and can actually be read afterwards.
+  // TEMPORARY: for diagnosing the black-screen rendering issue; remove
+  // once root-caused.
+  std::string log_path = std::string(pw->pw_dir) + "/fleetwm-session.log";
+  int log_fd = open(log_path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+  if (log_fd >= 0) {
+    dup2(log_fd, STDOUT_FILENO);
+    dup2(log_fd, STDERR_FILENO);
+    if (log_fd > STDERR_FILENO) {
+      close(log_fd);
+    }
   }
 
   std::vector<std::string> env_storage = build_env(pw, pam_envlist);
