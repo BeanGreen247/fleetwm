@@ -30,6 +30,10 @@ is being built against.
   and project info (fleetwm version, license, links), in the spirit of
   KDE's/XFCE's/Windows' "About This System" pages
 - Power menu: Settings, Sleep, Reboot, Poweroff
+- App launcher (`fleetwm-launcher`, `Alt+D`): minimal Albert/dmenu-style
+  popup, fuzzy search over installed applications (via `GDesktopAppInfo`)
+  with a category hint per result, plus a "Run Command" fallback for
+  typed shell commands
 - XWayland support for legacy X11 apps
 - `fleetwm-update`: pulls and rebuilds the latest version in place
 
@@ -51,8 +55,8 @@ cd fleetwm
 This installs build dependencies via `apt`, builds with Meson/Ninja, and
 installs:
 
-- `fleetwm`, `fleetwm-bar`, `fleetwm-settings`, `fleetwm-greet` to
-  `/usr/local/bin`
+- `fleetwm`, `fleetwm-bar`, `fleetwm-settings`, `fleetwm-launcher`,
+  `fleetwm-greet` to `/usr/local/bin`
 - A `Fleetwm` session entry to `/usr/share/wayland-sessions/` (log out and
   pick it from your display manager's session list)
 - Default theme files and `theme.toml` to `/etc/xdg/fleetwm/`
@@ -112,6 +116,7 @@ or compositor.
 | Keybind        | Action                          |
 |----------------|----------------------------------|
 | `Alt+Return`   | Spawn a terminal (`foot`)       |
+| `Alt+D`        | Open the app launcher           |
 | `Alt+Escape`   | Quit the compositor             |
 | `Super+1`..`0` | Switch to workspace 1-9, 0      |
 
@@ -147,12 +152,14 @@ Build with `-Dxwayland=false` to disable XWayland support and drop the
 
 ## Architecture
 
-Five processes, communicating over a Unix domain socket and a signal/pidfile
+Six processes, communicating over a Unix domain socket and a signal/pidfile
 mechanism -- see [docs/adr](docs/adr) for the reasoning behind each:
 
 - **`fleetwm`** -- the wlroots-based compositor and window manager
 - **`fleetwm-bar`** -- the always-resident GTK4 top bar
 - **`fleetwm-settings`** -- the settings/power-menu app, spawned on demand
+- **`fleetwm-launcher`** -- the app launcher popup, spawned on demand
+  (`Alt+D`), exits after one launch/dismiss
 - **`fleetwm-update`** -- the update script
 - **`fleetwm-greet`** -- the optional minimal PAM+TTY login greeter, an
   alternative to running a full display manager (see

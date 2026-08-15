@@ -30,18 +30,23 @@ constexpr xkb_keysym_t kSpawnTerminalKey = XKB_KEY_Return;
 
 constexpr const char* kTerminalCommand = "foot";  // lightweight Wayland-native terminal
 
-void spawn_terminal() {
+// Alt+D, dmenu-style mnemonic -- same Super-conflict rationale as
+// kSpawnTerminalKey above applies here too.
+constexpr xkb_keysym_t kSpawnLauncherKey = XKB_KEY_d;
+
+constexpr const char* kLauncherCommand = "fleetwm-launcher";
+
+void spawn(const char* cmd) {
   pid_t pid = fork();
   if (pid < 0) {
-    std::fprintf(stderr, "fleetwm: fork for terminal spawn failed: %s\n", std::strerror(errno));
+    std::fprintf(stderr, "fleetwm: fork for '%s' spawn failed: %s\n", cmd, std::strerror(errno));
     return;
   }
   if (pid == 0) {
-    execlp(kTerminalCommand, kTerminalCommand, nullptr);
+    execlp(cmd, cmd, nullptr);
     // execlp only returns on failure -- log why before the child dies, since
     // this failure would otherwise be completely silent.
-    std::fprintf(stderr, "fleetwm: failed to exec '%s': %s\n", kTerminalCommand,
-                 std::strerror(errno));
+    std::fprintf(stderr, "fleetwm: failed to exec '%s': %s\n", cmd, std::strerror(errno));
     _exit(1);
   }
 }
@@ -124,7 +129,11 @@ Keyboard::~Keyboard() {
 
 bool Keyboard::handle_keybind(xkb_keysym_t sym) {
   if (sym == kSpawnTerminalKey) {
-    spawn_terminal();
+    spawn(kTerminalCommand);
+    return true;
+  }
+  if (sym == kSpawnLauncherKey) {
+    spawn(kLauncherCommand);
     return true;
   }
   if (sym == XKB_KEY_Escape) {

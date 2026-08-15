@@ -38,6 +38,7 @@ subdir('src/common')
 subdir('src/compositor')
 subdir('src/bar')
 subdir('src/settings')
+subdir('src/launcher')
 if get_option('greeter')
   subdir('src/greeter')
 endif
