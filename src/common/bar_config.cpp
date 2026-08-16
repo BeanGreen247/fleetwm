@@ -52,14 +52,6 @@ std::string power_mode_to_profiles_daemon_name(PowerMode mode) {
   return "balanced";
 }
 
-std::string bar_mode_to_string(BarMode mode) {
-  return mode == BarMode::Island ? "island" : "full";
-}
-
-BarMode bar_mode_from_string(const std::string& s) {
-  return s == "island" ? BarMode::Island : BarMode::Full;
-}
-
 std::string bar_user_config_path() {
   return (config_home() / "fleetwm" / "bar.toml").string();
 }
@@ -95,14 +87,11 @@ BarConfig load_bar_config() {
     if (auto v = (*ws)["inactive_fg"].value<std::string>()) config.workspace_colors.inactive_fg = *v;
     if (auto v = (*ws)["active_bg"].value<std::string>()) config.workspace_colors.active_bg = *v;
     if (auto v = (*ws)["active_fg"].value<std::string>()) config.workspace_colors.active_fg = *v;
+    if (auto v = (*ws)["buttons_rounded"].value<bool>()) config.workspace_colors.buttons_rounded = *v;
   }
 
   if (auto v = table["power_mode"].value<std::string>()) {
     config.power_mode = power_mode_from_string(*v);
-  }
-
-  if (auto v = table["bar_mode"].value<std::string>()) {
-    config.bar_mode = bar_mode_from_string(*v);
   }
 
   return config;
@@ -124,12 +113,12 @@ void save_bar_config(const BarConfig& config) {
   workspace_colors.insert_or_assign("inactive_fg", config.workspace_colors.inactive_fg);
   workspace_colors.insert_or_assign("active_bg", config.workspace_colors.active_bg);
   workspace_colors.insert_or_assign("active_fg", config.workspace_colors.active_fg);
+  workspace_colors.insert_or_assign("buttons_rounded", config.workspace_colors.buttons_rounded);
 
   toml::table table;
   table.insert_or_assign("clock", clock);
   table.insert_or_assign("workspace_colors", workspace_colors);
   table.insert_or_assign("power_mode", power_mode_to_string(config.power_mode));
-  table.insert_or_assign("bar_mode", bar_mode_to_string(config.bar_mode));
 
   std::ofstream out(path);
   if (!out) {

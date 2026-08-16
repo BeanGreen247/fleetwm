@@ -69,13 +69,6 @@ class BarWindow {
   void reload_theme();
   void reload_bar_config();
 
-  // Full vs. island layout (bar_config_.bar_mode): sets the layer-shell
-  // anchors/margin/exclusive-zone/size that differ between the two.
-  // Called from build() and again from reload_bar_config() -- gtk4-layer-
-  // shell allows re-issuing these calls on an already-mapped surface, it
-  // just queues a fresh configure, so switching modes in Settings takes
-  // effect on this already-running bar process without a restart.
-  void apply_bar_layout();
   static void on_theme_file_changed(GFileMonitor* monitor, GFile* file, GFile* other_file,
                                      GFileMonitorEvent event_type, gpointer user_data);
   static void on_bar_config_file_changed(GFileMonitor* monitor, GFile* file, GFile* other_file,

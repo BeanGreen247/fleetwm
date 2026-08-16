@@ -27,6 +27,11 @@ struct WorkspaceColors {
   std::string inactive_fg = "#ffffff";
   std::string active_bg = "#ff7800";
   std::string active_fg = "#000000";
+  // Independent of theme.toml's own corner_style (which governs window/
+  // launcher/panel corners) -- explicit user request to be able to pick
+  // a rectangle workspace-switcher even while windows stay rounded, or
+  // vice versa, rather than the two being tied together.
+  bool buttons_rounded = true;
 };
 
 // Power profile the user has selected in Settings (only surfaced there
@@ -41,34 +46,11 @@ enum class PowerMode {
   BatterySaver,  // power-profiles-daemon "power-saver"
 };
 
-// Full: existing behavior -- anchored to both screen edges, spans the
-// whole output width (rectangle or full-width pill depending on
-// corner_style). Island: detached from the left/right edges, floating
-// horizontally centered with a small gap from the top edge -- the same
-// visual (still governed by corner_style/theme) just narrower and not
-// edge-to-edge. Only offered/applied on outputs >= kIslandMinOutputWidthPx
-// wide (bar_window.cpp) -- a floating pill on a narrow/small display has
-// no room to breathe and just looks cramped, per explicit user request to
-// gate it on screen width.
-enum class BarMode {
-  Full,
-  Island,
-};
-
-// Minimum output width (px) island mode is offered/applied at -- explicit
-// user-specified threshold, matching common 1366x768 laptop panels as the
-// cutoff.
-constexpr int kIslandMinOutputWidthPx = 1366;
-
 struct BarConfig {
   ClockFormat clock;
   WorkspaceColors workspace_colors;
   PowerMode power_mode = PowerMode::Normal;
-  BarMode bar_mode = BarMode::Full;
 };
-
-std::string bar_mode_to_string(BarMode mode);
-BarMode bar_mode_from_string(const std::string& s);
 
 std::string power_mode_to_string(PowerMode mode);
 PowerMode power_mode_from_string(const std::string& s);

@@ -19,38 +19,6 @@ namespace {
 constexpr int kBarHeightPx = 24;
 constexpr guint kReconnectIntervalMs = 2000;
 
-// Island mode (BarConfig::BarMode::Island): detached pill, centered
-// horizontally (per wlr-layer-shell: anchored to a single edge only ->
-// centered on the perpendicular axis) with a small gap from the top
-// screen edge instead of being flush against it.
-constexpr int kIslandTopMarginPx = 5;
-// Explicit, not -1: same "GTK's size-to-content sentinel forwards as
-// (uint32_t)-1 and wlroots' strict protocol validation fatally rejects
-// it" trap as the height comment above -- once left/right anchors are
-// off, width is unconstrained too and needs a real client-chosen value.
-// Generous enough for the full stat/workspace/battery content at once.
-constexpr int kIslandWidthPx = 720;
-
-// First monitor's width, used to gate island mode to reasonably wide
-// screens (ADR-less explicit user threshold: 1366px, matching common
-// laptop panels) -- a floating pill has no room to breathe on anything
-// smaller.
-int primary_monitor_width_px() {
-  GdkDisplay* display = gdk_display_get_default();
-  if (!display) {
-    return 0;
-  }
-  GListModel* monitors = gdk_display_get_monitors(display);
-  if (!monitors || g_list_model_get_n_items(monitors) == 0) {
-    return 0;
-  }
-  auto* monitor = static_cast<GdkMonitor*>(g_list_model_get_item(monitors, 0));
-  GdkRectangle geometry{};
-  gdk_monitor_get_geometry(monitor, &geometry);
-  g_object_unref(monitor);
-  return geometry.width;
-}
-
 }  // namespace
 
 BarWindow::BarWindow(GtkApplication* app) {
@@ -67,11 +35,19 @@ void BarWindow::build(GtkApplication* app) {
 
   window_ = gtk_application_window_new(app);
   gtk_window_set_decorated(GTK_WINDOW(window_), FALSE);
+  // Explicit height, not -1: gtk4-layer-shell forwards GTK's "size to
+  // content" sentinel straight through to zwlr_layer_surface_v1.set_size()
+  // as (uint32_t)-1, which wlroots' strict protocol validation fatally
+  // rejects -- same crash trap documented in launcher_window.cpp.
+  gtk_window_set_default_size(GTK_WINDOW(window_), 100, kBarHeightPx);
 
   gtk_layer_init_for_window(GTK_WINDOW(window_));
   gtk_layer_set_layer(GTK_WINDOW(window_), GTK_LAYER_SHELL_LAYER_TOP);
+  gtk_layer_set_anchor(GTK_WINDOW(window_), GTK_LAYER_SHELL_EDGE_TOP, TRUE);
+  gtk_layer_set_anchor(GTK_WINDOW(window_), GTK_LAYER_SHELL_EDGE_LEFT, TRUE);
+  gtk_layer_set_anchor(GTK_WINDOW(window_), GTK_LAYER_SHELL_EDGE_RIGHT, TRUE);
+  gtk_layer_set_exclusive_zone(GTK_WINDOW(window_), kBarHeightPx);
   gtk_layer_set_keyboard_mode(GTK_WINDOW(window_), GTK_LAYER_SHELL_KEYBOARD_MODE_NONE);
-  apply_bar_layout();
   // "fleetwm-bar" on the window itself matches themes/base.css's own
   // ".fleetwm-bar { background-color: ...; color: ...; }" selector --
   // gives the bar its background/text color straight from the active
@@ -182,30 +158,6 @@ std::string normalize_hex_color(const std::string& hex, const char* fallback) {
 
 }  // namespace
 
-void BarWindow::apply_bar_layout() {
-  bool island = bar_config_.bar_mode == BarMode::Island &&
-                primary_monitor_width_px() >= kIslandMinOutputWidthPx;
-
-  gtk_layer_set_anchor(GTK_WINDOW(window_), GTK_LAYER_SHELL_EDGE_TOP, TRUE);
-  gtk_layer_set_anchor(GTK_WINDOW(window_), GTK_LAYER_SHELL_EDGE_LEFT, !island);
-  gtk_layer_set_anchor(GTK_WINDOW(window_), GTK_LAYER_SHELL_EDGE_RIGHT, !island);
-  gtk_layer_set_margin(GTK_WINDOW(window_), GTK_LAYER_SHELL_EDGE_TOP,
-                        island ? kIslandTopMarginPx : 0);
-  // Island floats above tiled windows rather than reserving a full-width
-  // strip (0 = no exclusive zone) -- Full keeps the existing behavior of
-  // reserving the bar's height so windows tile starting below it.
-  gtk_layer_set_exclusive_zone(GTK_WINDOW(window_), island ? 0 : kBarHeightPx);
-  // Explicit width/height, never -1: gtk4-layer-shell forwards GTK's
-  // "size to content" sentinel straight through to
-  // zwlr_layer_surface_v1.set_size() as (uint32_t)-1, which wlroots'
-  // strict protocol validation fatally rejects -- same crash trap
-  // documented in launcher_window.cpp. Full's width is irrelevant once
-  // both left/right anchors force the compositor to dictate it via
-  // configure, but island (anchored on one axis only) actually uses the
-  // requested width per the wlr-layer-shell spec.
-  gtk_window_set_default_size(GTK_WINDOW(window_), island ? kIslandWidthPx : 100, kBarHeightPx);
-}
-
 void BarWindow::apply_theme() {
   // Background/text colors, structural rules, and the theme's default
   // accent all come from the installed theme CSS stack now (themes/*.css
@@ -222,13 +174,20 @@ void BarWindow::apply_theme() {
 
   // Rounded => pill (fully-rounded short ends: radius = half the bar
   // height), Sharp => plain rectangle -- same corner_style toggle that
-  // already drives window corners, reused as-is per explicit user
-  // choice not to add a bar-specific shape setting. Workspace buttons'
-  // own radius already comes from themes/corners-*.css (loaded by
-  // apply_app_style() above), so only the bar window's own radius needs
-  // a dynamic override here (no border -- see build()'s comment).
+  // already drives window corners, reused as-is for the bar window's own
+  // shape (no bar-specific "outer shape" setting).
   bool rounded = theme_config_.corner_style == CornerStyle::Rounded;
   int bar_radius = rounded ? kBarHeightPx / 2 : 0;
+
+  // Workspace/power buttons' own corner radius is a separate, bar-only
+  // setting (bar_config_.workspace_colors.buttons_rounded) rather than
+  // reusing theme_config_.corner_style directly -- explicit user request
+  // to be able to pick a rectangle button style independent of whether
+  // windows/launcher/panel are rounded. Overrides whatever
+  // themes/corners-*.css set for ".fleetwm-workspace-button" (loaded by
+  // apply_app_style() above) the same way the color rules below already
+  // override its background/color.
+  int button_radius = bar_config_.workspace_colors.buttons_rounded ? 6 : 0;
 
   // Workspace button colors are the one piece that's genuinely dynamic
   // per-user (bar.toml, not a static theme file) -- layered as an
@@ -252,7 +211,8 @@ void BarWindow::apply_theme() {
 
   std::string css = ".fleetwm-bar-radius { border-radius: " + std::to_string(bar_radius) +
                      "px; } " + ws_selector + " { background: " + inactive_bg +
-                     "; color: " + inactive_fg + "; } " + ws_active_selector +
+                     "; color: " + inactive_fg + "; border-radius: " +
+                     std::to_string(button_radius) + "px; } " + ws_active_selector +
                      " { background: " + active_bg + "; color: " + active_fg + "; }";
   gtk_css_provider_load_from_string(provider, css.c_str());
 }
@@ -301,7 +261,6 @@ void BarWindow::reload_bar_config() {
   bar_config_ = load_bar_config();
   apply_theme();  // workspace_colors live in bar_config_, not theme_config_
   update_power_mode_icon();
-  apply_bar_layout();
 }
 
 void BarWindow::try_connect() {

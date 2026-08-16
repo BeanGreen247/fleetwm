@@ -27,9 +27,9 @@ class SettingsWindow {
   void build(GtkApplication* app);
   void apply_theme();
 
-  static void on_corner_style_changed(GtkDropDown* dropdown, GParamSpec*, gpointer user_data);
-  static void on_theme_changed(GtkDropDown* dropdown, GParamSpec*, gpointer user_data);
-  static void on_nav_mode_changed(GtkDropDown* dropdown, GParamSpec*, gpointer user_data);
+  static void on_corner_style_changed(GtkCheckButton* button, gpointer user_data);
+  static void on_theme_changed(GtkCheckButton* button, gpointer user_data);
+  static void on_nav_mode_changed(GtkCheckButton* button, gpointer user_data);
   static void on_accent_auto_toggled(GtkCheckButton* button, gpointer user_data);
   static void on_accent_color_set(GtkColorButton* button, gpointer user_data);
   static void on_focus_border_thickness_changed(GtkSpinButton* button, gpointer user_data);
@@ -49,7 +49,7 @@ class SettingsWindow {
   GtkWidget* build_bar_tab();
   static void on_clock_toggle_changed(GtkCheckButton* button, gpointer user_data);
   static void on_workspace_color_set(GtkColorButton* button, gpointer user_data);
-  static void on_bar_mode_changed(GtkDropDown* dropdown, GParamSpec*, gpointer user_data);
+  static void on_buttons_rounded_toggled(GtkCheckButton* button, gpointer user_data);
   void save_bar();
 
   // Third notebook page: fleetwm-wallpaper's own wallpaper.toml (a

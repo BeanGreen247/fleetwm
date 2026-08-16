@@ -24,6 +24,46 @@ GtkWidget* labeled_row(const char* label_text, GtkWidget* control) {
   return row;
 }
 
+// Builds a labeled row of GtkCheckButtons wired together as a mutually-
+// exclusive radio group (gtk_check_button_set_group) -- explicit user
+// request to replace the Theme tab's dropdowns with visible radio
+// buttons per option instead of a collapsed menu. `callback` fires on
+// "toggled" for every button in the group (both the newly-active one and
+// whichever was previously active going inactive); callers must ignore
+// calls where gtk_check_button_get_active() is false. Each button's
+// option index is stashed via g_object_set_data under "radio-index" for
+// the callback to read back.
+GtkWidget* radio_row(const char* label_text, const char* const* options, int count, int selected,
+                      GCallback callback, gpointer user_data) {
+  GtkWidget* row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
+  gtk_widget_set_margin_start(row, 4);
+  gtk_widget_set_margin_end(row, 4);
+
+  GtkWidget* label = gtk_label_new(label_text);
+  gtk_label_set_xalign(GTK_LABEL(label), 0.0f);
+  gtk_widget_set_size_request(label, 120, -1);
+  gtk_box_append(GTK_BOX(row), label);
+
+  GtkWidget* radio_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+  gtk_widget_set_hexpand(radio_box, TRUE);
+
+  GtkCheckButton* group_leader = nullptr;
+  for (int i = 0; i < count; ++i) {
+    GtkWidget* radio = gtk_check_button_new_with_label(options[i]);
+    if (group_leader) {
+      gtk_check_button_set_group(GTK_CHECK_BUTTON(radio), group_leader);
+    } else {
+      group_leader = GTK_CHECK_BUTTON(radio);
+    }
+    gtk_check_button_set_active(GTK_CHECK_BUTTON(radio), i == selected);
+    g_object_set_data(G_OBJECT(radio), "radio-index", GINT_TO_POINTER(i));
+    g_signal_connect(radio, "toggled", callback, user_data);
+    gtk_box_append(GTK_BOX(radio_box), radio);
+  }
+  gtk_box_append(GTK_BOX(row), radio_box);
+  return row;
+}
+
 }  // namespace
 
 SettingsWindow::SettingsWindow(GtkApplication* app) {
@@ -56,31 +96,28 @@ void SettingsWindow::build(GtkApplication* app) {
   gtk_widget_set_margin_top(root_box, 16);
   gtk_widget_set_margin_bottom(root_box, 16);
 
-  // Corner style: rounded | sharp
-  const char* corner_options[] = {"Rounded", "Sharp", nullptr};
-  GtkWidget* corner_dropdown = gtk_drop_down_new_from_strings(corner_options);
-  gtk_drop_down_set_selected(GTK_DROP_DOWN(corner_dropdown),
-                              config_.corner_style == CornerStyle::Sharp ? 1 : 0);
-  g_signal_connect(corner_dropdown, "notify::selected",
-                    G_CALLBACK(on_corner_style_changed), this);
-  gtk_box_append(GTK_BOX(root_box), labeled_row("Corner style", corner_dropdown));
+  // Corner style: rounded | sharp -- radio buttons per explicit user
+  // request (Theme tab), not a dropdown.
+  const char* corner_options[] = {"Rounded", "Sharp"};
+  gtk_box_append(GTK_BOX(root_box),
+                 radio_row("Corner style", corner_options, 2,
+                           config_.corner_style == CornerStyle::Sharp ? 1 : 0,
+                           G_CALLBACK(on_corner_style_changed), this));
 
   // Theme: dark | catppuccin | dracula | oled_black | light -- order here
-  // must match the index math in on_theme_changed().
-  const char* theme_options[] = {"Dark", "Catppuccin", "Dracula", "OLED Black", "Light", nullptr};
-  GtkWidget* theme_dropdown = gtk_drop_down_new_from_strings(theme_options);
-  gtk_drop_down_set_selected(GTK_DROP_DOWN(theme_dropdown),
-                              static_cast<guint>(config_.theme));
-  g_signal_connect(theme_dropdown, "notify::selected", G_CALLBACK(on_theme_changed), this);
-  gtk_box_append(GTK_BOX(root_box), labeled_row("Theme", theme_dropdown));
+  // must match ThemeName's declaration order (theme.hpp), which the
+  // callback casts the radio index straight to.
+  const char* theme_options[] = {"Dark", "Catppuccin", "Dracula", "OLED Black", "Light"};
+  gtk_box_append(GTK_BOX(root_box),
+                 radio_row("Theme", theme_options, 5, static_cast<int>(config_.theme),
+                           G_CALLBACK(on_theme_changed), this));
 
   // Nav mode: windows | vim
-  const char* nav_options[] = {"Windows", "Vim", nullptr};
-  GtkWidget* nav_dropdown = gtk_drop_down_new_from_strings(nav_options);
-  gtk_drop_down_set_selected(GTK_DROP_DOWN(nav_dropdown),
-                              config_.nav_mode == NavMode::Vim ? 1 : 0);
-  g_signal_connect(nav_dropdown, "notify::selected", G_CALLBACK(on_nav_mode_changed), this);
-  gtk_box_append(GTK_BOX(root_box), labeled_row("Navigation", nav_dropdown));
+  const char* nav_options[] = {"Windows", "Vim"};
+  gtk_box_append(GTK_BOX(root_box),
+                 radio_row("Navigation", nav_options, 2,
+                           config_.nav_mode == NavMode::Vim ? 1 : 0,
+                           G_CALLBACK(on_nav_mode_changed), this));
 
   // Accent color: auto-extract checkbox + explicit color picker, mutually
   // exclusive per ThemeConfig::AccentColor's own auto_extract flag.
@@ -190,39 +227,6 @@ GtkWidget* SettingsWindow::build_bar_tab() {
     gtk_box_append(GTK_BOX(box), check);
   }
 
-  // Bar mode: full-width rectangle/pill (existing behavior) vs. a
-  // smaller floating "island" pill detached from the edges -- explicit
-  // user request. Island is only offered on outputs wide enough to give
-  // a floating pill room to breathe (kIslandMinOutputWidthPx, bar_window.
-  // cpp's own gate); disabled here rather than hidden so it's clear why
-  // it's unavailable on a small display instead of silently missing.
-  GdkDisplay* display = gdk_display_get_default();
-  int monitor_width = 0;
-  if (display) {
-    GListModel* monitors = gdk_display_get_monitors(display);
-    if (monitors && g_list_model_get_n_items(monitors) > 0) {
-      auto* monitor = static_cast<GdkMonitor*>(g_list_model_get_item(monitors, 0));
-      GdkRectangle geometry{};
-      gdk_monitor_get_geometry(monitor, &geometry);
-      monitor_width = geometry.width;
-      g_object_unref(monitor);
-    }
-  }
-  bool island_available = monitor_width >= kIslandMinOutputWidthPx;
-
-  const char* bar_mode_options[] = {"Full width", "Island (floating)", nullptr};
-  GtkWidget* bar_mode_dropdown = gtk_drop_down_new_from_strings(bar_mode_options);
-  gtk_drop_down_set_selected(GTK_DROP_DOWN(bar_mode_dropdown),
-                              bar_config_.bar_mode == BarMode::Island ? 1 : 0);
-  gtk_widget_set_sensitive(bar_mode_dropdown, island_available);
-  if (!island_available) {
-    gtk_widget_set_tooltip_text(
-        bar_mode_dropdown,
-        "Island mode needs a display at least 1366px wide");
-  }
-  g_signal_connect(bar_mode_dropdown, "notify::selected", G_CALLBACK(on_bar_mode_changed), this);
-  gtk_box_append(GTK_BOX(box), labeled_row("Bar mode", bar_mode_dropdown));
-
   GtkWidget* ws_heading = gtk_label_new("Workspace colors");
   gtk_label_set_xalign(GTK_LABEL(ws_heading), 0.0f);
   gtk_widget_set_margin_top(ws_heading, 12);
@@ -253,7 +257,23 @@ GtkWidget* SettingsWindow::build_bar_tab() {
     gtk_box_append(GTK_BOX(box), labeled_row(spec.label, button));
   }
 
+  // Independent of theme.toml's window/launcher/panel corner_style --
+  // explicit user request to pick the workspace/power button shape on
+  // its own.
+  GtkWidget* buttons_rounded_check = gtk_check_button_new_with_label("Rounded workspace buttons");
+  gtk_check_button_set_active(GTK_CHECK_BUTTON(buttons_rounded_check),
+                               bar_config_.workspace_colors.buttons_rounded);
+  gtk_widget_set_margin_top(buttons_rounded_check, 8);
+  g_signal_connect(buttons_rounded_check, "toggled", G_CALLBACK(on_buttons_rounded_toggled), this);
+  gtk_box_append(GTK_BOX(box), buttons_rounded_check);
+
   return box;
+}
+
+void SettingsWindow::on_buttons_rounded_toggled(GtkCheckButton* button, gpointer user_data) {
+  auto* self = static_cast<SettingsWindow*>(user_data);
+  self->bar_config_.workspace_colors.buttons_rounded = gtk_check_button_get_active(button);
+  self->save_bar();
 }
 
 void SettingsWindow::on_clock_toggle_changed(GtkCheckButton* button, gpointer user_data) {
@@ -278,13 +298,6 @@ void SettingsWindow::on_workspace_color_set(GtkColorButton* button, gpointer use
   auto* field = reinterpret_cast<std::string*>(
       reinterpret_cast<char*>(&self->bar_config_.workspace_colors) + offset);
   *field = hex;
-  self->save_bar();
-}
-
-void SettingsWindow::on_bar_mode_changed(GtkDropDown* dropdown, GParamSpec*, gpointer user_data) {
-  auto* self = static_cast<SettingsWindow*>(user_data);
-  guint selected = gtk_drop_down_get_selected(dropdown);
-  self->bar_config_.bar_mode = selected == 1 ? BarMode::Island : BarMode::Full;
   self->save_bar();
 }
 
@@ -414,28 +427,35 @@ void SettingsWindow::save_wallpaper() {
   save_wallpaper_config(wallpaper_config_);
 }
 
-void SettingsWindow::on_corner_style_changed(GtkDropDown* dropdown, GParamSpec*,
-                                              gpointer user_data) {
+void SettingsWindow::on_corner_style_changed(GtkCheckButton* button, gpointer user_data) {
+  if (!gtk_check_button_get_active(button)) {
+    return;  // fires for the previously-active button too; only act on the new one
+  }
   auto* self = static_cast<SettingsWindow*>(user_data);
-  guint selected = gtk_drop_down_get_selected(dropdown);
-  self->config_.corner_style = selected == 1 ? CornerStyle::Sharp : CornerStyle::Rounded;
+  int index = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(button), "radio-index"));
+  self->config_.corner_style = index == 1 ? CornerStyle::Sharp : CornerStyle::Rounded;
   self->save();
 }
 
-void SettingsWindow::on_theme_changed(GtkDropDown* dropdown, GParamSpec*, gpointer user_data) {
+void SettingsWindow::on_theme_changed(GtkCheckButton* button, gpointer user_data) {
+  if (!gtk_check_button_get_active(button)) {
+    return;
+  }
   auto* self = static_cast<SettingsWindow*>(user_data);
-  guint selected = gtk_drop_down_get_selected(dropdown);
+  int index = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(button), "radio-index"));
   // Index order matches theme_options[] in build(), which matches
   // ThemeName's declaration order in theme.hpp.
-  self->config_.theme = static_cast<ThemeName>(selected);
+  self->config_.theme = static_cast<ThemeName>(index);
   self->save();
 }
 
-void SettingsWindow::on_nav_mode_changed(GtkDropDown* dropdown, GParamSpec*,
-                                          gpointer user_data) {
+void SettingsWindow::on_nav_mode_changed(GtkCheckButton* button, gpointer user_data) {
+  if (!gtk_check_button_get_active(button)) {
+    return;
+  }
   auto* self = static_cast<SettingsWindow*>(user_data);
-  guint selected = gtk_drop_down_get_selected(dropdown);
-  self->config_.nav_mode = selected == 1 ? NavMode::Vim : NavMode::Windows;
+  int index = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(button), "radio-index"));
+  self->config_.nav_mode = index == 1 ? NavMode::Vim : NavMode::Windows;
   self->save();
 }
 
