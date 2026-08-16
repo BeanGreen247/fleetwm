@@ -28,7 +28,6 @@ class SettingsWindow {
   void apply_theme();
 
   static void on_theme_changed(GtkCheckButton* button, gpointer user_data);
-  static void on_nav_mode_changed(GtkCheckButton* button, gpointer user_data);
   static void on_accent_auto_toggled(GtkCheckButton* button, gpointer user_data);
   static void on_accent_color_set(GtkColorButton* button, gpointer user_data);
   static void on_focus_border_thickness_changed(GtkSpinButton* button, gpointer user_data);

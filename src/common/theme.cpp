@@ -64,14 +64,6 @@ std::string theme_css_filename(ThemeName theme) {
   return theme_name_to_string(theme) + ".css";
 }
 
-std::string nav_mode_to_string(NavMode mode) {
-  return mode == NavMode::Vim ? "vim" : "windows";
-}
-
-NavMode nav_mode_from_string(const std::string& s) {
-  return s == "vim" ? NavMode::Vim : NavMode::Windows;
-}
-
 ThemeConfig load_theme_config() {
   ThemeConfig config;
 
@@ -92,9 +84,6 @@ ThemeConfig load_theme_config() {
   }
   if (auto v = table["theme"].value<std::string>()) {
     config.theme = theme_name_from_string(*v);
-  }
-  if (auto v = table["nav_mode"].value<std::string>()) {
-    config.nav_mode = nav_mode_from_string(*v);
   }
   if (auto v = table["accent"].value<std::string>()) {
     if (*v == "auto") {
@@ -125,7 +114,6 @@ void save_theme_config(const ThemeConfig& config) {
   table.insert_or_assign(
       "corner_style", config.corner_style == CornerStyle::Sharp ? "sharp" : "rounded");
   table.insert_or_assign("theme", theme_name_to_string(config.theme));
-  table.insert_or_assign("nav_mode", nav_mode_to_string(config.nav_mode));
   table.insert_or_assign("accent", config.accent.auto_extract ? "auto" : config.accent.hex);
   table.insert_or_assign("focus_border_thickness_px",
                           static_cast<int64_t>(config.focus_border_thickness_px));

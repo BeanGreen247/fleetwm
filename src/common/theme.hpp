@@ -17,11 +17,6 @@ enum class ThemeName {
   Light,
 };
 
-enum class NavMode {
-  Windows,
-  Vim,
-};
-
 struct AccentColor {
   // When auto_extract is true, `hex` holds the last-computed value (see
   // accent_extract.hpp) and is regenerated whenever the wallpaper changes.
@@ -34,7 +29,6 @@ struct ThemeConfig {
   CornerStyle corner_style = CornerStyle::Rounded;
   ThemeName theme = ThemeName::Dark;
   AccentColor accent;
-  NavMode nav_mode = NavMode::Windows;
   // Focus-indicator border thickness in px, drawn by the compositor
   // around whichever window currently has keyboard focus. 2px default
   // matches the previous hardcoded constant it replaces.
@@ -85,9 +79,6 @@ std::string theme_css_filename(ThemeName theme);
 
 std::string theme_name_to_string(ThemeName theme);
 ThemeName theme_name_from_string(const std::string& s);
-
-std::string nav_mode_to_string(NavMode mode);
-NavMode nav_mode_from_string(const std::string& s);
 
 // Parses a "#rrggbb" hex color string into normalized [0,1] RGBA floats
 // (alpha always 1.0), the format wlr_scene_rect_set_color() expects.

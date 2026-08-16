@@ -104,13 +104,6 @@ void SettingsWindow::build(GtkApplication* app) {
                  radio_row("Theme", theme_options, 5, static_cast<int>(config_.theme),
                            G_CALLBACK(on_theme_changed), this));
 
-  // Nav mode: windows | vim
-  const char* nav_options[] = {"Windows", "Vim"};
-  gtk_box_append(GTK_BOX(root_box),
-                 radio_row("Navigation", nav_options, 2,
-                           config_.nav_mode == NavMode::Vim ? 1 : 0,
-                           G_CALLBACK(on_nav_mode_changed), this));
-
   // Accent color: auto-extract checkbox + explicit color picker, mutually
   // exclusive per ThemeConfig::AccentColor's own auto_extract flag.
   GtkWidget* accent_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
@@ -475,16 +468,6 @@ void SettingsWindow::on_theme_changed(GtkCheckButton* button, gpointer user_data
   self->save();
 }
 
-void SettingsWindow::on_nav_mode_changed(GtkCheckButton* button, gpointer user_data) {
-  if (!gtk_check_button_get_active(button)) {
-    return;
-  }
-  auto* self = static_cast<SettingsWindow*>(user_data);
-  int index = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(button), "radio-index"));
-  self->config_.nav_mode = index == 1 ? NavMode::Vim : NavMode::Windows;
-  self->save();
-}
-
 void SettingsWindow::on_accent_auto_toggled(GtkCheckButton* button, gpointer user_data) {
   auto* self = static_cast<SettingsWindow*>(user_data);
   bool active = gtk_check_button_get_active(button);
@@ -641,7 +624,7 @@ void SettingsWindow::on_battery_reading(const BatterySource::Reading& reading) {
 void SettingsWindow::save() {
   save_theme_config(config_);
   // Live-preview this window's own theme change immediately -- every
-  // handler that mutates config_ (theme/accent/nav_mode)
+  // handler that mutates config_ (theme/accent)
   // already calls save() right after, so this is the one call site that
   // covers all of them rather than duplicating the apply_theme() call
   // at each handler.

@@ -6,4 +6,3 @@
 corner_style = "rounded"   # "rounded" | "sharp"
 theme = "dark"             # "dark" | "catppuccin" | "dracula" | "oled_black" | "light"
 accent = "auto"            # "auto" | "#RRGGBB"
-nav_mode = "windows"       # "windows" | "vim"
