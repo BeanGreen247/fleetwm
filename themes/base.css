@@ -71,7 +71,19 @@ window.fleetwm-panel {
 
 notebook.fleetwm-settings-notebook header {
   background-color: @bg_secondary;
+}
+
+/* GTK's own Adwaita stylesheet dims unselected tab labels via opacity
+ * (independent of whatever color they're painted) -- on top of
+ * @fg_secondary that combination read as barely-legible gray-on-gray in
+ * every theme except Light, where the naturally higher base contrast
+ * happened to survive the dimming anyway. Setting color/opacity here
+ * (APPLICATION-priority provider, so it wins regardless of Adwaita's own
+ * selector specificity) makes unselected tabs fully opaque instead of
+ * inheriting that dim. */
+notebook.fleetwm-settings-notebook tab {
   color: @fg_secondary;
+  opacity: 1;
 }
 
 notebook.fleetwm-settings-notebook tab:checked {
