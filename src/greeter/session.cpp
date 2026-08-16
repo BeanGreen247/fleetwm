@@ -26,6 +26,16 @@ std::vector<std::string> build_env(const passwd* pw,
   env.push_back(std::string("SHELL=") + pw->pw_shell);
   env.emplace_back("PATH=/usr/local/bin:/usr/bin:/bin");
   env.emplace_back("XDG_SESSION_TYPE=wayland");
+  // Without this, the session gets no locale env at all (glibc's default
+  // is the plain "C" locale, ASCII-only) -- every GTK app and foot then
+  // logs its own "not a UTF-8 locale, falling back to C.UTF-8" warning on
+  // startup, and non-ASCII text (e.g. this session's own username/prompt
+  // glyphs) can render wrong. C.UTF-8 rather than a real language locale
+  // (e.g. en_US.UTF-8) since it's guaranteed present on every glibc
+  // system without needing locale-gen -- see install.sh, which also sets
+  // this as the system default for consistency outside of fleetwm too.
+  env.emplace_back("LANG=C.UTF-8");
+  env.emplace_back("LC_ALL=C.UTF-8");
   // Fallback only -- pam_systemd normally supplies XDG_RUNTIME_DIR itself
   // in pam_envlist below, which (appended after this floor) overrides it.
   // But pam_systemd registering the session with logind and logind

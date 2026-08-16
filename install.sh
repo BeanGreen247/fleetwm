@@ -29,6 +29,17 @@ sudo apt-get install -y \
                       # wlr-virtual-keyboard-v1 for exactly this; gdb for
                       # live-attaching to the compositor to catch crashes
 
+echo "==> Setting system default locale to C.UTF-8"
+# fleetwm-greet's session env (src/greeter/session.cpp) also hardcodes
+# this as a floor for every fleetwm session regardless of the system
+# default, but setting it here too keeps outside-of-fleetwm logins (a
+# plain TTY, SSH) consistent instead of inheriting whatever partial/
+# unavailable locale (e.g. a language locale that was never actually
+# generated on this machine) came from the base install. C.UTF-8 rather
+# than a real language locale since it's guaranteed present on every
+# glibc system with no locale-gen step required.
+sudo update-locale LANG=C.UTF-8 LC_ALL=C.UTF-8 LANGUAGE=
+
 echo "==> Configuring build"
 meson setup "${BUILD_DIR}" "${SCRIPT_DIR}" --prefix=/usr/local --buildtype=release --reconfigure
 

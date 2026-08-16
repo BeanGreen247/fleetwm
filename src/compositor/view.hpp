@@ -86,6 +86,41 @@ class View {
   // be reachable on top without following you across workspaces.
   bool always_on_top = false;
 
+  // Per-edge "step forward" amount (px) set by Output::relayout() for
+  // whichever tiled view is currently focused -- resize_border() bleeds
+  // the border rects outward by these amounts (into the outer gap) on
+  // top of the view's normal border thickness. Deliberately NOT part of
+  // the box passed to tile_view()/wlr_xdg_toplevel_set_size(): changing
+  // the client's actual content size on every focus switch would make
+  // resize_border() bleed outward by these amounts -- the client resize
+  // is async, so the border/position would visibly update a frame or
+  // more before the client's buffer catches up, reading as a flicker/
+  // jump on every focus change. Since these only ever affect border
+  // rects (independent scene nodes with no clipping to the container's
+  // "logical box"), the content position/size and the client's own
+  // resize cycle are completely unaffected -- purely cosmetic border
+  // bleed, always synchronous.
+  int grow_left = 0;
+  int grow_top = 0;
+  int grow_right = 0;
+  int grow_bottom = 0;
+
+  // Last content size actually requested via wlr_xdg_toplevel_set_size()
+  // (output.cpp's tile_view()) -- lets relayout() skip re-requesting a
+  // size that hasn't changed. wlr_xdg_toplevel_set_size() schedules a
+  // fresh configure/serial unconditionally on every call, with no
+  // internal dedup against the previous request; relayout() runs far
+  // more often than the tiled layout actually changes (e.g. once a
+  // second just from the bar's own clock-tick surface commit, via
+  // Output::update_usable_area() -> relayout()), so calling it
+  // unconditionally produced a steady stream of needless configure/
+  // ack_configure round-trips -- observed over WAYLAND_DEBUG firing every
+  // ~1s indefinitely, regardless of any real user action, which is what
+  // read as "gaps are glitchy". -1 sentinel so the very first tile_view()
+  // call always sends the initial size.
+  int last_requested_content_w = -1;
+  int last_requested_content_h = -1;
+
   // Whether this view currently holds keyboard focus -- Server::focus_view
   // sets this on the old/new focused view on every focus change and calls
   // resize_border() so the focus indicator stays in sync without every

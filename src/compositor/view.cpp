@@ -104,19 +104,28 @@ void View::resize_border() {
   int width = geo.width > 0 ? geo.width : 1;
   int height = geo.height > 0 ? geo.height : 1;
 
+  // Content position/size never depends on grow_* -- always the plain
+  // thickness offset, regardless of whether this view is currently
+  // "stepped forward" (Output::relayout()). Only the border rects below
+  // bleed outward into that extra space.
   wlr_scene_node_set_position(&scene_tree->node, thickness, thickness);
 
-  wlr_scene_rect_set_size(border_top, width + 2 * thickness, thickness);
-  wlr_scene_node_set_position(&border_top->node, 0, 0);
+  int top_h = thickness + grow_top;
+  int bottom_h = thickness + grow_bottom;
+  int left_w = thickness + grow_left;
+  int right_w = thickness + grow_right;
 
-  wlr_scene_rect_set_size(border_bottom, width + 2 * thickness, thickness);
-  wlr_scene_node_set_position(&border_bottom->node, 0, thickness + height);
+  wlr_scene_rect_set_size(border_top, width + left_w + right_w, top_h);
+  wlr_scene_node_set_position(&border_top->node, -grow_left, -grow_top);
 
-  wlr_scene_rect_set_size(border_left, thickness, height);
-  wlr_scene_node_set_position(&border_left->node, 0, thickness);
+  wlr_scene_rect_set_size(border_bottom, width + left_w + right_w, bottom_h);
+  wlr_scene_node_set_position(&border_bottom->node, -grow_left, thickness + height);
 
-  wlr_scene_rect_set_size(border_right, thickness, height);
-  wlr_scene_node_set_position(&border_right->node, thickness + width, thickness);
+  wlr_scene_rect_set_size(border_left, left_w, height + top_h + bottom_h);
+  wlr_scene_node_set_position(&border_left->node, -grow_left, -grow_top);
+
+  wlr_scene_rect_set_size(border_right, right_w, height + top_h + bottom_h);
+  wlr_scene_node_set_position(&border_right->node, thickness + width, -grow_top);
 }
 
 wlr_surface* View::surface() const {

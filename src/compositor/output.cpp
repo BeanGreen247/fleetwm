@@ -107,8 +107,16 @@ void tile_view(View* view, int x, int y, int w, int h) {
   int thickness = view->border_thickness();
   int content_w = std::max(1, w - 2 * thickness);
   int content_h = std::max(1, h - 2 * thickness);
-  if (view->kind == View::Kind::XdgToplevel && view->xdg_toplevel) {
+  // Skip the request entirely when nothing actually changed -- see the
+  // last_requested_content_w/h comment in view.hpp for why this matters:
+  // relayout() (and therefore tile_view()) runs far more often than the
+  // tiled layout actually changes.
+  if (view->kind == View::Kind::XdgToplevel && view->xdg_toplevel &&
+      (content_w != view->last_requested_content_w ||
+       content_h != view->last_requested_content_h)) {
     wlr_xdg_toplevel_set_size(view->xdg_toplevel, content_w, content_h);
+    view->last_requested_content_w = content_w;
+    view->last_requested_content_h = content_h;
   }
   // NOT calling view->resize_border() here: wlr_xdg_toplevel_set_size()
   // is async, so the client hasn't actually resized yet -- border rects
@@ -137,31 +145,21 @@ View* focused_view(Server* server) {
   return nullptr;
 }
 
-// Grows `tile` outward by `grow` px on whichever edges already sit at
-// the outer boundary of the workable area (`outer`) -- i.e. edges facing
-// the bar/screen edge, never an edge shared with a neighboring tiled
-// window, so this can never make two tiled windows overlap. This is
-// what makes the focused window "step forward": it eats into its own
-// share of the outer gap rather than shrinking anything else.
-wlr_box grow_at_outer_edges(wlr_box tile, const wlr_box& outer, int grow) {
-  if (grow <= 0) {
-    return tile;
-  }
-  if (tile.x <= outer.x) {
-    tile.x -= grow;
-    tile.width += grow;
-  }
-  if (tile.y <= outer.y) {
-    tile.y -= grow;
-    tile.height += grow;
-  }
-  if (tile.x + tile.width >= outer.x + outer.width) {
-    tile.width += grow;
-  }
-  if (tile.y + tile.height >= outer.y + outer.height) {
-    tile.height += grow;
-  }
-  return tile;
+// Sets View::grow_left/top/right/bottom (view.hpp) to `grow` on whichever
+// edges of `tile` already sit at the outer boundary of the workable area
+// (`outer`) -- i.e. edges facing the bar/screen edge, never an edge
+// shared with a neighboring tiled window, so the resulting border bleed
+// (View::resize_border()) can never overlap another tiled view. This is
+// what makes the focused window "step forward": its border eats into its
+// own share of the outer gap rather than shrinking anything else. `grow`
+// is 0 for every non-focused view, clearing any bleed left over from a
+// previous focus.
+void apply_edge_grow(View* view, const wlr_box& tile, const wlr_box& outer, int grow) {
+  view->grow_left = (grow > 0 && tile.x <= outer.x) ? grow : 0;
+  view->grow_top = (grow > 0 && tile.y <= outer.y) ? grow : 0;
+  view->grow_right = (grow > 0 && tile.x + tile.width >= outer.x + outer.width) ? grow : 0;
+  view->grow_bottom = (grow > 0 && tile.y + tile.height >= outer.y + outer.height) ? grow : 0;
+  view->resize_border();
 }
 
 // Extra breathing room between a tiled window's edge and any adjacent
@@ -247,26 +245,29 @@ void Output::relayout() {
   box.height = outer_h;
 
   // The focused window "steps forward" a few px into its own share of
-  // the outer gap (grow_at_outer_edges above) -- explicit user request
-  // to make the existing raise-to-top-on-focus behavior more visually
-  // pronounced. Capped well below the full gap so there's always some
-  // residual outer gap left even around a grown, focused window (and
-  // gap_px == 0 means grow == 0: nothing to step into).
+  // the outer gap -- explicit user request to make the existing
+  // raise-to-top-on-focus behavior more visually pronounced. This is
+  // border-only bleed (apply_edge_grow() above, View::resize_border()),
+  // deliberately never folded into the box below: every tile_view() call
+  // here always uses the same plain, focus-independent box, so a focus
+  // change never asks the client to resize (see the grow_* fields'
+  // comment in view.hpp for why that used to cause a visible flicker).
+  // Capped well below the full gap so there's always some residual gap
+  // left even around a grown, focused window (and gap_px == 0 means
+  // grow == 0: nothing to step into).
   View* focused = focused_view(server);
   int grow = std::min(6, std::max(0, gap - 1));
 
   if (tiled.size() == 1) {
-    wlr_box b = (tiled[0] == focused) ? grow_at_outer_edges(box, usable_area, grow) : box;
-    tile_view(tiled[0], b.x, b.y, b.width, b.height);
+    tile_view(tiled[0], box.x, box.y, box.width, box.height);
+    apply_edge_grow(tiled[0], box, usable_area, tiled[0] == focused ? grow : 0);
     return;
   }
 
   int master_width = (box.width - gap) / 2;
   wlr_box master_box{box.x, box.y, master_width, box.height};
-  if (tiled[0] == focused) {
-    master_box = grow_at_outer_edges(master_box, usable_area, grow);
-  }
   tile_view(tiled[0], master_box.x, master_box.y, master_box.width, master_box.height);
+  apply_edge_grow(tiled[0], master_box, usable_area, tiled[0] == focused ? grow : 0);
 
   int stack_count = static_cast<int>(tiled.size()) - 1;
   int stack_x = box.x + master_width + gap;
@@ -278,10 +279,8 @@ void Output::relayout() {
     // stack always exactly fills the output height.
     int h = (i == stack_count - 1) ? (box.y + box.height - y) : stack_height;
     wlr_box stack_box{stack_x, y, stack_width, h};
-    if (tiled[i + 1] == focused) {
-      stack_box = grow_at_outer_edges(stack_box, usable_area, grow);
-    }
     tile_view(tiled[i + 1], stack_box.x, stack_box.y, stack_box.width, stack_box.height);
+    apply_edge_grow(tiled[i + 1], stack_box, usable_area, tiled[i + 1] == focused ? grow : 0);
   }
 }
 
