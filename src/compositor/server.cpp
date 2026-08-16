@@ -458,6 +458,14 @@ static void process_cursor_motion(Server* server, uint32_t time_msec) {
   } else {
     wlr_seat_pointer_clear_focus(server->seat());
   }
+
+  // Focus-follows-mouse: hovering a view focuses it, no click required.
+  // Mirrors server_cursor_button's hit-testing; bare background/layer-shell
+  // hits intentionally leave the last-focused view focused (dwm-style, no
+  // debounce needed).
+  if (hit_something && hit.owner == SceneNodeOwner::View) {
+    server->focus_view(static_cast<View*>(hit.data));
+  }
 }
 
 void server_cursor_motion(wl_listener* listener, void* data) {
