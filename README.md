@@ -21,7 +21,13 @@ is being built against.
   CPU/GPU/disk usage
 - Settings app: rounded/sharp corner toggle, 5 themes (Dark, Catppuccin,
   Dracula, OLED Black, Light), custom or wallpaper-auto-extracted accent
-  color, Windows-style or Vim-style window navigation
+  color
+- Settings app -- Bar tab: workspace-button corner shape, per-workspace
+  colors; Wallpaper tab: image or solid-color background
+  (`fleetwm-wallpaper`), applied live
+- Battery indicator and power-profile switching (Normal/Performance/
+  Battery Saver) in the bar and Settings, shown only on machines with a
+  battery
 - Settings app -- Default Apps: per-category default application picker
   (browser, terminal, file manager, image viewer, etc.), backed by
   standard `xdg-mime`/`mimeapps.list` associations so OS-level and other
@@ -41,7 +47,7 @@ is being built against.
 
 - Debian 13.6 (Trixie) or Ubuntu/Kubuntu 26.04 LTS
 - A display manager that lists Wayland sessions (GDM, SDDM, LightDM all
-  work) -- or the bundled minimal `fleetwm-greet` TTY login, see
+  work) -- or the bundled graphical `fleetwm-greet` login screen, see
   [Greeter](#greeter) below
 
 ## Install
@@ -56,10 +62,14 @@ This installs build dependencies via `apt`, builds with Meson/Ninja, and
 installs:
 
 - `fleetwm`, `fleetwm-bar`, `fleetwm-settings`, `fleetwm-launcher`,
-  `fleetwm-greet` to `/usr/local/bin`
+  `fleetwm-wallpaper`, `fleetwm-greet`, `fleetwm-greeter-login` to
+  `/usr/local/bin`
 - A `Fleetwm` session entry to `/usr/share/wayland-sessions/` (log out and
   pick it from your display manager's session list)
 - Default theme files and `theme.toml` to `/etc/xdg/fleetwm/`
+- `seatd` (installed and enabled as a system service) -- the greeter's
+  own login-screen compositor needs it for DRM/seat access before
+  anyone's logged in, see [Greeter](#greeter)
 - The `fleetwm-greet` PAM config and systemd unit (not enabled by
   default -- see [Greeter](#greeter))
 
@@ -76,10 +86,22 @@ Log out and select **Fleetwm** as your session to start using it.
 
 ## Greeter
 
-`fleetwm-greet` is a minimal PAM+TTY login prompt bundled with fleetwm, for
-anyone who'd rather not run a full display manager. It's installed but not
-enabled by default; `install.sh` prints the exact commands to opt in on
-your main console (tty1):
+`fleetwm-greet` is a themed graphical login screen bundled with fleetwm,
+for anyone who'd rather not run a full display manager. It's a real,
+minimal wlroots compositor in its own right (see
+[ADR 0006](docs/adr/0006-custom-pam-tty-greeter-vs-display-manager.md)
+for why a custom greeter exists at all instead of depending on a display
+manager): a Windows-7-style picker of every real local account, each shown
+as a square avatar tile, plus an "Other User" tile for typing an
+arbitrary name. Picking a tile locks the username and asks only for a
+password; the background, accent color, and corner style all match
+whatever's currently set in `fleetwm-settings`. **Root login is refused
+outright** -- it never appears in the picker and is rejected server-side
+even if typed under "Other User" -- root is meant to stay a deliberate
+terminal/rescue-shell login, not a routine desktop session.
+
+It's installed but not enabled by default; `install.sh` prints the exact
+commands to opt in on your main console (tty1):
 
 ```sh
 sudo systemctl disable --now getty@tty1.service
@@ -89,11 +111,13 @@ sudo systemctl enable --now fleetwm-greeter@tty1.service
 Swap `tty1` for another VT (e.g. `tty2`) if you'd rather leave your normal
 login console untouched and just try the greeter alongside it.
 
-Switch to that VT (`Ctrl+Alt+F2`) to see the prompt. See
-[ADR 0006](docs/adr/0006-custom-pam-tty-greeter-vs-display-manager.md) for
-why this exists alongside the display-manager path rather than replacing
-it. Build with `-Dgreeter=false` to skip it (and its `libpam` dependency)
-entirely.
+Switch to that VT (`Ctrl+Alt+F2`) to see the login screen. Requires
+`seatd` running (`install.sh` installs and enables it automatically) --
+the greeter's compositor needs a seat backend to get DRM access before
+anyone's logged in, and `seatd` is what arbitrates that without opening a
+login session of its own (which would collide with the one PAM opens for
+whoever actually logs in). Build with `-Dgreeter=false` to skip the
+greeter (and its `libpam` dependency) entirely.
 
 ## Updating
 
@@ -114,7 +138,6 @@ Edit `~/.config/fleetwm/theme.toml` directly, or use the settings app
 corner_style = "rounded"   # "rounded" | "sharp"
 theme = "dark"             # "dark" | "catppuccin" | "dracula" | "oled_black" | "light"
 accent = "auto"            # "auto" | "#RRGGBB"
-nav_mode = "windows"       # "windows" | "vim"
 ```
 
 Changes made via the settings app apply live, without restarting the bar
@@ -157,23 +180,33 @@ foot
 
 Build with `-Dxwayland=false` to disable XWayland support and drop the
 `libxcb-dev` dependency. Build with `-Dgreeter=false` to skip
-`fleetwm-greet` and its `libpam` dependency.
+`fleetwm-greet` and its `libpam` dependency. If you enable the greeter
+manually (not via `install.sh`), also install and enable `seatd`
+(`apt install seatd && systemctl enable --now seatd.service`) -- see
+[Greeter](#greeter).
 
 ## Architecture
 
-Six processes, communicating over a Unix domain socket and a signal/pidfile
-mechanism -- see [docs/adr](docs/adr) for the reasoning behind each:
+Eight processes, communicating over a Unix domain socket and a
+signal/pidfile mechanism -- see [docs/adr](docs/adr) for the reasoning
+behind each:
 
 - **`fleetwm`** -- the wlroots-based compositor and window manager
 - **`fleetwm-bar`** -- the always-resident GTK4 top bar
 - **`fleetwm-settings`** -- the settings/power-menu app, spawned on demand
 - **`fleetwm-launcher`** -- the app launcher popup, spawned on demand
   (`Alt+D`), exits after one launch/dismiss
+- **`fleetwm-wallpaper`** -- the background renderer, autostarted with the
+  compositor
 - **`fleetwm-update`** -- the update script
-- **`fleetwm-greet`** -- the optional minimal PAM+TTY login greeter, an
+- **`fleetwm-greet`** -- the optional graphical login greeter, an
   alternative to running a full display manager (see
   [Greeter](#greeter)); not part of the IPC socket/signal mechanism since
-  it runs before any session exists
+  it runs before any session exists -- it's a small wlroots compositor of
+  its own that hands off to `fleetwm` on a successful login
+- **`fleetwm-greeter-login`** -- the GTK4 login-screen UI
+  `fleetwm-greet` spawns and talks to over a private socket; never runs
+  outside of a `fleetwm-greet` session
 
 ## License
 
