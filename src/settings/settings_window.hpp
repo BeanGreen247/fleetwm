@@ -31,6 +31,7 @@ class SettingsWindow {
   static void on_accent_color_set(GtkColorButton* button, gpointer user_data);
   static void on_focus_border_thickness_changed(GtkSpinButton* button, gpointer user_data);
   static void on_focus_border_color_set(GtkColorButton* button, gpointer user_data);
+  static void on_gap_changed(GtkSpinButton* button, gpointer user_data);
 
   // Writes config_ to disk. Called after every change rather than on a
   // separate "Apply" button -- theme.toml is cheap to rewrite and this

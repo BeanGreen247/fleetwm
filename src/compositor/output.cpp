@@ -191,15 +191,21 @@ void Output::relayout() {
     return;
   }
 
-  int master_width = box.width / 2;
+  // Gap between tiled windows only (master/stack split, and between
+  // stacked windows) -- does not touch usable_area, so it never adds
+  // extra spacing against the bar or screen edges, which are already
+  // governed by the exclusive-zone reservation above.
+  int gap = std::max(0, server->theme_config().gap_px);
+
+  int master_width = (box.width - gap) / 2;
   tile_view(tiled[0], box.x, box.y, master_width, box.height);
 
   int stack_count = static_cast<int>(tiled.size()) - 1;
-  int stack_x = box.x + master_width;
-  int stack_width = box.width - master_width;
-  int stack_height = box.height / stack_count;
+  int stack_x = box.x + master_width + gap;
+  int stack_width = box.width - master_width - gap;
+  int stack_height = (box.height - (stack_count - 1) * gap) / stack_count;
   for (int i = 0; i < stack_count; ++i) {
-    int y = box.y + i * stack_height;
+    int y = box.y + i * (stack_height + gap);
     // Last stripe absorbs any remainder from integer division so the
     // stack always exactly fills the output height.
     int h = (i == stack_count - 1) ? (box.y + box.height - y) : stack_height;

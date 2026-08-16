@@ -123,6 +123,14 @@ void SettingsWindow::build(GtkApplication* app) {
   gtk_box_append(GTK_BOX(root_box),
                   labeled_row("Focus border color", focus_border_color_button_));
 
+  // Gap between tiled windows (master/stack split, and between stacked
+  // windows). Does not add spacing against the bar or screen edges --
+  // that's a separate, fixed exclusive-zone reservation.
+  GtkWidget* gap_spin = gtk_spin_button_new_with_range(0, 64, 1);
+  gtk_spin_button_set_value(GTK_SPIN_BUTTON(gap_spin), config_.gap_px);
+  g_signal_connect(gap_spin, "value-changed", G_CALLBACK(on_gap_changed), this);
+  gtk_box_append(GTK_BOX(root_box), labeled_row("Window gap (px)", gap_spin));
+
   GtkWidget* notebook = gtk_notebook_new();
   gtk_widget_add_css_class(notebook, "fleetwm-settings-notebook");
   gtk_notebook_append_page(GTK_NOTEBOOK(notebook), root_box, gtk_label_new("Theme"));
@@ -412,6 +420,12 @@ void SettingsWindow::on_focus_border_thickness_changed(GtkSpinButton* button,
                                                          gpointer user_data) {
   auto* self = static_cast<SettingsWindow*>(user_data);
   self->config_.focus_border_thickness_px = gtk_spin_button_get_value_as_int(button);
+  self->save();
+}
+
+void SettingsWindow::on_gap_changed(GtkSpinButton* button, gpointer user_data) {
+  auto* self = static_cast<SettingsWindow*>(user_data);
+  self->config_.gap_px = gtk_spin_button_get_value_as_int(button);
   self->save();
 }
 

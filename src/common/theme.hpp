@@ -47,6 +47,12 @@ struct ThemeConfig {
   // the compositor's own pre-existing hardcoded fallback
   // (kFocusBorderColorFallback in view.cpp) for continuity.
   std::string focus_border_color = "#e6e6f2";
+  // Gap in px between tiled windows (master/stack split, and between
+  // stacked windows), applied by Output::relayout(). Does not add extra
+  // spacing against the top bar or screen edges -- that's governed
+  // separately by the layer-shell exclusive zone (kExclusiveZoneGapPx in
+  // output.cpp).
+  int gap_px = 2;
 };
 
 // Path helpers. Resolution order: $XDG_CONFIG_HOME/fleetwm/theme.toml (or

@@ -870,6 +870,11 @@ void Server::reload_theme_config() {
   for (const std::unique_ptr<View>& view : views) {
     view->resize_border();
   }
+  // gap_px lives on ThemeConfig too, so a live theme reload must re-tile
+  // every output, not just refresh border rects.
+  for (const std::unique_ptr<Output>& output : outputs) {
+    output->relayout();
+  }
 }
 
 int server_theme_watch_readable(int fd, uint32_t, void* data) {
