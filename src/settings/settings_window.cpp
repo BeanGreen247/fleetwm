@@ -96,14 +96,6 @@ void SettingsWindow::build(GtkApplication* app) {
   gtk_widget_set_margin_top(root_box, 16);
   gtk_widget_set_margin_bottom(root_box, 16);
 
-  // Corner style: rounded | sharp -- radio buttons per explicit user
-  // request (Theme tab), not a dropdown.
-  const char* corner_options[] = {"Rounded", "Sharp"};
-  gtk_box_append(GTK_BOX(root_box),
-                 radio_row("Corner style", corner_options, 2,
-                           config_.corner_style == CornerStyle::Sharp ? 1 : 0,
-                           G_CALLBACK(on_corner_style_changed), this));
-
   // Theme: dark | catppuccin | dracula | oled_black | light -- order here
   // must match ThemeName's declaration order (theme.hpp), which the
   // callback casts the radio index straight to.
@@ -176,6 +168,7 @@ void SettingsWindow::build(GtkApplication* app) {
   gtk_notebook_append_page(GTK_NOTEBOOK(notebook), build_bar_tab(), gtk_label_new("Bar"));
   gtk_notebook_append_page(GTK_NOTEBOOK(notebook), build_wallpaper_tab(),
                             gtk_label_new("Wallpaper"));
+  gtk_notebook_append_page(GTK_NOTEBOOK(notebook), build_about_tab(), gtk_label_new("About"));
 
   gtk_window_set_child(GTK_WINDOW(window_), notebook);
   apply_theme();
@@ -427,14 +420,47 @@ void SettingsWindow::save_wallpaper() {
   save_wallpaper_config(wallpaper_config_);
 }
 
-void SettingsWindow::on_corner_style_changed(GtkCheckButton* button, gpointer user_data) {
-  if (!gtk_check_button_get_active(button)) {
-    return;  // fires for the previously-active button too; only act on the new one
-  }
-  auto* self = static_cast<SettingsWindow*>(user_data);
-  int index = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(button), "radio-index"));
-  self->config_.corner_style = index == 1 ? CornerStyle::Sharp : CornerStyle::Rounded;
-  self->save();
+GtkWidget* SettingsWindow::build_about_tab() {
+  GtkWidget* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
+  gtk_widget_set_margin_start(box, 16);
+  gtk_widget_set_margin_end(box, 16);
+  gtk_widget_set_margin_top(box, 16);
+  gtk_widget_set_margin_bottom(box, 16);
+
+  GtkWidget* heading = gtk_label_new("fleetwm");
+  gtk_label_set_xalign(GTK_LABEL(heading), 0.0f);
+  PangoAttrList* attrs = pango_attr_list_new();
+  pango_attr_list_insert(attrs, pango_attr_weight_new(PANGO_WEIGHT_BOLD));
+  pango_attr_list_insert(attrs, pango_attr_scale_new(1.3));
+  gtk_label_set_attributes(GTK_LABEL(heading), attrs);
+  pango_attr_list_unref(attrs);
+  gtk_box_append(GTK_BOX(box), heading);
+
+  GtkWidget* description = gtk_label_new(
+      "A custom wlroots-based Wayland compositor and desktop shell "
+      "(bar, settings, launcher, wallpaper, greeter).");
+  gtk_label_set_xalign(GTK_LABEL(description), 0.0f);
+  gtk_label_set_wrap(GTK_LABEL(description), TRUE);
+  gtk_widget_add_css_class(description, "fleetwm-stat");
+  gtk_box_append(GTK_BOX(box), description);
+
+  GtkWidget* link = gtk_link_button_new_with_label(
+      "https://github.com/BeanGreen247/fleetwm", "github.com/BeanGreen247/fleetwm");
+  gtk_widget_set_halign(link, GTK_ALIGN_START);
+  gtk_widget_set_margin_top(link, 4);
+  gtk_box_append(GTK_BOX(box), link);
+
+  GtkWidget* developer = gtk_label_new("Sole developer: BeanGreen247");
+  gtk_label_set_xalign(GTK_LABEL(developer), 0.0f);
+  gtk_widget_set_margin_top(developer, 8);
+  gtk_box_append(GTK_BOX(box), developer);
+
+  GtkWidget* license = gtk_label_new("License: MIT");
+  gtk_label_set_xalign(GTK_LABEL(license), 0.0f);
+  gtk_widget_add_css_class(license, "fleetwm-stat");
+  gtk_box_append(GTK_BOX(box), license);
+
+  return box;
 }
 
 void SettingsWindow::on_theme_changed(GtkCheckButton* button, gpointer user_data) {
@@ -615,7 +641,7 @@ void SettingsWindow::on_battery_reading(const BatterySource::Reading& reading) {
 void SettingsWindow::save() {
   save_theme_config(config_);
   // Live-preview this window's own theme change immediately -- every
-  // handler that mutates config_ (theme/corner_style/accent/nav_mode)
+  // handler that mutates config_ (theme/accent/nav_mode)
   // already calls save() right after, so this is the one call site that
   // covers all of them rather than duplicating the apply_theme() call
   // at each handler.

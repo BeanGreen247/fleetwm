@@ -27,7 +27,6 @@ class SettingsWindow {
   void build(GtkApplication* app);
   void apply_theme();
 
-  static void on_corner_style_changed(GtkCheckButton* button, gpointer user_data);
   static void on_theme_changed(GtkCheckButton* button, gpointer user_data);
   static void on_nav_mode_changed(GtkCheckButton* button, gpointer user_data);
   static void on_accent_auto_toggled(GtkCheckButton* button, gpointer user_data);
@@ -58,6 +57,10 @@ class SettingsWindow {
   // compositor) picks it up live via its own GFileMonitor watch, same
   // pattern as the Bar tab's live-reloading colors.
   GtkWidget* build_wallpaper_tab();
+  // Fourth notebook page: static project info -- name, description, a
+  // clickable link to the repo, and sole-developer credit. Nothing here
+  // reads/writes config, so no dedicated save_*()/on_*_changed() pair.
+  GtkWidget* build_about_tab();
   static void on_choose_wallpaper_clicked(GtkButton* button, gpointer user_data);
   static void on_wallpaper_file_chosen(GObject* source, GAsyncResult* result,
                                         gpointer user_data);
