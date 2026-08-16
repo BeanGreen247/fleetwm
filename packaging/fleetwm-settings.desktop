@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=Fleetwm Settings
+Comment=Configure fleetwm's theme, bar, and wallpaper
+Exec=fleetwm-settings
+Type=Application
+Categories=Settings;
+Terminal=false

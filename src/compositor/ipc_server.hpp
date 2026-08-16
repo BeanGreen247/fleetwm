@@ -25,6 +25,15 @@ class Server;
 //
 //   WORKSPACE_CHANGED N
 //
+// Broadcast whenever keyboard focus changes (see Server::focus_view --
+// the single function responsible for every focus transition):
+//
+//   FOCUSED_TITLE <text>
+//
+// <text> is the newly-focused view's window title (falling back to its
+// app_id, then an empty string, if no title is set). An empty <text>
+// means no view currently holds focus.
+//
 // Everything here runs on the compositor's own wl_event_loop via
 // wl_event_loop_add_fd -- no separate thread -- since wlroots/wl_display
 // state is not safe to touch off the main event loop thread.
@@ -37,6 +46,9 @@ class IpcServer {
 
   // Sends "WORKSPACE_CHANGED N\n" to every currently-connected client.
   void broadcast_workspace_changed(int index);
+
+  // Sends "FOCUSED_TITLE <text>\n" to every currently-connected client.
+  void broadcast_focused_title(const std::string& title);
 
  private:
   struct Client {

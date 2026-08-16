@@ -39,6 +39,14 @@ struct ThemeConfig {
   // around whichever window currently has keyboard focus. 2px default
   // matches the previous hardcoded constant it replaces.
   int focus_border_thickness_px = 2;
+  // Color of that same focus-only border, independent of `accent` --
+  // accent.hex drives UI chrome everywhere (bar, launcher, settings,
+  // selection highlights), and reusing it for the focus border too made
+  // it hard to tell which window has focus when everything on screen is
+  // already the same accent color. Distinct near-white default matches
+  // the compositor's own pre-existing hardcoded fallback
+  // (kFocusBorderColorFallback in view.cpp) for continuity.
+  std::string focus_border_color = "#e6e6f2";
 };
 
 // Path helpers. Resolution order: $XDG_CONFIG_HOME/fleetwm/theme.toml (or
@@ -47,6 +55,12 @@ struct ThemeConfig {
 // by the caller on first load).
 std::string user_config_path();
 std::string system_default_config_path();
+
+// Directory containing the installed theme/corner-style CSS files (base.css,
+// dark.css, catppuccin.css, corners-rounded.css, accent.css, etc. -- see
+// themes/ in the repo root). Resolves to the real installed sysconfdir
+// (baked in at compile time via paths_config.h), not a hardcoded guess.
+std::string themes_dir();
 
 // Loads theme.toml from the resolved path. Returns the default ThemeConfig{}
 // if no config file exists anywhere (fresh install with no packaging step

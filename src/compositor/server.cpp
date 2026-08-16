@@ -1,6 +1,8 @@
 #include "server.hpp"
 
+#include <fcntl.h>
 #include <sys/inotify.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #include <wayland-server-core.h>
 
@@ -9,6 +11,7 @@ extern "C" {
 }
 
 #include <algorithm>
+#include <cerrno>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -19,6 +22,7 @@ extern "C" {
 #include "ipc_server.hpp"
 #include "layer_surface.hpp"
 #include "output.hpp"
+#include "paths_config.h"
 #include "scene_node_owner.hpp"
 #include "view.hpp"
 
@@ -55,6 +59,11 @@ void server_new_output(wl_listener* listener, void* data) {
                                       wlr_output_layout_get(server->output_layout_, wlr_out),
                                       scene_output);
   output->scene_output = scene_output;
+  // No layer surfaces exist yet for a brand-new output, so this just seeds
+  // usable_area to the full output box (equivalent to the old
+  // wlr_output_layout_get_box() call relayout() used directly before
+  // exclusive-zone support existed).
+  output->update_usable_area();
 
   server->outputs.push_back(std::move(output));
 }
@@ -547,6 +556,73 @@ Server::~Server() {
   }
 }
 
+namespace {
+
+// Autostarts one long-lived session helper (fleetwm-bar) once the
+// compositor's Wayland socket is up. Same fork+execlp shape as
+// input.cpp's keybind-triggered spawn() (kept as a separate local copy
+// rather than sharing a header for one function -- matches this file's
+// existing style of small per-file free-function helpers, e.g.
+// server_theme_watch_readable). A failed exec logs and the child exits;
+// it does not affect the compositor itself either way.
+//
+// Guards against a duplicate instance first: an autostarted helper is
+// forked as a child of the compositor, but killing the compositor
+// (this project's usual dev-cycle restart, e.g. `pkill -f
+// '^/usr/local/bin/fleetwm$'`) does not kill its children -- an old
+// instance from a previous compositor run would be orphaned (reparented
+// to PID 1) and keep running against a dead Wayland socket, then a
+// second one would spawn on the next login. Checks via `pgrep -f
+// <full path>` (not `-x <basename>`) for two reasons: `-x` matches
+// against the kernel's 15-character-truncated comm name, which silently
+// never matches "fleetwm-wallpaper" (17 chars) or any future autostart
+// target that long; matching the full absolute path via `-f` instead of
+// a bare basename avoids the self-match footgun `pkill -f
+// 'fleetwm-bar'` hit earlier this session (a bare basename can appear
+// inside this very process's own argv/environment).
+bool already_running(const char* full_path) {
+  pid_t pid = fork();
+  if (pid < 0) {
+    return false;  // can't tell; fall through and spawn anyway
+  }
+  if (pid == 0) {
+    int devnull = open("/dev/null", O_WRONLY);
+    if (devnull >= 0) {
+      dup2(devnull, STDOUT_FILENO);
+    }
+    execlp("pgrep", "pgrep", "-f", full_path, nullptr);
+    _exit(1);
+  }
+  int status = 0;
+  waitpid(pid, &status, 0);
+  return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+}
+
+// `name` is the bare binary name (resolved via this process's own PATH,
+// same as input.cpp's keybind spawn()); `full_path` is the expected
+// absolute installed path, used only for the already_running() dedup
+// check -- passed separately rather than derived from `name` since
+// relying on `pgrep -f <bare name>` to somehow avoid ambiguity is
+// exactly the footgun already hit once this session.
+void spawn_autostart(const char* name, const char* full_path) {
+  if (already_running(full_path)) {
+    return;
+  }
+  pid_t pid = fork();
+  if (pid < 0) {
+    wlr_log(WLR_ERROR, "fleetwm: fork for autostart '%s' failed", name);
+    return;
+  }
+  if (pid == 0) {
+    execlp(name, name, nullptr);
+    std::fprintf(stderr, "fleetwm: failed to exec autostart '%s': %s\n", name,
+                 std::strerror(errno));
+    _exit(1);
+  }
+}
+
+}  // namespace
+
 bool Server::init() {
   // TEMPORARY: bumped to WLR_DEBUG to diagnose the "error in client
   // communication" / "Lost connection to Wayland compositor" failure
@@ -679,6 +755,9 @@ bool Server::init() {
   }
 #endif
 
+  spawn_autostart("fleetwm-bar", FLEETWM_BINDIR "/fleetwm-bar");
+  spawn_autostart("fleetwm-wallpaper", FLEETWM_BINDIR "/fleetwm-wallpaper");
+
   return true;
 }
 
@@ -699,6 +778,9 @@ void Server::focus_view(View* view) {
       }
     }
     wlr_seat_keyboard_clear_focus(seat_);
+    if (ipc_server) {
+      ipc_server->broadcast_focused_title("");
+    }
     return;
   }
 
@@ -742,6 +824,18 @@ void Server::focus_view(View* view) {
   if (keyboard) {
     wlr_seat_keyboard_notify_enter(seat_, surface, keyboard->keycodes, keyboard->num_keycodes,
                                     &keyboard->modifiers);
+  }
+
+  if (ipc_server) {
+    std::string title;
+    if (view->kind == View::Kind::XdgToplevel && view->xdg_toplevel) {
+      if (view->xdg_toplevel->title) {
+        title = view->xdg_toplevel->title;
+      } else if (view->xdg_toplevel->app_id) {
+        title = view->xdg_toplevel->app_id;
+      }
+    }
+    ipc_server->broadcast_focused_title(title);
   }
 }
 
@@ -858,6 +952,15 @@ Workspace* Server::active_workspace_for_focused_output() {
   // Phase 0 has one implicit "focused output" (the first one) until Phase 1
   // adds real focus-follows-cursor output tracking for multi-monitor setups.
   return &outputs.front()->active_workspace();
+}
+
+Output* Server::output_for(wlr_output* wlr_output_ptr) const {
+  for (const std::unique_ptr<Output>& output : outputs) {
+    if (output->wlr_output_ptr == wlr_output_ptr) {
+      return output.get();
+    }
+  }
+  return nullptr;
 }
 
 }  // namespace fleetwm

@@ -39,6 +39,7 @@ subdir('src/compositor')
 subdir('src/bar')
 subdir('src/settings')
 subdir('src/launcher')
+subdir('src/wallpaper')
 if get_option('greeter')
   subdir('src/greeter')
 endif
@@ -46,6 +47,17 @@ endif
 install_data(
   'packaging/fleetwm.desktop',
   install_dir: get_option('sysconfdir') / '..' / 'share' / 'wayland-sessions',
+)
+
+# fleetwm-settings only -- fleetwm-bar/fleetwm-wallpaper are background
+# renderers with no standalone user-facing action (same reason
+# fleetwm-launcher itself has no .desktop entry: GDesktopAppInfo only
+# enumerates apps that have one at all, so simply not installing an
+# entry for those is what keeps them out of fleetwm-launcher's own
+# search results, no special-casing needed in app_index.cpp).
+install_data(
+  'packaging/fleetwm-settings.desktop',
+  install_dir: get_option('prefix') / 'share' / 'applications',
 )
 
 install_data(

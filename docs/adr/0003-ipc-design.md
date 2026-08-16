@@ -19,6 +19,15 @@ frequencies of use:
   (compositor replies `N`), and an unsolicited `WORKSPACE_CHANGED N` push
   broadcast to all connected clients whenever the active workspace changes
   by any means. No JSON library dependency for a protocol this small.
+- **Focused window title** (unsolicited push, added when fleetwm-bar was
+  built): `FOCUSED_TITLE <text>`, broadcast to every connected client
+  whenever keyboard focus changes (`Server::focus_view()` is the single
+  function responsible for every focus transition, so this is one call
+  site). `<text>` is the newly-focused view's title, falling back to its
+  app_id, then empty, if unset; an empty `<text>` means no view is
+  focused. Reuses the same socket/line protocol as `WORKSPACE*` rather
+  than a separate mechanism, since it's the same shape of problem
+  (frequent-ish, push-only, no reply needed).
 - **Theme reload** (infrequent, fire-and-forget): `SIGUSR1` sent to the
   bar's PID (read from a pidfile at `$XDG_RUNTIME_DIR/fleetwm-bar.pid`)
   and to the compositor, after the settings app writes

@@ -2,7 +2,10 @@
 
 #include <gtk/gtk.h>
 
+#include "app_style.hpp"
+#include "bar_config.hpp"
 #include "theme.hpp"
+#include "wallpaper_config.hpp"
 
 namespace fleetwm::settings {
 
@@ -19,6 +22,7 @@ class SettingsWindow {
  private:
   static void on_activate(GtkApplication* app, gpointer user_data);
   void build(GtkApplication* app);
+  void apply_theme();
 
   static void on_corner_style_changed(GtkDropDown* dropdown, GParamSpec*, gpointer user_data);
   static void on_theme_changed(GtkDropDown* dropdown, GParamSpec*, gpointer user_data);
@@ -26,6 +30,7 @@ class SettingsWindow {
   static void on_accent_auto_toggled(GtkCheckButton* button, gpointer user_data);
   static void on_accent_color_set(GtkColorButton* button, gpointer user_data);
   static void on_focus_border_thickness_changed(GtkSpinButton* button, gpointer user_data);
+  static void on_focus_border_color_set(GtkColorButton* button, gpointer user_data);
 
   // Writes config_ to disk. Called after every change rather than on a
   // separate "Apply" button -- theme.toml is cheap to rewrite and this
@@ -33,9 +38,37 @@ class SettingsWindow {
   // explicit save step.
   void save();
 
+  // Second notebook page: fleetwm-bar's own bar.toml preferences (kept
+  // in a separate file/struct from ThemeConfig -- see bar_config.hpp --
+  // per explicit user choice not to fold bar-only settings like clock
+  // format into theme.toml).
+  GtkWidget* build_bar_tab();
+  static void on_clock_toggle_changed(GtkCheckButton* button, gpointer user_data);
+  static void on_workspace_color_set(GtkColorButton* button, gpointer user_data);
+  void save_bar();
+
+  // Third notebook page: fleetwm-wallpaper's own wallpaper.toml (a
+  // single "path" field) -- picking a file writes the path immediately,
+  // fleetwm-wallpaper (running separately, autostarted by the
+  // compositor) picks it up live via its own GFileMonitor watch, same
+  // pattern as the Bar tab's live-reloading colors.
+  GtkWidget* build_wallpaper_tab();
+  static void on_choose_wallpaper_clicked(GtkButton* button, gpointer user_data);
+  static void on_wallpaper_file_chosen(GObject* source, GAsyncResult* result,
+                                        gpointer user_data);
+  static void on_use_solid_color_toggled(GtkCheckButton* button, gpointer user_data);
+  static void on_solid_color_set(GtkColorButton* button, gpointer user_data);
+  void save_wallpaper();
+
   ThemeConfig config_;
+  BarConfig bar_config_;
+  WallpaperConfig wallpaper_config_;
   GtkWidget* window_ = nullptr;
   GtkWidget* accent_color_button_ = nullptr;
+  GtkWidget* focus_border_color_button_ = nullptr;
+  GtkWidget* wallpaper_path_label_ = nullptr;
+  GtkWidget* choose_image_button_ = nullptr;
+  GtkWidget* solid_color_button_ = nullptr;
 };
 
 }  // namespace fleetwm::settings

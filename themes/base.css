@@ -10,22 +10,143 @@ window.fleetwm-bar {
   color: @fg_primary;
 }
 
-.fleetwm-workspace-button {
-  min-width: 28px;
-  min-height: 22px;
-  padding: 2px 6px;
-  background-color: transparent;
-  color: @fg_secondary;
+/* fleetwm-launcher and fleetwm-settings share this base panel look --
+ * distinct from window.fleetwm-bar above only in that these are regular
+ * (non-transparent-background) app windows, not an overlaid pill/bar
+ * shape, so they get a plain background fill with no border here (the
+ * accent-colored border is drawn separately per-process, same as the
+ * bar's own .fleetwm-bar-border, since it needs live corner_style/accent
+ * values neither this static file nor GTK's color-only @define-color
+ * mechanism can express on its own). */
+window.fleetwm-panel {
+  background-color: @bg_primary;
+  color: @fg_primary;
 }
 
-.fleetwm-workspace-button.active {
+/* fleetwm-launcher's search entry and result list. */
+.fleetwm-launcher-entry {
+  background-color: @bg_secondary;
+  color: @fg_primary;
+  border: 1px solid @bg_secondary;
+}
+
+.fleetwm-launcher-entry:focus-within {
+  border-color: @accent_color;
+}
+
+/* GtkListBox's own "list" node still paints GTK's default white
+ * background if left unstyled, showing through around/behind each
+ * "row" node's own background below -- needs its own explicit rule,
+ * not just the rows. */
+.fleetwm-launcher-list {
+  background-color: @bg_primary;
+}
+
+/* GtkListBox wraps every appended child in its own "row" CSS node
+ * automatically -- ".fleetwm-launcher-list row" (descendant selector,
+ * not a class applied to the row itself) is how to reach it without
+ * needing a handle to each auto-created GtkListBoxRow. */
+.fleetwm-launcher-list row {
+  color: @fg_primary;
+  background-color: transparent;
+}
+
+.fleetwm-launcher-list row:selected {
   background-color: @accent_color;
   color: @bg_primary;
 }
 
+.fleetwm-launcher-row-subtitle {
+  color: @fg_secondary;
+}
+
+.fleetwm-launcher-list row:selected .fleetwm-launcher-row-subtitle {
+  color: @bg_primary;
+}
+
+/* fleetwm-settings' notebook tabs and section headings. */
+.fleetwm-settings-heading {
+  color: @fg_primary;
+}
+
+notebook.fleetwm-settings-notebook header {
+  background-color: @bg_secondary;
+  color: @fg_secondary;
+}
+
+notebook.fleetwm-settings-notebook tab:checked {
+  color: @accent_color;
+}
+
+/* GtkNotebook's own page-content area (the "stack" node behind each
+ * page's widgets) paints GTK's default white background over whatever
+ * window.fleetwm-panel set beneath it -- needs its own explicit rule,
+ * same class of gap as .fleetwm-launcher-list's "list" node below. */
+notebook.fleetwm-settings-notebook stack {
+  background-color: @bg_primary;
+}
+
+/* GtkDropDown's visible background/border paints on an internal nested
+ * "button" CSS node (dropdown > button), not the outer "dropdown" node
+ * itself -- same descendant-node gap as GtkMenuButton's own
+ * "menubutton > button" structure (see bar_window.cpp's apply_theme()
+ * comment for the general pattern: GTK CSS classes don't cascade to
+ * descendant nodes). */
+.fleetwm-settings-notebook dropdown,
+.fleetwm-settings-notebook dropdown button {
+  background-color: @bg_secondary;
+  color: @fg_primary;
+}
+
+.fleetwm-settings-notebook checkbutton {
+  color: @fg_primary;
+}
+
+.fleetwm-settings-notebook spinbutton {
+  background-color: @bg_secondary;
+  color: @fg_primary;
+}
+
+.fleetwm-settings-notebook spinbutton button {
+  background-color: @bg_secondary;
+  color: @fg_primary;
+}
+
+/* ".fleetwm-workspace-button button" (GtkMenuButton's internal nested
+ * button node, not just the outer class the power icon's "menubutton"
+ * node carries) is needed for the same reason described in
+ * bar_window.cpp's apply_theme() -- GTK CSS classes don't cascade to
+ * descendant nodes, and the *button* node is what actually paints
+ * background/border/min-size, not the outer menubutton wrapper. Missing
+ * this half of the selector here (while the dynamic per-user-color
+ * override in bar_window.cpp already had it) is what let GtkMenuButton's
+ * default Adwaita min-size through, stretching the power icon -- and by
+ * extension the whole bar's rendered height -- past its intended 24px. */
+.fleetwm-workspace-button,
+.fleetwm-workspace-button button {
+  min-width: 20px;
+  min-height: 16px;
+  padding: 2px 6px;
+  margin: 0;
+  border: none;
+  box-shadow: none;
+  background-color: transparent;
+  color: @fg_secondary;
+}
+
+.fleetwm-workspace-button.active,
+.fleetwm-workspace-button.active button {
+  background-color: @accent_color;
+  color: @bg_primary;
+}
+
+/* Accent-colored (rather than plain @fg_primary) -- now the bar's
+ * centerpiece since the focused-window title was removed, keeping
+ * accent_color a real, visible use elsewhere than just the active-
+ * workspace highlight. */
 .fleetwm-clock {
   font-weight: 600;
-  color: @fg_primary;
+  color: @accent_color;
 }
 
 .fleetwm-stat {

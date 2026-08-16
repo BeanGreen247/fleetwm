@@ -31,11 +31,27 @@ class Output {
   WorkspaceArray workspaces = make_workspaces();
   int active_workspace_index = 0;
 
+  // Output box minus every mapped layer-shell surface's exclusive zone
+  // (e.g. fleetwm-bar's reserved top strip). Defaults to the full output
+  // box when no layer surface claims an exclusive zone. Recomputed via
+  // update_usable_area() whenever a layer surface on this output maps,
+  // unmaps, or commits a changed exclusive zone -- see
+  // layer_surface_surface_commit (layer_surface.cpp).
+  wlr_box usable_area{};
+
   wl_listener frame{};
   wl_listener request_state{};
   wl_listener destroy{};
 
   Workspace& active_workspace() { return workspaces[active_workspace_index]; }
+
+  // Recomputes usable_area from scratch: starts from the full output box
+  // and shrinks it by every mapped layer-shell surface's anchored
+  // exclusive zone on this output, then re-tiles via relayout() so tiled
+  // windows immediately respect the new reservation. Matches this
+  // codebase's existing pattern of eagerly re-deriving full state (see
+  // relayout() itself) rather than incremental accounting.
+  void update_usable_area();
 
   // Switches to workspace `index` (0-9), toggles scene-tree visibility per
   // view, and re-tiles the newly-active workspace via relayout().

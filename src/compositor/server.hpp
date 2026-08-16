@@ -105,6 +105,12 @@ class Server {
   // keybind handling, ipc_server.cpp) that don't already hold an Output*.
   Workspace* active_workspace_for_focused_output();
 
+  // Finds the Output wrapping a given wlr_output*, or nullptr if none
+  // (e.g. the output was already destroyed). Used by layer-shell exclusive-
+  // zone handling (layer_surface.cpp) to route from wlr_layer_surface_v1::
+  // output back to the owning Output for update_usable_area().
+  Output* output_for(wlr_output* wlr_output_ptr) const;
+
   // Current theme.toml contents, loaded at init() and kept fresh by an
   // inotify watch on the config file (see theme_watch_fd_ below) -- any
   // write to theme.toml, from fleetwm-settings or anything else, is

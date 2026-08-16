@@ -3,3 +3,9 @@
 .fleetwm-power-menu-item {
   border-radius: 0;
 }
+
+window.fleetwm-panel,
+.fleetwm-launcher-entry,
+.fleetwm-launcher-list row {
+  border-radius: 0;
+}

@@ -36,18 +36,42 @@ if not tomlplusplus_dep.found()
   ).get_variable('tomlplusplus_dep')
 endif
 
+# Real installed system config dir (e.g. /usr/local/etc/fleetwm with this
+# project's default --prefix=/usr/local), baked in at compile time so
+# system_default_config_path()/themes_dir() actually find what
+# `ninja install` puts there -- get_option('sysconfdir') alone
+# (previously hardcoded as the unrelated "/etc/xdg/fleetwm" string in
+# theme.cpp) never matched the real install path on this project's
+# default prefix, a latent bug independent of this dependency now being
+# fixed alongside adding themes_dir().
+common_conf = configuration_data()
+common_conf.set_quoted(
+  'FLEETWM_SYSCONF_DIR',
+  get_option('prefix') / get_option('sysconfdir') / 'fleetwm',
+)
+common_conf.set_quoted(
+  'FLEETWM_BINDIR',
+  get_option('prefix') / get_option('bindir'),
+)
+configure_file(output: 'paths_config.h', configuration: common_conf)
+
+gtk4_dep_common = dependency('gtk4')
+
 libcommon = static_library(
   'fleetwm-common',
   files(
     'theme.cpp',
     'ipc_client.cpp',
+    'bar_config.cpp',
+    'app_style.cpp',
+    'wallpaper_config.cpp',
   ),
-  dependencies: [tomlplusplus_dep],
+  dependencies: [tomlplusplus_dep, gtk4_dep_common],
   include_directories: include_directories('.'),
 )
 
 libcommon_dep = declare_dependency(
   link_with: libcommon,
   include_directories: include_directories('.'),
-  dependencies: [tomlplusplus_dep],
+  dependencies: [tomlplusplus_dep, gtk4_dep_common],
 )

@@ -6,6 +6,8 @@
 #include <vector>
 
 #include "app_index.hpp"
+#include "app_style.hpp"
+#include "theme.hpp"
 
 namespace fleetwm::launcher {
 
@@ -22,6 +24,7 @@ class LauncherWindow {
   static void on_activate(GtkApplication* app, gpointer user_data);
 
   void build(GtkApplication* app);
+  void apply_theme();
   void refresh_results(const std::string& query);
   void launch_selected();
   void launch_app(GDesktopAppInfo* info);
@@ -34,6 +37,7 @@ class LauncherWindow {
                                   guint keycode, GdkModifierType state, gpointer user_data);
 
   AppIndex index_;
+  ThemeConfig theme_config_;
   GtkWidget* window_ = nullptr;
   GtkWidget* entry_ = nullptr;
   GtkWidget* list_box_ = nullptr;

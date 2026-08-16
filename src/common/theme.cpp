@@ -8,6 +8,8 @@
 #include <fstream>
 #include <stdexcept>
 
+#include "paths_config.h"
+
 namespace fleetwm {
 
 namespace fs = std::filesystem;
@@ -32,7 +34,11 @@ std::string user_config_path() {
 }
 
 std::string system_default_config_path() {
-  return "/etc/xdg/fleetwm/theme.toml";
+  return std::string(FLEETWM_SYSCONF_DIR) + "/theme.toml";
+}
+
+std::string themes_dir() {
+  return std::string(FLEETWM_SYSCONF_DIR) + "/themes";
 }
 
 std::string theme_name_to_string(ThemeName theme) {
@@ -101,6 +107,9 @@ ThemeConfig load_theme_config() {
   if (auto v = table["focus_border_thickness_px"].value<int64_t>()) {
     config.focus_border_thickness_px = static_cast<int>(*v);
   }
+  if (auto v = table["focus_border_color"].value<std::string>()) {
+    config.focus_border_color = *v;
+  }
 
   return config;
 }
@@ -117,6 +126,7 @@ void save_theme_config(const ThemeConfig& config) {
   table.insert_or_assign("accent", config.accent.auto_extract ? "auto" : config.accent.hex);
   table.insert_or_assign("focus_border_thickness_px",
                           static_cast<int64_t>(config.focus_border_thickness_px));
+  table.insert_or_assign("focus_border_color", config.focus_border_color);
 
   std::ofstream out(path);
   if (!out) {

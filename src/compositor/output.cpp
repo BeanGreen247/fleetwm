@@ -1,11 +1,16 @@
 #include "output.hpp"
 
+extern "C" {
+#include <wlr/types/wlr_layer_shell_v1.h>
+}
+
 #include <algorithm>
 #include <cstdio>
 #include <ctime>
 #include <memory>
 #include <vector>
 
+#include "layer_surface.hpp"
 #include "server.hpp"
 #include "view.hpp"
 
@@ -114,7 +119,58 @@ void tile_view(View* view, int x, int y, int w, int h) {
   // comment for the full story).
 }
 
+// Extra breathing room between a tiled window's edge and any adjacent
+// exclusive-zone layer surface (e.g. fleetwm-bar) -- purely cosmetic, on
+// top of the zone's own reserved space, so a window's border doesn't sit
+// flush against the bar's own border with zero visual gap between them.
+// Only applied to edges that actually have a mapped exclusive-zone
+// surface reserving space there; an output with no bar at all still
+// tiles edge-to-edge, unaffected.
+constexpr int kExclusiveZoneGapPx = 6;
+
 }  // namespace
+
+void Output::update_usable_area() {
+  wlr_box box{};
+  wlr_output_layout_get_box(server->output_layout(), wlr_output_ptr, &box);
+
+  for (const std::unique_ptr<LayerSurface>& ls : server->layer_surfaces) {
+    if (ls->layer_surface->output != wlr_output_ptr || !ls->surface()->mapped) {
+      continue;
+    }
+    uint32_t exclusive_zone = ls->layer_surface->current.exclusive_zone > 0
+                                   ? static_cast<uint32_t>(ls->layer_surface->current.exclusive_zone)
+                                   : 0;
+    if (exclusive_zone == 0) {
+      continue;
+    }
+    uint32_t anchor = ls->layer_surface->current.anchor;
+    bool anchored_left = anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT;
+    bool anchored_right = anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT;
+    bool anchored_top = anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP;
+    bool anchored_bottom = anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM;
+
+    // Exclusive zone only reserves space for a surface anchored to
+    // exactly one edge (spanning the perpendicular axis) -- matches the
+    // wlr-layer-shell-v1 spec's own definition of exclusive_zone.
+    if (anchored_top && !anchored_bottom && anchored_left && anchored_right) {
+      int reserve = static_cast<int>(exclusive_zone) + kExclusiveZoneGapPx;
+      box.y += reserve;
+      box.height -= reserve;
+    } else if (anchored_bottom && !anchored_top && anchored_left && anchored_right) {
+      box.height -= static_cast<int>(exclusive_zone) + kExclusiveZoneGapPx;
+    } else if (anchored_left && !anchored_right && anchored_top && anchored_bottom) {
+      int reserve = static_cast<int>(exclusive_zone) + kExclusiveZoneGapPx;
+      box.x += reserve;
+      box.width -= reserve;
+    } else if (anchored_right && !anchored_left && anchored_top && anchored_bottom) {
+      box.width -= static_cast<int>(exclusive_zone) + kExclusiveZoneGapPx;
+    }
+  }
+
+  usable_area = box;
+  relayout();
+}
 
 void Output::relayout() {
   std::vector<View*> tiled;
@@ -128,8 +184,7 @@ void Output::relayout() {
     return;
   }
 
-  wlr_box box{};
-  wlr_output_layout_get_box(server->output_layout(), wlr_output_ptr, &box);
+  wlr_box box = usable_area;
 
   if (tiled.size() == 1) {
     tile_view(tiled[0], box.x, box.y, box.width, box.height);

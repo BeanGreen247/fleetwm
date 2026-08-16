@@ -48,7 +48,8 @@ render and receive both keyboard and pointer input correctly.
 - Lays groundwork for fleetwm-bar's future exclusive-zone reservation
   (the BOTTOM/TOP trees and per-surface `wlr_scene_layer_surface_v1`
   wiring already exist) without building the actual usable-area-shrinkage
-  math yet -- that's a follow-up when the bar is built.
+  math yet -- implemented as a follow-up when the bar was built, see
+  ADR 0009.
 - Adds a second scene-tree hit-testing path (`scene_node_at()` generalizes
   the previous `view_at()`) in `server.cpp`'s cursor handling, the one
   piece of genuinely new (non-mirrored) logic in this change -- pointer

@@ -4,6 +4,7 @@ extern "C" {
 #include <wlr/types/wlr_xdg_shell.h>
 }
 
+#include "output.hpp"
 #include "server.hpp"
 
 namespace fleetwm {
@@ -26,6 +27,13 @@ void layer_surface_unmap(wl_listener* listener, void*) {
   wlr_seat* seat = ls->server->seat();
   if (seat->keyboard_state.focused_surface == ls->surface()) {
     ls->server->focus_view(nullptr);
+  }
+  // Drop this surface's exclusive-zone reservation, if any -- surface()
+  // ->mapped is already false by this point (wlroots clears it before
+  // firing unmap), so update_usable_area()'s scan naturally skips it.
+  Output* output = ls->server->output_for(ls->layer_surface->output);
+  if (output) {
+    output->update_usable_area();
   }
 }
 
@@ -68,20 +76,33 @@ void layer_surface_surface_commit(wl_listener* listener, void*) {
   // wlr_layer_surface_v1", regardless of what wlr_layer_shell_v1.h's
   // doc comment implies about configuring during new_surface.
   // initial_commit is wlroots' own flag for exactly this moment.
-  if (!ls->layer_surface->initial_commit) {
-    return;
+  bool first_configure = ls->layer_surface->initial_commit;
+  if (first_configure) {
+    // wlr_scene_layer_surface_v1_configure() (not the raw
+    // wlr_layer_surface_v1_configure) so the scene helper also positions
+    // the node per the client's now-populated anchors/margins in
+    // layer_surface->current. Passing full_area as usable_area here
+    // (rather than an already-shrunk box) matches wlroots' own
+    // tinywl.c reference for the very first configure -- this
+    // surface's own exclusive zone should not shrink the area it is
+    // itself positioned against. Other surfaces' zones are accounted
+    // for separately via Output::update_usable_area() below.
+    wlr_box full_area{};
+    wlr_output_layout_get_box(ls->server->output_layout(), ls->layer_surface->output, &full_area);
+    wlr_box usable_area = full_area;
+    wlr_scene_layer_surface_v1_configure(ls->scene_layer_surface, &full_area, &usable_area);
   }
 
-  // wlr_scene_layer_surface_v1_configure() (not the raw
-  // wlr_layer_surface_v1_configure) so the scene helper also positions
-  // the node per the client's now-populated anchors/margins in
-  // layer_surface->current. No exclusive-zone accumulation across
-  // sibling layer surfaces yet (see docs/adr/0008), so full_area ==
-  // usable_area.
-  wlr_box full_area{};
-  wlr_output_layout_get_box(ls->server->output_layout(), ls->layer_surface->output, &full_area);
-  wlr_box usable_area = full_area;
-  wlr_scene_layer_surface_v1_configure(ls->scene_layer_surface, &full_area, &usable_area);
+  // Recompute exclusive-zone accumulation whenever this surface's
+  // committed state could have changed it (its exclusive_zone/anchor, or
+  // simply having just become mapped for the first time). update_usable_area()
+  // walks every mapped layer surface on the output from scratch (see
+  // output.cpp), so it's safe -- if a bit redundant -- to call on every
+  // commit rather than only when exclusive_zone actually changed.
+  Output* output = ls->server->output_for(ls->layer_surface->output);
+  if (output) {
+    output->update_usable_area();
+  }
 }
 
 }  // namespace fleetwm

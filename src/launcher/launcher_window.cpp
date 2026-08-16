@@ -36,7 +36,7 @@ GtkWidget* make_row(const std::string& primary, const std::string& secondary) {
 
   GtkWidget* secondary_label = gtk_label_new(secondary.c_str());
   gtk_label_set_xalign(GTK_LABEL(secondary_label), 0.0f);
-  gtk_widget_add_css_class(secondary_label, "dim-label");
+  gtk_widget_add_css_class(secondary_label, "fleetwm-launcher-row-subtitle");
 
   gtk_box_append(GTK_BOX(box), primary_label);
   gtk_box_append(GTK_BOX(box), secondary_label);
@@ -89,6 +89,8 @@ void LauncherWindow::on_activate(GtkApplication* app, gpointer user_data) {
 }
 
 void LauncherWindow::build(GtkApplication* app) {
+  theme_config_ = load_theme_config();
+
   window_ = gtk_application_window_new(app);
   // Explicit height, not -1 ("size to content"): gtk4-layer-shell forwards
   // GTK's -1 sentinel straight through to zwlr_layer_surface_v1.set_size()
@@ -99,6 +101,15 @@ void LauncherWindow::build(GtkApplication* app) {
   // followed by "Lost connection to Wayland compositor".
   gtk_window_set_default_size(GTK_WINDOW(window_), kWindowWidth, kWindowHeight);
   gtk_window_set_decorated(GTK_WINDOW(window_), FALSE);
+  // Same dark panel background + corner_style-driven radius as
+  // fleetwm-settings (themes/base.css's "window.fleetwm-panel" rule,
+  // themes/corners-*.css for the radius) rather than GTK's default light
+  // theme. No border here -- matches i3/dwm, where neither draws a
+  // border around app windows or the bar itself; the compositor's own
+  // focused-window border (View::resize_border(), view.cpp) is the only
+  // border concept in this compositor now, same as i3/dwm's client
+  // focus border.
+  gtk_widget_add_css_class(window_, "fleetwm-panel");
 
   gtk_layer_init_for_window(GTK_WINDOW(window_));
   gtk_layer_set_layer(GTK_WINDOW(window_), GTK_LAYER_SHELL_LAYER_OVERLAY);
@@ -113,6 +124,7 @@ void LauncherWindow::build(GtkApplication* app) {
   gtk_widget_set_margin_bottom(root_box, 8);
 
   entry_ = gtk_search_entry_new();
+  gtk_widget_add_css_class(entry_, "fleetwm-launcher-entry");
   gtk_widget_set_hexpand(entry_, TRUE);
   g_signal_connect(entry_, "search-changed", G_CALLBACK(on_search_changed), this);
   // GtkSearchEntry (a GtkText internally) claims the Return keypress for
@@ -128,6 +140,7 @@ void LauncherWindow::build(GtkApplication* app) {
   gtk_widget_set_size_request(scrolled, -1, kMaxVisibleRows * kRowHeightPx);
 
   list_box_ = gtk_list_box_new();
+  gtk_widget_add_css_class(list_box_, "fleetwm-launcher-list");
   gtk_list_box_set_selection_mode(GTK_LIST_BOX(list_box_), GTK_SELECTION_BROWSE);
   g_signal_connect(list_box_, "row-activated", G_CALLBACK(on_row_activated), this);
   gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scrolled), list_box_);
@@ -140,9 +153,18 @@ void LauncherWindow::build(GtkApplication* app) {
   g_signal_connect(key_controller, "key-pressed", G_CALLBACK(on_key_pressed), this);
   gtk_widget_add_controller(window_, key_controller);
 
+  apply_theme();
   refresh_results("");
   gtk_window_present(GTK_WINDOW(window_));
   gtk_widget_grab_focus(entry_);
+}
+
+void LauncherWindow::apply_theme() {
+  // Background, text colors, and corner_style-driven radius (window.
+  // fleetwm-panel in themes/base.css + themes/corners-*.css) all come
+  // from the installed theme CSS stack -- no border, no per-process
+  // dynamic override needed here.
+  apply_app_style(theme_config_);
 }
 
 void LauncherWindow::refresh_results(const std::string& query) {

@@ -163,6 +163,19 @@ void IpcServer::broadcast_workspace_changed(int index) {
   }
 }
 
+void IpcServer::broadcast_focused_title(const std::string& title) {
+  // A window title is arbitrary client-supplied text and could in theory
+  // contain a newline, which would corrupt the line-based protocol (the
+  // embedded '\n' would be read as the end of the command). Replace any
+  // with a space rather than trusting client input to stay one line.
+  std::string sanitized = title;
+  std::replace(sanitized.begin(), sanitized.end(), '\n', ' ');
+  std::string msg = "FOCUSED_TITLE " + sanitized + "\n";
+  for (Client& client : clients_) {
+    send(client.fd, msg.data(), msg.size(), MSG_NOSIGNAL);
+  }
+}
+
 void IpcServer::drop_client(int fd) {
   auto it = std::find_if(clients_.begin(), clients_.end(),
                           [fd](const Client& c) { return c.fd == fd; });
