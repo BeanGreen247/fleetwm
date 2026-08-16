@@ -2,8 +2,11 @@
 
 #include <gtk/gtk.h>
 
+#include <array>
+
 #include "app_style.hpp"
 #include "bar_config.hpp"
+#include "battery_source.hpp"
 #include "theme.hpp"
 #include "wallpaper_config.hpp"
 
@@ -46,6 +49,7 @@ class SettingsWindow {
   GtkWidget* build_bar_tab();
   static void on_clock_toggle_changed(GtkCheckButton* button, gpointer user_data);
   static void on_workspace_color_set(GtkColorButton* button, gpointer user_data);
+  static void on_bar_mode_changed(GtkDropDown* dropdown, GParamSpec*, gpointer user_data);
   void save_bar();
 
   // Third notebook page: fleetwm-wallpaper's own wallpaper.toml (a
@@ -61,6 +65,17 @@ class SettingsWindow {
   static void on_solid_color_set(GtkColorButton* button, gpointer user_data);
   void save_wallpaper();
 
+  // Power section, appended to the main/first page ("Home") only when
+  // BatterySource::battery_present() -- desktops with no battery never
+  // see this at all, per explicit user request. Three linked toggle
+  // buttons (not a dropdown) so each mode's icon stays visible at a
+  // glance, same "reuse the workspace-button chrome" pattern as the
+  // rest of the bar/settings UI.
+  void build_power_section(GtkWidget* parent_box);
+  void set_power_mode(PowerMode mode);
+  static void on_power_mode_button_toggled(GtkToggleButton* button, gpointer user_data);
+  void on_battery_reading(const BatterySource::Reading& reading);
+
   ThemeConfig config_;
   BarConfig bar_config_;
   WallpaperConfig wallpaper_config_;
@@ -70,6 +85,10 @@ class SettingsWindow {
   GtkWidget* wallpaper_path_label_ = nullptr;
   GtkWidget* choose_image_button_ = nullptr;
   GtkWidget* solid_color_button_ = nullptr;
+
+  GtkWidget* battery_status_label_ = nullptr;
+  std::array<GtkWidget*, 3> power_mode_buttons_{};
+  BatterySource battery_source_;
 };
 
 }  // namespace fleetwm::settings

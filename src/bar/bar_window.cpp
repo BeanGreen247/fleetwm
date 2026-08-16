@@ -3,6 +3,8 @@
 #include <gtk4-layer-shell.h>
 #include <sys/statvfs.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -16,6 +18,38 @@ namespace {
 
 constexpr int kBarHeightPx = 24;
 constexpr guint kReconnectIntervalMs = 2000;
+
+// Island mode (BarConfig::BarMode::Island): detached pill, centered
+// horizontally (per wlr-layer-shell: anchored to a single edge only ->
+// centered on the perpendicular axis) with a small gap from the top
+// screen edge instead of being flush against it.
+constexpr int kIslandTopMarginPx = 5;
+// Explicit, not -1: same "GTK's size-to-content sentinel forwards as
+// (uint32_t)-1 and wlroots' strict protocol validation fatally rejects
+// it" trap as the height comment above -- once left/right anchors are
+// off, width is unconstrained too and needs a real client-chosen value.
+// Generous enough for the full stat/workspace/battery content at once.
+constexpr int kIslandWidthPx = 720;
+
+// First monitor's width, used to gate island mode to reasonably wide
+// screens (ADR-less explicit user threshold: 1366px, matching common
+// laptop panels) -- a floating pill has no room to breathe on anything
+// smaller.
+int primary_monitor_width_px() {
+  GdkDisplay* display = gdk_display_get_default();
+  if (!display) {
+    return 0;
+  }
+  GListModel* monitors = gdk_display_get_monitors(display);
+  if (!monitors || g_list_model_get_n_items(monitors) == 0) {
+    return 0;
+  }
+  auto* monitor = static_cast<GdkMonitor*>(g_list_model_get_item(monitors, 0));
+  GdkRectangle geometry{};
+  gdk_monitor_get_geometry(monitor, &geometry);
+  g_object_unref(monitor);
+  return geometry.width;
+}
 
 }  // namespace
 
@@ -33,19 +67,11 @@ void BarWindow::build(GtkApplication* app) {
 
   window_ = gtk_application_window_new(app);
   gtk_window_set_decorated(GTK_WINDOW(window_), FALSE);
-  // Explicit height, not -1: gtk4-layer-shell forwards GTK's "size to
-  // content" sentinel straight through to zwlr_layer_surface_v1.set_size()
-  // as (uint32_t)-1, which wlroots' strict protocol validation fatally
-  // rejects -- same crash trap documented in launcher_window.cpp.
-  gtk_window_set_default_size(GTK_WINDOW(window_), 100, kBarHeightPx);
 
   gtk_layer_init_for_window(GTK_WINDOW(window_));
   gtk_layer_set_layer(GTK_WINDOW(window_), GTK_LAYER_SHELL_LAYER_TOP);
-  gtk_layer_set_anchor(GTK_WINDOW(window_), GTK_LAYER_SHELL_EDGE_TOP, TRUE);
-  gtk_layer_set_anchor(GTK_WINDOW(window_), GTK_LAYER_SHELL_EDGE_LEFT, TRUE);
-  gtk_layer_set_anchor(GTK_WINDOW(window_), GTK_LAYER_SHELL_EDGE_RIGHT, TRUE);
-  gtk_layer_set_exclusive_zone(GTK_WINDOW(window_), kBarHeightPx);
   gtk_layer_set_keyboard_mode(GTK_WINDOW(window_), GTK_LAYER_SHELL_KEYBOARD_MODE_NONE);
+  apply_bar_layout();
   // "fleetwm-bar" on the window itself matches themes/base.css's own
   // ".fleetwm-bar { background-color: ...; color: ...; }" selector --
   // gives the bar its background/text color straight from the active
@@ -120,6 +146,7 @@ void BarWindow::build(GtkApplication* app) {
   gtk_box_append(GTK_BOX(right_box), disk_label_);
   gtk_box_append(GTK_BOX(right_box), volume_label_);
 
+  build_battery_indicator(right_box);
   build_power_menu(right_box);
 
   gtk_box_append(GTK_BOX(bar_box), right_box);
@@ -154,6 +181,30 @@ std::string normalize_hex_color(const std::string& hex, const char* fallback) {
 }
 
 }  // namespace
+
+void BarWindow::apply_bar_layout() {
+  bool island = bar_config_.bar_mode == BarMode::Island &&
+                primary_monitor_width_px() >= kIslandMinOutputWidthPx;
+
+  gtk_layer_set_anchor(GTK_WINDOW(window_), GTK_LAYER_SHELL_EDGE_TOP, TRUE);
+  gtk_layer_set_anchor(GTK_WINDOW(window_), GTK_LAYER_SHELL_EDGE_LEFT, !island);
+  gtk_layer_set_anchor(GTK_WINDOW(window_), GTK_LAYER_SHELL_EDGE_RIGHT, !island);
+  gtk_layer_set_margin(GTK_WINDOW(window_), GTK_LAYER_SHELL_EDGE_TOP,
+                        island ? kIslandTopMarginPx : 0);
+  // Island floats above tiled windows rather than reserving a full-width
+  // strip (0 = no exclusive zone) -- Full keeps the existing behavior of
+  // reserving the bar's height so windows tile starting below it.
+  gtk_layer_set_exclusive_zone(GTK_WINDOW(window_), island ? 0 : kBarHeightPx);
+  // Explicit width/height, never -1: gtk4-layer-shell forwards GTK's
+  // "size to content" sentinel straight through to
+  // zwlr_layer_surface_v1.set_size() as (uint32_t)-1, which wlroots'
+  // strict protocol validation fatally rejects -- same crash trap
+  // documented in launcher_window.cpp. Full's width is irrelevant once
+  // both left/right anchors force the compositor to dictate it via
+  // configure, but island (anchored on one axis only) actually uses the
+  // requested width per the wlr-layer-shell spec.
+  gtk_window_set_default_size(GTK_WINDOW(window_), island ? kIslandWidthPx : 100, kBarHeightPx);
+}
 
 void BarWindow::apply_theme() {
   // Background/text colors, structural rules, and the theme's default
@@ -249,6 +300,8 @@ void BarWindow::reload_theme() {
 void BarWindow::reload_bar_config() {
   bar_config_ = load_bar_config();
   apply_theme();  // workspace_colors live in bar_config_, not theme_config_
+  update_power_mode_icon();
+  apply_bar_layout();
 }
 
 void BarWindow::try_connect() {
@@ -509,6 +562,122 @@ void BarWindow::init_stats() {
       gtk_label_set_text(GTK_LABEL(volume_label_), "Vol N/A");
     }
   });
+
+  battery_source_.start([this](const BatterySource::Reading& reading) {
+    battery_reading_ = reading;
+    gtk_widget_set_visible(battery_area_, reading.available);
+    gtk_widget_set_visible(power_mode_icon_, reading.available);
+    if (reading.available) {
+      std::string tooltip = std::to_string(reading.percent) + "% " +
+                             (reading.charging ? "(charging)" : "(on battery)");
+      if (reading.hours_remaining >= 0.0) {
+        int total_minutes = static_cast<int>(reading.hours_remaining * 60.0 + 0.5);
+        tooltip += " - " + std::to_string(total_minutes / 60) + "h " +
+                   std::to_string(total_minutes % 60) + "m " +
+                   (reading.charging ? "until full" : "remaining");
+      }
+      gtk_widget_set_tooltip_text(battery_area_, tooltip.c_str());
+    }
+    gtk_widget_queue_draw(battery_area_);
+  });
+}
+
+void BarWindow::build_battery_indicator(GtkWidget* parent_box) {
+  power_mode_icon_ = gtk_image_new();
+  gtk_image_set_pixel_size(GTK_IMAGE(power_mode_icon_), 12);
+  gtk_widget_add_css_class(power_mode_icon_, "fleetwm-stat");
+  gtk_widget_set_visible(power_mode_icon_, FALSE);
+  gtk_box_append(GTK_BOX(parent_box), power_mode_icon_);
+  update_power_mode_icon();
+
+  // iOS-style pill battery, drawn by hand (Cairo) rather than a stock
+  // GTK/Adwaita battery icon, since none of those render the percentage
+  // as text inside the outline the way iOS does -- explicit user request.
+  battery_area_ = gtk_drawing_area_new();
+  gtk_widget_set_size_request(battery_area_, 26, 14);
+  gtk_widget_add_css_class(battery_area_, "fleetwm-stat");
+  gtk_widget_set_visible(battery_area_, FALSE);
+  gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(battery_area_), on_battery_draw, this, nullptr);
+  gtk_box_append(GTK_BOX(parent_box), battery_area_);
+}
+
+void BarWindow::update_power_mode_icon() {
+  const char* icon_name = "power-profile-balanced-symbolic";
+  switch (bar_config_.power_mode) {
+    case PowerMode::Performance: icon_name = "power-profile-performance-symbolic"; break;
+    case PowerMode::BatterySaver: icon_name = "power-profile-power-saver-symbolic"; break;
+    case PowerMode::Normal: icon_name = "power-profile-balanced-symbolic"; break;
+  }
+  gtk_image_set_from_icon_name(GTK_IMAGE(power_mode_icon_), icon_name);
+}
+
+void BarWindow::on_battery_draw(GtkDrawingArea*, cairo_t* cr, int width, int height,
+                                 gpointer user_data) {
+  auto* self = static_cast<BarWindow*>(user_data);
+  const BatterySource::Reading& r = self->battery_reading_;
+  if (!r.available) {
+    return;
+  }
+
+  GdkRGBA fg{};
+  gtk_widget_get_color(self->battery_area_, &fg);
+
+  // Body: rounded outline, leaving room on the right for the small nub
+  // (the one detail that reads as "battery" rather than just "rounded
+  // rect" -- iOS's own battery glyph has the same proportions).
+  const double nub_w = 2.0;
+  const double body_w = width - nub_w - 1.0;
+  const double body_h = height;
+  const double radius = 3.0;
+  const double stroke_w = 1.3;
+
+  cairo_set_line_width(cr, stroke_w);
+  cairo_set_source_rgba(cr, fg.red, fg.green, fg.blue, fg.alpha);
+
+  double x = stroke_w / 2.0, y = stroke_w / 2.0;
+  double w = body_w - stroke_w, h = body_h - stroke_w;
+  cairo_new_sub_path(cr);
+  cairo_arc(cr, x + w - radius, y + radius, radius, -M_PI_2, 0);
+  cairo_arc(cr, x + w - radius, y + h - radius, radius, 0, M_PI_2);
+  cairo_arc(cr, x + radius, y + h - radius, radius, M_PI_2, M_PI);
+  cairo_arc(cr, x + radius, y + radius, radius, M_PI, 3 * M_PI_2);
+  cairo_close_path(cr);
+  cairo_stroke(cr);
+
+  // Nub, vertically centered against the body.
+  double nub_h = body_h * 0.4;
+  cairo_rectangle(cr, body_w, (body_h - nub_h) / 2.0, nub_w, nub_h);
+  cairo_fill(cr);
+
+  // Fill proportional to charge. Green while charging or comfortably
+  // charged, amber under 20%, red under 10% and not charging -- same
+  // thresholds as iOS's own battery glyph.
+  double pct = std::max(0, std::min(100, r.percent)) / 100.0;
+  double inset = stroke_w + 1.5;
+  double fill_w = std::max(0.0, (body_w - 2 * inset) * pct);
+  double fill_h = body_h - 2 * inset;
+  if (r.charging || r.percent > 20) {
+    cairo_set_source_rgba(cr, 0.30, 0.85, 0.39, 1.0);
+  } else if (r.percent > 10) {
+    cairo_set_source_rgba(cr, 1.0, 0.62, 0.04, 1.0);
+  } else {
+    cairo_set_source_rgba(cr, 1.0, 0.23, 0.19, 1.0);
+  }
+  if (fill_w > 0.0) {
+    cairo_rectangle(cr, inset, inset, fill_w, fill_h);
+    cairo_fill(cr);
+  }
+
+  // Percentage, centered inside the body.
+  cairo_set_source_rgba(cr, fg.red, fg.green, fg.blue, fg.alpha);
+  cairo_select_font_face(cr, "sans-serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+  cairo_set_font_size(cr, 8.5);
+  std::string text = std::to_string(r.percent);
+  cairo_text_extents_t extents{};
+  cairo_text_extents(cr, text.c_str(), &extents);
+  cairo_move_to(cr, x + w / 2.0 - extents.width / 2.0 - extents.x_bearing,
+                y + h / 2.0 - extents.height / 2.0 - extents.y_bearing);
+  cairo_show_text(cr, text.c_str());
 }
 
 void BarWindow::update_cpu_stat() {

@@ -131,6 +131,8 @@ void SettingsWindow::build(GtkApplication* app) {
   g_signal_connect(gap_spin, "value-changed", G_CALLBACK(on_gap_changed), this);
   gtk_box_append(GTK_BOX(root_box), labeled_row("Window gap (px)", gap_spin));
 
+  build_power_section(root_box);
+
   GtkWidget* notebook = gtk_notebook_new();
   gtk_widget_add_css_class(notebook, "fleetwm-settings-notebook");
   gtk_notebook_append_page(GTK_NOTEBOOK(notebook), root_box, gtk_label_new("Theme"));
@@ -188,6 +190,39 @@ GtkWidget* SettingsWindow::build_bar_tab() {
     gtk_box_append(GTK_BOX(box), check);
   }
 
+  // Bar mode: full-width rectangle/pill (existing behavior) vs. a
+  // smaller floating "island" pill detached from the edges -- explicit
+  // user request. Island is only offered on outputs wide enough to give
+  // a floating pill room to breathe (kIslandMinOutputWidthPx, bar_window.
+  // cpp's own gate); disabled here rather than hidden so it's clear why
+  // it's unavailable on a small display instead of silently missing.
+  GdkDisplay* display = gdk_display_get_default();
+  int monitor_width = 0;
+  if (display) {
+    GListModel* monitors = gdk_display_get_monitors(display);
+    if (monitors && g_list_model_get_n_items(monitors) > 0) {
+      auto* monitor = static_cast<GdkMonitor*>(g_list_model_get_item(monitors, 0));
+      GdkRectangle geometry{};
+      gdk_monitor_get_geometry(monitor, &geometry);
+      monitor_width = geometry.width;
+      g_object_unref(monitor);
+    }
+  }
+  bool island_available = monitor_width >= kIslandMinOutputWidthPx;
+
+  const char* bar_mode_options[] = {"Full width", "Island (floating)", nullptr};
+  GtkWidget* bar_mode_dropdown = gtk_drop_down_new_from_strings(bar_mode_options);
+  gtk_drop_down_set_selected(GTK_DROP_DOWN(bar_mode_dropdown),
+                              bar_config_.bar_mode == BarMode::Island ? 1 : 0);
+  gtk_widget_set_sensitive(bar_mode_dropdown, island_available);
+  if (!island_available) {
+    gtk_widget_set_tooltip_text(
+        bar_mode_dropdown,
+        "Island mode needs a display at least 1366px wide");
+  }
+  g_signal_connect(bar_mode_dropdown, "notify::selected", G_CALLBACK(on_bar_mode_changed), this);
+  gtk_box_append(GTK_BOX(box), labeled_row("Bar mode", bar_mode_dropdown));
+
   GtkWidget* ws_heading = gtk_label_new("Workspace colors");
   gtk_label_set_xalign(GTK_LABEL(ws_heading), 0.0f);
   gtk_widget_set_margin_top(ws_heading, 12);
@@ -243,6 +278,13 @@ void SettingsWindow::on_workspace_color_set(GtkColorButton* button, gpointer use
   auto* field = reinterpret_cast<std::string*>(
       reinterpret_cast<char*>(&self->bar_config_.workspace_colors) + offset);
   *field = hex;
+  self->save_bar();
+}
+
+void SettingsWindow::on_bar_mode_changed(GtkDropDown* dropdown, GParamSpec*, gpointer user_data) {
+  auto* self = static_cast<SettingsWindow*>(user_data);
+  guint selected = gtk_drop_down_get_selected(dropdown);
+  self->bar_config_.bar_mode = selected == 1 ? BarMode::Island : BarMode::Full;
   self->save_bar();
 }
 
@@ -438,6 +480,116 @@ void SettingsWindow::on_focus_border_color_set(GtkColorButton* button, gpointer 
                 static_cast<int>(rgba.green * 255), static_cast<int>(rgba.blue * 255));
   self->config_.focus_border_color = hex;
   self->save();
+}
+
+void SettingsWindow::build_power_section(GtkWidget* parent_box) {
+  // Only surfaced on machines with a battery -- a desktop with none has
+  // nothing meaningful for "Performance"/"Battery Saver" to trade off,
+  // per explicit user request to gate this on battery/laptop detection.
+  if (!BatterySource::battery_present()) {
+    return;
+  }
+
+  GtkWidget* heading = gtk_label_new("Power");
+  gtk_label_set_xalign(GTK_LABEL(heading), 0.0f);
+  gtk_widget_set_margin_top(heading, 4);
+  PangoAttrList* attrs = pango_attr_list_new();
+  pango_attr_list_insert(attrs, pango_attr_weight_new(PANGO_WEIGHT_BOLD));
+  gtk_label_set_attributes(GTK_LABEL(heading), attrs);
+  pango_attr_list_unref(attrs);
+  gtk_box_append(GTK_BOX(parent_box), heading);
+
+  battery_status_label_ = gtk_label_new("Battery: --");
+  gtk_label_set_xalign(GTK_LABEL(battery_status_label_), 0.0f);
+  gtk_widget_add_css_class(battery_status_label_, "fleetwm-stat");
+  gtk_box_append(GTK_BOX(parent_box), battery_status_label_);
+  battery_source_.start([this](const BatterySource::Reading& reading) { on_battery_reading(reading); });
+
+  struct ModeSpec {
+    const char* label;
+    const char* icon_name;
+    PowerMode mode;
+  };
+  static const ModeSpec specs[] = {
+      {"Normal", "power-profile-balanced-symbolic", PowerMode::Normal},
+      {"Performance", "power-profile-performance-symbolic", PowerMode::Performance},
+      {"Battery Saver", "power-profile-power-saver-symbolic", PowerMode::BatterySaver},
+  };
+
+  GtkWidget* mode_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+  gtk_widget_add_css_class(mode_box, "linked");
+  gtk_widget_set_margin_top(mode_box, 4);
+
+  GtkToggleButton* group_leader = nullptr;
+  for (size_t i = 0; i < sizeof(specs) / sizeof(specs[0]); ++i) {
+    const ModeSpec& spec = specs[i];
+    GtkWidget* button = gtk_toggle_button_new();
+    GtkWidget* content = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+    GtkWidget* icon = gtk_image_new_from_icon_name(spec.icon_name);
+    gtk_image_set_pixel_size(GTK_IMAGE(icon), 16);
+    gtk_box_append(GTK_BOX(content), icon);
+    gtk_box_append(GTK_BOX(content), gtk_label_new(spec.label));
+    gtk_button_set_child(GTK_BUTTON(button), content);
+    gtk_widget_set_hexpand(button, TRUE);
+
+    if (group_leader) {
+      gtk_toggle_button_set_group(GTK_TOGGLE_BUTTON(button), group_leader);
+    } else {
+      group_leader = GTK_TOGGLE_BUTTON(button);
+    }
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(button), bar_config_.power_mode == spec.mode);
+    g_object_set_data(G_OBJECT(button), "power-mode", GINT_TO_POINTER(static_cast<int>(spec.mode)));
+    g_signal_connect(button, "toggled", G_CALLBACK(on_power_mode_button_toggled), this);
+
+    power_mode_buttons_[i] = button;
+    gtk_box_append(GTK_BOX(mode_box), button);
+  }
+  gtk_box_append(GTK_BOX(parent_box), labeled_row("Power mode", mode_box));
+}
+
+void SettingsWindow::on_power_mode_button_toggled(GtkToggleButton* button, gpointer user_data) {
+  auto* self = static_cast<SettingsWindow*>(user_data);
+  if (!gtk_toggle_button_get_active(button)) {
+    return;
+  }
+  auto mode = static_cast<PowerMode>(
+      GPOINTER_TO_INT(g_object_get_data(G_OBJECT(button), "power-mode")));
+  self->set_power_mode(mode);
+}
+
+void SettingsWindow::set_power_mode(PowerMode mode) {
+  bar_config_.power_mode = mode;
+  save_bar_config(bar_config_);  // fleetwm-bar picks this up live via its own GFileMonitor watch
+
+  // Applying the system power profile is a fire-and-forget shell out to
+  // powerprofilesctl (power-profiles-daemon's own CLI) -- same
+  // g_spawn_async, no-blocking-the-UI pattern as the bar's power menu
+  // actions (logout/reboot/shutdown).
+  char* argv[] = {const_cast<char*>("powerprofilesctl"), const_cast<char*>("set"),
+                   const_cast<char*>(power_mode_to_profiles_daemon_name(mode).c_str()), nullptr};
+  GError* error = nullptr;
+  if (!g_spawn_async(nullptr, argv, nullptr, G_SPAWN_SEARCH_PATH, nullptr, nullptr, nullptr,
+                      &error)) {
+    std::fprintf(stderr, "fleetwm-settings: powerprofilesctl set failed: %s\n",
+                 error != nullptr ? error->message : "unknown error");
+    g_clear_error(&error);
+  }
+}
+
+void SettingsWindow::on_battery_reading(const BatterySource::Reading& reading) {
+  if (!reading.available) {
+    gtk_label_set_text(GTK_LABEL(battery_status_label_), "Battery: N/A");
+    return;
+  }
+  std::string text = "Battery: " + std::to_string(reading.percent) + "%";
+  text += reading.charging ? " (charging)" : " (on battery)";
+  if (reading.hours_remaining >= 0.0) {
+    int total_minutes = static_cast<int>(reading.hours_remaining * 60.0 + 0.5);
+    text += " -- " + std::to_string(total_minutes / 60) + "h " +
+            std::to_string(total_minutes % 60) + "m " +
+            (reading.charging ? "until full" : "remaining");
+  }
+  gtk_label_set_text(GTK_LABEL(battery_status_label_), text.c_str());
 }
 
 void SettingsWindow::save() {

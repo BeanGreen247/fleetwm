@@ -7,6 +7,7 @@
 
 #include "app_style.hpp"
 #include "bar_config.hpp"
+#include "battery_source.hpp"
 #include "ipc_client.hpp"
 #include "theme.hpp"
 #include "volume_source.hpp"
@@ -49,6 +50,14 @@ class BarWindow {
   static gboolean on_disk_tick(gpointer user_data);
   void update_disk_stat();
 
+  // Battery indicator (iOS-style pill with the percentage drawn inside)
+  // plus the power-mode icon next to it -- both hidden entirely on
+  // desktops with no battery (BatterySource::Reading::available).
+  void build_battery_indicator(GtkWidget* parent_box);
+  void update_power_mode_icon();
+  static void on_battery_draw(GtkDrawingArea* area, cairo_t* cr, int width, int height,
+                               gpointer user_data);
+
   // Reloads theme_config_/bar_config_ from disk and re-applies the
   // border/shape/clock-format that depend on them. Both configs are
   // watched live via GFileMonitor (GIO's own file-watch API, the natural
@@ -59,6 +68,14 @@ class BarWindow {
   void apply_theme();
   void reload_theme();
   void reload_bar_config();
+
+  // Full vs. island layout (bar_config_.bar_mode): sets the layer-shell
+  // anchors/margin/exclusive-zone/size that differ between the two.
+  // Called from build() and again from reload_bar_config() -- gtk4-layer-
+  // shell allows re-issuing these calls on an already-mapped surface, it
+  // just queues a fresh configure, so switching modes in Settings takes
+  // effect on this already-running bar process without a restart.
+  void apply_bar_layout();
   static void on_theme_file_changed(GFileMonitor* monitor, GFile* file, GFile* other_file,
                                      GFileMonitorEvent event_type, gpointer user_data);
   static void on_bar_config_file_changed(GFileMonitor* monitor, GFile* file, GFile* other_file,
@@ -85,6 +102,10 @@ class BarWindow {
   guint reconnect_timer_id_ = 0;
 
   VolumeSource volume_source_;
+  BatterySource battery_source_;
+  BatterySource::Reading battery_reading_;
+  GtkWidget* battery_area_ = nullptr;
+  GtkWidget* power_mode_icon_ = nullptr;
 
   // /proc/stat aggregate-line samples, used to compute a CPU% delta
   // between consecutive 1Hz ticks (ADR 0005).

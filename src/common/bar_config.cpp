@@ -28,6 +28,38 @@ fs::path config_home() {
 
 }  // namespace
 
+std::string power_mode_to_string(PowerMode mode) {
+  switch (mode) {
+    case PowerMode::Performance: return "performance";
+    case PowerMode::BatterySaver: return "battery_saver";
+    case PowerMode::Normal: return "normal";
+  }
+  return "normal";
+}
+
+PowerMode power_mode_from_string(const std::string& s) {
+  if (s == "performance") return PowerMode::Performance;
+  if (s == "battery_saver") return PowerMode::BatterySaver;
+  return PowerMode::Normal;
+}
+
+std::string power_mode_to_profiles_daemon_name(PowerMode mode) {
+  switch (mode) {
+    case PowerMode::Performance: return "performance";
+    case PowerMode::BatterySaver: return "power-saver";
+    case PowerMode::Normal: return "balanced";
+  }
+  return "balanced";
+}
+
+std::string bar_mode_to_string(BarMode mode) {
+  return mode == BarMode::Island ? "island" : "full";
+}
+
+BarMode bar_mode_from_string(const std::string& s) {
+  return s == "island" ? BarMode::Island : BarMode::Full;
+}
+
 std::string bar_user_config_path() {
   return (config_home() / "fleetwm" / "bar.toml").string();
 }
@@ -65,6 +97,14 @@ BarConfig load_bar_config() {
     if (auto v = (*ws)["active_fg"].value<std::string>()) config.workspace_colors.active_fg = *v;
   }
 
+  if (auto v = table["power_mode"].value<std::string>()) {
+    config.power_mode = power_mode_from_string(*v);
+  }
+
+  if (auto v = table["bar_mode"].value<std::string>()) {
+    config.bar_mode = bar_mode_from_string(*v);
+  }
+
   return config;
 }
 
@@ -88,6 +128,8 @@ void save_bar_config(const BarConfig& config) {
   toml::table table;
   table.insert_or_assign("clock", clock);
   table.insert_or_assign("workspace_colors", workspace_colors);
+  table.insert_or_assign("power_mode", power_mode_to_string(config.power_mode));
+  table.insert_or_assign("bar_mode", bar_mode_to_string(config.bar_mode));
 
   std::ofstream out(path);
   if (!out) {
