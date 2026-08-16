@@ -119,6 +119,51 @@ void tile_view(View* view, int x, int y, int w, int h) {
   // comment for the full story).
 }
 
+// The View currently holding keyboard focus, or nullptr -- local copy of
+// input.cpp's own focused_view() (kept file-static there), since that
+// one lives in an anonymous namespace and isn't shared across
+// translation units. Same "seat only tracks a wlr_surface*, scan views
+// for the owner" approach.
+View* focused_view(Server* server) {
+  wlr_surface* focused_surface = server->seat()->keyboard_state.focused_surface;
+  if (!focused_surface) {
+    return nullptr;
+  }
+  for (const std::unique_ptr<View>& view : server->views) {
+    if (view->surface() == focused_surface) {
+      return view.get();
+    }
+  }
+  return nullptr;
+}
+
+// Grows `tile` outward by `grow` px on whichever edges already sit at
+// the outer boundary of the workable area (`outer`) -- i.e. edges facing
+// the bar/screen edge, never an edge shared with a neighboring tiled
+// window, so this can never make two tiled windows overlap. This is
+// what makes the focused window "step forward": it eats into its own
+// share of the outer gap rather than shrinking anything else.
+wlr_box grow_at_outer_edges(wlr_box tile, const wlr_box& outer, int grow) {
+  if (grow <= 0) {
+    return tile;
+  }
+  if (tile.x <= outer.x) {
+    tile.x -= grow;
+    tile.width += grow;
+  }
+  if (tile.y <= outer.y) {
+    tile.y -= grow;
+    tile.height += grow;
+  }
+  if (tile.x + tile.width >= outer.x + outer.width) {
+    tile.width += grow;
+  }
+  if (tile.y + tile.height >= outer.y + outer.height) {
+    tile.height += grow;
+  }
+  return tile;
+}
+
 // Extra breathing room between a tiled window's edge and any adjacent
 // exclusive-zone layer surface (e.g. fleetwm-bar) -- purely cosmetic, on
 // top of the zone's own reserved space, so a window's border doesn't sit
@@ -186,19 +231,42 @@ void Output::relayout() {
 
   wlr_box box = usable_area;
 
+  // Outer gap: reserved on every edge of the usable area, whether
+  // there's a single tiled window or several -- previously only the
+  // *inner* gap between master/stack windows was implemented below, so a
+  // lone window (or the outermost edge of a multi-window layout) sat
+  // flush against the bar/screen edges with no gap at all, which is what
+  // made gap_px look broken with only one window open. Clamped so a
+  // large gap_px on a small output can't invert width/height negative.
+  int gap = std::max(0, server->theme_config().gap_px);
+  int outer_w = std::max(1, box.width - 2 * gap);
+  int outer_h = std::max(1, box.height - 2 * gap);
+  box.x += (box.width - outer_w) / 2;
+  box.y += (box.height - outer_h) / 2;
+  box.width = outer_w;
+  box.height = outer_h;
+
+  // The focused window "steps forward" a few px into its own share of
+  // the outer gap (grow_at_outer_edges above) -- explicit user request
+  // to make the existing raise-to-top-on-focus behavior more visually
+  // pronounced. Capped well below the full gap so there's always some
+  // residual outer gap left even around a grown, focused window (and
+  // gap_px == 0 means grow == 0: nothing to step into).
+  View* focused = focused_view(server);
+  int grow = std::min(6, std::max(0, gap - 1));
+
   if (tiled.size() == 1) {
-    tile_view(tiled[0], box.x, box.y, box.width, box.height);
+    wlr_box b = (tiled[0] == focused) ? grow_at_outer_edges(box, usable_area, grow) : box;
+    tile_view(tiled[0], b.x, b.y, b.width, b.height);
     return;
   }
 
-  // Gap between tiled windows only (master/stack split, and between
-  // stacked windows) -- does not touch usable_area, so it never adds
-  // extra spacing against the bar or screen edges, which are already
-  // governed by the exclusive-zone reservation above.
-  int gap = std::max(0, server->theme_config().gap_px);
-
   int master_width = (box.width - gap) / 2;
-  tile_view(tiled[0], box.x, box.y, master_width, box.height);
+  wlr_box master_box{box.x, box.y, master_width, box.height};
+  if (tiled[0] == focused) {
+    master_box = grow_at_outer_edges(master_box, usable_area, grow);
+  }
+  tile_view(tiled[0], master_box.x, master_box.y, master_box.width, master_box.height);
 
   int stack_count = static_cast<int>(tiled.size()) - 1;
   int stack_x = box.x + master_width + gap;
@@ -209,7 +277,11 @@ void Output::relayout() {
     // Last stripe absorbs any remainder from integer division so the
     // stack always exactly fills the output height.
     int h = (i == stack_count - 1) ? (box.y + box.height - y) : stack_height;
-    tile_view(tiled[i + 1], stack_x, y, stack_width, h);
+    wlr_box stack_box{stack_x, y, stack_width, h};
+    if (tiled[i + 1] == focused) {
+      stack_box = grow_at_outer_edges(stack_box, usable_area, grow);
+    }
+    tile_view(tiled[i + 1], stack_box.x, stack_box.y, stack_box.width, stack_box.height);
   }
 }
 

@@ -768,16 +768,24 @@ void Server::run() {
 void Server::focus_view(View* view) {
   if (!view) {
     wlr_surface* prev_surface = seat_->keyboard_state.focused_surface;
+    Output* prev_output = nullptr;
     if (prev_surface) {
       for (const std::unique_ptr<View>& candidate : views) {
         if (candidate->surface() == prev_surface) {
           candidate->focused = false;
           candidate->resize_border();
+          prev_output = candidate->output;
           break;
         }
       }
     }
     wlr_seat_keyboard_clear_focus(seat_);
+    // Losing focus un-grows this view (grow_at_outer_edges() in
+    // output.cpp) -- must run after wlr_seat_keyboard_clear_focus()
+    // above so relayout() sees no view as focused anymore.
+    if (prev_output) {
+      prev_output->relayout();
+    }
     if (ipc_server) {
       ipc_server->broadcast_focused_title("");
     }
@@ -824,6 +832,18 @@ void Server::focus_view(View* view) {
   if (keyboard) {
     wlr_seat_keyboard_notify_enter(seat_, surface, keyboard->keycodes, keyboard->num_keycodes,
                                     &keyboard->modifiers);
+  }
+
+  // Newly-focused view "steps forward" a few px (grow_at_outer_edges() in
+  // output.cpp) -- relayout() recomputes every tiled view's box on this
+  // output, so both this view and whichever previously-grown one is now
+  // back to normal size get updated in the same pass. Must run after
+  // wlr_seat_keyboard_notify_enter() above: relayout() resolves "the
+  // focused view" from the seat's own focused_surface, which that call
+  // is what actually updates. No-op if `view` is floating/pinned
+  // (relayout() only touches tiled views).
+  if (view->output) {
+    view->output->relayout();
   }
 
   if (ipc_server) {
