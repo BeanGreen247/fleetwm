@@ -9,3 +9,11 @@ window.fleetwm-panel,
 .fleetwm-launcher-list row {
   border-radius: 0;
 }
+
+.fleetwm-greeter-avatar,
+.fleetwm-greeter-entry,
+.fleetwm-greeter-submit-button,
+.fleetwm-greeter-power-button,
+.fleetwm-greeter-back-button {
+  border-radius: 0;
+}

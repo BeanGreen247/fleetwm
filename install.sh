@@ -72,6 +72,15 @@ echo "(If any of these groups were newly added, log out and back in --"
 echo "or reboot -- for group membership to take effect.)"
 
 if [[ -x "${BUILD_DIR}/src/greeter/fleetwm-greet" ]]; then
+  # fleetwm-greet now runs its own wlroots compositor for the login UI
+  # (src/greeter/compositor.{hpp,cpp}), which needs a seat backend to get
+  # DRM access before anyone's logged in -- seatd, not logind (see
+  # packaging/fleetwm-greeter@.service's own comment for why logind
+  # specifically doesn't work here: it segfaults on a real login).
+  echo "==> Installing seatd (required by the greeter's login-screen compositor)"
+  sudo apt-get install -y seatd
+  sudo systemctl enable --now seatd.service
+
   echo "==> Installing greeter PAM config and systemd unit"
   sudo install -m 644 "${SCRIPT_DIR}/packaging/fleetwm-greeter-pam.conf" /etc/pam.d/fleetwm-greeter
   sudo install -m 644 "${SCRIPT_DIR}/packaging/fleetwm-greeter@.service" /usr/lib/systemd/system/fleetwm-greeter@.service

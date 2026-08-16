@@ -6,21 +6,31 @@
 #include <cstdlib>
 #include <cstring>
 
-#include "tty.hpp"
-
 namespace fleetwm::auth {
 
 namespace {
 
 constexpr const char* kServiceName = "fleetwm-greeter";
 
+// Credentials the login UI already collected, handed to PAM's conversation
+// callback via pam_conv's appdata pointer. `password_used` guards against
+// answering more than one echo-off prompt with it -- a module chaining a
+// second password-style prompt (e.g. a one-time token) should not silently
+// get the login password fed back to it.
+struct Credentials {
+  const std::string* username;
+  const std::string* password;
+  bool password_used = false;
+};
+
 // PAM owns and frees both the response array and each response string it
 // contains (see pam_conv(3)) -- we allocate with malloc/strdup accordingly.
-int conv_callback(int num_msg, const struct pam_message** msgs,
-                   struct pam_response** out_resp, void* /*appdata*/) {
+int conv_callback(int num_msg, const struct pam_message** msgs, struct pam_response** out_resp,
+                   void* appdata) {
   if (num_msg <= 0) {
     return PAM_CONV_ERR;
   }
+  auto* creds = static_cast<Credentials*>(appdata);
 
   auto* resp = static_cast<pam_response*>(
       std::calloc(static_cast<size_t>(num_msg), sizeof(pam_response)));
@@ -30,38 +40,31 @@ int conv_callback(int num_msg, const struct pam_message** msgs,
 
   for (int i = 0; i < num_msg; ++i) {
     const pam_message* msg = msgs[i];
-    std::string line;
 
     switch (msg->msg_style) {
       case PAM_PROMPT_ECHO_OFF: {
-        tty::print(msg->msg ? msg->msg : "");
-        if (!tty::read_password(line)) {
-          for (int j = 0; j < i; ++j) {
-            std::free(resp[j].resp);
-          }
-          std::free(resp);
-          return PAM_CONV_ERR;
-        }
-        resp[i].resp = strdup(line.c_str());
+        // The password prompt. Answer with the already-collected password
+        // exactly once; any further echo-off prompt (unexpected for this
+        // greeter's plain password auth) gets an empty response rather
+        // than reusing the password.
+        const std::string& answer =
+            (!creds->password_used) ? *creds->password : std::string();
+        creds->password_used = true;
+        resp[i].resp = strdup(answer.c_str());
         break;
       }
       case PAM_PROMPT_ECHO_ON: {
-        tty::print(msg->msg ? msg->msg : "");
-        if (!tty::read_line(line)) {
-          for (int j = 0; j < i; ++j) {
-            std::free(resp[j].resp);
-          }
-          std::free(resp);
-          return PAM_CONV_ERR;
-        }
-        resp[i].resp = strdup(line.c_str());
+        // The username prompt -- normally never fires since PAM_USER is
+        // set before pam_authenticate(), but answer it if some module
+        // asks anyway rather than failing the whole conversation.
+        resp[i].resp = strdup(creds->username->c_str());
         break;
       }
       case PAM_ERROR_MSG:
       case PAM_TEXT_INFO:
-        if (msg->msg != nullptr) {
-          tty::print_line(msg->msg);
-        }
+        // No TTY to print these to any more -- the login UI has no
+        // channel for free-form PAM text messages today. Silently
+        // discarded rather than failing the conversation over it.
         resp[i].resp = nullptr;
         break;
       default:
@@ -69,11 +72,6 @@ int conv_callback(int num_msg, const struct pam_message** msgs,
         break;
     }
     resp[i].resp_retcode = 0;
-    // The password/line we just read was copied into the PAM response;
-    // scrub our own copy now rather than waiting on the destructor.
-    if (!line.empty()) {
-      std::fill(line.begin(), line.end(), '\0');
-    }
   }
 
   *out_resp = resp;
@@ -82,15 +80,15 @@ int conv_callback(int num_msg, const struct pam_message** msgs,
 
 }  // namespace
 
-AuthResult authenticate(const std::string& tty_name) {
+AuthResult authenticate(const std::string& tty_name, const std::string& username,
+                         const std::string& password) {
   AuthResult result;
 
-  pam_conv conv{conv_callback, nullptr};
+  Credentials creds{&username, &password};
+  pam_conv conv{conv_callback, &creds};
   pam_handle_t* pamh = nullptr;
 
-  tty::print_line("fleetwm login:");
-
-  int status = pam_start(kServiceName, nullptr, &conv, &pamh);
+  int status = pam_start(kServiceName, username.c_str(), &conv, &pamh);
   if (status != PAM_SUCCESS) {
     return result;
   }

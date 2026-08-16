@@ -9,3 +9,17 @@ window.fleetwm-panel,
 .fleetwm-launcher-list row {
   border-radius: 8px;
 }
+
+.fleetwm-greeter-avatar {
+  border-radius: 10px;
+}
+
+.fleetwm-greeter-entry,
+.fleetwm-greeter-submit-button,
+.fleetwm-greeter-back-button {
+  border-radius: 8px;
+}
+
+.fleetwm-greeter-power-button {
+  border-radius: 999px;
+}

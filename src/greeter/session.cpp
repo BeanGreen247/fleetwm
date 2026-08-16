@@ -26,6 +26,11 @@ std::vector<std::string> build_env(const passwd* pw,
   env.push_back(std::string("SHELL=") + pw->pw_shell);
   env.emplace_back("PATH=/usr/local/bin:/usr/bin:/bin");
   env.emplace_back("XDG_SESSION_TYPE=wayland");
+  // Same rationale as fleetwm-greeter@.service's own copy of this var
+  // (see packaging/fleetwm-greeter@.service): on hardware/VMs with no
+  // hardware-accelerated EGL, wlroots refuses to fall back to llvmpipe
+  // unless this is set. Harmless no-op when real GPU accel exists.
+  env.emplace_back("WLR_RENDERER_ALLOW_SOFTWARE=1");
   // Without this, the session gets no locale env at all (glibc's default
   // is the plain "C" locale, ASCII-only) -- every GTK app and foot then
   // logs its own "not a UTF-8 locale, falling back to C.UTF-8" warning on

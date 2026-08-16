@@ -1,7 +1,8 @@
 [Unit]
 Description=Fleetwm minimal TTY greeter on %I
 Conflicts=getty@%i.service
-After=systemd-user-sessions.service plymouth-quit-wait.service getty@%i.service
+After=systemd-user-sessions.service plymouth-quit-wait.service getty@%i.service seatd.service
+Wants=seatd.service
 Before=graphical.target
 
 [Service]
@@ -9,6 +10,55 @@ ExecStart=/usr/local/bin/fleetwm-greet %I
 Type=simple
 Restart=always
 RestartSec=1
+# fleetwm-greet now runs its own wlroots compositor before any user is
+# authenticated (see src/greeter/compositor.{hpp,cpp}), which needs
+# libseat to hand it the DRM device. Two things were tried and rejected
+# before this:
+#  - PAMName=login (registering a real logind session for this service's
+#    root process): works for DRM access, but collides with the
+#    *separate* logind session src/greeter/auth.cpp's own
+#    pam_open_session() opens for the just-authenticated user on the
+#    very same seat/tty once login succeeds -- confirmed via real
+#    testing, fleetwm-greet segfaulted inside pam_systemd.so on a
+#    successful login (a root logind session and a user logind session
+#    both on seat0/tty1), and the resulting user session got no
+#    XDG_RUNTIME_DIR at all (logind never created /run/user/<uid>).
+#  - LIBSEAT_BACKEND=noop (skip session management entirely): avoids the
+#    conflict above, but wlroots' DRM backend needs libseat's real
+#    device-open callbacks for udev enumeration, which the noop backend
+#    doesn't implement -- "udev_enumerate_scan_devices failed", no GPU
+#    ever found.
+# seatd (a small daemon whose only job is arbitrating device access
+# outside of any login-session concept) is the actual standard answer
+# for exactly this "compositor needs a seat before anyone's logged in"
+# case -- libseat talks to it instead of logind, so there is no session
+# to conflict with the user's own logind session later. Requires the
+# `seatd` package installed and its systemd service enabled.
+# With no logind session for this process any more (see the seatd
+# rationale above), nothing sets XDG_RUNTIME_DIR for it either --
+# PAMName=login used to provide that as a side effect. wl_display_
+# add_socket_auto() (the greeter compositor's *own* internal Wayland
+# socket, for the login client to connect to) needs it set to an
+# existing, writable directory or fails outright ("XDG_RUNTIME_DIR is
+# invalid or not set"). RuntimeDirectory= is systemd's plain mechanism
+# for exactly this -- creates/owns /run/fleetwm-greeter for this
+# service's lifetime, no PAM/logind/session concept involved.
+RuntimeDirectory=fleetwm-greeter
+Environment=XDG_RUNTIME_DIR=/run/fleetwm-greeter
+# Same missing-PAMName=login fallout as XDG_RUNTIME_DIR above: nothing
+# sets HOME any more, and src/common/theme.cpp's user_config_path() (used
+# by both this process's own theme loading and, via inheritance, the
+# login client it spawns) throws outright without it. This process is
+# always root (ADR 0006), so root's home is not a guess.
+Environment=HOME=/root
+Environment=LIBSEAT_BACKEND=seatd
+# Some deployments (e.g. a QEMU VM with a plain stdvga/bochs-drm device
+# and no renderD* node -- no Mesa driver, wlroots falls back to llvmpipe)
+# have no hardware-accelerated EGL at all; wlroots refuses a software
+# renderer unless explicitly allowed. Harmless when real GPU accel is
+# available -- this only lifts a refusal, it never forces software
+# rendering over a working hardware path.
+Environment=WLR_RENDERER_ALLOW_SOFTWARE=1
 UtmpIdentifier=%I
 TTYPath=/dev/%I
 TTYReset=yes

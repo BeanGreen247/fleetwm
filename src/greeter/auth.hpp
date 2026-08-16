@@ -16,11 +16,15 @@ struct AuthResult {
   pam_handle_t* pamh = nullptr;
 };
 
-// Runs the full PAM auth conversation on the current controlling terminal:
-// prompts for username/password via tty::read_line()/read_password(),
+// Runs the full PAM auth conversation for a username/password pair already
+// collected by the login UI (src/greeter-login, via login_ipc): sets
+// PAM_USER up front so PAM's own username prompt never fires, answers
+// exactly one PAM_PROMPT_ECHO_OFF (password) prompt with `password`, then
 // pam_authenticate(), pam_acct_mgmt(), and on success pam_open_session().
-// Never logs the password anywhere.
-AuthResult authenticate(const std::string& tty_name);
+// Never logs the password anywhere; the password is scrubbed from the
+// conversation callback's own copy immediately after PAM consumes it.
+AuthResult authenticate(const std::string& tty_name, const std::string& username,
+                         const std::string& password);
 
 // Closes the PAM session opened by a successful authenticate() and ends the
 // PAM transaction. Must be called exactly once per successful authenticate()

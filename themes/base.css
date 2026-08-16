@@ -183,3 +183,117 @@ notebook.fleetwm-settings-notebook stack {
   background-color: @accent_color;
   color: @bg_primary;
 }
+
+/* fleetwm-greeter-login (src/greeter-login) -- Windows-7-welcome-screen
+ * style: no card/box chrome anywhere, everything floats directly on the
+ * wallpaper background, per explicit user request/reference screenshots.
+ *
+ * background-image: none appears on every button-rooted rule below --
+ * Adwaita's default `button` style paints a background-image gradient on
+ * top of whatever background-color is set, so without clearing it
+ * explicitly these all rendered as GTK's stock light-gray button instead
+ * of the intended themed color (confirmed via a real screenshot before
+ * this was added). */
+
+.fleetwm-greeter-brand {
+  color: @fg_primary;
+  opacity: 0.85;
+  font-weight: 600;
+  font-size: 1.1em;
+}
+
+.fleetwm-greeter-avatar {
+  background-color: @bg_secondary;
+  border: 2px solid @bg_primary;
+  color: @fg_secondary;
+}
+
+.fleetwm-greeter-tile-button {
+  background-color: transparent;
+  background-image: none;
+  border: none;
+  box-shadow: none;
+  color: @fg_primary;
+  padding: 4px;
+}
+
+.fleetwm-greeter-tile-button:hover .fleetwm-greeter-avatar {
+  border-color: @accent_color;
+}
+
+.fleetwm-greeter-tile-name {
+  color: @fg_primary;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+.fleetwm-greeter-login-name {
+  color: @fg_primary;
+  font-weight: 600;
+  font-size: 1.3em;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+/* bg_secondary, not bg_primary -- with no card behind these any more
+ * (everything floats directly on the wallpaper/page background, which
+ * is bg_primary when no wallpaper image is set), an entry styled
+ * bg_primary-on-bg_primary was only visible once focused (the only time
+ * its border color diverges via :focus-within below) -- confirmed via a
+ * real screenshot: the unfocused username/password fields were
+ * essentially invisible, just an eye icon floating with nothing around
+ * it. */
+.fleetwm-greeter-entry {
+  background-color: @bg_secondary;
+  color: @fg_primary;
+  border: 1px solid @bg_secondary;
+  min-width: 200px;
+  padding: 8px 10px;
+}
+
+.fleetwm-greeter-entry:focus-within {
+  border-color: @accent_color;
+}
+
+.fleetwm-greeter-error {
+  color: #f38ba8;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+.fleetwm-greeter-submit-button {
+  background-color: @accent_color;
+  background-image: none;
+  color: @bg_primary;
+  border: none;
+  min-width: 20px;
+  min-height: 20px;
+  padding: 8px;
+}
+
+.fleetwm-greeter-submit-button:hover {
+  opacity: 0.9;
+}
+
+.fleetwm-greeter-power-button {
+  background-color: transparent;
+  background-image: none;
+  color: @fg_secondary;
+  border: none;
+  padding: 6px;
+}
+
+.fleetwm-greeter-power-button:hover {
+  color: @accent_color;
+}
+
+/* Rounded-box, not circular -- explicit request, distinct from the
+ * power buttons which stay circular icon-only. */
+.fleetwm-greeter-back-button {
+  background-color: @bg_secondary;
+  background-image: none;
+  color: @fg_secondary;
+  border: none;
+  padding: 6px 10px;
+}
+
+.fleetwm-greeter-back-button:hover {
+  color: @accent_color;
+}
