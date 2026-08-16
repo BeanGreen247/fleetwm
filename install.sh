@@ -20,7 +20,14 @@ sudo apt-get install -y \
   libpipewire-0.3-dev \
   libpam0g-dev \
   xwayland \
-  foot
+  foot \
+  grim wlrctl wtype gdb imagemagick  # dev-box testing: screenshot (grim)
+                      # + pixel inspection (imagemagick's `convert
+                      # ... txt:-`) + synthetic pointer/keyboard input
+                      # (wlrctl/wtype) over SSH, since fleetwm advertises
+                      # wlr-screencopy-v1, wlr-virtual-pointer-v1, and
+                      # wlr-virtual-keyboard-v1 for exactly this; gdb for
+                      # live-attaching to the compositor to catch crashes
 
 echo "==> Configuring build"
 meson setup "${BUILD_DIR}" "${SCRIPT_DIR}" --prefix=/usr/local --buildtype=release --reconfigure

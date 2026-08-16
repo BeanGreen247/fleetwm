@@ -10,11 +10,14 @@ extern "C" {
 #include <wlr/types/wlr_seat.h>
 }
 
+#include <algorithm>
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 
+#include "output.hpp"
 #include "server.hpp"
 #include "view.hpp"
 
@@ -48,6 +51,24 @@ constexpr xkb_keysym_t kCloseWindowKey = XKB_KEY_Q;
 // focused window. Same Shift-resolved-into-keysym note as
 // kCloseWindowKey above applies.
 constexpr xkb_keysym_t kTogglePinKey = XKB_KEY_P;
+
+// dwm-style master-stack tiling binds (Output::relayout()). Alt+J/K cycle
+// focus through server->views in stacking order; unlike
+// kCloseWindowKey/kTogglePinKey these are NOT Shift-combined, so lowercase
+// j/k (not J/K) is what xkb_state_key_get_syms resolves to.
+constexpr xkb_keysym_t kFocusNextKey = XKB_KEY_j;
+constexpr xkb_keysym_t kFocusPrevKey = XKB_KEY_k;
+
+// Alt+Shift+F: opts the focused window out of tiling (or back in),
+// independent of pinned -- see View::floating.
+constexpr xkb_keysym_t kToggleFloatKey = XKB_KEY_F;
+
+// Alt+Shift+Return: promotes the focused window to master. Deliberately
+// checked via an explicit shift_held flag (unlike kCloseWindowKey/
+// kTogglePinKey's "Shift resolves into the keysym" shortcut) because plain
+// Alt+Return without Shift is already kSpawnTerminalKey and Return has no
+// separate shifted keysym to distinguish them by.
+constexpr xkb_keysym_t kPromoteKey = XKB_KEY_Return;
 
 // Finds the View owning the seat's currently keyboard-focused surface, if
 // any -- the seat only tracks a wlr_surface*, not the owning View, so
@@ -159,7 +180,22 @@ Keyboard::~Keyboard() {
 }
 
 bool Keyboard::handle_keybind(xkb_keysym_t sym) {
+  bool shift_held = (wlr_keyboard_get_modifiers(wlr_keyboard_ptr) & WLR_MODIFIER_SHIFT) != 0;
+
   if (sym == kSpawnTerminalKey) {
+    if (shift_held) {
+      if (View* view = focused_view(server)) {
+        // Promote to master: splice to front of server->views the same
+        // way focus_view() already does for topmost-on-focus, then
+        // re-tile -- master is defined as "first in the tiled set",
+        // which relayout() derives from this same list.
+        server->focus_view(view);
+        if (view->output) {
+          view->output->relayout();
+        }
+      }
+      return true;
+    }
     spawn(kTerminalCommand);
     return true;
   }
@@ -177,6 +213,47 @@ bool Keyboard::handle_keybind(xkb_keysym_t sym) {
     if (View* view = focused_view(server)) {
       view->set_pinned(!view->pinned);
     }
+    return true;
+  }
+  if (sym == kToggleFloatKey) {
+    if (View* view = focused_view(server)) {
+      view->set_floating(!view->floating);
+      if (view->output) {
+        view->output->relayout();
+      }
+    }
+    return true;
+  }
+  if (sym == kFocusNextKey || sym == kFocusPrevKey) {
+    if (server->views.empty()) {
+      return true;
+    }
+    View* current = focused_view(server);
+    // server->views is stacking-ordered (front = topmost/focused), which
+    // for a freshly-tiled workspace also matches master-then-stack order
+    // -- walking it directly gives "next/prev in the tiled set" without
+    // needing a separate per-workspace ordering.
+    auto it = server->views.begin();
+    if (current) {
+      it = std::find_if(server->views.begin(), server->views.end(),
+                         [current](const std::unique_ptr<View>& v) { return v.get() == current; });
+    }
+    if (it == server->views.end()) {
+      it = server->views.begin();
+    }
+    if (sym == kFocusNextKey) {
+      ++it;
+      if (it == server->views.end()) {
+        it = server->views.begin();
+      }
+    } else {
+      if (it == server->views.begin()) {
+        it = std::prev(server->views.end());
+      } else {
+        --it;
+      }
+    }
+    server->focus_view(it->get());
     return true;
   }
   if (sym == XKB_KEY_Escape) {

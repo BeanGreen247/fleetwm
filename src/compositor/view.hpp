@@ -20,13 +20,13 @@ namespace fleetwm {
 
 class Server;
 class Workspace;
+class Output;
 
-// A toplevel window, native (xdg_toplevel) or XWayland. Phase 0 does no
-// real tiling: a View is placed at a fixed origin sized to its output at
-// map time and left alone (see server.cpp new_xdg_toplevel handling).
-// Phase 1 replaces that placement call with the master-stack algorithm;
-// View itself doesn't need to change for that since layout is driven
-// externally by Output::relayout(), not by View.
+// A toplevel window, native (xdg_toplevel) or XWayland. Phase 1's
+// master-stack algorithm lives in Output::relayout(), driven externally;
+// View just exposes the pinned/floating flags relayout() reads to decide
+// whether to skip a view, plus the border-rect nodes it (and focus
+// tracking) render into.
 class View {
  public:
   enum class Kind { XdgToplevel, XWayland };
@@ -41,6 +41,10 @@ class View {
   Server* server;
   Kind kind;
   Workspace* workspace = nullptr;
+  // Set at map time alongside workspace; unmap needs it to trigger a
+  // relayout of the remaining tiled views after workspace is cleared,
+  // and relayout() itself needs it for output-box geometry.
+  Output* output = nullptr;
 
   // container_tree_ is the outer wrapper: it holds the four border rects
   // plus scene_tree (the actual surface content) as a child, offset by
@@ -65,12 +69,32 @@ class View {
   // Output::switch_workspace(), which never touches layer_pinned_.
   bool pinned = false;
 
+  // Opts this view out of Output::relayout()'s master-stack math,
+  // independent of pinned -- floating (unlike pinned) keeps the view in
+  // its normal workspace/layer_toplevels_ position, just skipped by
+  // tiling so it keeps whatever position/size it last had.
+  bool floating = false;
+
+  // Whether this view currently holds keyboard focus -- Server::focus_view
+  // sets this on the old/new focused view on every focus change and calls
+  // resize_border() so the focus indicator stays in sync without every
+  // caller needing to know about borders.
+  bool focused = false;
+
   // Sets/clears the border color and thickness used to indicate pinned
   // state. Safe to call before the view has mapped (border rects exist
   // from construction; resize_border() below applies real dimensions
   // once the surface's actual size is known at map time).
   void set_pinned(bool pinned);
+  void set_floating(bool floating);
   void resize_border();
+
+  // Current border thickness in px, per the same pinned/focused priority
+  // resize_border() uses internally -- relayout() needs this to size the
+  // toplevel's content area (container_tree's box minus border) rather
+  // than the outer box, since wlr_xdg_toplevel_set_size sets the client's
+  // surface size, not container_tree's.
+  int border_thickness() const;
 
   wl_listener map{};
   wl_listener unmap{};
@@ -78,6 +102,7 @@ class View {
   wl_listener request_move{};
   wl_listener request_resize{};
   wl_listener surface_commit{};
+  wl_listener new_popup{};
 
 #if FLEETWM_XWAYLAND
   wlr_xwayland_surface* xwayland_surface = nullptr;

@@ -35,6 +35,10 @@ struct ThemeConfig {
   ThemeName theme = ThemeName::Dark;
   AccentColor accent;
   NavMode nav_mode = NavMode::Windows;
+  // Focus-indicator border thickness in px, drawn by the compositor
+  // around whichever window currently has keyboard focus. 2px default
+  // matches the previous hardcoded constant it replaces.
+  int focus_border_thickness_px = 2;
 };
 
 // Path helpers. Resolution order: $XDG_CONFIG_HOME/fleetwm/theme.toml (or
@@ -64,5 +68,13 @@ ThemeName theme_name_from_string(const std::string& s);
 
 std::string nav_mode_to_string(NavMode mode);
 NavMode nav_mode_from_string(const std::string& s);
+
+// Parses a "#rrggbb" hex color string into normalized [0,1] RGBA floats
+// (alpha always 1.0), the format wlr_scene_rect_set_color() expects.
+// Returns false (out_rgba left untouched) on malformed input -- callers
+// should keep whatever color they already had rather than trust a
+// zeroed/garbage result. No support for named colors or an alpha
+// channel; theme.toml's accent field is always plain "#rrggbb".
+bool parse_hex_color(const std::string& hex, float out_rgba[4]);
 
 }  // namespace fleetwm

@@ -1,5 +1,7 @@
 #include "server.hpp"
 
+#include <sys/inotify.h>
+#include <unistd.h>
 #include <wayland-server-core.h>
 
 extern "C" {
@@ -7,7 +9,10 @@ extern "C" {
 }
 
 #include <algorithm>
+#include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <filesystem>
 #include <memory>
 
 #include "input.hpp"
@@ -69,10 +74,16 @@ static void xdg_toplevel_map(wl_listener* listener, void*) {
     Workspace& workspace = output->active_workspace();
     workspace.add_view(view);
     view->workspace = &workspace;
+    view->output = output;
 
+    // relayout() below handles tiled placement; this is just a sane
+    // fallback position (full output box) for the pinned/floating case,
+    // which relayout() skips entirely.
     wlr_box box{};
     wlr_output_layout_get_box(view->server->output_layout(), output->wlr_output_ptr, &box);
     wlr_scene_node_set_position(&view->container_tree->node, box.x, box.y);
+
+    output->relayout();
   }
 
   view->server->focus_view(view);
@@ -82,10 +93,16 @@ static void xdg_toplevel_unmap(wl_listener* listener, void*) {
   View* view = wl_container_of(listener, view, unmap);
   Server* server = view->server;
   bool was_focused = server->seat()->keyboard_state.focused_surface == view->surface();
+  Output* output = view->output;
 
   if (view->workspace) {
     view->workspace->remove_view(view);
     view->workspace = nullptr;
+  }
+  view->output = nullptr;
+
+  if (output) {
+    output->relayout();
   }
 
   if (!was_focused) {
@@ -111,6 +128,47 @@ static void xdg_toplevel_unmap(wl_listener* listener, void*) {
 static void xdg_toplevel_destroy(wl_listener* listener, void*) {
   View* view = wl_container_of(listener, view, destroy);
   Server* server = view->server;
+
+  // Remove every one of View's listeners FIRST, before anything else --
+  // matches wlroots' own tinywl.c reference pattern exactly (see its
+  // xdg_toplevel_destroy). Order matters: the wlr_scene_node_destroy()
+  // call below can cascade into wlroots' own internal xdg-surface scene
+  // cleanup (scene_xdg_surface_handle_*, see wlroots 0.18.2
+  // types/scene/xdg_shell.c), which itself may tear down the underlying
+  // wlr_surface's listener lists as part of the same teardown. Removing
+  // View's own listeners (map/unmap/surface_commit are registered on
+  // that same surface) AFTER letting that cascade run left their
+  // wl_list links already invalidated by the time this code tried to
+  // wl_list_remove() them -- wl_list_remove() unconditionally
+  // dereferences elm->prev/elm->next with no "already removed" guard,
+  // so removing an already-invalidated link segfaults (confirmed via
+  // gdb: crash was inside wl_list_remove() itself, reproducibly
+  // triggered by Alt+Shift+Q closing a window with another still open).
+  // Removing everything up front, before any scene/surface teardown
+  // cascade has a chance to touch these same links, is what tinywl does
+  // and is what keeps this safe.
+  wl_list_remove(&view->map.link);
+  wl_list_remove(&view->unmap.link);
+  wl_list_remove(&view->destroy.link);
+  wl_list_remove(&view->request_move.link);
+  wl_list_remove(&view->request_resize.link);
+  wl_list_remove(&view->surface_commit.link);
+  wl_list_remove(&view->new_popup.link);
+  // NOT removing view->request_configure here even though it's compiled
+  // in under FLEETWM_XWAYLAND: nothing in this file (or anywhere else)
+  // currently calls wl_signal_add() on it -- XWayland toplevel creation
+  // itself isn't implemented yet (see the new_xwayland_surface comment
+  // elsewhere in this file). A wl_listener{}'s default-constructed link
+  // is unlinked (prev/next both null), and wl_list_remove() unconditionally
+  // dereferences elm->prev/elm->next with no null guard -- removing a
+  // never-added listener segfaults on those nulls. This was the actual
+  // cause of a real crash (Alt+Shift+Q closing a foot window with
+  // another still open): confirmed via a temporary per-line DEBUGTRACE
+  // fprintf (added, used, removed) showing every *other* listener
+  // removed cleanly and the crash landing exactly here. Add the
+  // wl_list_remove() back only once something actually wires this
+  // listener up via wl_signal_add() for real XWayland toplevels.
+
   // container_tree is a plain wlr_scene_tree_create(), unlike scene_tree
   // (owned/auto-destroyed by wlr_scene_xdg_surface_create alongside the
   // xdg_surface) -- nothing else destroys it, so it would otherwise leak
@@ -136,10 +194,22 @@ static void xdg_toplevel_surface_commit(wl_listener* listener, void*) {
   // wlroots' flag for "the surface just initialized, safe to configure
   // now" (same gate as the layer-shell path, see layer_surface.cpp).
   // Size (0, 0) tells the client to pick its own natural size.
-  if (!view->xdg_toplevel->base->initial_commit) {
+  if (view->xdg_toplevel->base->initial_commit) {
+    wlr_xdg_toplevel_set_size(view->xdg_toplevel, 0, 0);
     return;
   }
-  wlr_xdg_toplevel_set_size(view->xdg_toplevel, 0, 0);
+  // Border rects must be sized off the client's just-committed geometry,
+  // not the size we last requested -- wlr_xdg_toplevel_set_size() (called
+  // from Output::relayout() on every tile/promote/float-toggle) is async:
+  // the client hasn't actually resized when that call returns, so drawing
+  // borders synchronously right after it uses stale geometry. Concretely
+  // this showed up as a second, empty, wrongly-sized bordered box left
+  // behind below a tiled window's real content -- resize_border()'s
+  // border_bottom/border_right rects, positioned off the OLD width/height
+  // that was still current at the moment relayout() called them. Doing it
+  // here instead, after the client's own commit lands, keeps geometry and
+  // border in sync on every resize, tiled or not.
+  view->resize_border();
 }
 
 static void xdg_toplevel_request_move(wl_listener* listener, void*) {
@@ -148,6 +218,62 @@ static void xdg_toplevel_request_move(wl_listener* listener, void*) {
 
 static void xdg_toplevel_request_resize(wl_listener* listener, void*) {
   (void)listener;  // Phase 1 scope: floating interactive resize.
+}
+
+// Owns the one commit listener a toplevel's xdg_popup needs to actually
+// finish configuring -- see PopupHandle::on_commit below for why this is
+// required at all (not just cosmetic scene-node setup like
+// layer_surface_new_popup gets away with for the launcher, which never
+// triggers this path).
+struct PopupHandle {
+  Server* server;
+  wlr_xdg_popup* popup;
+  wl_listener commit{};
+  wl_listener destroy{};
+};
+
+static void popup_handle_destroy(wl_listener* listener, void*) {
+  PopupHandle* handle = wl_container_of(listener, handle, destroy);
+  wl_list_remove(&handle->commit.link);
+  wl_list_remove(&handle->destroy.link);
+  delete handle;
+}
+
+static void popup_handle_commit(wl_listener* listener, void*) {
+  PopupHandle* handle = wl_container_of(listener, handle, commit);
+  // wlr_xdg_popup_unconstrain_from_box() is what actually finishes the
+  // popup's configure sequence (it calls wlr_xdg_surface_schedule_configure
+  // internally) -- without calling it at all, GTK's dropdown/color-picker
+  // popups sat forever waiting for a configure that never came, which is
+  // why clicking a dropdown looked like the whole app "hung": the main
+  // window still responded to the click event itself (hence the focus
+  // ring), but the popup surface never finished initializing so nothing
+  // ever rendered or received further input. Same initial_commit gate as
+  // xdg_toplevel_surface_commit/layer_surface_surface_commit -- calling
+  // schedule_configure (transitively, via unconstrain) before that flips
+  // true logs "A configure is scheduled for an uninitialized xdg_surface"
+  // and the popup still never configures.
+  if (!handle->popup->base->initial_commit) {
+    return;
+  }
+  wlr_box output_box{};
+  wlr_output_layout_get_box(handle->server->output_layout(), nullptr, &output_box);
+  wlr_xdg_popup_unconstrain_from_box(handle->popup, &output_box);
+}
+
+static void xdg_toplevel_new_popup(wl_listener* listener, void* data) {
+  View* view = wl_container_of(listener, view, new_popup);
+  auto* popup = static_cast<wlr_xdg_popup*>(data);
+  // Parent the popup's scene node into the toplevel's own tree so
+  // dropdown menus, color pickers, etc. (GtkDropDown/GtkColorButton in
+  // fleetwm-settings) stack correctly above the window's own content.
+  wlr_scene_xdg_surface_create(view->scene_tree, popup->base);
+
+  auto* handle = new PopupHandle{view->server, popup};
+  handle->commit.notify = popup_handle_commit;
+  wl_signal_add(&popup->base->surface->events.commit, &handle->commit);
+  handle->destroy.notify = popup_handle_destroy;
+  wl_signal_add(&popup->base->events.destroy, &handle->destroy);
 }
 
 void server_new_xdg_toplevel(wl_listener* listener, void* data) {
@@ -187,6 +313,8 @@ void server_new_xdg_toplevel(wl_listener* listener, void* data) {
   wl_signal_add(&toplevel->events.request_resize, &view->request_resize);
   view->surface_commit.notify = xdg_toplevel_surface_commit;
   wl_signal_add(&toplevel->base->surface->events.commit, &view->surface_commit);
+  view->new_popup.notify = xdg_toplevel_new_popup;
+  wl_signal_add(&toplevel->base->events.new_popup, &view->new_popup);
 
   server->views.push_front(std::move(view));
 }
@@ -265,6 +393,18 @@ void server_new_input(wl_listener* listener, void* data) {
   } else if (device->type == WLR_INPUT_DEVICE_POINTER) {
     wlr_cursor_attach_input_device(server->cursor_, device);
   }
+}
+
+void server_new_virtual_pointer(wl_listener* listener, void* data) {
+  Server* server = wl_container_of(listener, server, new_virtual_pointer_);
+  auto* event = static_cast<wlr_virtual_pointer_v1_new_pointer_event*>(data);
+  wlr_cursor_attach_input_device(server->cursor_, &event->new_pointer->pointer.base);
+}
+
+void server_new_virtual_keyboard(wl_listener* listener, void* data) {
+  Server* server = wl_container_of(listener, server, new_virtual_keyboard_);
+  auto* virtual_keyboard = static_cast<wlr_virtual_keyboard_v1*>(data);
+  new Keyboard(server, &virtual_keyboard->keyboard);  // owns itself; see server_new_input
 }
 
 // -- cursor ------------------------------------------------------------
@@ -387,6 +527,12 @@ void server_request_set_selection(wl_listener* listener, void* data) {
 Server::Server() = default;
 
 Server::~Server() {
+  if (theme_watch_source_) {
+    wl_event_source_remove(theme_watch_source_);
+  }
+  if (theme_watch_fd_ >= 0) {
+    close(theme_watch_fd_);
+  }
   if (display_) {
     wl_display_destroy_clients(display_);
     wl_display_destroy(display_);
@@ -460,6 +606,14 @@ bool Server::init() {
   wlr_cursor_attach_output_layout(cursor_, output_layout_);
   cursor_mgr_ = wlr_xcursor_manager_create(nullptr, 24);
 
+  virtual_pointer_manager_ = wlr_virtual_pointer_manager_v1_create(display_);
+  new_virtual_pointer_.notify = server_new_virtual_pointer;
+  wl_signal_add(&virtual_pointer_manager_->events.new_virtual_pointer, &new_virtual_pointer_);
+
+  virtual_keyboard_manager_ = wlr_virtual_keyboard_manager_v1_create(display_);
+  new_virtual_keyboard_.notify = server_new_virtual_keyboard;
+  wl_signal_add(&virtual_keyboard_manager_->events.new_virtual_keyboard, &new_virtual_keyboard_);
+
   cursor_motion_.notify = server_cursor_motion;
   wl_signal_add(&cursor_->events.motion, &cursor_motion_);
   cursor_motion_absolute_.notify = server_cursor_motion_absolute;
@@ -505,6 +659,12 @@ bool Server::init() {
     wlr_log(WLR_ERROR, "failed to start IPC socket; workspace switching via bar will not work");
   }
 
+  theme_config_ = load_theme_config();
+  if (!start_theme_watch()) {
+    wlr_log(WLR_ERROR,
+            "failed to start theme.toml inotify watch; live theme reload will not work");
+  }
+
 #if FLEETWM_XWAYLAND
   if (xwayland_) {
     setenv("DISPLAY", xwayland_->display_name, true);
@@ -520,6 +680,16 @@ void Server::run() {
 
 void Server::focus_view(View* view) {
   if (!view) {
+    wlr_surface* prev_surface = seat_->keyboard_state.focused_surface;
+    if (prev_surface) {
+      for (const std::unique_ptr<View>& candidate : views) {
+        if (candidate->surface() == prev_surface) {
+          candidate->focused = false;
+          candidate->resize_border();
+          break;
+        }
+      }
+    }
     wlr_seat_keyboard_clear_focus(seat_);
     return;
   }
@@ -535,6 +705,16 @@ void Server::focus_view(View* view) {
     if (prev_toplevel) {
       wlr_xdg_toplevel_set_activated(prev_toplevel, false);
     }
+    // Clear the focus border on whichever View previously held focus, if
+    // any -- prev_surface alone doesn't identify the owning View, so scan
+    // for it the same way focused_view() (input.cpp) does.
+    for (const std::unique_ptr<View>& candidate : views) {
+      if (candidate->surface() == prev_surface) {
+        candidate->focused = false;
+        candidate->resize_border();
+        break;
+      }
+    }
   }
 
   auto it = std::find_if(views.begin(), views.end(),
@@ -547,6 +727,8 @@ void Server::focus_view(View* view) {
   if (view->kind == View::Kind::XdgToplevel && view->xdg_toplevel) {
     wlr_xdg_toplevel_set_activated(view->xdg_toplevel, true);
   }
+  view->focused = true;
+  view->resize_border();
 
   wlr_keyboard* keyboard = wlr_seat_get_keyboard(seat_);
   if (keyboard) {
@@ -579,6 +761,68 @@ wlr_scene_tree* Server::layer_tree_for(zwlr_layer_shell_v1_layer layer) {
 
 void Server::set_default_cursor_image() {
   wlr_cursor_set_xcursor(cursor_, cursor_mgr_, "left_ptr");
+}
+
+void Server::reload_theme_config() {
+  theme_config_ = load_theme_config();
+  for (const std::unique_ptr<View>& view : views) {
+    view->resize_border();
+  }
+}
+
+int server_theme_watch_readable(int fd, uint32_t, void* data) {
+  auto* server = static_cast<Server*>(data);
+  // inotify events arrive batched in one read(); a single save can emit
+  // more than one (e.g. a CLOSE_WRITE plus a separate MOVED_TO for an
+  // atomic rename-into-place save), so drain everything available and
+  // reload once rather than once per event -- reload_theme_config() is
+  // cheap and idempotent, but there's no reason to redo it several
+  // times for what the user experienced as one save.
+  alignas(struct inotify_event) char buf[4096];
+  bool got_theme_event = false;
+  ssize_t n;
+  while ((n = read(fd, buf, sizeof(buf))) > 0) {
+    ssize_t offset = 0;
+    while (offset < n) {
+      auto* event = reinterpret_cast<struct inotify_event*>(buf + offset);
+      if (event->len > 0 && std::strcmp(event->name, "theme.toml") == 0) {
+        got_theme_event = true;
+      }
+      offset += static_cast<ssize_t>(sizeof(struct inotify_event)) + event->len;
+    }
+  }
+  if (got_theme_event) {
+    server->reload_theme_config();
+  }
+  return 0;
+}
+
+bool Server::start_theme_watch() {
+  theme_watch_fd_ = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
+  if (theme_watch_fd_ < 0) {
+    return false;
+  }
+
+  // Watch theme.toml's parent directory rather than the file itself:
+  // save_theme_config() (theme.cpp) writes via a fresh std::ofstream each
+  // call, and the directory needs to already exist (fs::create_directories
+  // there) before the first save ever happens -- watching the directory
+  // means the watch survives across saves regardless of exactly how each
+  // one lands on disk (in-place write vs. a tool that writes-then-renames).
+  std::filesystem::path config_dir = std::filesystem::path(user_config_path()).parent_path();
+  std::filesystem::create_directories(config_dir);
+
+  int wd = inotify_add_watch(theme_watch_fd_, config_dir.c_str(), IN_CLOSE_WRITE | IN_MOVED_TO);
+  if (wd < 0) {
+    close(theme_watch_fd_);
+    theme_watch_fd_ = -1;
+    return false;
+  }
+
+  wl_event_loop* loop = wl_display_get_event_loop(display_);
+  theme_watch_source_ = wl_event_loop_add_fd(loop, theme_watch_fd_, WL_EVENT_READABLE,
+                                              server_theme_watch_readable, this);
+  return theme_watch_source_ != nullptr;
 }
 
 void Server::notify_keyboard_added() {

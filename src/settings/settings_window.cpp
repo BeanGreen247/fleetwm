@@ -89,6 +89,18 @@ void SettingsWindow::build(GtkApplication* app) {
   gtk_box_append(GTK_BOX(accent_box), accent_color_button_);
   gtk_box_append(GTK_BOX(root_box), labeled_row("Accent color", accent_box));
 
+  // Focus border thickness: how many px wide the accent-colored ring
+  // drawn around the currently-focused window is. 0-10px covers
+  // "off" through "chunky"; the compositor clamps nothing further, so
+  // this range is just a sane UI bound, not a hard limit enforced
+  // elsewhere.
+  GtkWidget* thickness_spin =
+      gtk_spin_button_new_with_range(0, 10, 1);
+  gtk_spin_button_set_value(GTK_SPIN_BUTTON(thickness_spin), config_.focus_border_thickness_px);
+  g_signal_connect(thickness_spin, "value-changed",
+                    G_CALLBACK(on_focus_border_thickness_changed), this);
+  gtk_box_append(GTK_BOX(root_box), labeled_row("Focus border (px)", thickness_spin));
+
   gtk_window_set_child(GTK_WINDOW(window_), root_box);
   gtk_window_present(GTK_WINDOW(window_));
 }
@@ -134,6 +146,13 @@ void SettingsWindow::on_accent_color_set(GtkColorButton* button, gpointer user_d
   std::snprintf(hex, sizeof(hex), "#%02x%02x%02x", static_cast<int>(rgba.red * 255),
                 static_cast<int>(rgba.green * 255), static_cast<int>(rgba.blue * 255));
   self->config_.accent.hex = hex;
+  self->save();
+}
+
+void SettingsWindow::on_focus_border_thickness_changed(GtkSpinButton* button,
+                                                         gpointer user_data) {
+  auto* self = static_cast<SettingsWindow*>(user_data);
+  self->config_.focus_border_thickness_px = gtk_spin_button_get_value_as_int(button);
   self->save();
 }
 

@@ -26,6 +26,18 @@ std::vector<std::string> build_env(const passwd* pw,
   env.push_back(std::string("SHELL=") + pw->pw_shell);
   env.emplace_back("PATH=/usr/local/bin:/usr/bin:/bin");
   env.emplace_back("XDG_SESSION_TYPE=wayland");
+  // Fallback only -- pam_systemd normally supplies XDG_RUNTIME_DIR itself
+  // in pam_envlist below, which (appended after this floor) overrides it.
+  // But pam_systemd registering the session with logind and logind
+  // actually creating/exporting /run/user/<uid> is not guaranteed to have
+  // finished by the time PAM hands control back here -- observed in
+  // practice after rapid repeated logins, where pam_envlist simply omits
+  // XDG_RUNTIME_DIR and the compositor fails to init with "XDG_RUNTIME_DIR
+  // is invalid or not set", bouncing the user straight back to the login
+  // prompt with no indication why. /run/user/<uid> is the fixed, standard
+  // systemd-logind convention (confirmed via `loginctl show-user`), safe
+  // to assume even when PAM's own copy hasn't arrived yet.
+  env.push_back(std::string("XDG_RUNTIME_DIR=/run/user/") + std::to_string(pw->pw_uid));
 
   for (const std::string& kv : pam_envlist) {
     env.push_back(kv);

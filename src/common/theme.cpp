@@ -2,6 +2,7 @@
 
 #include <toml++/toml.h>
 
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -97,6 +98,9 @@ ThemeConfig load_theme_config() {
       config.accent.hex = *v;
     }
   }
+  if (auto v = table["focus_border_thickness_px"].value<int64_t>()) {
+    config.focus_border_thickness_px = static_cast<int>(*v);
+  }
 
   return config;
 }
@@ -111,12 +115,32 @@ void save_theme_config(const ThemeConfig& config) {
   table.insert_or_assign("theme", theme_name_to_string(config.theme));
   table.insert_or_assign("nav_mode", nav_mode_to_string(config.nav_mode));
   table.insert_or_assign("accent", config.accent.auto_extract ? "auto" : config.accent.hex);
+  table.insert_or_assign("focus_border_thickness_px",
+                          static_cast<int64_t>(config.focus_border_thickness_px));
 
   std::ofstream out(path);
   if (!out) {
     throw std::runtime_error("failed to open " + path.string() + " for writing");
   }
   out << table << "\n";
+}
+
+bool parse_hex_color(const std::string& hex, float out_rgba[4]) {
+  if (hex.size() != 7 || hex[0] != '#') {
+    return false;
+  }
+  unsigned int r, g, b;
+  // %2x consumes exactly two hex digits per component; sscanf returning
+  // fewer than 3 conversions means a malformed string (non-hex chars,
+  // early null, etc.) rather than a valid #rrggbb.
+  if (std::sscanf(hex.c_str() + 1, "%2x%2x%2x", &r, &g, &b) != 3) {
+    return false;
+  }
+  out_rgba[0] = static_cast<float>(r) / 255.0f;
+  out_rgba[1] = static_cast<float>(g) / 255.0f;
+  out_rgba[2] = static_cast<float>(b) / 255.0f;
+  out_rgba[3] = 1.0f;
+  return true;
 }
 
 }  // namespace fleetwm

@@ -32,6 +32,17 @@ void layer_surface_unmap(wl_listener* listener, void*) {
 void layer_surface_destroy(wl_listener* listener, void*) {
   LayerSurface* ls = wl_container_of(listener, ls, destroy);
   Server* server = ls->server;
+  // Remove listeners before erasing ls -- see xdg_toplevel_destroy
+  // (server.cpp) for the full explanation of why this ordering matters
+  // (tinywl.c reference pattern; a destructor-based removal invoked
+  // indirectly through remove_if crashed for View under the equivalent
+  // real-world teardown race, so this is fixed the same way up front
+  // rather than waiting to hit the same bug here too).
+  wl_list_remove(&ls->map.link);
+  wl_list_remove(&ls->unmap.link);
+  wl_list_remove(&ls->destroy.link);
+  wl_list_remove(&ls->new_popup.link);
+  wl_list_remove(&ls->surface_commit.link);
   server->layer_surfaces.remove_if(
       [ls](const std::unique_ptr<LayerSurface>& l) { return l.get() == ls; });
 }

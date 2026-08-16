@@ -1,8 +1,10 @@
 #include "output.hpp"
 
 #include <algorithm>
+#include <cstdio>
 #include <ctime>
 #include <memory>
+#include <vector>
 
 #include "server.hpp"
 #include "view.hpp"
@@ -83,6 +85,70 @@ void Output::switch_workspace(int index) {
     if (!view->pinned) {
       wlr_scene_node_set_enabled(&view->container_tree->node, true);
     }
+  }
+
+  relayout();
+}
+
+namespace {
+
+// Positions container_tree at (x, y) and asks the client to resize its
+// surface to (w, h) minus the view's current border inset -- container_tree
+// is the outer box (border + content), but wlr_xdg_toplevel_set_size sets
+// the client's content size, not the outer box, so the border would
+// otherwise eat into the requested tile size instead of framing it.
+void tile_view(View* view, int x, int y, int w, int h) {
+  wlr_scene_node_set_position(&view->container_tree->node, x, y);
+  int thickness = view->border_thickness();
+  int content_w = std::max(1, w - 2 * thickness);
+  int content_h = std::max(1, h - 2 * thickness);
+  if (view->kind == View::Kind::XdgToplevel && view->xdg_toplevel) {
+    wlr_xdg_toplevel_set_size(view->xdg_toplevel, content_w, content_h);
+  }
+  // NOT calling view->resize_border() here: wlr_xdg_toplevel_set_size()
+  // is async, so the client hasn't actually resized yet -- border rects
+  // must stay in sync with the client's real committed geometry, which
+  // xdg_toplevel_surface_commit (server.cpp) updates once the resize
+  // actually lands. Calling it here too would draw borders against the
+  // stale pre-resize size for one frame (see server.cpp's commit handler
+  // comment for the full story).
+}
+
+}  // namespace
+
+void Output::relayout() {
+  std::vector<View*> tiled;
+  for (View* view : active_workspace().views()) {
+    if (view->pinned || view->floating || !view->container_tree->node.enabled) {
+      continue;
+    }
+    tiled.push_back(view);
+  }
+  if (tiled.empty()) {
+    return;
+  }
+
+  wlr_box box{};
+  wlr_output_layout_get_box(server->output_layout(), wlr_output_ptr, &box);
+
+  if (tiled.size() == 1) {
+    tile_view(tiled[0], box.x, box.y, box.width, box.height);
+    return;
+  }
+
+  int master_width = box.width / 2;
+  tile_view(tiled[0], box.x, box.y, master_width, box.height);
+
+  int stack_count = static_cast<int>(tiled.size()) - 1;
+  int stack_x = box.x + master_width;
+  int stack_width = box.width - master_width;
+  int stack_height = box.height / stack_count;
+  for (int i = 0; i < stack_count; ++i) {
+    int y = box.y + i * stack_height;
+    // Last stripe absorbs any remainder from integer division so the
+    // stack always exactly fills the output height.
+    int h = (i == stack_count - 1) ? (box.y + box.height - y) : stack_height;
+    tile_view(tiled[i + 1], stack_x, y, stack_width, h);
   }
 }
 

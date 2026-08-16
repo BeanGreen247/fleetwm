@@ -15,6 +15,8 @@ extern "C" {
 #include <wlr/types/wlr_screencopy_v1.h>
 #include <wlr/types/wlr_seat.h>
 #include <wlr/types/wlr_subcompositor.h>
+#include <wlr/types/wlr_virtual_keyboard_v1.h>
+#include <wlr/types/wlr_virtual_pointer_v1.h>
 #include <wlr/types/wlr_xcursor_manager.h>
 #include <wlr/types/wlr_xdg_decoration_v1.h>
 #include <wlr/types/wlr_xdg_output_v1.h>
@@ -26,6 +28,7 @@ extern "C" {
 #include <vector>
 
 #include "config.h"
+#include "theme.hpp"
 #include "workspace.hpp"
 
 #if FLEETWM_XWAYLAND
@@ -102,6 +105,17 @@ class Server {
   // keybind handling, ipc_server.cpp) that don't already hold an Output*.
   Workspace* active_workspace_for_focused_output();
 
+  // Current theme.toml contents, loaded at init() and kept fresh by an
+  // inotify watch on the config file (see theme_watch_fd_ below) -- any
+  // write to theme.toml, from fleetwm-settings or anything else, is
+  // picked up live without needing a re-login or an explicit IPC ping.
+  const ThemeConfig& theme_config() const { return theme_config_; }
+
+  // Re-reads theme.toml into theme_config_ and refreshes every current
+  // View's border (color/thickness may have changed). Called once at
+  // init() and again on every inotify-detected write to the config file.
+  void reload_theme_config();
+
   std::list<std::unique_ptr<View>> views;  // stacking order: front = topmost
   std::list<std::unique_ptr<LayerSurface>> layer_surfaces;
   std::vector<std::unique_ptr<Output>> outputs;
@@ -135,6 +149,11 @@ class Server {
 
   wlr_scene_tree* layer_tree_for(zwlr_layer_shell_v1_layer layer);
 
+  // Sets up the inotify watch backing reload_theme_config()'s live
+  // reload. Returns false (non-fatal -- theming just won't live-update)
+  // on any setup failure.
+  bool start_theme_watch();
+
   wlr_xdg_shell* xdg_shell_ = nullptr;
   wl_listener new_xdg_toplevel_{};
 
@@ -158,11 +177,38 @@ class Server {
   // output geometry -- without it grim can't determine capture
   // dimensions at all and fails outright.
   wlr_xdg_output_manager_v1* xdg_output_manager_ = nullptr;
+  // wlr-virtual-pointer-unstable-v1: lets tools like wlrctl inject
+  // synthetic pointer motion/button/axis events, same as a real input
+  // device would -- used for scripted UI testing over SSH where no
+  // physical mouse is available. new_virtual_pointer hands back a
+  // wlr_virtual_pointer_v1 whose embedded wlr_pointer.base is a real
+  // wlr_input_device, so it's routed through the same
+  // wlr_cursor_attach_input_device() path as server_new_input's
+  // WLR_INPUT_DEVICE_POINTER branch rather than needing separate logic.
+  wlr_virtual_pointer_manager_v1* virtual_pointer_manager_ = nullptr;
+  wl_listener new_virtual_pointer_{};
+  // wlr-virtual-keyboard-unstable-v1: same rationale as
+  // virtual_pointer_manager_ above, but for synthetic key events (wtype).
+  wlr_virtual_keyboard_manager_v1* virtual_keyboard_manager_ = nullptr;
+  wl_listener new_virtual_keyboard_{};
 
   wlr_cursor* cursor_ = nullptr;
   wlr_xcursor_manager* cursor_mgr_ = nullptr;
   wlr_seat* seat_ = nullptr;
   int keyboard_count_ = 0;
+
+  ThemeConfig theme_config_;
+  // inotify fd watching theme.toml's parent directory (not the file
+  // itself -- fleetwm-settings' save_theme_config() writes via a fresh
+  // std::ofstream each time, which some inotify setups see as the watched
+  // file being replaced rather than modified in place; watching the
+  // directory for IN_CLOSE_WRITE/IN_MOVED_TO on that specific filename
+  // catches both a plain in-place write and an atomic rename-into-place
+  // save). Wired into the compositor's existing wl_event_loop via
+  // wl_event_loop_add_fd(), same integration pattern IpcServer already
+  // uses for its listen/client sockets.
+  int theme_watch_fd_ = -1;
+  wl_event_source* theme_watch_source_ = nullptr;
 
   wl_listener new_output_{};
   wl_listener new_input_{};
@@ -185,6 +231,9 @@ class Server {
   friend void server_new_layer_surface(wl_listener* listener, void* data);
   friend void server_new_toplevel_decoration(wl_listener* listener, void* data);
   friend void server_new_input(wl_listener* listener, void* data);
+  friend void server_new_virtual_pointer(wl_listener* listener, void* data);
+  friend void server_new_virtual_keyboard(wl_listener* listener, void* data);
+  friend int server_theme_watch_readable(int fd, uint32_t mask, void* data);
   friend void server_cursor_motion(wl_listener* listener, void* data);
   friend void server_cursor_motion_absolute(wl_listener* listener, void* data);
   friend void server_cursor_button(wl_listener* listener, void* data);

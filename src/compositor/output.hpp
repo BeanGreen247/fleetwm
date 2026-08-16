@@ -37,11 +37,19 @@ class Output {
 
   Workspace& active_workspace() { return workspaces[active_workspace_index]; }
 
-  // Switches to workspace `index` (0-9) and requests a redraw. Layout of
-  // views within the newly active workspace is Phase 1 scope (master-stack
-  // tiling); Phase 0 just toggles scene-tree visibility per view so the
-  // switch is at least observably correct.
+  // Switches to workspace `index` (0-9), toggles scene-tree visibility per
+  // view, and re-tiles the newly-active workspace via relayout().
   void switch_workspace(int index);
+
+  // dwm/i3-style master-stack: the first (topmost-focused-first, per
+  // Server::focus_view's splice-to-front) view in the active workspace's
+  // tiled set becomes master and takes the left half of the output; the
+  // rest split the right half into equal horizontal stripes. Pinned and
+  // floating views are skipped entirely -- they keep whatever
+  // position/size they already have. Safe to call any time the active
+  // workspace's visible-view set changes (map/unmap/promote/float-toggle/
+  // workspace-switch).
+  void relayout();
 };
 
 }  // namespace fleetwm
