@@ -78,6 +78,19 @@ static void xdg_toplevel_map(wl_listener* listener, void*) {
   // xdg_toplevel_surface_commit's size-0,0 "client decides" configure).
   view->resize_border();
 
+  // fleetwm-settings always opens floating and centered, on top of
+  // whatever's tiled in the workspace it lands in -- explicit user
+  // request. It's a single-instance panel, not something that should
+  // compete for tiling space the way a terminal would. Matched by its
+  // GApplication ID (settings/main.cpp's gtk_application_new() call),
+  // not window title, since that's stable regardless of locale/theme.
+  bool is_settings = view->kind == View::Kind::XdgToplevel && view->xdg_toplevel &&
+                      view->xdg_toplevel->app_id &&
+                      std::strcmp(view->xdg_toplevel->app_id, "dev.fleetwm.Settings") == 0;
+  if (is_settings) {
+    view->set_floating(true);
+  }
+
   if (!view->server->outputs.empty()) {
     Output* output = view->server->outputs.front().get();
     Workspace& workspace = output->active_workspace();
@@ -85,12 +98,23 @@ static void xdg_toplevel_map(wl_listener* listener, void*) {
     view->workspace = &workspace;
     view->output = output;
 
-    // relayout() below handles tiled placement; this is just a sane
-    // fallback position (full output box) for the pinned/floating case,
-    // which relayout() skips entirely.
     wlr_box box{};
     wlr_output_layout_get_box(view->server->output_layout(), output->wlr_output_ptr, &box);
-    wlr_scene_node_set_position(&view->container_tree->node, box.x, box.y);
+
+    if (is_settings) {
+      // Center using the toplevel's own committed geometry (known now --
+      // see the resize_border() comment above for why).
+      wlr_box geo{};
+      wlr_xdg_surface_get_geometry(view->xdg_toplevel->base, &geo);
+      wlr_scene_node_set_position(&view->container_tree->node, box.x + (box.width - geo.width) / 2,
+                                   box.y + (box.height - geo.height) / 2);
+      wlr_scene_node_raise_to_top(&view->container_tree->node);
+    } else {
+      // relayout() below handles tiled placement; this is just a sane
+      // fallback position (full output box) for the pinned/floating
+      // case, which relayout() skips entirely.
+      wlr_scene_node_set_position(&view->container_tree->node, box.x, box.y);
+    }
 
     output->relayout();
   }
