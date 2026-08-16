@@ -70,6 +70,21 @@ void server_new_output(wl_listener* listener, void* data) {
 
 // -- xdg toplevels -------------------------------------------------------
 
+// Re-asserts View::always_on_top within `workspace` -- called after every
+// focus change (Server::focus_view) so raising the newly-focused view
+// there can never leave it above an always-on-top view (e.g.
+// fleetwm-settings) that happens to share the same workspace.
+void raise_always_on_top_views(Workspace* workspace) {
+  if (!workspace) {
+    return;
+  }
+  for (View* v : workspace->views()) {
+    if (v->always_on_top) {
+      wlr_scene_node_raise_to_top(&v->container_tree->node);
+    }
+  }
+}
+
 static void xdg_toplevel_map(wl_listener* listener, void*) {
   View* view = wl_container_of(listener, view, map);
 
@@ -89,6 +104,7 @@ static void xdg_toplevel_map(wl_listener* listener, void*) {
                       std::strcmp(view->xdg_toplevel->app_id, "dev.fleetwm.Settings") == 0;
   if (is_settings) {
     view->set_floating(true);
+    view->always_on_top = true;
   }
 
   if (!view->server->outputs.empty()) {
@@ -793,12 +809,14 @@ void Server::focus_view(View* view) {
   if (!view) {
     wlr_surface* prev_surface = seat_->keyboard_state.focused_surface;
     Output* prev_output = nullptr;
+    Workspace* prev_workspace = nullptr;
     if (prev_surface) {
       for (const std::unique_ptr<View>& candidate : views) {
         if (candidate->surface() == prev_surface) {
           candidate->focused = false;
           candidate->resize_border();
           prev_output = candidate->output;
+          prev_workspace = candidate->workspace;
           break;
         }
       }
@@ -810,6 +828,7 @@ void Server::focus_view(View* view) {
     if (prev_output) {
       prev_output->relayout();
     }
+    raise_always_on_top_views(prev_workspace);
     if (ipc_server) {
       ipc_server->broadcast_focused_title("");
     }
@@ -845,6 +864,10 @@ void Server::focus_view(View* view) {
     views.splice(views.begin(), views, it);  // move to front (topmost) without destroying
   }
   wlr_scene_node_raise_to_top(&view->container_tree->node);
+  // Re-assert always-on-top (fleetwm-settings) above whatever was just
+  // raised, if it shares this view's workspace -- see the comment on
+  // View::always_on_top (view.hpp) and raise_always_on_top_views() above.
+  raise_always_on_top_views(view->workspace);
 
   if (view->kind == View::Kind::XdgToplevel && view->xdg_toplevel) {
     wlr_xdg_toplevel_set_activated(view->xdg_toplevel, true);

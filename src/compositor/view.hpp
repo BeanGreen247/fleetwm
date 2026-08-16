@@ -75,6 +75,17 @@ class View {
   // tiling so it keeps whatever position/size it last had.
   bool floating = false;
 
+  // Stays raised above every other view *within its own workspace*,
+  // re-asserted on every focus change (Server::focus_view) -- unlike
+  // pinned, this does not move the view to layer_pinned_ or bypass
+  // Output::switch_workspace(), so it's still hidden/shown with whatever
+  // workspace it was opened into, it just never loses the top spot to
+  // some other view being focused/raised while visible there. Currently
+  // only set for fleetwm-settings (server.cpp's xdg_toplevel_map, matched
+  // by app_id) -- explicit user request for the settings panel to always
+  // be reachable on top without following you across workspaces.
+  bool always_on_top = false;
+
   // Whether this view currently holds keyboard focus -- Server::focus_view
   // sets this on the old/new focused view on every focus change and calls
   // resize_border() so the focus indicator stays in sync without every
