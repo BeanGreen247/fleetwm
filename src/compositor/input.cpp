@@ -158,11 +158,6 @@ void keyboard_key(wl_listener* listener, void* data) {
   bool alt_held = (wlr_keyboard_get_modifiers(keyboard->wlr_keyboard_ptr) & WLR_MODIFIER_ALT) != 0;
   bool handled = false;
 
-  if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
-    std::fprintf(stderr, "fleetwm: key press keycode=%u alt_held=%d nsyms=%d\n", keycode,
-                 alt_held, nsyms);
-  }
-
   // While locked, no global Alt+<key> keybind (spawn terminal, launcher,
   // close window, etc.) may fire -- otherwise Alt+Return would spawn a
   // terminal straight through the lock screen. Every other key still

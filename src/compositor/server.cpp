@@ -702,11 +702,19 @@ bool Server::confirm_unlock(pid_t requesting_pid) {
 }
 
 bool Server::init() {
-  // TEMPORARY: bumped to WLR_DEBUG to diagnose the "error in client
-  // communication" / "Lost connection to Wayland compositor" failure
-  // seen when fleetwm-launcher connects -- revert to WLR_INFO once
-  // root-caused.
-  wlr_log_init(WLR_DEBUG, nullptr);
+  // WLR_DEBUG logs every single cursor motion and scene/render commit --
+  // real per-frame CPU cost (string formatting + a session-log write on
+  // every one, confirmed via fleetwm-session.log filling with repeated
+  // "Falling back to software cursor"-class spam during nothing more
+  // than normal mouse movement) that was only ever meant to diagnose one
+  // specific bug (a "Lost connection to Wayland compositor" failure when
+  // fleetwm-launcher connected). That bug has long since been fixed --
+  // the launcher has worked reliably in every session since -- so this
+  // is reverted to WLR_INFO, wlroots' own normal-operation default (still
+  // logs real problems, just not a debug trace of everything the
+  // compositor does every frame). Part of the standing CPU/memory
+  // efficiency goal, not a one-off cleanup.
+  wlr_log_init(WLR_INFO, nullptr);
 
   display_ = wl_display_create();
 
