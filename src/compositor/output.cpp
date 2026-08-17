@@ -218,7 +218,8 @@ void Output::update_usable_area() {
 void Output::relayout() {
   std::vector<View*> tiled;
   for (View* view : active_workspace().views()) {
-    if (view->pinned || view->floating || !view->container_tree->node.enabled) {
+    if (view->pinned || view->floating || view->fullscreen ||
+        !view->container_tree->node.enabled) {
       continue;
     }
     tiled.push_back(view);

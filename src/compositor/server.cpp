@@ -201,6 +201,7 @@ static void xdg_toplevel_destroy(wl_listener* listener, void*) {
   wl_list_remove(&view->destroy.link);
   wl_list_remove(&view->request_move.link);
   wl_list_remove(&view->request_resize.link);
+  wl_list_remove(&view->request_fullscreen.link);
   wl_list_remove(&view->surface_commit.link);
   wl_list_remove(&view->new_popup.link);
   // NOT removing view->request_configure here even though it's compiled
@@ -267,6 +268,14 @@ static void xdg_toplevel_request_move(wl_listener* listener, void*) {
 
 static void xdg_toplevel_request_resize(wl_listener* listener, void*) {
   (void)listener;  // Phase 1 scope: floating interactive resize.
+}
+
+static void xdg_toplevel_request_fullscreen(wl_listener* listener, void*) {
+  View* view = wl_container_of(listener, view, request_fullscreen);
+  // wlroots updates toplevel->requested.fullscreen before firing this
+  // event (there's no useful payload in `data` itself) -- see
+  // wlr_xdg_shell.h's wlr_xdg_toplevel_requested doc comment.
+  view->set_fullscreen(view->xdg_toplevel->requested.fullscreen);
 }
 
 // Owns the one commit listener a toplevel's xdg_popup needs to actually
@@ -360,6 +369,8 @@ void server_new_xdg_toplevel(wl_listener* listener, void* data) {
   wl_signal_add(&toplevel->events.request_move, &view->request_move);
   view->request_resize.notify = xdg_toplevel_request_resize;
   wl_signal_add(&toplevel->events.request_resize, &view->request_resize);
+  view->request_fullscreen.notify = xdg_toplevel_request_fullscreen;
+  wl_signal_add(&toplevel->events.request_fullscreen, &view->request_fullscreen);
   view->surface_commit.notify = xdg_toplevel_surface_commit;
   wl_signal_add(&toplevel->base->surface->events.commit, &view->surface_commit);
   view->new_popup.notify = xdg_toplevel_new_popup;
@@ -732,6 +743,7 @@ bool Server::init() {
   layer_toplevels_ = wlr_scene_tree_create(&scene_->tree);
   layer_pinned_ = wlr_scene_tree_create(&scene_->tree);
   layer_top_ = wlr_scene_tree_create(&scene_->tree);
+  layer_fullscreen_ = wlr_scene_tree_create(&scene_->tree);
   layer_overlay_ = wlr_scene_tree_create(&scene_->tree);
 
   new_output_.notify = server_new_output;
