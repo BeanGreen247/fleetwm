@@ -74,6 +74,20 @@ class GreeterCompositor {
   void notify_keyboard_added();
   void notify_keyboard_removed();
 
+  // True from the first line of ~GreeterCompositor() onward. Guards
+  // keyboard_key()/keyboard_modifiers() (compositor.cpp): wl_display_destroy()
+  // cascades into wlr_keyboard_finish() for every still-attached keyboard,
+  // which itself emits a synthetic "key" event to release any key that
+  // was logically still held (e.g. the Enter that just submitted the
+  // login form, if its release hasn't been processed yet) -- but by that
+  // point in the same teardown cascade, seat_ may already be a dangling
+  // pointer (wlroots does not guarantee the seat's own destroy fires
+  // strictly after every input device's), so calling wlr_seat_
+  // keyboard_notify_key() on it segfaults. Confirmed via gdb: crash was
+  // in wlr_seat_keyboard_notify_key, called from wlr_keyboard_finish,
+  // called from wl_display_destroy, called from ~GreeterCompositor.
+  bool is_shutting_down() const { return shutting_down_; }
+
  private:
   friend void greeter_new_output(wl_listener*, void*);
   friend void greeter_output_frame(wl_listener*, void*);
@@ -110,6 +124,7 @@ class GreeterCompositor {
   wlr_xcursor_manager* cursor_mgr_ = nullptr;
   wlr_seat* seat_ = nullptr;
   int keyboard_count_ = 0;
+  bool shutting_down_ = false;
 
   // Read-only/synthetic-input protocols, same rationale as
   // src/compositor/server.hpp's own copies: wlr-screencopy + xdg-output

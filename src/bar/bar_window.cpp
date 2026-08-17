@@ -407,11 +407,12 @@ void BarWindow::build_power_menu(GtkWidget* parent_box) {
   GMenu* menu = g_menu_new();
   g_menu_append(menu, "Lock", "bar.lock");
   g_menu_append(menu, "Log out", "bar.logout");
+  g_menu_append(menu, "Sleep", "bar.sleep");
   g_menu_append(menu, "Reboot", "bar.reboot");
   g_menu_append(menu, "Shut down", "bar.shutdown");
 
   GSimpleActionGroup* action_group = g_simple_action_group_new();
-  const char* action_names[] = {"lock", "logout", "reboot", "shutdown"};
+  const char* action_names[] = {"lock", "logout", "sleep", "reboot", "shutdown"};
   for (const char* name : action_names) {
     GSimpleAction* action = g_simple_action_new(name, nullptr);
     g_signal_connect(action, "activate", G_CALLBACK(on_power_action), this);
@@ -460,6 +461,9 @@ void BarWindow::on_power_action(GSimpleAction* action, GVariant*, gpointer user_
     argv[0] = "loginctl";
     argv[1] = "terminate-session";
     argv[2] = std::getenv("XDG_SESSION_ID");
+  } else if (std::strcmp(name, "sleep") == 0) {
+    argv[0] = "systemctl";
+    argv[1] = "suspend";
   } else if (std::strcmp(name, "reboot") == 0) {
     argv[0] = "systemctl";
     argv[1] = "reboot";
