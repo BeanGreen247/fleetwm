@@ -63,9 +63,25 @@ echo "==> Configuring build"
 # prebuilt binary) -- a binary built this way will refuse to run
 # correctly on a different CPU model, which is fine here but would NOT
 # be fine for e.g. a .deb built once and shipped to arbitrary machines.
+# -ffunction-sections/-fdata-sections + -Wl,--gc-sections: puts each
+# function/global in its own linker section so the linker can drop ones
+# nothing calls -- LTO already does cross-TU dead-code elimination, but
+# this catches unused code inside libraries/headers LTO doesn't see
+# through (e.g. template instantiations, inline helpers pulled in by a
+# system header) and is essentially free to add alongside it.
+# -fno-semantic-interposition: tells GCC this is a plain executable, not
+# something another library might override symbols in at load time, so
+# it can inline/optimize across function-call boundaries as aggressively
+# as LTO's own analysis allows instead of conservatively assuming any
+# call could be interposed -- meaningful free win specifically because
+# LTO is already on (this flag's benefit is largest exactly when
+# whole-program analysis is already happening).
 meson setup "${BUILD_DIR}" "${SCRIPT_DIR}" --prefix=/usr/local --buildtype=release \
   -Db_ndebug=true -Dstrip=true -Db_lto=true \
-  -Dc_args=-march=native -Dcpp_args=-march=native --reconfigure
+  -Dc_args='-march=native -ffunction-sections -fdata-sections -fno-semantic-interposition' \
+  -Dcpp_args='-march=native -ffunction-sections -fdata-sections -fno-semantic-interposition' \
+  -Dc_link_args=-Wl,--gc-sections -Dcpp_link_args=-Wl,--gc-sections \
+  --reconfigure
 
 echo "==> Building"
 ninja -C "${BUILD_DIR}"
