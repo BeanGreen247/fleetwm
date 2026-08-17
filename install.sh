@@ -46,7 +46,16 @@ echo "==> Setting system default locale to C.UTF-8"
 sudo update-locale LANG=C.UTF-8 LC_ALL=C.UTF-8 LANGUAGE=
 
 echo "==> Configuring build"
-meson setup "${BUILD_DIR}" "${SCRIPT_DIR}" --prefix=/usr/local --buildtype=release --reconfigure
+# -Db_ndebug=true: meson's "release" buildtype alone does NOT disable
+# assert() (that's a separate option) -- every assert-guarded check in
+# the compositor's hot paths (input, render, layout) would otherwise
+# still pay its runtime cost in a "release" build. -Dstrip=true: strips
+# debug symbols from the installed binaries (meson's buildtype also
+# doesn't imply this). Neither changes behavior, both are standard
+# release-build hygiene -- part of the standing "run as efficiently as
+# possible" goal, not a one-off tweak.
+meson setup "${BUILD_DIR}" "${SCRIPT_DIR}" --prefix=/usr/local --buildtype=release \
+  -Db_ndebug=true -Dstrip=true --reconfigure
 
 echo "==> Building"
 ninja -C "${BUILD_DIR}"

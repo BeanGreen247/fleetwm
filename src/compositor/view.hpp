@@ -75,6 +75,19 @@ class View {
   // tiling so it keeps whatever position/size it last had.
   bool floating = false;
 
+  // True while this view holds fullscreen state (client-requested via
+  // xdg_toplevel.set_fullscreen, e.g. a game or video player) --
+  // acknowledged with wlr_xdg_toplevel_set_fullscreen() and reparented
+  // into Server's layer_fullscreen_ tree (above the bar, below any
+  // layer-shell overlay client) at exactly the output's full geometry,
+  // border-less. Skipped by Output::relayout() the same way
+  // pinned/floating are; a single unoccluded fullscreen buffer exactly
+  // matching the output is also what makes wlr_scene_output_commit's own
+  // built-in direct-scanout path eligible to kick in -- no separate
+  // scanout code needed here, wlr_scene already does this automatically
+  // once the precondition (this) is met.
+  bool fullscreen = false;
+
   // Stays raised above every other view *within its own workspace*,
   // re-asserted on every focus change (Server::focus_view) -- unlike
   // pinned, this does not move the view to layer_pinned_ or bypass
@@ -133,6 +146,14 @@ class View {
   // once the surface's actual size is known at map time).
   void set_pinned(bool pinned);
   void set_floating(bool floating);
+  // Requests/clears fullscreen: acknowledges the client's request via
+  // wlr_xdg_toplevel_set_fullscreen(), reparents container_tree into/out
+  // of Server::layer_fullscreen(), and positions/sizes it directly at the
+  // owning output's full geometry (bypassing gaps/usable_area/border
+  // entirely) -- or, when turning off, just triggers a relayout() so
+  // normal tiling picks the view back up. No-op if `output` is null (a
+  // view can't be sized to an output it isn't mapped on yet).
+  void set_fullscreen(bool fullscreen);
   void resize_border();
 
   // Current border thickness in px, per the same pinned/focused priority
@@ -147,6 +168,7 @@ class View {
   wl_listener destroy{};
   wl_listener request_move{};
   wl_listener request_resize{};
+  wl_listener request_fullscreen{};
   wl_listener surface_commit{};
   wl_listener new_popup{};
 

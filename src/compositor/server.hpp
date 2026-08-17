@@ -79,6 +79,13 @@ class Server {
   // workspace) while still sitting under layer-shell popups like the
   // launcher. See View::set_pinned().
   wlr_scene_tree* layer_pinned() const { return layer_pinned_; }
+  // Above layer_top_ (the bar) but below layer_overlay_ -- fullscreen
+  // views live here instead, so a fullscreened app visually covers the
+  // bar (matching normal fullscreen expectations) while a genuine
+  // layer-shell overlay client (fleetwm-locker, fleetwm-launcher) still
+  // stays on top of it, same as any other desktop's z-order. See
+  // View::set_fullscreen().
+  wlr_scene_tree* layer_fullscreen() const { return layer_fullscreen_; }
 
   // Focuses `view`, raising it in the scene graph and handing keyboard
   // focus to its surface. Passing nullptr clears focus.
@@ -188,6 +195,12 @@ class Server {
   wlr_scene_tree* layer_toplevels_ = nullptr;
   wlr_scene_tree* layer_pinned_ = nullptr;
   wlr_scene_tree* layer_top_ = nullptr;
+  // Not one of the four wlr-layer-shell-v1 protocol layers -- fleetwm's
+  // own addition, holding whichever View is currently fullscreen (see
+  // View::set_fullscreen()). Positioned above layer_top_ so a
+  // fullscreened app covers the bar, below layer_overlay_ so a genuine
+  // layer-shell overlay client still stays on top of it.
+  wlr_scene_tree* layer_fullscreen_ = nullptr;
   wlr_scene_tree* layer_overlay_ = nullptr;
 
   wlr_scene_tree* layer_tree_for(zwlr_layer_shell_v1_layer layer);

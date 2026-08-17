@@ -1,5 +1,8 @@
 #include "view.hpp"
 
+#include <algorithm>
+
+#include "output.hpp"
 #include "server.hpp"
 #include "workspace.hpp"
 
@@ -35,6 +38,11 @@ constexpr float kFocusBorderColorFallback[4] = {0.9f, 0.9f, 0.95f, 1.0f};  // ne
 }  // namespace
 
 int View::border_thickness() const {
+  if (fullscreen) {
+    return 0;  // a border would break the "exact output match" scanout
+               // precondition (see the fullscreen field's doc comment,
+               // view.hpp), and no one wants a focus ring around a game.
+  }
   if (pinned && focused) {
     return kPinnedFocusedBorderThicknessPx;
   }
@@ -75,6 +83,47 @@ void View::set_floating(bool floating_) {
     return;
   }
   floating = floating_;
+}
+
+void View::set_fullscreen(bool fullscreen_) {
+  if (fullscreen == fullscreen_ || output == nullptr) {
+    return;
+  }
+  fullscreen = fullscreen_;
+
+  if (kind == Kind::XdgToplevel && xdg_toplevel) {
+    wlr_xdg_toplevel_set_fullscreen(xdg_toplevel, fullscreen);
+  }
+
+  if (!fullscreen) {
+    // Reparent back under normal toplevels and let the usual tiling
+    // machinery pick the view back up -- resize_border() will restore
+    // real border dimensions once the client's shrink-back-down commit
+    // lands (xdg_toplevel_surface_commit, server.cpp), same as any other
+    // resize.
+    wlr_scene_node_reparent(&container_tree->node, server->layer_toplevels());
+    output->relayout();
+    return;
+  }
+
+  wlr_box output_box{};
+  wlr_output_layout_get_box(server->output_layout(), output->wlr_output_ptr, &output_box);
+
+  wlr_scene_node_reparent(&container_tree->node, server->layer_fullscreen());
+  wlr_scene_node_raise_to_top(&container_tree->node);
+  wlr_scene_node_set_position(&container_tree->node, output_box.x, output_box.y);
+
+  if (kind == Kind::XdgToplevel && xdg_toplevel) {
+    int w = std::max(1, output_box.width);
+    int h = std::max(1, output_box.height);
+    if (w != last_requested_content_w || h != last_requested_content_h) {
+      wlr_xdg_toplevel_set_size(xdg_toplevel, w, h);
+      last_requested_content_w = w;
+      last_requested_content_h = h;
+    }
+  }
+  resize_border();  // thickness is 0 while fullscreen; zeroes the rects now
+                     // rather than waiting on the client's resize commit
 }
 
 void View::resize_border() {
