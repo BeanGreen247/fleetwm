@@ -1,8 +1,13 @@
 #include "settings_window.hpp"
 
+#include <gio/gdesktopappinfo.h>
+#include <gio/gio.h>
+
 #include <cstddef>
 #include <cstdio>
+#include <cstring>
 #include <string>
+#include <vector>
 
 namespace fleetwm::settings {
 
@@ -78,6 +83,7 @@ void SettingsWindow::build(GtkApplication* app) {
   config_ = load_theme_config();
   bar_config_ = load_bar_config();
   wallpaper_config_ = load_wallpaper_config();
+  default_apps_config_ = load_default_apps_config();
 
   window_ = gtk_application_window_new(app);
   gtk_window_set_title(GTK_WINDOW(window_), "Fleetwm Settings");
@@ -161,6 +167,8 @@ void SettingsWindow::build(GtkApplication* app) {
   gtk_notebook_append_page(GTK_NOTEBOOK(notebook), build_bar_tab(), gtk_label_new("Bar"));
   gtk_notebook_append_page(GTK_NOTEBOOK(notebook), build_wallpaper_tab(),
                             gtk_label_new("Wallpaper"));
+  gtk_notebook_append_page(GTK_NOTEBOOK(notebook), build_default_apps_tab(),
+                            gtk_label_new("Default Apps"));
   gtk_notebook_append_page(GTK_NOTEBOOK(notebook), build_about_tab(), gtk_label_new("About"));
 
   gtk_window_set_child(GTK_WINDOW(window_), notebook);
@@ -411,6 +419,260 @@ void SettingsWindow::on_solid_color_set(GtkColorButton* button, gpointer user_da
 
 void SettingsWindow::save_wallpaper() {
   save_wallpaper_config(wallpaper_config_);
+}
+
+namespace {
+
+// Frees a std::vector<GAppInfo*> and every GAppInfo* it owns -- passed as
+// the GDestroyNotify to g_object_set_data_full() on each Default Apps
+// row, so the vector's lifetime tracks its row widget's own (freed
+// automatically when GTK tears down the notebook on window close).
+void free_app_info_vector(gpointer data) {
+  auto* apps = static_cast<std::vector<GAppInfo*>*>(data);
+  for (GAppInfo* info : *apps) {
+    g_object_unref(info);
+  }
+  delete apps;
+}
+
+// True if `info`'s .desktop Categories field lists TerminalEmulator --
+// same category vocabulary the launcher's AppIndex reads (app_index.cpp),
+// but checked for membership here rather than just taken as the first
+// match, since a terminal's categories list often also includes System
+// or Utility ahead of TerminalEmulator.
+bool is_terminal_app(GDesktopAppInfo* info) {
+  const char* categories = g_desktop_app_info_get_categories(info);
+  if (categories == nullptr) {
+    return false;
+  }
+  std::string csv = categories;
+  std::string needle = "TerminalEmulator";
+  size_t pos = 0;
+  while ((pos = csv.find(needle, pos)) != std::string::npos) {
+    bool start_ok = pos == 0 || csv[pos - 1] == ';';
+    size_t end = pos + needle.size();
+    bool end_ok = end == csv.size() || csv[end] == ';';
+    if (start_ok && end_ok) {
+      return true;
+    }
+    pos = end;
+  }
+  return false;
+}
+
+}  // namespace
+
+GtkWidget* SettingsWindow::build_default_apps_tab() {
+  GtkWidget* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
+  gtk_widget_set_margin_start(box, 16);
+  gtk_widget_set_margin_end(box, 16);
+  gtk_widget_set_margin_top(box, 16);
+  gtk_widget_set_margin_bottom(box, 16);
+
+  GtkWidget* heading = gtk_label_new("Default Applications");
+  gtk_label_set_xalign(GTK_LABEL(heading), 0.0f);
+  PangoAttrList* attrs = pango_attr_list_new();
+  pango_attr_list_insert(attrs, pango_attr_weight_new(PANGO_WEIGHT_BOLD));
+  gtk_label_set_attributes(GTK_LABEL(heading), attrs);
+  pango_attr_list_unref(attrs);
+  gtk_box_append(GTK_BOX(box), heading);
+
+  // mime_type is null-terminated C strings understood by GIO's
+  // g_app_info_get_all_for_type()/set_as_default_for_type() -- picking
+  // one representative type per category (e.g. image/png rather than
+  // every image/* subtype) matches how most desktop environments' own
+  // "Default Applications" panels scope these categories.
+  struct MimeCategory {
+    const char* label;
+    const char* mime_type;
+  };
+  static const MimeCategory categories[] = {
+      {"Web Browser", "x-scheme-handler/https"},
+      {"File Manager", "inode/directory"},
+      {"Image Viewer", "image/png"},
+      {"Text Editor", "text/plain"},
+      {"Video Player", "video/mp4"},
+      {"PDF Viewer", "application/pdf"},
+      {"Archive Manager", "application/zip"},
+  };
+  for (const MimeCategory& category : categories) {
+    gtk_box_append(GTK_BOX(box), build_mime_default_row(category.label, category.mime_type));
+  }
+
+  // Terminal has no XDG mimetype of its own -- see default_apps.hpp --
+  // so it's the one row here backed by fleetwm's own config instead of
+  // mimeapps.list.
+  gtk_box_append(GTK_BOX(box), build_terminal_default_row());
+
+  return box;
+}
+
+namespace {
+
+// Builds the horizontal "label | radio radio radio" row shape shared by
+// every Default Apps category, including the empty case (no candidate
+// apps found -- a bare dim label instead of an empty radio group, rather
+// than showing a category with nothing selectable in it). `apps` and
+// `extra_data`/`extra_key` (mime type string, or nullptr for the
+// Terminal row which needs none) are attached to the *row* itself
+// (not the individual radio buttons) so every button's toggled callback
+// can walk up two parents (button -> radio_box -> row) to reach them --
+// same "hang shared state off a stable ancestor" approach as
+// build_power_section's mode buttons.
+GtkWidget* app_radio_row(const char* label, std::vector<GAppInfo*>* apps, int selected,
+                          GCallback toggled_callback, gpointer user_data, const char* mime_type) {
+  GtkWidget* row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
+  gtk_widget_set_margin_start(row, 4);
+  gtk_widget_set_margin_end(row, 4);
+
+  GtkWidget* row_label = gtk_label_new(label);
+  gtk_label_set_xalign(GTK_LABEL(row_label), 0.0f);
+  gtk_widget_set_size_request(row_label, 120, -1);
+  gtk_box_append(GTK_BOX(row), row_label);
+
+  if (apps->empty()) {
+    GtkWidget* none_label = gtk_label_new("No apps found");
+    gtk_widget_add_css_class(none_label, "fleetwm-stat");
+    gtk_widget_set_hexpand(none_label, TRUE);
+    gtk_box_append(GTK_BOX(row), none_label);
+    free_app_info_vector(apps);
+    return row;
+  }
+
+  GtkWidget* radio_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+  gtk_widget_set_hexpand(radio_box, TRUE);
+
+  GtkCheckButton* group_leader = nullptr;
+  for (size_t i = 0; i < apps->size(); ++i) {
+    const char* name = g_app_info_get_display_name((*apps)[i]);
+    GtkWidget* radio = gtk_check_button_new_with_label(name != nullptr ? name : "(unnamed)");
+    if (group_leader != nullptr) {
+      gtk_check_button_set_group(GTK_CHECK_BUTTON(radio), group_leader);
+    } else {
+      group_leader = GTK_CHECK_BUTTON(radio);
+    }
+    gtk_check_button_set_active(GTK_CHECK_BUTTON(radio), static_cast<int>(i) == selected);
+    g_object_set_data(G_OBJECT(radio), "radio-index", GINT_TO_POINTER(static_cast<int>(i)));
+    g_signal_connect(radio, "toggled", toggled_callback, user_data);
+    gtk_box_append(GTK_BOX(radio_box), radio);
+  }
+  gtk_box_append(GTK_BOX(row), radio_box);
+
+  g_object_set_data_full(G_OBJECT(row), "fleetwm-apps", apps, free_app_info_vector);
+  if (mime_type != nullptr) {
+    g_object_set_data_full(G_OBJECT(row), "fleetwm-mime", g_strdup(mime_type), g_free);
+  }
+  return row;
+}
+
+}  // namespace
+
+GtkWidget* SettingsWindow::build_mime_default_row(const char* label, const char* mime_type) {
+  auto* apps = new std::vector<GAppInfo*>();
+  GList* infos = g_app_info_get_all_for_type(mime_type);
+  for (GList* l = infos; l != nullptr; l = l->next) {
+    apps->push_back(static_cast<GAppInfo*>(l->data));  // ownership transferred from the GList
+  }
+  g_list_free(infos);
+
+  int selected = -1;
+  GAppInfo* current_default = g_app_info_get_default_for_type(mime_type, FALSE);
+  if (current_default != nullptr) {
+    for (size_t i = 0; i < apps->size(); ++i) {
+      if (g_app_info_equal((*apps)[i], current_default)) {
+        selected = static_cast<int>(i);
+        break;
+      }
+    }
+    g_object_unref(current_default);
+  }
+
+  return app_radio_row(label, apps, selected, G_CALLBACK(on_mime_default_selected), this,
+                        mime_type);
+}
+
+void SettingsWindow::on_mime_default_selected(GtkCheckButton* button, gpointer) {
+  if (!gtk_check_button_get_active(button)) {
+    return;
+  }
+  int index = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(button), "radio-index"));
+
+  GtkWidget* radio_box = gtk_widget_get_parent(GTK_WIDGET(button));
+  GtkWidget* row = gtk_widget_get_parent(radio_box);
+  auto* apps = static_cast<std::vector<GAppInfo*>*>(g_object_get_data(G_OBJECT(row), "fleetwm-apps"));
+  const auto* mime_type = static_cast<const char*>(g_object_get_data(G_OBJECT(row), "fleetwm-mime"));
+  if (apps == nullptr || mime_type == nullptr || index < 0 ||
+      static_cast<size_t>(index) >= apps->size()) {
+    return;
+  }
+
+  GError* error = nullptr;
+  if (!g_app_info_set_as_default_for_type((*apps)[index], mime_type, &error)) {
+    std::fprintf(stderr, "fleetwm-settings: failed to set default app for %s: %s\n", mime_type,
+                 error != nullptr ? error->message : "unknown error");
+    g_clear_error(&error);
+  }
+}
+
+GtkWidget* SettingsWindow::build_terminal_default_row() {
+  auto* apps = new std::vector<GAppInfo*>();
+  GList* infos = g_app_info_get_all();
+  for (GList* l = infos; l != nullptr; l = l->next) {
+    auto* info = static_cast<GAppInfo*>(l->data);
+    if (G_IS_DESKTOP_APP_INFO(info) && g_app_info_should_show(info) &&
+        is_terminal_app(G_DESKTOP_APP_INFO(info))) {
+      apps->push_back(info);  // ownership transferred from the GList
+    } else {
+      g_object_unref(info);
+    }
+  }
+  g_list_free(infos);
+
+  // Two-pass match: prefer an exact commandline match (e.g. distinguishes
+  // foot.desktop's "foot" from foot-server.desktop's "foot --server" --
+  // both report the same bare executable, so matching on executable alone
+  // picks whichever entry happens to sort last) and only fall back to a
+  // bare-executable match if nothing matched exactly, so a
+  // terminal_command written before this fix (or by hand) still resolves
+  // to *some* selection rather than none.
+  int exact_match = -1;
+  int executable_match = -1;
+  for (size_t i = 0; i < apps->size(); ++i) {
+    const char* commandline = g_app_info_get_commandline((*apps)[i]);
+    if (commandline != nullptr && default_apps_config_.terminal_command == commandline) {
+      exact_match = static_cast<int>(i);
+    }
+    const char* executable = g_app_info_get_executable((*apps)[i]);
+    if (executable != nullptr && default_apps_config_.terminal_command == executable) {
+      executable_match = static_cast<int>(i);
+    }
+  }
+  int selected = exact_match >= 0 ? exact_match : executable_match;
+
+  return app_radio_row("Terminal", apps, selected, G_CALLBACK(on_terminal_default_selected), this,
+                        nullptr);
+}
+
+void SettingsWindow::on_terminal_default_selected(GtkCheckButton* button, gpointer user_data) {
+  if (!gtk_check_button_get_active(button)) {
+    return;
+  }
+  int index = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(button), "radio-index"));
+
+  GtkWidget* radio_box = gtk_widget_get_parent(GTK_WIDGET(button));
+  GtkWidget* row = gtk_widget_get_parent(radio_box);
+  auto* apps = static_cast<std::vector<GAppInfo*>*>(g_object_get_data(G_OBJECT(row), "fleetwm-apps"));
+  if (apps == nullptr || index < 0 || static_cast<size_t>(index) >= apps->size()) {
+    return;
+  }
+  const char* executable = g_app_info_get_executable((*apps)[index]);
+  if (executable == nullptr) {
+    return;
+  }
+
+  auto* self = static_cast<SettingsWindow*>(user_data);
+  self->default_apps_config_.terminal_command = executable;
+  save_default_apps_config(self->default_apps_config_);
 }
 
 GtkWidget* SettingsWindow::build_about_tab() {

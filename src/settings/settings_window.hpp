@@ -7,8 +7,11 @@
 #include "app_style.hpp"
 #include "bar_config.hpp"
 #include "battery_source.hpp"
+#include "default_apps.hpp"
 #include "theme.hpp"
 #include "wallpaper_config.hpp"
+
+#include <vector>
 
 namespace fleetwm::settings {
 
@@ -60,6 +63,21 @@ class SettingsWindow {
   // clickable link to the repo, and sole-developer credit. Nothing here
   // reads/writes config, so no dedicated save_*()/on_*_changed() pair.
   GtkWidget* build_about_tab();
+  // Fifth notebook page: per-category default application picker, backed
+  // directly by GIO's g_app_info_set_as_default_for_type() for every
+  // mimetype-based category (browser, file manager, image viewer, text
+  // editor, video player, PDF viewer, archive manager) -- that call
+  // reads/writes ~/.config/mimeapps.list itself, the same file xdg-mime
+  // and every other XDG-aware app reads, so those categories need no
+  // fleetwm-side config storage. Terminal is the one exception (no XDG
+  // mimetype exists for "terminal emulator"), backed instead by
+  // default_apps.toml (see default_apps.hpp) which compositor/input.cpp
+  // reads for its Alt+Return spawn keybind.
+  GtkWidget* build_default_apps_tab();
+  GtkWidget* build_mime_default_row(const char* label, const char* mime_type);
+  GtkWidget* build_terminal_default_row();
+  static void on_mime_default_selected(GtkCheckButton* button, gpointer user_data);
+  static void on_terminal_default_selected(GtkCheckButton* button, gpointer user_data);
   static void on_choose_wallpaper_clicked(GtkButton* button, gpointer user_data);
   static void on_wallpaper_file_chosen(GObject* source, GAsyncResult* result,
                                         gpointer user_data);
@@ -81,6 +99,7 @@ class SettingsWindow {
   ThemeConfig config_;
   BarConfig bar_config_;
   WallpaperConfig wallpaper_config_;
+  DefaultAppsConfig default_apps_config_;
   GtkWidget* window_ = nullptr;
   GtkWidget* accent_color_button_ = nullptr;
   GtkWidget* focus_border_color_button_ = nullptr;

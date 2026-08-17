@@ -32,8 +32,6 @@ namespace {
 // nested-Wayland or nested-X11 dev setups this phase targets.
 constexpr xkb_keysym_t kSpawnTerminalKey = XKB_KEY_Return;
 
-constexpr const char* kTerminalCommand = "foot";  // lightweight Wayland-native terminal
-
 // Alt+D, dmenu-style mnemonic -- same Super-conflict rationale as
 // kSpawnTerminalKey above applies here too.
 constexpr xkb_keysym_t kSpawnLauncherKey = XKB_KEY_d;
@@ -196,7 +194,12 @@ bool Keyboard::handle_keybind(xkb_keysym_t sym) {
       }
       return true;
     }
-    spawn(kTerminalCommand);
+    // Read live rather than cached-at-startup: settings' Default Apps
+    // tab writes default_apps.toml, and server picks it up via the same
+    // inotify watch as theme.toml (see server.cpp's
+    // server_theme_watch_readable), so a change here takes effect on
+    // the next Enter press with no restart needed.
+    spawn(server->default_apps_config().terminal_command.c_str());
     return true;
   }
   if (sym == kSpawnLauncherKey) {

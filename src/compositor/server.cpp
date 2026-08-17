@@ -784,6 +784,7 @@ bool Server::init() {
   }
 
   theme_config_ = load_theme_config();
+  default_apps_config_ = load_default_apps_config();
   if (!start_theme_watch()) {
     wlr_log(WLR_ERROR,
             "failed to start theme.toml inotify watch; live theme reload will not work");
@@ -954,6 +955,7 @@ int server_theme_watch_readable(int fd, uint32_t, void* data) {
   // times for what the user experienced as one save.
   alignas(struct inotify_event) char buf[4096];
   bool got_theme_event = false;
+  bool got_default_apps_event = false;
   ssize_t n;
   while ((n = read(fd, buf, sizeof(buf))) > 0) {
     ssize_t offset = 0;
@@ -961,12 +963,17 @@ int server_theme_watch_readable(int fd, uint32_t, void* data) {
       auto* event = reinterpret_cast<struct inotify_event*>(buf + offset);
       if (event->len > 0 && std::strcmp(event->name, "theme.toml") == 0) {
         got_theme_event = true;
+      } else if (event->len > 0 && std::strcmp(event->name, "default_apps.toml") == 0) {
+        got_default_apps_event = true;
       }
       offset += static_cast<ssize_t>(sizeof(struct inotify_event)) + event->len;
     }
   }
   if (got_theme_event) {
     server->reload_theme_config();
+  }
+  if (got_default_apps_event) {
+    server->reload_default_apps_config();
   }
   return 0;
 }
