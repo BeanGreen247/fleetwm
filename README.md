@@ -2,10 +2,11 @@
 
 A minimal, fast Wayland window manager and desktop shell for Debian and
 Ubuntu/Kubuntu. Built on [wlroots](https://gitlab.freedesktop.org/wlroots/wlroots)
-in C++, with a thin GTK4 top bar and settings app. No file manager, no app
-launcher, no bundled apps -- just tiling window management, a bar, and a
-power/settings menu, aimed squarely at low idle resource usage and
-uncompromised gaming performance.
+in C++, with a thin GTK4 top bar, settings app, app launcher, and power
+menu/lock screen. No file manager, no bundled productivity apps -- just
+tiling window management, a bar, and the handful of desktop-shell pieces
+every session actually needs, aimed squarely at low idle resource usage
+and uncompromised gaming performance.
 
 ## Status
 
@@ -35,7 +36,16 @@ is being built against.
 - Settings app -- About: hardware summary (CPU, GPU, RAM, disk, kernel)
   and project info (fleetwm version, license, links), in the spirit of
   KDE's/XFCE's/Windows' "About This System" pages
-- Power menu: Settings, Sleep, Reboot, Poweroff
+- Power menu (`fleetwm-powermenu`, click the power icon at the right
+  edge of the bar): Lock, Log out, Sleep, Reboot, Shut down, as a
+  centered card over a full-screen overlay
+- Lock screen (`fleetwm-locker`, `Alt+Shift+L` or the power menu's
+  Lock): PAM-verified password prompt reusing the greeter's visual
+  language; gates every global keybind while locked
+- Systray (StatusNotifierItem/`org.kde.StatusNotifierWatcher`) in the
+  bar, for apps like Steam/Discord that dock a tray icon
+- Themed pinned-window borders (accent-colored, configurable
+  thickness) for always-on-top windows, set in Settings' Theme tab
 - App launcher (`fleetwm-launcher`, `Alt+D`): minimal Albert/dmenu-style
   popup, fuzzy search over installed applications (via `GDesktopAppInfo`)
   with a category hint per result, plus a "Run Command" fallback for
@@ -62,8 +72,8 @@ This installs build dependencies via `apt`, builds with Meson/Ninja, and
 installs:
 
 - `fleetwm`, `fleetwm-bar`, `fleetwm-settings`, `fleetwm-launcher`,
-  `fleetwm-wallpaper`, `fleetwm-greet`, `fleetwm-greeter-login` to
-  `/usr/local/bin`
+  `fleetwm-wallpaper`, `fleetwm-powermenu`, `fleetwm-greet`,
+  `fleetwm-greeter-login`, `fleetwm-locker` to `/usr/local/bin`
 - A `Fleetwm` session entry to `/usr/share/wayland-sessions/` (log out and
   pick it from your display manager's session list)
 - Default theme files and `theme.toml` to `/etc/xdg/fleetwm/`
@@ -132,7 +142,7 @@ having installed via `install.sh` (it tracks the source checkout path in
 ## Configuration
 
 Edit `~/.config/fleetwm/theme.toml` directly, or use the settings app
-(open it from the power icon at the right edge of the bar):
+(`fleetwm-settings`, launch it via the app launcher, `Alt+D`):
 
 ```toml
 corner_style = "rounded"   # "rounded" | "sharp"
@@ -224,9 +234,19 @@ libegl1-mesa-dev libgles2-mesa-dev
 libgtk-4-dev libgtk4-layer-shell-dev
 libpipewire-0.3-dev
 libpam0g-dev
+libsystemd-dev
+polkitd pkexec
 xwayland
 foot
 ```
+
+`polkitd`/`pkexec` are a runtime, not build, dependency -- the power
+menu's Sleep/Reboot/Shut down go through `systemctl`, which
+`systemd-logind` refuses to authorize for a non-root caller without
+polkit running, regardless of session state. `libsystemd-dev` is a real
+build dependency (`sd_pid_get_session()`, used to resolve the session
+id for Log out without depending on `$XDG_SESSION_ID` being set, which
+modern `pam_systemd` no longer guarantees).
 
 Build with `-Dxwayland=false` to disable XWayland support and drop the
 `libxcb-dev` dependency. Build with `-Dgreeter=false` to skip
@@ -237,17 +257,24 @@ manually (not via `install.sh`), also install and enable `seatd`
 
 ## Architecture
 
-Eight processes, communicating over a Unix domain socket and a
+Nine processes, communicating over a Unix domain socket and a
 signal/pidfile mechanism -- see [docs/adr](docs/adr) for the reasoning
 behind each:
 
 - **`fleetwm`** -- the wlroots-based compositor and window manager
 - **`fleetwm-bar`** -- the always-resident GTK4 top bar
-- **`fleetwm-settings`** -- the settings/power-menu app, spawned on demand
+- **`fleetwm-settings`** -- the settings app, spawned on demand
 - **`fleetwm-launcher`** -- the app launcher popup, spawned on demand
   (`Alt+D`), exits after one launch/dismiss
 - **`fleetwm-wallpaper`** -- the background renderer, autostarted with the
   compositor
+- **`fleetwm-powermenu`** -- the power menu (Lock/Log out/Sleep/Reboot/
+  Shut down), spawned on demand from the bar's power icon; a standalone
+  fullscreen layer-shell overlay rather than a GTK popover, for reliable
+  click handling -- exits after one action or a dismiss
+- **`fleetwm-locker`** -- the lock screen, spawned on demand (`Alt+Shift+L`
+  or the power menu's Lock); PAM-verifies the password in-process and
+  signals the compositor to unlock over the IPC socket
 - **`fleetwm-update`** -- the update script
 - **`fleetwm-greet`** -- the optional graphical login greeter, an
   alternative to running a full display manager (see
