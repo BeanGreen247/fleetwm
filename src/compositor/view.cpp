@@ -10,30 +10,23 @@ namespace fleetwm {
 
 namespace {
 
-// Pinned and pinned+focused colors/thickness are still hardcoded --
-// theming those isn't asked for yet (only the plain focus border is, via
-// ThemeConfig::focus_border_color + focus_border_thickness_px, read live
-// off server->theme_config()). focus_border_color is intentionally
-// separate from ThemeConfig::accent (used for UI chrome everywhere
-// else -- bar, launcher, settings) so the focused-window border reads as
-// a distinct signal instead of blending into whatever else on screen
-// already uses the accent color. One border-rect set renders whichever
-// of these applies, picked by priority in resize_border() --
-// pinned+focused gets its own distinct color/thickness so it doesn't
-// read as merely "pinned" or merely "focused".
-constexpr int kPinnedBorderThicknessPx = 3;
-constexpr float kPinnedBorderColor[4] = {0.2f, 0.6f, 1.0f, 1.0f};  // blue, RGBA
-
-constexpr int kPinnedFocusedBorderThicknessPx = 3;
-constexpr float kPinnedFocusedBorderColor[4] = {0.6f, 0.9f, 0.4f, 1.0f};  // green
-
+// Pinned/pinned+focused colors and thickness are themeable
+// (ThemeConfig::pinned_border_color/pinned_focused_border_color/
+// pinned_border_thickness_px, same as the plain focus border below),
+// read live off server->theme_config(). focus_border_color is
+// intentionally separate from ThemeConfig::accent (used for UI chrome
+// everywhere else -- bar, launcher, settings) so the focused-window
+// border reads as a distinct signal instead of blending into whatever
+// else on screen already uses the accent color. One border-rect set
+// renders whichever of these applies, picked by priority in
+// resize_border() -- pinned+focused gets its own distinct color so it
+// doesn't read as merely "pinned" or merely "focused".
 constexpr float kNoBorderColor[4] = {0.0f, 0.0f, 0.0f, 0.0f};  // fully transparent
-// Fallback if theme_config().focus_border_color is somehow unparseable
-// -- should never actually be hit since ThemeConfig::focus_border_color's
-// own default is a valid "#e6e6f2", but parse_hex_color() leaves its
-// output untouched on failure and this is what that untouched buffer
-// starts as.
-constexpr float kFocusBorderColorFallback[4] = {0.9f, 0.9f, 0.95f, 1.0f};  // near-white
+// Fallback if a theme_config() color string is somehow unparseable --
+// should never actually be hit since every ThemeConfig color field's own
+// default is a valid hex string, but parse_hex_color() leaves its output
+// untouched on failure and this is what that untouched buffer starts as.
+constexpr float kBorderColorFallback[4] = {0.9f, 0.9f, 0.95f, 1.0f};  // near-white
 
 }  // namespace
 
@@ -43,11 +36,8 @@ int View::border_thickness() const {
                // precondition (see the fullscreen field's doc comment,
                // view.hpp), and no one wants a focus ring around a game.
   }
-  if (pinned && focused) {
-    return kPinnedFocusedBorderThicknessPx;
-  }
   if (pinned) {
-    return kPinnedBorderThicknessPx;
+    return server->theme_config().pinned_border_thickness_px;
   }
   if (focused) {
     return server->theme_config().focus_border_thickness_px;
@@ -142,15 +132,17 @@ void View::set_fullscreen(bool fullscreen_) {
 void View::resize_border() {
   int thickness = border_thickness();
   const float* color;
-  float focus_color[4] = {kFocusBorderColorFallback[0], kFocusBorderColorFallback[1],
-                           kFocusBorderColorFallback[2], kFocusBorderColorFallback[3]};
+  float themed_color[4] = {kBorderColorFallback[0], kBorderColorFallback[1],
+                            kBorderColorFallback[2], kBorderColorFallback[3]};
   if (pinned && focused) {
-    color = kPinnedFocusedBorderColor;
+    parse_hex_color(server->theme_config().pinned_focused_border_color, themed_color);
+    color = themed_color;
   } else if (pinned) {
-    color = kPinnedBorderColor;
+    parse_hex_color(server->theme_config().pinned_border_color, themed_color);
+    color = themed_color;
   } else if (focused) {
-    parse_hex_color(server->theme_config().focus_border_color, focus_color);
-    color = focus_color;
+    parse_hex_color(server->theme_config().focus_border_color, themed_color);
+    color = themed_color;
   } else {
     color = kNoBorderColor;
   }

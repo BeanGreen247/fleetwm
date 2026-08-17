@@ -102,6 +102,15 @@ ThemeConfig load_theme_config() {
   if (auto v = table["gap_px"].value<int64_t>()) {
     config.gap_px = static_cast<int>(*v);
   }
+  if (auto v = table["pinned_border_color"].value<std::string>()) {
+    config.pinned_border_color = *v;
+  }
+  if (auto v = table["pinned_focused_border_color"].value<std::string>()) {
+    config.pinned_focused_border_color = *v;
+  }
+  if (auto v = table["pinned_border_thickness_px"].value<int64_t>()) {
+    config.pinned_border_thickness_px = static_cast<int>(*v);
+  }
 
   return config;
 }
@@ -119,6 +128,10 @@ void save_theme_config(const ThemeConfig& config) {
                           static_cast<int64_t>(config.focus_border_thickness_px));
   table.insert_or_assign("focus_border_color", config.focus_border_color);
   table.insert_or_assign("gap_px", static_cast<int64_t>(config.gap_px));
+  table.insert_or_assign("pinned_border_color", config.pinned_border_color);
+  table.insert_or_assign("pinned_focused_border_color", config.pinned_focused_border_color);
+  table.insert_or_assign("pinned_border_thickness_px",
+                          static_cast<int64_t>(config.pinned_border_thickness_px));
 
   std::ofstream out(path);
   if (!out) {

@@ -25,68 +25,29 @@ namespace fleetwm {
 
 namespace {
 
-// Alt+Return rather than Super+Return: Phase 0 is routinely run nested
-// inside an existing host compositor/WM for dev iteration (per the Phase 0
-// roadmap entry), and Super is frequently already claimed by the host
-// desktop's own shortcuts. Alt+Return has no such conflict in the common
-// nested-Wayland or nested-X11 dev setups this phase targets.
-constexpr xkb_keysym_t kSpawnTerminalKey = XKB_KEY_Return;
-
-// Alt+D, dmenu-style mnemonic -- same Super-conflict rationale as
-// kSpawnTerminalKey above applies here too.
-constexpr xkb_keysym_t kSpawnLauncherKey = XKB_KEY_d;
-
+// The actual key each Alt+<key>/Alt+Shift+<key> bind uses is remappable
+// via keybinds.toml (see keybinds_config.hpp) -- Keyboard::handle_keybind()
+// below reads the resolved xkb_keysym_t values off server->keybinds()
+// live, rather than fixed constexpr constants like this file used to
+// define here. Only the modifier itself (always Alt, Shift for the
+// combined ones) stays fixed -- see the class doc comment in
+// keybinds_config.hpp for why. Uppercase key names in keybinds.toml mean
+// "Shift resolves into the keysym itself" (e.g. "Q" is Alt+Shift+Q),
+// same convention xkb itself uses; kPromoteKey's old special case
+// (sharing a physical key with spawn-terminal, distinguished only by an
+// explicit shift_held check since Return has no separate shifted keysym)
+// still works the same way below, just off server->keybinds().terminal
+// instead of a fixed constant.
 constexpr const char* kLauncherCommand = "fleetwm-launcher";
 
-// Alt+Shift+Q: closest available match to i3's default Mod+Shift+kill
-// bind, since Phase 0 has no Super/Mod4 support yet (same Alt-only
-// convention as the spawn binds above). xkb_state_key_get_syms already
-// resolves Shift into the keysym itself (Shift+q -> XKB_KEY_Q), so no
-// separate shift_held check is needed here.
-constexpr xkb_keysym_t kCloseWindowKey = XKB_KEY_Q;
-
-// Alt+Shift+P: toggles PowerToys-style always-on-top pinning for the
-// focused window. Same Shift-resolved-into-keysym note as
-// kCloseWindowKey above applies.
-constexpr xkb_keysym_t kTogglePinKey = XKB_KEY_P;
-
-// dwm-style master-stack tiling binds (Output::relayout()). Alt+J/K cycle
-// focus through server->views in stacking order; unlike
-// kCloseWindowKey/kTogglePinKey these are NOT Shift-combined, so lowercase
-// j/k (not J/K) is what xkb_state_key_get_syms resolves to.
-constexpr xkb_keysym_t kFocusNextKey = XKB_KEY_j;
-constexpr xkb_keysym_t kFocusPrevKey = XKB_KEY_k;
-
-// Alt+Shift+F: opts the focused window out of tiling (or back in),
-// independent of pinned -- see View::floating.
-constexpr xkb_keysym_t kToggleFloatKey = XKB_KEY_F;
-
-// Alt+Shift+L: locks the session (same action as the bar's power-menu
-// "Lock" entry, bar_window.cpp's build_power_menu()). Same
-// Shift-resolved-into-keysym convention as kTogglePinKey/kToggleFloatKey
-// above. Deliberately still dispatched through the normal
-// !is_locked()-gated branch in keyboard_key() like every other Alt+<key>
-// bind -- if the session is already locked, Alt+Shift+L (like every
-// other global keybind) is a no-op rather than reaching this handler at
-// all, so there's no separate "already locked" check needed here.
-constexpr xkb_keysym_t kLockKey = XKB_KEY_L;
-
-// Alt+Shift+S: region-select screenshot, copied to the clipboard with a
-// desktop notification -- same grim+slurp+wl-copy+notify-send combo (and
-// $mod+Shift+s binding) the project's own sway config used
-// (github.com/BeanGreen247/sway-setup-script), ported to this
-// compositor's Alt-based convention. Runs via spawn_shell() (not
+// Alt+Shift+<screenshot>: region-select screenshot, copied to the
+// clipboard with a desktop notification -- same grim+slurp+wl-copy+
+// notify-send combo (and $mod+Shift+s binding) the project's own sway
+// config used (github.com/BeanGreen247/sway-setup-script), ported to
+// this compositor's Alt-based convention. Runs via spawn_shell() (not
 // spawn()) since it needs a pipe, not a bare argv-less binary.
-constexpr xkb_keysym_t kScreenshotKey = XKB_KEY_S;
 constexpr const char* kScreenshotCommand =
     "grim -g \"$(slurp)\" - | wl-copy && notify-send 'Screenshot' 'Copied to clipboard'";
-
-// Alt+Shift+Return: promotes the focused window to master. Deliberately
-// checked via an explicit shift_held flag (unlike kCloseWindowKey/
-// kTogglePinKey's "Shift resolves into the keysym" shortcut) because plain
-// Alt+Return without Shift is already kSpawnTerminalKey and Return has no
-// separate shifted keysym to distinguish them by.
-constexpr xkb_keysym_t kPromoteKey = XKB_KEY_Return;
 
 // Finds the View owning the seat's currently keyboard-focused surface, if
 // any -- the seat only tracks a wlr_surface*, not the owning View, so
@@ -104,6 +65,98 @@ View* focused_view(Server* server) {
     }
   }
   return nullptr;
+}
+
+// Approximate on-screen box of `view`'s container_tree, in output-layout
+// coordinates. container_tree->node.x/y are relative to its immediate
+// parent (a wlr_scene_node_t field, per wlroots), but that parent is
+// always one of Server's layer_* trees, which are all created at (0,0)
+// under scene_->tree and never repositioned -- so in practice these are
+// already absolute output-layout coordinates, the same assumption
+// tile_view()/View::set_fullscreen() (output.cpp/view.cpp) already make
+// when they call wlr_scene_node_set_position() with raw output-box
+// values. Size is the client's last-committed content geometry plus the
+// view's current border thickness on each side, recomputed the same way
+// resize_border() (view.cpp) does -- not tracked as a separate field
+// anywhere.
+wlr_box view_box(View* view) {
+  wlr_box box{};
+  box.x = view->container_tree->node.x;
+  box.y = view->container_tree->node.y;
+  wlr_box geo{};
+  if (view->kind == View::Kind::XdgToplevel && view->xdg_toplevel) {
+    wlr_xdg_surface_get_geometry(view->xdg_toplevel->base, &geo);
+  }
+  int thickness = view->border_thickness();
+  box.width = std::max(1, geo.width) + 2 * thickness;
+  box.height = std::max(1, geo.height) + 2 * thickness;
+  return box;
+}
+
+enum class Direction { Left, Right, Up, Down };
+
+// Finds the nearest *visible* view in `dir` from `current`'s screen
+// position -- a real spatial search (center-point distance, weighted
+// against perpendicular misalignment), not a stacking-order cycle.
+// Standard "focus in direction" heuristic, same shape as i3/sway's own
+// direction-focus tools: candidates strictly on the requested side score
+// by (distance along that axis) + 2x(misalignment on the other axis), so
+// a window slightly farther but well-aligned beats one closer but
+// off-axis. Returns nullptr if `current` is null or nothing qualifies
+// (e.g. already at the edge in that direction).
+View* find_view_in_direction(Server* server, View* current, Direction dir) {
+  if (current == nullptr) {
+    return nullptr;
+  }
+  wlr_box current_box = view_box(current);
+  int fx = current_box.x + current_box.width / 2;
+  int fy = current_box.y + current_box.height / 2;
+
+  View* best = nullptr;
+  long best_score = 0;
+  for (const std::unique_ptr<View>& v : server->views) {
+    if (v.get() == current || !v->container_tree->node.enabled) {
+      continue;  // enabled mirrors the same visibility check
+                 // Output::switch_workspace() uses -- an invisible
+                 // (different-workspace, non-pinned) view is never a
+                 // sensible focus target.
+    }
+    wlr_box box = view_box(v.get());
+    int dx = (box.x + box.width / 2) - fx;
+    int dy = (box.y + box.height / 2) - fy;
+
+    long primary;
+    long secondary;
+    switch (dir) {
+      case Direction::Left:
+        if (dx >= 0) continue;
+        primary = -dx;
+        secondary = std::abs(dy);
+        break;
+      case Direction::Right:
+        if (dx <= 0) continue;
+        primary = dx;
+        secondary = std::abs(dy);
+        break;
+      case Direction::Up:
+        if (dy >= 0) continue;
+        primary = -dy;
+        secondary = std::abs(dx);
+        break;
+      case Direction::Down:
+      default:
+        if (dy <= 0) continue;
+        primary = dy;
+        secondary = std::abs(dx);
+        break;
+    }
+    long score = primary + secondary * 2;
+    if (best == nullptr || score < best_score) {
+      best = v.get();
+      best_score = score;
+    }
+  }
+  return best;
 }
 
 void spawn(const char* cmd) {
@@ -222,8 +275,9 @@ Keyboard::~Keyboard() {
 
 bool Keyboard::handle_keybind(xkb_keysym_t sym) {
   bool shift_held = (wlr_keyboard_get_modifiers(wlr_keyboard_ptr) & WLR_MODIFIER_SHIFT) != 0;
+  const Server::ResolvedKeybinds& binds = server->keybinds();
 
-  if (sym == kSpawnTerminalKey) {
+  if (sym == binds.terminal) {
     if (shift_held) {
       if (View* view = focused_view(server)) {
         // Promote to master: splice to front of server->views the same
@@ -245,31 +299,31 @@ bool Keyboard::handle_keybind(xkb_keysym_t sym) {
     spawn(server->default_apps_config().terminal_command.c_str());
     return true;
   }
-  if (sym == kSpawnLauncherKey) {
+  if (sym == binds.launcher) {
     spawn(kLauncherCommand);
     return true;
   }
-  if (sym == kCloseWindowKey) {
+  if (sym == binds.close_window) {
     if (View* view = focused_view(server)) {
       view->close();
     }
     return true;
   }
-  if (sym == kTogglePinKey) {
+  if (sym == binds.toggle_pin) {
     if (View* view = focused_view(server)) {
       view->set_pinned(!view->pinned);
     }
     return true;
   }
-  if (sym == kLockKey) {
+  if (sym == binds.lock) {
     server->request_lock();
     return true;
   }
-  if (sym == kScreenshotKey) {
+  if (sym == binds.screenshot) {
     spawn_shell(kScreenshotCommand);
     return true;
   }
-  if (sym == kToggleFloatKey) {
+  if (sym == binds.toggle_float) {
     if (View* view = focused_view(server)) {
       view->set_floating(!view->floating);
       if (view->output) {
@@ -278,39 +332,18 @@ bool Keyboard::handle_keybind(xkb_keysym_t sym) {
     }
     return true;
   }
-  if (sym == kFocusNextKey || sym == kFocusPrevKey) {
-    if (server->views.empty()) {
-      return true;
+  if (sym == binds.focus_left || sym == binds.focus_right || sym == binds.focus_up ||
+      sym == binds.focus_down) {
+    Direction dir = sym == binds.focus_left    ? Direction::Left
+                     : sym == binds.focus_right ? Direction::Right
+                     : sym == binds.focus_up    ? Direction::Up
+                                                 : Direction::Down;
+    if (View* target = find_view_in_direction(server, focused_view(server), dir)) {
+      server->focus_view(target);
     }
-    View* current = focused_view(server);
-    // server->views is stacking-ordered (front = topmost/focused), which
-    // for a freshly-tiled workspace also matches master-then-stack order
-    // -- walking it directly gives "next/prev in the tiled set" without
-    // needing a separate per-workspace ordering.
-    auto it = server->views.begin();
-    if (current) {
-      it = std::find_if(server->views.begin(), server->views.end(),
-                         [current](const std::unique_ptr<View>& v) { return v.get() == current; });
-    }
-    if (it == server->views.end()) {
-      it = server->views.begin();
-    }
-    if (sym == kFocusNextKey) {
-      ++it;
-      if (it == server->views.end()) {
-        it = server->views.begin();
-      }
-    } else {
-      if (it == server->views.begin()) {
-        it = std::prev(server->views.end());
-      } else {
-        --it;
-      }
-    }
-    server->focus_view(it->get());
     return true;
   }
-  if (sym == XKB_KEY_Escape) {
+  if (sym == binds.quit) {
     wl_display_terminate(server->display());
     return true;
   }

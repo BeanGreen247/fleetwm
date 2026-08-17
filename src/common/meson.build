@@ -67,6 +67,7 @@ libcommon = static_library(
     'wallpaper_config.cpp',
     'battery_source.cpp',
     'default_apps.cpp',
+    'keybinds_config.cpp',
   ),
   dependencies: [tomlplusplus_dep, gtk4_dep_common],
   include_directories: include_directories('.'),

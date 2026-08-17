@@ -36,6 +36,9 @@ class SettingsWindow {
   static void on_focus_border_thickness_changed(GtkSpinButton* button, gpointer user_data);
   static void on_focus_border_color_set(GtkColorButton* button, gpointer user_data);
   static void on_gap_changed(GtkSpinButton* button, gpointer user_data);
+  static void on_pinned_border_thickness_changed(GtkSpinButton* button, gpointer user_data);
+  static void on_pinned_border_color_set(GtkColorButton* button, gpointer user_data);
+  static void on_pinned_focused_border_color_set(GtkColorButton* button, gpointer user_data);
 
   // Writes config_ to disk. Called after every change rather than on a
   // separate "Apply" button -- theme.toml is cheap to rewrite and this
@@ -103,6 +106,8 @@ class SettingsWindow {
   GtkWidget* window_ = nullptr;
   GtkWidget* accent_color_button_ = nullptr;
   GtkWidget* focus_border_color_button_ = nullptr;
+  GtkWidget* pinned_border_color_button_ = nullptr;
+  GtkWidget* pinned_focused_border_color_button_ = nullptr;
   GtkWidget* wallpaper_path_label_ = nullptr;
   GtkWidget* choose_image_button_ = nullptr;
   GtkWidget* solid_color_button_ = nullptr;

@@ -159,6 +159,37 @@ void SettingsWindow::build(GtkApplication* app) {
   g_signal_connect(gap_spin, "value-changed", G_CALLBACK(on_gap_changed), this);
   gtk_box_append(GTK_BOX(root_box), labeled_row("Window gap (px)", gap_spin));
 
+  // Pinned-window (always-on-top) border: previously hardcoded blue/green
+  // constants in compositor/view.cpp, now themeable the same way the
+  // plain focus border above is. One shared thickness for both the
+  // plain-pinned and pinned+focused states (matches the previous
+  // hardcoded behavior, where both constants already happened to be the
+  // same value) -- only the color differs between them, so
+  // pinned+focused still reads as visually distinct from merely pinned.
+  GtkWidget* pinned_thickness_spin = gtk_spin_button_new_with_range(0, 10, 1);
+  gtk_spin_button_set_value(GTK_SPIN_BUTTON(pinned_thickness_spin),
+                             config_.pinned_border_thickness_px);
+  g_signal_connect(pinned_thickness_spin, "value-changed",
+                    G_CALLBACK(on_pinned_border_thickness_changed), this);
+  gtk_box_append(GTK_BOX(root_box), labeled_row("Pinned border (px)", pinned_thickness_spin));
+
+  GdkRGBA pinned_rgba{};
+  gdk_rgba_parse(&pinned_rgba, config_.pinned_border_color.c_str());
+  pinned_border_color_button_ = gtk_color_button_new_with_rgba(&pinned_rgba);
+  g_signal_connect(pinned_border_color_button_, "color-set",
+                    G_CALLBACK(on_pinned_border_color_set), this);
+  gtk_box_append(GTK_BOX(root_box),
+                  labeled_row("Pinned border color", pinned_border_color_button_));
+
+  GdkRGBA pinned_focused_rgba{};
+  gdk_rgba_parse(&pinned_focused_rgba, config_.pinned_focused_border_color.c_str());
+  pinned_focused_border_color_button_ = gtk_color_button_new_with_rgba(&pinned_focused_rgba);
+  g_signal_connect(pinned_focused_border_color_button_, "color-set",
+                    G_CALLBACK(on_pinned_focused_border_color_set), this);
+  gtk_box_append(
+      GTK_BOX(root_box),
+      labeled_row("Pinned+focused border color", pinned_focused_border_color_button_));
+
   build_power_section(root_box);
 
   GtkWidget* notebook = gtk_notebook_new();
@@ -770,6 +801,36 @@ void SettingsWindow::on_focus_border_color_set(GtkColorButton* button, gpointer 
   std::snprintf(hex, sizeof(hex), "#%02x%02x%02x", static_cast<int>(rgba.red * 255),
                 static_cast<int>(rgba.green * 255), static_cast<int>(rgba.blue * 255));
   self->config_.focus_border_color = hex;
+  self->save();
+}
+
+void SettingsWindow::on_pinned_border_thickness_changed(GtkSpinButton* button,
+                                                          gpointer user_data) {
+  auto* self = static_cast<SettingsWindow*>(user_data);
+  self->config_.pinned_border_thickness_px = gtk_spin_button_get_value_as_int(button);
+  self->save();
+}
+
+void SettingsWindow::on_pinned_border_color_set(GtkColorButton* button, gpointer user_data) {
+  auto* self = static_cast<SettingsWindow*>(user_data);
+  GdkRGBA rgba{};
+  gtk_color_chooser_get_rgba(GTK_COLOR_CHOOSER(button), &rgba);
+  char hex[8];
+  std::snprintf(hex, sizeof(hex), "#%02x%02x%02x", static_cast<int>(rgba.red * 255),
+                static_cast<int>(rgba.green * 255), static_cast<int>(rgba.blue * 255));
+  self->config_.pinned_border_color = hex;
+  self->save();
+}
+
+void SettingsWindow::on_pinned_focused_border_color_set(GtkColorButton* button,
+                                                          gpointer user_data) {
+  auto* self = static_cast<SettingsWindow*>(user_data);
+  GdkRGBA rgba{};
+  gtk_color_chooser_get_rgba(GTK_COLOR_CHOOSER(button), &rgba);
+  char hex[8];
+  std::snprintf(hex, sizeof(hex), "#%02x%02x%02x", static_cast<int>(rgba.red * 255),
+                static_cast<int>(rgba.green * 255), static_cast<int>(rgba.blue * 255));
+  self->config_.pinned_focused_border_color = hex;
   self->save();
 }
 
