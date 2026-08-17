@@ -508,7 +508,22 @@ static bool scene_node_at(Server* server, double lx, double ly, double* sx, doub
   }
   out->owner = *static_cast<SceneNodeOwner*>(tree->node.data);
   out->data = tree->node.data;
-  if (out->owner == SceneNodeOwner::View) {
+  // The hit buffer node itself may be a popup or subsurface nested under
+  // a View/LayerSurface's tree, not that tree's own main surface -- e.g.
+  // a GtkMenuButton popover's scene node is parented under the bar's
+  // layer-surface tree (see layer_surface_new_popup), so walking up to
+  // "the nearest tagged ancestor" and using ITS main surface routes every
+  // click inside the popup to the bar's main surface instead, at the
+  // wrong local coordinates. wlr_scene_surface_try_from_buffer() resolves
+  // the surface actually backing the hit buffer node, popup or not; only
+  // fall back to the tagged ancestor's main surface (a plain view/layer
+  // surface with no popup involved) when the hit node has no surface of
+  // its own.
+  wlr_scene_buffer* scene_buffer = wlr_scene_buffer_from_node(node);
+  wlr_scene_surface* scene_surface = wlr_scene_surface_try_from_buffer(scene_buffer);
+  if (scene_surface) {
+    out->surface = scene_surface->surface;
+  } else if (out->owner == SceneNodeOwner::View) {
     out->surface = static_cast<View*>(tree->node.data)->surface();
   } else {
     out->surface = static_cast<LayerSurface*>(tree->node.data)->surface();
