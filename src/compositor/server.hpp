@@ -238,6 +238,22 @@ class Server {
   // on any setup failure.
   bool start_theme_watch();
 
+  // Registers SIGTERM/SIGINT handlers (via wl_event_loop_add_signal,
+  // the safe wayland-server-integrated way to handle a signal -- no
+  // traditional async-signal-safety constraints, it delivers via the
+  // event loop like any other source) that call wl_display_terminate()
+  // for a clean shutdown instead of the OS's default "just die"
+  // disposition. Without this, `kill`/`systemctl stop`/a plain Ctrl-C
+  // from a terminal all skipped every atexit-registered cleanup
+  // entirely -- confirmed missing while setting up PGO training
+  // (scripts/build-pgo.sh): GCC's profiling runtime flushes collected
+  // .gcda data via exactly such an atexit hook, so every PGO training
+  // session ended via `kill` was silently losing its whole profile.
+  // Same clean-exit path Alt+Escape's existing keybind already uses
+  // (input.cpp calls the same wl_display_terminate()), just reachable
+  // without a keyboard now too.
+  void start_signal_handlers();
+
   wlr_xdg_shell* xdg_shell_ = nullptr;
   wl_listener new_xdg_toplevel_{};
 
@@ -303,6 +319,9 @@ class Server {
   // uses for its listen/client sockets.
   int theme_watch_fd_ = -1;
   wl_event_source* theme_watch_source_ = nullptr;
+
+  wl_event_source* sigterm_source_ = nullptr;
+  wl_event_source* sigint_source_ = nullptr;
 
   wl_listener new_output_{};
   wl_listener new_input_{};
