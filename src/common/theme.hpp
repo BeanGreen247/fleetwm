@@ -41,6 +41,18 @@ struct ThemeConfig {
   // the compositor's own pre-existing hardcoded fallback
   // (kFocusBorderColorFallback in view.cpp) for continuity.
   std::string focus_border_color = "#e6e6f2";
+  // Pinned-window (PowerToys-style always-on-top, View::pinned) border
+  // color/thickness -- previously hardcoded constants in view.cpp
+  // (kPinnedBorderColor/kPinnedFocusedBorderColor/
+  // kPinnedBorderThicknessPx), now themeable like the plain focus border
+  // above. One shared thickness for both pinned states (matches the
+  // previous hardcoded behavior, where both constants already happened
+  // to be the same value); the two colors stay distinct so
+  // pinned+focused reads as a clearly different state from merely
+  // pinned, same as before.
+  std::string pinned_border_color = "#3399ff";           // blue
+  std::string pinned_focused_border_color = "#99e666";   // green
+  int pinned_border_thickness_px = 3;
   // Gap in px between tiled windows (master/stack split, and between
   // stacked windows), applied by Output::relayout(). Does not add extra
   // spacing against the top bar or screen edges -- that's governed

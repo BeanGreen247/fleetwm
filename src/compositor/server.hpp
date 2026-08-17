@@ -23,6 +23,8 @@ extern "C" {
 #include <wlr/types/wlr_xdg_shell.h>
 }
 
+#include <xkbcommon/xkbcommon.h>
+
 #include <sys/types.h>
 
 #include <list>
@@ -31,6 +33,7 @@ extern "C" {
 
 #include "config.h"
 #include "default_apps.hpp"
+#include "keybinds_config.hpp"
 #include "theme.hpp"
 #include "workspace.hpp"
 
@@ -138,6 +141,31 @@ class Server {
   // theme_config_ since both files live in the same config directory.
   const DefaultAppsConfig& default_apps_config() const { return default_apps_config_; }
   void reload_default_apps_config() { default_apps_config_ = load_default_apps_config(); }
+
+  // Every field of KeybindsConfig (keybinds_config.hpp) is a keysym
+  // *name* (human-editable in keybinds.toml); this is the resolved
+  // xkb_keysym_t form input.cpp's Keyboard::handle_keybind() actually
+  // compares against on every keypress, cached here so that comparison
+  // doesn't re-parse a string on every single key event. Defaults match
+  // this codebase's previous hardcoded constexpr keysym constants
+  // exactly, so an unconfigured install behaves identically to before
+  // this became remappable.
+  struct ResolvedKeybinds {
+    xkb_keysym_t terminal = XKB_KEY_Return;
+    xkb_keysym_t launcher = XKB_KEY_d;
+    xkb_keysym_t close_window = XKB_KEY_Q;
+    xkb_keysym_t toggle_pin = XKB_KEY_P;
+    xkb_keysym_t toggle_float = XKB_KEY_F;
+    xkb_keysym_t lock = XKB_KEY_L;
+    xkb_keysym_t screenshot = XKB_KEY_S;
+    xkb_keysym_t focus_left = XKB_KEY_h;
+    xkb_keysym_t focus_down = XKB_KEY_j;
+    xkb_keysym_t focus_up = XKB_KEY_k;
+    xkb_keysym_t focus_right = XKB_KEY_l;
+    xkb_keysym_t quit = XKB_KEY_Escape;
+  };
+  const ResolvedKeybinds& keybinds() const { return resolved_keybinds_; }
+  void reload_keybinds_config();
 
   // Screen-lock state (bar's power-menu "Lock" action, see
   // bar_window.cpp's build_power_menu()/on_power_action()). `locked_`
@@ -255,6 +283,8 @@ class Server {
 
   ThemeConfig theme_config_;
   DefaultAppsConfig default_apps_config_;
+  KeybindsConfig keybinds_config_;
+  ResolvedKeybinds resolved_keybinds_;
   bool locked_ = false;
   // pid of the currently-spawned fleetwm-locker, or -1 when not locked.
   // Not reaped via waitpid (matches spawn_autostart()'s existing

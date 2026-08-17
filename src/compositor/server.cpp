@@ -844,6 +844,7 @@ bool Server::init() {
 
   theme_config_ = load_theme_config();
   default_apps_config_ = load_default_apps_config();
+  reload_keybinds_config();
   if (!start_theme_watch()) {
     wlr_log(WLR_ERROR,
             "failed to start theme.toml inotify watch; live theme reload will not work");
@@ -992,6 +993,58 @@ void Server::set_default_cursor_image() {
   wlr_cursor_set_xcursor(cursor_, cursor_mgr_, "left_ptr");
 }
 
+namespace {
+
+// Resolves a keybinds.toml key name to an xkb_keysym_t via the same
+// libxkbcommon name table xkb itself uses (so "Return", "d", "Q",
+// "Escape" etc. all just work, matching how the value would be written
+// in an xkb keymap). Falls back to the given default and logs a warning
+// on an unresolvable name (typo, or a name libxkbcommon doesn't
+// recognize) rather than silently disabling the bind with no
+// explanation.
+xkb_keysym_t resolve_keybind(const std::string& name, xkb_keysym_t fallback,
+                              const char* field_name) {
+  if (name.empty()) {
+    return fallback;
+  }
+  xkb_keysym_t sym = xkb_keysym_from_name(name.c_str(), XKB_KEYSYM_NO_FLAGS);
+  if (sym == XKB_KEY_NoSymbol) {
+    wlr_log(WLR_ERROR, "fleetwm: keybinds.toml: unrecognized key name '%s' for '%s', keeping default",
+            name.c_str(), field_name);
+    return fallback;
+  }
+  return sym;
+}
+
+}  // namespace
+
+void Server::reload_keybinds_config() {
+  keybinds_config_ = load_keybinds_config();
+  ResolvedKeybinds defaults;  // XKB_KEY_* defaults, see server.hpp
+  resolved_keybinds_.terminal =
+      resolve_keybind(keybinds_config_.terminal, defaults.terminal, "terminal");
+  resolved_keybinds_.launcher =
+      resolve_keybind(keybinds_config_.launcher, defaults.launcher, "launcher");
+  resolved_keybinds_.close_window =
+      resolve_keybind(keybinds_config_.close_window, defaults.close_window, "close_window");
+  resolved_keybinds_.toggle_pin =
+      resolve_keybind(keybinds_config_.toggle_pin, defaults.toggle_pin, "toggle_pin");
+  resolved_keybinds_.toggle_float =
+      resolve_keybind(keybinds_config_.toggle_float, defaults.toggle_float, "toggle_float");
+  resolved_keybinds_.lock = resolve_keybind(keybinds_config_.lock, defaults.lock, "lock");
+  resolved_keybinds_.screenshot =
+      resolve_keybind(keybinds_config_.screenshot, defaults.screenshot, "screenshot");
+  resolved_keybinds_.focus_left =
+      resolve_keybind(keybinds_config_.focus_left, defaults.focus_left, "focus_left");
+  resolved_keybinds_.focus_down =
+      resolve_keybind(keybinds_config_.focus_down, defaults.focus_down, "focus_down");
+  resolved_keybinds_.focus_up =
+      resolve_keybind(keybinds_config_.focus_up, defaults.focus_up, "focus_up");
+  resolved_keybinds_.focus_right =
+      resolve_keybind(keybinds_config_.focus_right, defaults.focus_right, "focus_right");
+  resolved_keybinds_.quit = resolve_keybind(keybinds_config_.quit, defaults.quit, "quit");
+}
+
 void Server::reload_theme_config() {
   theme_config_ = load_theme_config();
   for (const std::unique_ptr<View>& view : views) {
@@ -1015,6 +1068,7 @@ int server_theme_watch_readable(int fd, uint32_t, void* data) {
   alignas(struct inotify_event) char buf[4096];
   bool got_theme_event = false;
   bool got_default_apps_event = false;
+  bool got_keybinds_event = false;
   ssize_t n;
   while ((n = read(fd, buf, sizeof(buf))) > 0) {
     ssize_t offset = 0;
@@ -1024,6 +1078,8 @@ int server_theme_watch_readable(int fd, uint32_t, void* data) {
         got_theme_event = true;
       } else if (event->len > 0 && std::strcmp(event->name, "default_apps.toml") == 0) {
         got_default_apps_event = true;
+      } else if (event->len > 0 && std::strcmp(event->name, "keybinds.toml") == 0) {
+        got_keybinds_event = true;
       }
       offset += static_cast<ssize_t>(sizeof(struct inotify_event)) + event->len;
     }
@@ -1033,6 +1089,9 @@ int server_theme_watch_readable(int fd, uint32_t, void* data) {
   }
   if (got_default_apps_event) {
     server->reload_default_apps_config();
+  }
+  if (got_keybinds_event) {
+    server->reload_keybinds_config();
   }
   return 0;
 }

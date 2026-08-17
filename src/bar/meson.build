@@ -25,6 +25,7 @@ executable(
     'main.cpp',
     'bar_window.cpp',
     'volume_source.cpp',
+    'systray.cpp',
   ),
   include_directories: include_directories('.'),
   dependencies: bar_deps,

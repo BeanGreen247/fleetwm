@@ -3,12 +3,14 @@
 #include <gtk/gtk.h>
 
 #include <array>
+#include <memory>
 #include <string>
 
 #include "app_style.hpp"
 #include "bar_config.hpp"
 #include "battery_source.hpp"
 #include "ipc_client.hpp"
+#include "systray.hpp"
 #include "theme.hpp"
 #include "volume_source.hpp"
 
@@ -99,6 +101,9 @@ class BarWindow {
   BatterySource::Reading battery_reading_;
   GtkWidget* battery_area_ = nullptr;
   GtkWidget* power_mode_icon_ = nullptr;
+
+  GtkWidget* tray_box_ = nullptr;
+  std::unique_ptr<SystemTray> systray_;
 
   // /proc/stat aggregate-line samples, used to compute a CPU% delta
   // between consecutive 1Hz ticks (ADR 0005).

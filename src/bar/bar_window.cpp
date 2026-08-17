@@ -122,6 +122,14 @@ void BarWindow::build(GtkApplication* app) {
   gtk_box_append(GTK_BOX(right_box), disk_label_);
   gtk_box_append(GTK_BOX(right_box), volume_label_);
 
+  // Systray (StatusNotifierItem/StatusNotifierWatcher, see systray.hpp)
+  // -- its own box so tray icons can be appended dynamically as apps
+  // register, without disturbing the stat labels' fixed positions.
+  tray_box_ = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+  gtk_box_append(GTK_BOX(right_box), tray_box_);
+  systray_ = std::make_unique<SystemTray>(tray_box_);
+  systray_->start();
+
   build_battery_indicator(right_box);
   build_power_menu(right_box);
 

@@ -151,7 +151,7 @@ or compositor.
 | `Alt+Shift+Return`  | Promote the focused window to master      |
 | `Alt+D`             | Open the app launcher                     |
 | `Alt+Shift+Q`       | Close the focused window                  |
-| `Alt+J` / `Alt+K`   | Focus next/previous window                |
+| `Alt+H`/`J`/`K`/`L` | Focus window left/down/up/right (spatial, vim-style) |
 | `Alt+Shift+P`       | Toggle always-on-top pinning               |
 | `Alt+Shift+F`       | Toggle floating (opt out of tiling)       |
 | `Alt+Shift+L`       | Lock the session                          |
@@ -162,6 +162,27 @@ or compositor.
 More tiling/focus keybinds land in Phase 1. `Alt`, not `Super`, is used
 for the terminal/quit binds in Phase 0 since `Super` is often already
 claimed by the host compositor during nested development testing.
+
+The *key* half of every Alt+`<key>`/Alt+Shift+`<key>` bind above is
+remappable via `~/.config/fleetwm/keybinds.toml` (the modifier itself
+stays fixed). Each field takes an xkb key name (e.g. `"Return"`, `"d"`,
+uppercase like `"Q"` for a Shift-combined bind), picked up live with no
+restart needed:
+
+```toml
+terminal = "Return"       # + Shift = promote focused window to master
+launcher = "d"
+close_window = "Q"
+toggle_pin = "P"
+toggle_float = "F"
+lock = "L"
+screenshot = "S"
+focus_left = "h"
+focus_down = "j"
+focus_up = "k"
+focus_right = "l"
+quit = "Escape"
+```
 
 ## Building from source manually
 
