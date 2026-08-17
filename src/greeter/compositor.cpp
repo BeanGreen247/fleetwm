@@ -32,6 +32,9 @@ struct Keyboard {
 
 void keyboard_modifiers(wl_listener* listener, void*) {
   Keyboard* kb = wl_container_of(listener, kb, modifiers);
+  if (kb->compositor->is_shutting_down()) {
+    return;  // see GreeterCompositor::is_shutting_down()'s doc comment
+  }
   wlr_seat* seat = kb->compositor->seat();
   wlr_seat_set_keyboard(seat, kb->wlr_keyboard_ptr);
   wlr_seat_keyboard_notify_modifiers(seat, &kb->wlr_keyboard_ptr->modifiers);
@@ -39,6 +42,15 @@ void keyboard_modifiers(wl_listener* listener, void*) {
 
 void keyboard_key(wl_listener* listener, void* data) {
   Keyboard* kb = wl_container_of(listener, kb, key);
+  if (kb->compositor->is_shutting_down()) {
+    // wlr_keyboard_finish() (called while tearing down the display, see
+    // ~GreeterCompositor()) synthesizes a release for any key still
+    // logically held and emits it right here -- touching seat_ this late
+    // in teardown is what segfaulted (see is_shutting_down()'s doc
+    // comment, compositor.hpp); there is no session left for this event
+    // to usefully reach anyway.
+    return;
+  }
   auto* event = static_cast<wlr_keyboard_key_event*>(data);
   wlr_seat* seat = kb->compositor->seat();
   wlr_seat_set_keyboard(seat, kb->wlr_keyboard_ptr);
@@ -359,6 +371,10 @@ void GreeterCompositor::notify_keyboard_removed() {
 }
 
 GreeterCompositor::~GreeterCompositor() {
+  // Must be set before any teardown call below -- see is_shutting_down()'s
+  // doc comment (compositor.hpp) for why wl_display_destroy() can still
+  // reach back into keyboard_key()/keyboard_modifiers() below this point.
+  shutting_down_ = true;
   if (extra_fd_source_) {
     wl_event_source_remove(extra_fd_source_);
   }
