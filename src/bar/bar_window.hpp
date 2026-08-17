@@ -44,7 +44,7 @@ class BarWindow {
   static void on_workspace_button_clicked_c(GtkButton* button, gpointer user_data);
 
   void build_power_menu(GtkWidget* parent_box);
-  static void on_power_action(GSimpleAction* action, GVariant* parameter, gpointer user_data);
+  static void on_power_icon_clicked(GtkButton* button, gpointer user_data);
 
   void init_stats();
   void update_cpu_stat();

@@ -297,3 +297,25 @@ notebook.fleetwm-settings-notebook stack {
 .fleetwm-greeter-back-button:hover {
   color: @accent_color;
 }
+
+/* fleetwm-powermenu: a centered card of full-width action buttons over
+ * the same fullscreen fleetwm-panel backdrop the locker uses. */
+.fleetwm-powermenu-card {
+  min-width: 260px;
+  padding: 24px;
+  border-radius: 12px;
+  background-color: @bg_secondary;
+}
+
+.fleetwm-powermenu-button {
+  background-color: transparent;
+  background-image: none;
+  color: @fg_primary;
+  border: none;
+  padding: 10px 14px;
+}
+
+.fleetwm-powermenu-button:hover {
+  background-color: @accent_color;
+  color: @bg_primary;
+}

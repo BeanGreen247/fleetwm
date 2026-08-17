@@ -55,15 +55,54 @@ void layer_surface_destroy(wl_listener* listener, void*) {
       [ls](const std::unique_ptr<LayerSurface>& l) { return l.get() == ls; });
 }
 
+namespace {
+
+// Same PopupHandle shape as xdg_toplevel_new_popup's copy in server.cpp
+// (kept as a separate local copy rather than shared, matching this
+// codebase's existing per-file small-helper style) -- without this, a
+// layer surface's own popups (e.g. fleetwm-bar's power menu, a
+// GtkMenuButton popover) never receive their initial configure and just
+// hang forever: the button itself still responds to the click (internal
+// GTK state toggles), but the popup surface never finishes initializing
+// so nothing ever renders, which reads as "the power menu does nothing".
+struct LayerPopupHandle {
+  Server* server;
+  wlr_xdg_popup* popup;
+  wl_listener commit{};
+  wl_listener destroy{};
+};
+
+void layer_popup_handle_destroy(wl_listener* listener, void*) {
+  LayerPopupHandle* handle = wl_container_of(listener, handle, destroy);
+  wl_list_remove(&handle->commit.link);
+  wl_list_remove(&handle->destroy.link);
+  delete handle;
+}
+
+void layer_popup_handle_commit(wl_listener* listener, void*) {
+  LayerPopupHandle* handle = wl_container_of(listener, handle, commit);
+  if (!handle->popup->base->initial_commit) {
+    return;
+  }
+  wlr_box output_box{};
+  wlr_output_layout_get_box(handle->server->output_layout(), nullptr, &output_box);
+  wlr_xdg_popup_unconstrain_from_box(handle->popup, &output_box);
+}
+
+}  // namespace
+
 void layer_surface_new_popup(wl_listener* listener, void* data) {
   LayerSurface* ls = wl_container_of(listener, ls, new_popup);
   auto* popup = static_cast<wlr_xdg_popup*>(data);
   // Parent the popup's scene node into this layer surface's own tree so
-  // it stacks correctly above the layer surface's main content. Full
-  // popup lifecycle (output-box unconstraining, grabs) is out of scope
-  // for launcher MVP, which creates no popups -- this is enough for the
-  // popup to at least render if one ever appears.
+  // it stacks correctly above the layer surface's main content.
   wlr_scene_xdg_surface_create(ls->scene_layer_surface->tree, popup->base);
+
+  auto* handle = new LayerPopupHandle{ls->server, popup};
+  handle->commit.notify = layer_popup_handle_commit;
+  wl_signal_add(&popup->base->surface->events.commit, &handle->commit);
+  handle->destroy.notify = layer_popup_handle_destroy;
+  wl_signal_add(&popup->base->events.destroy, &handle->destroy);
 }
 
 void layer_surface_surface_commit(wl_listener* listener, void*) {

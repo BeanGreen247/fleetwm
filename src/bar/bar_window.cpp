@@ -412,92 +412,36 @@ gboolean BarWindow::on_clock_tick(gpointer user_data) {
 }
 
 void BarWindow::build_power_menu(GtkWidget* parent_box) {
-  GMenu* menu = g_menu_new();
-  g_menu_append(menu, "Lock", "bar.lock");
-  g_menu_append(menu, "Log out", "bar.logout");
-  g_menu_append(menu, "Sleep", "bar.sleep");
-  g_menu_append(menu, "Reboot", "bar.reboot");
-  g_menu_append(menu, "Shut down", "bar.shutdown");
-
-  GSimpleActionGroup* action_group = g_simple_action_group_new();
-  const char* action_names[] = {"lock", "logout", "sleep", "reboot", "shutdown"};
-  for (const char* name : action_names) {
-    GSimpleAction* action = g_simple_action_new(name, nullptr);
-    g_signal_connect(action, "activate", G_CALLBACK(on_power_action), this);
-    g_action_map_add_action(G_ACTION_MAP(action_group), G_ACTION(action));
-    g_object_unref(action);
-  }
-  gtk_widget_insert_action_group(window_, "bar", G_ACTION_GROUP(action_group));
-  g_object_unref(action_group);
-
-  GtkWidget* menu_button = gtk_menu_button_new();
-  // gtk_menu_button_set_icon_name()'s internal GtkImage defaults to a
-  // larger symbolic-icon size than fits the workspace buttons' 16px
-  // min-height, stretching the whole button (and the bar's own
-  // exclusive-zone-sized height along with it) taller than intended --
-  // CSS's "-gtk-icon-size" only accepts named sizes (normal/large), not
-  // raw pixels, so it had no effect. Building the GtkImage directly and
-  // pinning its pixel size explicitly is the only reliable fix.
+  // Used to be a GtkMenuButton + GMenu popover (a GTK-managed xdg_popup).
+  // Individual row clicks inside that popover turned out to be unreliable
+  // against this compositor's popup input routing (confirmed via
+  // extensive live testing: hover worked, but only the row closest to the
+  // button ever actually activated its action). Replaced with a plain
+  // button that spawns fleetwm-powermenu -- a full fullscreen layer-shell
+  // overlay, same proven-reliable input path as fleetwm-locker, see its
+  // own header comment for the full rationale.
+  GtkWidget* button = gtk_button_new();
   GtkWidget* icon = gtk_image_new_from_icon_name("system-shutdown-symbolic");
   gtk_image_set_pixel_size(GTK_IMAGE(icon), 12);
-  gtk_menu_button_set_child(GTK_MENU_BUTTON(menu_button), icon);
-  gtk_menu_button_set_menu_model(GTK_MENU_BUTTON(menu_button), G_MENU_MODEL(menu));
-  // Same flat box treatment as the workspace buttons
-  // (.fleetwm-workspace-button CSS, set up in apply_theme()) rather than
-  // GTK's default menu-button chrome, so the power icon reads as part of
-  // the same button family instead of standing out as a leftover
-  // system-themed control -- explicit user request, distinct from
-  // themes/base.css's own icon-only ".fleetwm-power-icon" style.
-  gtk_widget_add_css_class(menu_button, "fleetwm-workspace-button");
-  g_object_unref(menu);
-  gtk_box_append(GTK_BOX(parent_box), menu_button);
+  gtk_button_set_child(GTK_BUTTON(button), icon);
+  gtk_widget_add_css_class(button, "fleetwm-workspace-button");
+  g_signal_connect(button, "clicked", G_CALLBACK(on_power_icon_clicked), this);
+  gtk_box_append(GTK_BOX(parent_box), button);
 }
 
-void BarWindow::on_power_action(GSimpleAction* action, GVariant*, gpointer user_data) {
-  const char* name = g_action_get_name(G_ACTION(action));
-  if (std::strcmp(name, "lock") == 0) {
-    // Goes over the compositor IPC socket, not a subprocess spawn like
-    // the other three actions below -- Server::request_lock() (see
-    // ipc_server.cpp's "LOCK" handling) is what actually spawns
-    // fleetwm-locker, same action Alt+Shift+L triggers directly
-    // (compositor/input.cpp).
-    static_cast<BarWindow*>(user_data)->ipc_.send_command("LOCK");
-    return;
-  }
-  const char* argv[3] = {nullptr, nullptr, nullptr};
-  if (std::strcmp(name, "logout") == 0) {
-    argv[0] = "loginctl";
-    argv[1] = "terminate-session";
-    argv[2] = std::getenv("XDG_SESSION_ID");
-  } else if (std::strcmp(name, "sleep") == 0) {
-    argv[0] = "systemctl";
-    argv[1] = "suspend";
-  } else if (std::strcmp(name, "reboot") == 0) {
-    argv[0] = "systemctl";
-    argv[1] = "reboot";
-  } else if (std::strcmp(name, "shutdown") == 0) {
-    argv[0] = "systemctl";
-    argv[1] = "poweroff";
-  } else {
-    return;
-  }
+void BarWindow::on_power_icon_clicked(GtkButton*, gpointer) {
+  // GApplication's default single-instance activation (dev.fleetwm.
+  // PowerMenu, see src/powermenu/main.cpp) means a second click while one
+  // is already open just re-presents/re-focuses it rather than spawning a
+  // duplicate -- no extra already-running guard needed here.
   GError* error = nullptr;
-  char** child_argv = nullptr;
-  int argc = 0;
-  while (argv[argc] != nullptr) {
-    ++argc;
-  }
-  child_argv = g_new0(char*, static_cast<guint>(argc) + 1);
-  for (int i = 0; i < argc; ++i) {
-    child_argv[i] = g_strdup(argv[i]);
-  }
-  if (!g_spawn_async(nullptr, child_argv, nullptr, G_SPAWN_SEARCH_PATH, nullptr, nullptr, nullptr,
+  char* argv[] = {const_cast<char*>("fleetwm-powermenu"), nullptr};
+  if (!g_spawn_async(nullptr, argv, nullptr, G_SPAWN_SEARCH_PATH, nullptr, nullptr, nullptr,
                       &error)) {
-    std::fprintf(stderr, "fleetwm-bar: power action '%s' failed: %s\n", name,
+    std::fprintf(stderr, "fleetwm-bar: failed to launch fleetwm-powermenu: %s\n",
                  error != nullptr ? error->message : "unknown error");
     g_clear_error(&error);
   }
-  g_strfreev(child_argv);
 }
 
 // -- Stats (ADR 0005) ----------------------------------------------------

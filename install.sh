@@ -19,6 +19,24 @@ sudo apt-get install -y \
   libgtk-4-dev libgtk4-layer-shell-dev \
   libpipewire-0.3-dev \
   libpam0g-dev \
+  libsystemd-dev \
+  polkitd pkexec \
+                      # runtime dependency for the bar's power menu
+                      # (fleetwm-powermenu): systemd-logind refuses
+                      # Sleep/Reboot/Shut down for a non-root caller
+                      # without a running polkit to authorize the
+                      # request, regardless of session state -- fails
+                      # with "Access denied" even from an active
+                      # session. Log out doesn't need this (ending
+                      # your own session needs no authorization), and
+                      # sudo bypasses it too (root needs no polkit
+                      # check), which is why those two paths could look
+                      # like they worked while this one silently didn't
+                      # on a minimal install that never pulled polkit in
+                      # as a transitive dependency of anything else.
+                      # Package name is "polkitd" (Debian 13/trixie) --
+                      # the older "policykit-1" transitional package no
+                      # longer exists there; both work on Ubuntu 26.04.
   xwayland \
   foot \
   grim slurp wl-clipboard libnotify-bin \
