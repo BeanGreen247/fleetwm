@@ -1,4 +1,5 @@
 build/
+build-pgo/
 subprojects/tomlplusplus/
 subprojects/packagecache/
 *.o

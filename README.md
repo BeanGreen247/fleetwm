@@ -192,6 +192,14 @@ ninja -C build
 sudo ninja -C build install
 ```
 
+`install.sh` builds with a heavier set of flags than the plain command
+above -- LTO, `-march=native`, dead-code stripping, and more (see its own
+comments for what and why). For an even more aggressive build,
+`scripts/build-pgo.sh` adds profile-guided optimization on top, as a
+separate two-stage opt-in flow (it needs a real usage sample collected
+between builds, which doesn't fit a single-pass installer) -- see that
+script's header comment for the exact steps.
+
 Build dependencies (apt package names):
 
 ```
