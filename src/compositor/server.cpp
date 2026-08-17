@@ -1,6 +1,7 @@
 #include "server.hpp"
 
 #include <fcntl.h>
+#include <signal.h>
 #include <sys/inotify.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -613,6 +614,12 @@ Server::~Server() {
   if (theme_watch_fd_ >= 0) {
     close(theme_watch_fd_);
   }
+  if (sigterm_source_) {
+    wl_event_source_remove(sigterm_source_);
+  }
+  if (sigint_source_) {
+    wl_event_source_remove(sigint_source_);
+  }
   if (display_) {
     wl_display_destroy_clients(display_);
     wl_display_destroy(display_);
@@ -841,6 +848,8 @@ bool Server::init() {
   if (!ipc_server->listen()) {
     wlr_log(WLR_ERROR, "failed to start IPC socket; workspace switching via bar will not work");
   }
+
+  start_signal_handlers();
 
   theme_config_ = load_theme_config();
   default_apps_config_ = load_default_apps_config();
@@ -1094,6 +1103,26 @@ int server_theme_watch_readable(int fd, uint32_t, void* data) {
     server->reload_keybinds_config();
   }
   return 0;
+}
+
+namespace {
+
+int server_signal_terminate(int, void* data) {
+  auto* server = static_cast<Server*>(data);
+  wl_display_terminate(server->display());
+  return 0;
+}
+
+}  // namespace
+
+void Server::start_signal_handlers() {
+  wl_event_loop* loop = wl_display_get_event_loop(display_);
+  sigterm_source_ = wl_event_loop_add_signal(loop, SIGTERM, server_signal_terminate, this);
+  sigint_source_ = wl_event_loop_add_signal(loop, SIGINT, server_signal_terminate, this);
+  if (sigterm_source_ == nullptr || sigint_source_ == nullptr) {
+    wlr_log(WLR_ERROR, "failed to register SIGTERM/SIGINT handlers; kill will not shut down "
+                        "cleanly (clients won't be notified, atexit hooks won't run)");
+  }
 }
 
 bool Server::start_theme_watch() {
