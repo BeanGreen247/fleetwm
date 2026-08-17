@@ -86,10 +86,23 @@ void View::set_floating(bool floating_) {
 }
 
 void View::set_fullscreen(bool fullscreen_) {
-  if (fullscreen == fullscreen_ || output == nullptr) {
+  if (fullscreen == fullscreen_) {
     return;
   }
   fullscreen = fullscreen_;
+
+  if (output == nullptr) {
+    // Client requested fullscreen before ever mapping -- confirmed via
+    // real testing with `foot --fullscreen`, which sends
+    // xdg_toplevel.set_fullscreen() immediately at startup, well before
+    // its first real (non-initial) commit. `fullscreen` above is already
+    // updated, so this isn't lost: xdg_toplevel_map (server.cpp) checks
+    // it and re-invokes this method once `output` is actually set,
+    // before that same call's relayout() runs (so relayout() already
+    // sees fullscreen==true and skips tiling this view -- no
+    // tiled-then-corrected flash).
+    return;
+  }
 
   if (kind == Kind::XdgToplevel && xdg_toplevel) {
     wlr_xdg_toplevel_set_fullscreen(xdg_toplevel, fullscreen);

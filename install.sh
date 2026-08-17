@@ -54,8 +54,18 @@ echo "==> Configuring build"
 # doesn't imply this). Neither changes behavior, both are standard
 # release-build hygiene -- part of the standing "run as efficiently as
 # possible" goal, not a one-off tweak.
+# -Db_lto=true: whole-program link-time optimization across every
+# translation unit in each binary (cross-TU inlining, better dead-code
+# elimination) -- meson/ninja handle this natively, no manual flag
+# wrangling needed. -march=native: codegen tuned for the exact CPU this
+# is building on, safe ONLY because install.sh always builds fresh on
+# the machine it installs to (never cross-compiled or redistributed as a
+# prebuilt binary) -- a binary built this way will refuse to run
+# correctly on a different CPU model, which is fine here but would NOT
+# be fine for e.g. a .deb built once and shipped to arbitrary machines.
 meson setup "${BUILD_DIR}" "${SCRIPT_DIR}" --prefix=/usr/local --buildtype=release \
-  -Db_ndebug=true -Dstrip=true --reconfigure
+  -Db_ndebug=true -Dstrip=true -Db_lto=true \
+  -Dc_args=-march=native -Dcpp_args=-march=native --reconfigure
 
 echo "==> Building"
 ninja -C "${BUILD_DIR}"

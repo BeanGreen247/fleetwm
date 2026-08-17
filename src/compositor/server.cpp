@@ -132,6 +132,18 @@ static void xdg_toplevel_map(wl_listener* listener, void*) {
       wlr_scene_node_set_position(&view->container_tree->node, box.x, box.y);
     }
 
+    if (view->fullscreen) {
+      // A fullscreen request that arrived before this view ever mapped
+      // (output was still null -- see View::set_fullscreen's doc
+      // comment) never got applied. output is set above now, so
+      // re-invoke it -- toggle fullscreen_ off first so set_fullscreen's
+      // own no-op-if-unchanged guard doesn't swallow this call. Done
+      // before relayout() below so relayout() already sees
+      // fullscreen==true and skips tiling this view instead of tiling
+      // it for one frame and then correcting.
+      view->fullscreen = false;
+      view->set_fullscreen(true);
+    }
     output->relayout();
   }
 
