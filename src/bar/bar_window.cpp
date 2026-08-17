@@ -405,12 +405,13 @@ gboolean BarWindow::on_clock_tick(gpointer user_data) {
 
 void BarWindow::build_power_menu(GtkWidget* parent_box) {
   GMenu* menu = g_menu_new();
+  g_menu_append(menu, "Lock", "bar.lock");
   g_menu_append(menu, "Log out", "bar.logout");
   g_menu_append(menu, "Reboot", "bar.reboot");
   g_menu_append(menu, "Shut down", "bar.shutdown");
 
   GSimpleActionGroup* action_group = g_simple_action_group_new();
-  const char* action_names[] = {"logout", "reboot", "shutdown"};
+  const char* action_names[] = {"lock", "logout", "reboot", "shutdown"};
   for (const char* name : action_names) {
     GSimpleAction* action = g_simple_action_new(name, nullptr);
     g_signal_connect(action, "activate", G_CALLBACK(on_power_action), this);
@@ -443,8 +444,17 @@ void BarWindow::build_power_menu(GtkWidget* parent_box) {
   gtk_box_append(GTK_BOX(parent_box), menu_button);
 }
 
-void BarWindow::on_power_action(GSimpleAction* action, GVariant*, gpointer) {
+void BarWindow::on_power_action(GSimpleAction* action, GVariant*, gpointer user_data) {
   const char* name = g_action_get_name(G_ACTION(action));
+  if (std::strcmp(name, "lock") == 0) {
+    // Goes over the compositor IPC socket, not a subprocess spawn like
+    // the other three actions below -- Server::request_lock() (see
+    // ipc_server.cpp's "LOCK" handling) is what actually spawns
+    // fleetwm-locker, same action Alt+Shift+L triggers directly
+    // (compositor/input.cpp).
+    static_cast<BarWindow*>(user_data)->ipc_.send_command("LOCK");
+    return;
+  }
   const char* argv[3] = {nullptr, nullptr, nullptr};
   if (std::strcmp(name, "logout") == 0) {
     argv[0] = "loginctl";

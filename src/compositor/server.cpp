@@ -663,6 +663,33 @@ void spawn_autostart(const char* name, const char* full_path) {
 
 }  // namespace
 
+void Server::request_lock() {
+  if (locked_) {
+    return;  // already locked; don't spawn a second fleetwm-locker on top
+  }
+  pid_t pid = fork();
+  if (pid < 0) {
+    wlr_log(WLR_ERROR, "fleetwm: fork for fleetwm-locker failed: %s", std::strerror(errno));
+    return;
+  }
+  if (pid == 0) {
+    execlp("fleetwm-locker", "fleetwm-locker", nullptr);
+    std::fprintf(stderr, "fleetwm: failed to exec fleetwm-locker: %s\n", std::strerror(errno));
+    _exit(1);
+  }
+  locked_ = true;
+  locker_pid_ = pid;
+}
+
+bool Server::confirm_unlock(pid_t requesting_pid) {
+  if (!locked_ || requesting_pid != locker_pid_) {
+    return false;
+  }
+  locked_ = false;
+  locker_pid_ = -1;
+  return true;
+}
+
 bool Server::init() {
   // TEMPORARY: bumped to WLR_DEBUG to diagnose the "error in client
   // communication" / "Lost connection to Wayland compositor" failure

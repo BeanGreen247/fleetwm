@@ -23,6 +23,8 @@ extern "C" {
 #include <wlr/types/wlr_xdg_shell.h>
 }
 
+#include <sys/types.h>
+
 #include <list>
 #include <memory>
 #include <vector>
@@ -130,6 +132,33 @@ class Server {
   const DefaultAppsConfig& default_apps_config() const { return default_apps_config_; }
   void reload_default_apps_config() { default_apps_config_ = load_default_apps_config(); }
 
+  // Screen-lock state (bar's power-menu "Lock" action, see
+  // bar_window.cpp's build_power_menu()/on_power_action()). `locked_`
+  // gates input.cpp's Alt+<key> global keybind interception (input.cpp's
+  // keyboard_key()) so a locked session can't be bypassed by e.g.
+  // Alt+Return spawning a terminal -- everything else (ordinary key
+  // events, all pointer events) already flows to whatever surface holds
+  // seat keyboard/pointer focus regardless of locked_, which is safe here
+  // only because fleetwm-locker's lock surface is layer-shell OVERLAY +
+  // KEYBOARD_MODE_EXCLUSIVE and anchored fullscreen (see locker_window.cpp),
+  // so it already owns focus and fully occludes every toplevel underneath.
+  bool is_locked() const { return locked_; }
+
+  // Spawns fleetwm-locker and sets locked_ = true. A no-op if already
+  // locked (e.g. a second "LOCK" IPC command while one lock screen is
+  // already up) -- does not spawn a second locker process on top of the
+  // first. See ipc_server.cpp's "LOCK" command handling.
+  void request_lock();
+
+  // Only succeeds if currently locked *and* `requesting_pid` is the exact
+  // pid request_lock() spawned -- verified by the caller (ipc_server.cpp's
+  // "UNLOCK" handling) via SO_PEERCRED on the requesting socket, which the
+  // kernel supplies and a client process cannot spoof. This is what stops
+  // any other process on the same IPC socket from just sending "UNLOCK"
+  // itself without ever having passed fleetwm-locker's PAM check. Returns
+  // true if the unlock was accepted.
+  bool confirm_unlock(pid_t requesting_pid);
+
   std::list<std::unique_ptr<View>> views;  // stacking order: front = topmost
   std::list<std::unique_ptr<LayerSurface>> layer_surfaces;
   std::vector<std::unique_ptr<Output>> outputs;
@@ -213,6 +242,13 @@ class Server {
 
   ThemeConfig theme_config_;
   DefaultAppsConfig default_apps_config_;
+  bool locked_ = false;
+  // pid of the currently-spawned fleetwm-locker, or -1 when not locked.
+  // Not reaped via waitpid (matches spawn_autostart()'s existing
+  // no-reaping convention, server.cpp) -- an unreaped locker becomes a
+  // zombie for the rest of the compositor's lifetime once it exits, same
+  // trade-off already made for fleetwm-bar/fleetwm-wallpaper.
+  pid_t locker_pid_ = -1;
   // inotify fd watching theme.toml's parent directory (not the file
   // itself -- fleetwm-settings' save_theme_config() writes via a fresh
   // std::ofstream each time, which some inotify setups see as the watched
