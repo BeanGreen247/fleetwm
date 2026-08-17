@@ -28,6 +28,7 @@ extern "C" {
 #include <vector>
 
 #include "config.h"
+#include "default_apps.hpp"
 #include "theme.hpp"
 #include "workspace.hpp"
 
@@ -122,6 +123,13 @@ class Server {
   // init() and again on every inotify-detected write to the config file.
   void reload_theme_config();
 
+  // Current default_apps.toml contents (currently just terminal_command,
+  // the one default-app choice with no XDG mimetype -- see
+  // default_apps.hpp), kept fresh by the same inotify watch as
+  // theme_config_ since both files live in the same config directory.
+  const DefaultAppsConfig& default_apps_config() const { return default_apps_config_; }
+  void reload_default_apps_config() { default_apps_config_ = load_default_apps_config(); }
+
   std::list<std::unique_ptr<View>> views;  // stacking order: front = topmost
   std::list<std::unique_ptr<LayerSurface>> layer_surfaces;
   std::vector<std::unique_ptr<Output>> outputs;
@@ -204,6 +212,7 @@ class Server {
   int keyboard_count_ = 0;
 
   ThemeConfig theme_config_;
+  DefaultAppsConfig default_apps_config_;
   // inotify fd watching theme.toml's parent directory (not the file
   // itself -- fleetwm-settings' save_theme_config() writes via a fresh
   // std::ofstream each time, which some inotify setups see as the watched
