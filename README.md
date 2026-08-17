@@ -200,6 +200,20 @@ separate two-stage opt-in flow (it needs a real usage sample collected
 between builds, which doesn't fit a single-pass installer) -- see that
 script's header comment for the exact steps.
 
+fleetwm's GTK4 clients (bar, wallpaper, settings, launcher, locker,
+greeter login card) run with `GSK_RENDERER=cairo` rather than GTK4's
+default GL renderer, since none of them render anything that needs GPU
+compositing. GTK4's GL renderer pulls in Mesa's full GL/EGL/gallium
+stack -- and, on any machine without real GPU-accelerated EGL (e.g. a
+VM falling back to llvmpipe), `libLLVM` on top of that, ~15-20MB of Pss
+per process by itself. Measured on a real box: `fleetwm-bar` dropped
+from 131MB to 24MB Pss, `fleetwm-wallpaper` from 99MB to 22MB, with
+pixel-identical output. This is set via `GSK_RENDERER` in each
+process's environment (`src/greeter/session.cpp` for the user session,
+`packaging/fleetwm-greeter@.service` for the login screen), not
+hardcoded, so it can be overridden if a future client ever needs real
+GPU-accelerated rendering.
+
 Build dependencies (apt package names):
 
 ```

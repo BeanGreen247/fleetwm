@@ -31,6 +31,15 @@ std::vector<std::string> build_env(const passwd* pw,
   // hardware-accelerated EGL, wlroots refuses to fall back to llvmpipe
   // unless this is set. Harmless no-op when real GPU accel exists.
   env.emplace_back("WLR_RENDERER_ALLOW_SOFTWARE=1");
+  // GTK4's GSK defaults to a GL renderer, which drags in Mesa's full
+  // GL/EGL/gallium stack (and, on any host without real GPU-accelerated
+  // EGL, llvmpipe -- pulling in libLLVM too, ~15-20MB Pss per process by
+  // itself). Measured on fleetwm-dev: fleetwm-bar 131MB->24MB Pss,
+  // fleetwm-wallpaper 99MB->22MB Pss, pixel-identical output (grim
+  // screenshot diff) -- none of fleetwm's GTK4 clients (bar, wallpaper,
+  // settings, launcher, locker) render anything that needs GPU
+  // compositing. Inherited by every execlp-spawned helper below.
+  env.emplace_back("GSK_RENDERER=cairo");
   // Without this, the session gets no locale env at all (glibc's default
   // is the plain "C" locale, ASCII-only) -- every GTK app and foot then
   // logs its own "not a UTF-8 locale, falling back to C.UTF-8" warning on

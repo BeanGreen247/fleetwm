@@ -59,6 +59,10 @@ Environment=LIBSEAT_BACKEND=seatd
 # available -- this only lifts a refusal, it never forces software
 # rendering over a working hardware path.
 Environment=WLR_RENDERER_ALLOW_SOFTWARE=1
+# Same GSK_RENDERER rationale as src/greeter/session.cpp's copy of this
+# var -- avoids GTK4 pulling in Mesa's GL/EGL/gallium/LLVM stack for the
+# login card, which needs no GPU compositing.
+Environment=GSK_RENDERER=cairo
 UtmpIdentifier=%I
 TTYPath=/dev/%I
 TTYReset=yes
