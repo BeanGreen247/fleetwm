@@ -119,6 +119,7 @@ subdir('src/wallpaper')
 if get_option('greeter')
   subdir('src/greeter')
   subdir('src/greeter-login')
+  subdir('src/locker')
 endif
 
 install_data(

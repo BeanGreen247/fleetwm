@@ -138,6 +138,27 @@ void IpcServer::handle_line(Client& client, const std::string& line) {
     return;
   }
 
+  if (line == "LOCK") {
+    server_->request_lock();
+    return;
+  }
+
+  if (line == "UNLOCK") {
+    // SO_PEERCRED gives the kernel's own record of which process is on
+    // the other end of this specific socket fd -- unlike the pid a
+    // client could claim in its own message text, this cannot be
+    // spoofed by some other process just connecting and sending
+    // "UNLOCK" itself (see Server::confirm_unlock's doc comment,
+    // server.hpp). Only fleetwm-locker's exact spawned pid, checked by
+    // Server::confirm_unlock, can ever unlock a locked session this way.
+    struct ucred cred {};
+    socklen_t cred_len = sizeof(cred);
+    if (getsockopt(client.fd, SOL_SOCKET, SO_PEERCRED, &cred, &cred_len) == 0) {
+      server_->confirm_unlock(cred.pid);
+    }
+    return;
+  }
+
   if (line.rfind("WORKSPACE ", 0) == 0) {
     int index = -1;
     try {

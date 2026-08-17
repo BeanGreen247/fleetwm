@@ -21,13 +21,18 @@ sudo apt-get install -y \
   libpam0g-dev \
   xwayland \
   foot \
-  grim wlrctl wtype gdb imagemagick  # dev-box testing: screenshot (grim)
-                      # + pixel inspection (imagemagick's `convert
-                      # ... txt:-`) + synthetic pointer/keyboard input
-                      # (wlrctl/wtype) over SSH, since fleetwm advertises
-                      # wlr-screencopy-v1, wlr-virtual-pointer-v1, and
-                      # wlr-virtual-keyboard-v1 for exactly this; gdb for
-                      # live-attaching to the compositor to catch crashes
+  grim slurp wl-clipboard libnotify-bin \
+                      # end-user runtime: Alt+Shift+S's screenshot keybind
+                      # (compositor/input.cpp's kScreenshotCommand) --
+                      # grim captures, slurp picks the region, wl-copy
+                      # puts it on the clipboard, notify-send confirms it
+  wlrctl wtype gdb imagemagick  # dev-box testing: pixel inspection
+                      # (imagemagick's `convert ... txt:-`) + synthetic
+                      # pointer/keyboard input (wlrctl/wtype) over SSH,
+                      # since fleetwm advertises wlr-screencopy-v1,
+                      # wlr-virtual-pointer-v1, and wlr-virtual-keyboard-v1
+                      # for exactly this; gdb for live-attaching to the
+                      # compositor to catch crashes
 
 echo "==> Setting system default locale to C.UTF-8"
 # fleetwm-greet's session env (src/greeter/session.cpp) also hardcodes
@@ -85,6 +90,14 @@ if [[ -x "${BUILD_DIR}/src/greeter/fleetwm-greet" ]]; then
   sudo install -m 644 "${SCRIPT_DIR}/packaging/fleetwm-greeter-pam.conf" /etc/pam.d/fleetwm-greeter
   sudo install -m 644 "${SCRIPT_DIR}/packaging/fleetwm-greeter@.service" /usr/lib/systemd/system/fleetwm-greeter@.service
   sudo systemctl daemon-reload
+
+  # fleetwm-locker (the Lock power-menu action) re-verifies the running
+  # user's password via its own PAM service -- separate from
+  # fleetwm-greeter's above since it never opens a session (pam_unix +
+  # pam_systemd's session lines make no sense for re-auth of an
+  # already-running session).
+  echo "==> Installing locker PAM config"
+  sudo install -m 644 "${SCRIPT_DIR}/packaging/fleetwm-locker-pam.conf" /etc/pam.d/fleetwm-locker
 fi
 
 echo

@@ -145,12 +145,19 @@ or compositor.
 
 ## Default keybinds
 
-| Keybind        | Action                          |
-|----------------|----------------------------------|
-| `Alt+Return`   | Spawn a terminal (`foot`)       |
-| `Alt+D`        | Open the app launcher           |
-| `Alt+Escape`   | Quit the compositor             |
-| `Super+1`..`0` | Switch to workspace 1-9, 0      |
+| Keybind             | Action                                    |
+|---------------------|--------------------------------------------|
+| `Alt+Return`        | Spawn a terminal (Settings' Default Apps tab; `foot` by default) |
+| `Alt+Shift+Return`  | Promote the focused window to master      |
+| `Alt+D`             | Open the app launcher                     |
+| `Alt+Shift+Q`       | Close the focused window                  |
+| `Alt+J` / `Alt+K`   | Focus next/previous window                |
+| `Alt+Shift+P`       | Toggle always-on-top pinning               |
+| `Alt+Shift+F`       | Toggle floating (opt out of tiling)       |
+| `Alt+Shift+L`       | Lock the session                          |
+| `Alt+Shift+S`       | Region-select screenshot, copied to clipboard |
+| `Alt+Escape`        | Quit the compositor                       |
+| `Super+1`..`0`      | Switch to workspace 1-9, 0                |
 
 More tiling/focus keybinds land in Phase 1. `Alt`, not `Super`, is used
 for the terminal/quit binds in Phase 0 since `Super` is often already

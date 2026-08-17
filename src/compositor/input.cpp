@@ -61,6 +61,26 @@ constexpr xkb_keysym_t kFocusPrevKey = XKB_KEY_k;
 // independent of pinned -- see View::floating.
 constexpr xkb_keysym_t kToggleFloatKey = XKB_KEY_F;
 
+// Alt+Shift+L: locks the session (same action as the bar's power-menu
+// "Lock" entry, bar_window.cpp's build_power_menu()). Same
+// Shift-resolved-into-keysym convention as kTogglePinKey/kToggleFloatKey
+// above. Deliberately still dispatched through the normal
+// !is_locked()-gated branch in keyboard_key() like every other Alt+<key>
+// bind -- if the session is already locked, Alt+Shift+L (like every
+// other global keybind) is a no-op rather than reaching this handler at
+// all, so there's no separate "already locked" check needed here.
+constexpr xkb_keysym_t kLockKey = XKB_KEY_L;
+
+// Alt+Shift+S: region-select screenshot, copied to the clipboard with a
+// desktop notification -- same grim+slurp+wl-copy+notify-send combo (and
+// $mod+Shift+s binding) the project's own sway config used
+// (github.com/BeanGreen247/sway-setup-script), ported to this
+// compositor's Alt-based convention. Runs via spawn_shell() (not
+// spawn()) since it needs a pipe, not a bare argv-less binary.
+constexpr xkb_keysym_t kScreenshotKey = XKB_KEY_S;
+constexpr const char* kScreenshotCommand =
+    "grim -g \"$(slurp)\" - | wl-copy && notify-send 'Screenshot' 'Copied to clipboard'";
+
 // Alt+Shift+Return: promotes the focused window to master. Deliberately
 // checked via an explicit shift_held flag (unlike kCloseWindowKey/
 // kTogglePinKey's "Shift resolves into the keysym" shortcut) because plain
@@ -101,6 +121,25 @@ void spawn(const char* cmd) {
   }
 }
 
+// Same fork+exec shape as spawn() above, but for a shell command line
+// that needs pipes/subshells (e.g. kScreenshotCommand's `grim ... | wl-
+// copy`) -- spawn()'s execlp(cmd, cmd, nullptr) can only run a bare
+// binary with no arguments at all. Same precedent as launcher_window.cpp's
+// launch_command() routing a typed command through `/bin/sh -c`.
+void spawn_shell(const char* shell_cmd) {
+  pid_t pid = fork();
+  if (pid < 0) {
+    std::fprintf(stderr, "fleetwm: fork for '%s' spawn failed: %s\n", shell_cmd,
+                 std::strerror(errno));
+    return;
+  }
+  if (pid == 0) {
+    execlp("/bin/sh", "/bin/sh", "-c", shell_cmd, nullptr);
+    std::fprintf(stderr, "fleetwm: failed to exec '%s': %s\n", shell_cmd, std::strerror(errno));
+    _exit(1);
+  }
+}
+
 void keyboard_modifiers(wl_listener* listener, void*) {
   Keyboard* keyboard = wl_container_of(listener, keyboard, modifiers);
   wlr_seat_set_keyboard(keyboard->server->seat(), keyboard->wlr_keyboard_ptr);
@@ -124,7 +163,16 @@ void keyboard_key(wl_listener* listener, void* data) {
                  alt_held, nsyms);
   }
 
-  if (alt_held && event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
+  // While locked, no global Alt+<key> keybind (spawn terminal, launcher,
+  // close window, etc.) may fire -- otherwise Alt+Return would spawn a
+  // terminal straight through the lock screen. Every other key still
+  // just flows to wlr_seat_keyboard_notify_key() below, which routes to
+  // whatever surface currently holds seat keyboard focus -- safe here
+  // because fleetwm-locker's lock surface is KEYBOARD_MODE_EXCLUSIVE and
+  // already owns that focus for as long as the session is locked (see
+  // Server::is_locked()'s doc comment, server.hpp).
+  if (!keyboard->server->is_locked() && alt_held &&
+      event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
     for (int i = 0; i < nsyms; ++i) {
       if (keyboard->handle_keybind(syms[i])) {
         handled = true;
@@ -216,6 +264,14 @@ bool Keyboard::handle_keybind(xkb_keysym_t sym) {
     if (View* view = focused_view(server)) {
       view->set_pinned(!view->pinned);
     }
+    return true;
+  }
+  if (sym == kLockKey) {
+    server->request_lock();
+    return true;
+  }
+  if (sym == kScreenshotKey) {
+    spawn_shell(kScreenshotCommand);
     return true;
   }
   if (sym == kToggleFloatKey) {

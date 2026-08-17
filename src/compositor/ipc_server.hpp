@@ -17,6 +17,14 @@ class Server;
 //                         (N in 0-9; 0 is the '0' key / 10th workspace)
 //   WORKSPACE?        -> reply "N\n" with the focused output's active
 //                         workspace
+//   LOCK              -> spawn fleetwm-locker and enter the locked state
+//                         (Server::request_lock(); no-op if already locked)
+//   UNLOCK            -> exit the locked state, but ONLY if the sender is
+//                         the exact process request_lock() spawned --
+//                         verified via SO_PEERCRED, not sender-supplied
+//                         data, so no other process on this socket can
+//                         send this itself (see Server::confirm_unlock's
+//                         doc comment, server.hpp)
 //
 // Broadcast (unsolicited, sent to every connected client whenever a
 // keybind-driven workspace switch happens, so the bar's highlighted
