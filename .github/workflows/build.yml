@@ -25,7 +25,10 @@ jobs:
             libinput-dev libdrm-dev libxkbcommon-dev libpixman-1-dev \
             libegl1-mesa-dev libgles2-mesa-dev \
             libgtk-4-dev libgtk4-layer-shell-dev \
-            libpipewire-0.3-dev
+            libpipewire-0.3-dev \
+            libpam0g-dev \
+            libsystemd-dev \
+            librsvg2-common
 
       - name: Configure
         run: meson setup build --buildtype=debug
