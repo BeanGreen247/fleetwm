@@ -123,6 +123,10 @@ if get_option('greeter')
   subdir('src/locker')
 endif
 
+if get_option('tests')
+  subdir('tests')
+endif
+
 install_data(
   'packaging/fleetwm.desktop',
   install_dir: get_option('sysconfdir') / '..' / 'share' / 'wayland-sessions',
