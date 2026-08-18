@@ -77,6 +77,23 @@ std::vector<std::string> build_env(const passwd* pw,
   // as above) for anyone running a manually-built checkout without it.
   if (std::filesystem::exists("/usr/lib/x86_64-linux-gnu/libjemalloc.so.2")) {
     env.emplace_back("LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2");
+    // jemalloc's decay-based purge only runs opportunistically, as a
+    // side effect of a later malloc/free call -- confirmed live: after
+    // opening/closing a batch of terminals against the real desktop
+    // compositor, Pss sat unchanged for 30+ idle seconds, then visibly
+    // dropped only once a further batch of allocation activity gave it
+    // something to piggyback the purge check on. A compositor that's
+    // just sitting there with nothing to redraw (the normal case, see
+    // output.cpp/output_frame -- wlr_scene's damage tracking means an
+    // idle desktop allocates nothing) would otherwise hold onto that
+    // freed memory indefinitely. background_thread:true is jemalloc's
+    // own documented answer for exactly this: a dedicated thread that
+    // purges on a timer regardless of whether the app allocates again.
+    // 5s decay (both dirty and muzzy pages) rather than jemalloc's
+    // default ~10s+10s, since RAM footprint matters more here than
+    // shaving a few background-thread wakeups.
+    env.emplace_back(
+        "MALLOC_CONF=background_thread:true,dirty_decay_ms:5000,muzzy_decay_ms:5000");
   }
   // Fallback only -- pam_systemd normally supplies XDG_RUNTIME_DIR itself
   // in pam_envlist below, which (appended after this floor) overrides it.
