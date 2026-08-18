@@ -51,8 +51,12 @@ is being built against.
   with a category hint per result, plus a "Run Command" fallback for
   typed shell commands
 - XWayland support for legacy X11 apps
-- Debug overlay (`Alt+Shift+I`): a per-output frame-time bar graph, for
-  actually seeing render performance rather than guessing at it
+- Debug overlay (`Alt+Shift+I`): a per-output frame-time bar graph plus
+  live FPS/RAM/CPU-MHz text, for actually seeing render performance
+  rather than guessing at it -- drawn with a hand-coded bitmap font
+  (no font library) and reads no storage at all (RSS via a pure
+  `getrusage()` syscall; CPU MHz via sysfs, which is generated
+  in-kernel and never touches a disk either)
 - `fleetwm-update`: pulls and rebuilds the latest version in place
 
 ## Requirements
@@ -169,7 +173,7 @@ or compositor.
 | `Alt+Shift+L`       | Lock the session                          |
 | `Alt+Shift+S`       | Region-select screenshot, copied to clipboard |
 | `Alt+Escape`        | Quit the compositor                       |
-| `Alt+Shift+I`       | Toggle the frame-time debug overlay (bar graph, bottom-right of each output) |
+| `Alt+Shift+I`       | Toggle the debug overlay (frame-time bar graph + FPS/RAM/CPU-MHz text, bottom-right of each output) |
 | `Super+1`..`0`      | Switch to workspace 1-9, 0                |
 
 More tiling/focus keybinds land in Phase 1. `Alt`, not `Super`, is used
@@ -219,10 +223,31 @@ live usage session required -- it drives a synthetic training pass
 wlroots' headless backend.
 
 A `tests/` unit-test suite (GTest, fetched via wrapdb) covers the
-config-parsing modules in `src/common/` -- build with `-Dtests=true`
-(the default for `install.sh` and `scripts/build-pgo.sh`, which both run
-`meson test` right after `ninja` and before install) or run manually
-with `meson test -C build`.
+config-parsing modules in `src/common/`. `install.sh` and
+`scripts/build-pgo.sh` both build with `-Dtests=true` and run `meson
+test` automatically right after `ninja` and before install, so a
+failing test blocks the install rather than shipping silently broken.
+
+To just build and run the tests on their own, without a full install,
+`scripts/run-tests.sh` does it in one step (a throwaway `build-tests/`
+directory, left alongside `build/` rather than reusing it):
+
+```sh
+$ scripts/run-tests.sh
+...
+[==========] Running 40 tests from 9 test suites.
+[----------] Global test environment set-up.
+[----------] 9 tests from ParseHexColor
+[ RUN      ] ParseHexColor.ValidLowercase
+[       OK ] ParseHexColor.ValidLowercase (0 ms)
+...
+[----------] 4 tests from BarConfigTest
+[ RUN      ] BarConfigTest.LoadWithNoConfigFileReturnsDefaults
+[       OK ] BarConfigTest.LoadWithNoConfigFileReturnsDefaults (0 ms)
+...
+[==========] 40 tests from 9 test suites ran.
+[  PASSED  ] 40 tests.
+```
 
 fleetwm's GTK4 clients (bar, wallpaper, settings, launcher, locker,
 greeter login card) run with `GSK_RENDERER=cairo` rather than GTK4's
