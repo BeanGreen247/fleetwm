@@ -47,6 +47,18 @@ sudo apt-get install -y \
 # on Ubuntu 26.04.
 sudo apt-get install -y polkitd pkexec
 
+# runtime dependency for the greeter's user-avatar and power-button icons
+# (src/greeter-login/login_window.cpp, e.g. avatar-default-symbolic,
+# system-reboot-symbolic): those are Adwaita's SVG symbolic icons, and
+# GTK4 rasterizes SVG icons through gdk-pixbuf's "svg" loader, which
+# ships in librsvg2-common -- not pulled in automatically by
+# libgtk-4-dev/adwaita-icon-theme on a minimal install. Without it every
+# such icon silently renders as GTK's broken-image/missing-icon glyph
+# instead of failing loudly. Confirmed live on real armhf hardware
+# (ODROID-XU4): the icon *names* were always correct, installing this
+# package alone fixed every broken icon on the login screen.
+sudo apt-get install -y librsvg2-common
+
 sudo apt-get install -y xwayland foot
 
 # end-user runtime: Alt+Shift+S's screenshot keybind
