@@ -1,6 +1,8 @@
 build/
 build-pgo/
+build-tests/
 subprojects/tomlplusplus/
+subprojects/googletest-*/
 subprojects/packagecache/
 *.o
 *.swp
