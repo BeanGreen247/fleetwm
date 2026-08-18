@@ -25,6 +25,7 @@ TEST_F(KeybindsConfigTest, LoadWithNoConfigFileReturnsDefaults) {
   EXPECT_EQ(config.focus_up, "k");
   EXPECT_EQ(config.focus_right, "l");
   EXPECT_EQ(config.quit, "Escape");
+  EXPECT_EQ(config.debug_overlay, "I");
 }
 
 TEST_F(KeybindsConfigTest, SaveThenLoadRoundTripsEveryField) {
@@ -41,6 +42,7 @@ TEST_F(KeybindsConfigTest, SaveThenLoadRoundTripsEveryField) {
   config.focus_up = "Up";
   config.focus_right = "Right";
   config.quit = "q";
+  config.debug_overlay = "O";
 
   save_keybinds_config(config);
   KeybindsConfig loaded = load_keybinds_config();
@@ -57,6 +59,7 @@ TEST_F(KeybindsConfigTest, SaveThenLoadRoundTripsEveryField) {
   EXPECT_EQ(loaded.focus_up, "Up");
   EXPECT_EQ(loaded.focus_right, "Right");
   EXPECT_EQ(loaded.quit, "q");
+  EXPECT_EQ(loaded.debug_overlay, "O");
 }
 
 TEST_F(KeybindsConfigTest, PartialConfigKeepsDefaultsForMissingKeys) {

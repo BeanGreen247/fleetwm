@@ -89,6 +89,19 @@ class Server {
   // stays on top of it, same as any other desktop's z-order. See
   // View::set_fullscreen().
   wlr_scene_tree* layer_fullscreen() const { return layer_fullscreen_; }
+  // Topmost layer, above even layer_overlay_ -- exists only for the
+  // per-frame debug overlay (Output::update_debug_overlay(), toggled by
+  // toggle_debug_overlay()) so it's never hidden behind a real
+  // layer-shell overlay client. Nothing else should parent nodes here.
+  wlr_scene_tree* layer_debug() const { return layer_debug_; }
+
+  bool debug_overlay_enabled() const { return debug_overlay_enabled_; }
+  // Alt+Shift+<keybinds.toggle_debug_overlay> (default "I") -- flips a
+  // single global on/off switch for every output's frame-time bar
+  // graph. Deliberately one flag for all outputs rather than per-output
+  // state: this is a developer/debugging tool, not a per-monitor user
+  // preference.
+  void toggle_debug_overlay();
 
   // Focuses `view`, raising it in the scene graph and handing keyboard
   // focus to its surface. Passing nullptr clears focus.
@@ -163,6 +176,7 @@ class Server {
     xkb_keysym_t focus_up = XKB_KEY_k;
     xkb_keysym_t focus_right = XKB_KEY_l;
     xkb_keysym_t quit = XKB_KEY_Escape;
+    xkb_keysym_t debug_overlay = XKB_KEY_I;
   };
   const ResolvedKeybinds& keybinds() const { return resolved_keybinds_; }
   void reload_keybinds_config();
@@ -230,6 +244,9 @@ class Server {
   // layer-shell overlay client still stays on top of it.
   wlr_scene_tree* layer_fullscreen_ = nullptr;
   wlr_scene_tree* layer_overlay_ = nullptr;
+  wlr_scene_tree* layer_debug_ = nullptr;
+
+  bool debug_overlay_enabled_ = false;
 
   wlr_scene_tree* layer_tree_for(zwlr_layer_shell_v1_layer layer);
 
