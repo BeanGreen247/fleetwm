@@ -51,13 +51,16 @@ if [[ "$MODE" == "use" ]]; then
 fi
 
 meson setup "${BUILD_DIR}" "${SCRIPT_DIR}" --prefix=/usr/local --buildtype=release \
-  -Db_ndebug=true -Db_lto=true -Db_pgo="${MODE}" \
+  -Db_ndebug=true -Db_lto=true -Db_pgo="${MODE}" -Dtests=true \
   -Dc_args='-march=native -ffunction-sections -fdata-sections -fno-semantic-interposition' \
   -Dcpp_args='-march=native -ffunction-sections -fdata-sections -fno-semantic-interposition' \
   -Dc_link_args=-Wl,--gc-sections -Dcpp_link_args=-Wl,--gc-sections \
   "${EXTRA_OPTS[@]}" --reconfigure
 
 ninja -C "${BUILD_DIR}"
+
+echo "==> Running unit tests"
+meson test -C "${BUILD_DIR}"
 
 echo
 if [[ "$MODE" == "generate" ]]; then
