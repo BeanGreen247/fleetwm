@@ -3,6 +3,9 @@
 # top-level meson.build (shared with src/compositor).
 
 pam_dep = cpp.find_library('pam', required: get_option('greeter'))
+# dlopen/dlclose used by session.cpp to probe for libjemalloc.so.2 by bare
+# soname (arch-independent) rather than a hardcoded multiarch path.
+dl_dep = cpp.find_library('dl', required: false)
 
 executable(
   'fleetwm-greet',
@@ -27,6 +30,7 @@ executable(
     gles2_dep,
     pam_dep,
     protocols_dep,
+    dl_dep,
   ],
   install: true,
 )

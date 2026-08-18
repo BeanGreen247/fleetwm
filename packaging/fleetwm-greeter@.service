@@ -89,8 +89,11 @@ Environment=NO_AT_BRIDGE=1
 # login attempt -- see src/greeter/main.cpp). Safe if libjemalloc2 isn't
 # installed: glibc's ld.so treats a missing LD_PRELOAD target as a
 # non-fatal warning (logged, not a startup failure) for a normal
-# non-setuid process like this one, not a hard error.
-Environment=LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2
+# non-setuid process like this one, not a hard error. Bare soname (no
+# multiarch path prefix) so this resolves via ld.so's normal cache/search
+# rules on any architecture -- a hardcoded x86_64-linux-gnu path silently
+# never matched on e.g. armhf (/usr/lib/arm-linux-gnueabihf).
+Environment=LD_PRELOAD=libjemalloc.so.2
 # Same background_thread rationale as src/greeter/session.cpp's copy of
 # this var -- jemalloc's decay-based purge only runs opportunistically
 # on a later malloc/free call, so an idle process (this one blocks in
