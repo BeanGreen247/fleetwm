@@ -16,6 +16,22 @@ namespace fleetwm {
 
 class Server;
 
+// A fixed-capacity row of tiny rects rendering plain digits/letters via
+// a hand-coded 3x5-pixel bitmap font (kDebugGlyphs, output.cpp) --
+// deliberately not a real font/text-rendering library: this compositor
+// draws zero text anywhere else, and the debug overlay's character set
+// is small and fixed (digits, '.', and a handful of unit letters), so
+// a real font stack would be a lot of new dependency for very little
+// gained legibility. Rects are created once per row and reused on
+// every update (recolored/hidden in place), same create-once-then-
+// mutate pattern as Output's frame-time bar graph.
+struct DebugTextRow {
+  static constexpr int kMaxChars = 8;
+  static constexpr int kGlyphCells = 15;  // 3 wide x 5 tall
+  std::array<std::array<wlr_scene_rect*, kGlyphCells>, kMaxChars> cells{};
+  bool created = false;
+};
+
 // One physical/virtual display. Owns its own WorkspaceArray (per-output
 // workspace model, ADR 0002) so switching workspaces on one monitor never
 // touches another's layout. Frame scheduling is entirely damage-driven via
@@ -93,8 +109,21 @@ class Output {
   int debug_base_x_ = 0;
   int debug_base_y_ = 0;
 
+  // Numeric text rows (avg frame time / compositor RSS / live CPU MHz)
+  // stacked above the bar graph. Read/reformatted on a slower cadence
+  // than the per-frame bar graph -- see kDebugTextIntervalMs (output.cpp)
+  // -- both because /proc reads aren't free and because these numbers
+  // don't meaningfully change frame to frame anyway.
+  DebugTextRow debug_frame_time_row_;
+  DebugTextRow debug_ram_row_;
+  DebugTextRow debug_cpu_row_;
+  timespec debug_last_text_update_{};
+  bool debug_has_last_text_update_ = false;
+
   void create_debug_bars();
   void draw_debug_bars();
+  void create_debug_text_rows();
+  void update_debug_text();
 };
 
 }  // namespace fleetwm
