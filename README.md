@@ -51,6 +51,8 @@ is being built against.
   with a category hint per result, plus a "Run Command" fallback for
   typed shell commands
 - XWayland support for legacy X11 apps
+- Debug overlay (`Alt+Shift+I`): a per-output frame-time bar graph, for
+  actually seeing render performance rather than guessing at it
 - `fleetwm-update`: pulls and rebuilds the latest version in place
 
 ## Requirements
@@ -271,6 +273,16 @@ forks into your authenticated session and then blocks in `waitpid()`
 until you log out, so whatever it mapped while showing the login screen
 stays resident the entire time you're logged in. Measured effect on a
 real box: `fleetwm-greet`'s idle Pss dropped from ~103MB to ~15MB.
+
+If the real desktop compositor falls back to Mesa's llvmpipe software
+rasterizer (no real GPU render node present -- check for a
+`renderD*` device in `/dev/dri/`, not just a `card*` one, which can
+exist for display-only KMS with no actual render capability behind
+it), `LP_NUM_THREADS` caps how many worker threads llvmpipe spawns
+(defaults to one per CPU core, each holding its own JIT-compiled
+shader copy) -- worth capping lower on a many-core machine that's
+falling back to software rendering; not worth touching on a low-core
+one, where the default is already small.
 
 Release builds also add `-Wl,-z,now` (full RELRO -- eagerly-resolved,
 read-only GOT) and `-DG_DISABLE_ASSERT` (strips GLib's own
