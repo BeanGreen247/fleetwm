@@ -104,11 +104,28 @@ echo "==> Configuring build"
 # call could be interposed -- meaningful free win specifically because
 # LTO is already on (this flag's benefit is largest exactly when
 # whole-program analysis is already happening).
+# -DG_DISABLE_ASSERT: strips GLib's own g_assert()/g_return_if_fail()
+# precondition checks from the GTK4 clients (bar/wallpaper/settings/
+# launcher/locker/powermenu/greeter-login all link GLib/GTK) -- a small
+# speed win on whatever hot paths those checks guard, at the cost of
+# losing that defensive layer (a violated precondition becomes
+# undefined behavior instead of a clean early-return-with-a-warning).
+# Explicit user tradeoff, accepted knowingly given fleetwm is still
+# under active development and real bugs keep surfacing.
+#
+# -Wl,-z,now: full RELRO (eagerly resolve every dynamic symbol at
+# startup instead of lazily on first call, then mark the GOT
+# read-only) -- pure upside for long-running daemons like the
+# compositor/bar: the per-symbol lazy-binding resolution cost still
+# happens exactly once either way, this just moves it to startup
+# instead of paying it on first use, and a read-only GOT is real
+# hardening against GOT-overwrite exploits. Debian/Ubuntu's default
+# gcc spec already applies partial RELRO but not bind-now.
 meson setup "${BUILD_DIR}" "${SCRIPT_DIR}" --prefix=/usr/local --buildtype=release \
   -Db_ndebug=true -Dstrip=true -Db_lto=true -Dtests=true \
-  -Dc_args='-march=native -ffunction-sections -fdata-sections -fno-semantic-interposition' \
-  -Dcpp_args='-march=native -ffunction-sections -fdata-sections -fno-semantic-interposition' \
-  -Dc_link_args=-Wl,--gc-sections -Dcpp_link_args=-Wl,--gc-sections \
+  -Dc_args='-march=native -ffunction-sections -fdata-sections -fno-semantic-interposition -DG_DISABLE_ASSERT' \
+  -Dcpp_args='-march=native -ffunction-sections -fdata-sections -fno-semantic-interposition -DG_DISABLE_ASSERT' \
+  -Dc_link_args='-Wl,--gc-sections -Wl,-z,now' -Dcpp_link_args='-Wl,--gc-sections -Wl,-z,now' \
   --reconfigure
 
 echo "==> Building"

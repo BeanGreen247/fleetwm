@@ -42,8 +42,9 @@ if [[ "$MODE" != "generate" && "$MODE" != "use" ]]; then
   exit 1
 fi
 
-# Same release/LTO/native-arch/gc-sections flags as install.sh, plus
-# -Db_pgo -- strip only on the final "use" build (no reason to strip an
+# Same release/LTO/native-arch/gc-sections/G_DISABLE_ASSERT/bind-now
+# flags as install.sh (see its own comments for why), plus -Db_pgo --
+# strip only on the final "use" build (no reason to strip an
 # instrumented throwaway binary you're about to rebuild anyway).
 EXTRA_OPTS=()
 if [[ "$MODE" == "use" ]]; then
@@ -52,9 +53,9 @@ fi
 
 meson setup "${BUILD_DIR}" "${SCRIPT_DIR}" --prefix=/usr/local --buildtype=release \
   -Db_ndebug=true -Db_lto=true -Db_pgo="${MODE}" -Dtests=true \
-  -Dc_args='-march=native -ffunction-sections -fdata-sections -fno-semantic-interposition' \
-  -Dcpp_args='-march=native -ffunction-sections -fdata-sections -fno-semantic-interposition' \
-  -Dc_link_args=-Wl,--gc-sections -Dcpp_link_args=-Wl,--gc-sections \
+  -Dc_args='-march=native -ffunction-sections -fdata-sections -fno-semantic-interposition -DG_DISABLE_ASSERT' \
+  -Dcpp_args='-march=native -ffunction-sections -fdata-sections -fno-semantic-interposition -DG_DISABLE_ASSERT' \
+  -Dc_link_args='-Wl,--gc-sections -Wl,-z,now' -Dcpp_link_args='-Wl,--gc-sections -Wl,-z,now' \
   "${EXTRA_OPTS[@]}" --reconfigure
 
 ninja -C "${BUILD_DIR}"
