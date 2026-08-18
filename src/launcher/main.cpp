@@ -1,10 +1,12 @@
 #include <gtk/gtk.h>
 
 #include "launcher_window.hpp"
+#include "clean_quit.hpp"
 
 int main(int argc, char** argv) {
   GtkApplication* app =
       gtk_application_new("dev.fleetwm.Launcher", G_APPLICATION_DEFAULT_FLAGS);
+  fleetwm::install_clean_quit(G_APPLICATION(app));
 
   fleetwm::launcher::LauncherWindow window(app);
 

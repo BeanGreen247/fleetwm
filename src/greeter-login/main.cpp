@@ -4,6 +4,7 @@
 #include <cstdio>
 
 #include "login_window.hpp"
+#include "clean_quit.hpp"
 
 int main(int argc, char** argv) {
   const char* fd_env = std::getenv("FLEETWM_GREETER_IPC_FD");
@@ -15,6 +16,7 @@ int main(int argc, char** argv) {
 
   GtkApplication* app =
       gtk_application_new("dev.fleetwm.GreeterLogin", G_APPLICATION_DEFAULT_FLAGS);
+  fleetwm::install_clean_quit(G_APPLICATION(app));
 
   fleetwm::greeter_login::LoginWindow window(app, ipc_fd);
 

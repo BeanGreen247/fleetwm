@@ -68,6 +68,7 @@ libcommon = static_library(
     'battery_source.cpp',
     'default_apps.cpp',
     'keybinds_config.cpp',
+    'clean_quit.cpp',
   ),
   dependencies: [tomlplusplus_dep, gtk4_dep_common],
   include_directories: include_directories('.'),
