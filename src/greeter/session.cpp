@@ -1,5 +1,6 @@
 #include "session.hpp"
 
+#include <dlfcn.h>
 #include <fcntl.h>
 #include <grp.h>
 #include <pwd.h>
@@ -7,7 +8,6 @@
 
 #include <cstdio>
 #include <cstdlib>
-#include <filesystem>
 
 namespace fleetwm::session {
 
@@ -75,8 +75,17 @@ std::vector<std::string> build_env(const passwd* pw,
   // install.sh dependency on a normal fleetwm install, but this floor
   // still needs to degrade cleanly (falls back to plain glibc, tuned
   // as above) for anyone running a manually-built checkout without it.
-  if (std::filesystem::exists("/usr/lib/x86_64-linux-gnu/libjemalloc.so.2")) {
-    env.emplace_back("LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2");
+  // Probed and preloaded by bare soname (no multiarch directory prefix)
+  // so this works unmodified on any architecture -- ld.so resolves a
+  // slash-free LD_PRELOAD entry through the same cache/search rules as
+  // a normal dependency, which already knows the right per-arch
+  // directory (e.g. /usr/lib/aarch64-linux-gnu on arm64, .../arm-linux-
+  // gnueabihf on armhf); a hardcoded x86_64-linux-gnu path silently
+  // never matched on other architectures.
+  void* jemalloc_probe = dlopen("libjemalloc.so.2", RTLD_LAZY);
+  if (jemalloc_probe != nullptr) {
+    dlclose(jemalloc_probe);
+    env.emplace_back("LD_PRELOAD=libjemalloc.so.2");
     // jemalloc's decay-based purge only runs opportunistically, as a
     // side effect of a later malloc/free call -- confirmed live: after
     // opening/closing a batch of terminals against the real desktop
