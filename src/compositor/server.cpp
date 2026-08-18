@@ -791,6 +791,8 @@ bool Server::init() {
   layer_top_ = wlr_scene_tree_create(&scene_->tree);
   layer_fullscreen_ = wlr_scene_tree_create(&scene_->tree);
   layer_overlay_ = wlr_scene_tree_create(&scene_->tree);
+  layer_debug_ = wlr_scene_tree_create(&scene_->tree);
+  wlr_scene_node_set_enabled(&layer_debug_->node, false);
 
   new_output_.notify = server_new_output;
   wl_signal_add(&backend_->events.new_output, &new_output_);
@@ -1021,6 +1023,11 @@ void Server::set_default_cursor_image() {
   wlr_cursor_set_xcursor(cursor_, cursor_mgr_, "left_ptr");
 }
 
+void Server::toggle_debug_overlay() {
+  debug_overlay_enabled_ = !debug_overlay_enabled_;
+  wlr_scene_node_set_enabled(&layer_debug_->node, debug_overlay_enabled_);
+}
+
 namespace {
 
 // Resolves a keybinds.toml key name to an xkb_keysym_t via the same
@@ -1071,6 +1078,8 @@ void Server::reload_keybinds_config() {
   resolved_keybinds_.focus_right =
       resolve_keybind(keybinds_config_.focus_right, defaults.focus_right, "focus_right");
   resolved_keybinds_.quit = resolve_keybind(keybinds_config_.quit, defaults.quit, "quit");
+  resolved_keybinds_.debug_overlay =
+      resolve_keybind(keybinds_config_.debug_overlay, defaults.debug_overlay, "debug_overlay");
 }
 
 void Server::reload_theme_config() {

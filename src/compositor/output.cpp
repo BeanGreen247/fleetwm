@@ -30,6 +30,8 @@ void output_frame(wl_listener* listener, void*) {
   timespec now{};
   clock_gettime(CLOCK_MONOTONIC, &now);
   wlr_scene_output_send_frame_done(scene_output, &now);
+
+  output->update_debug_overlay();
 }
 
 void output_request_state(wl_listener* listener, void* data) {
@@ -65,6 +67,17 @@ Output::~Output() {
   wl_list_remove(&frame.link);
   wl_list_remove(&request_state.link);
   wl_list_remove(&destroy.link);
+
+  // debug_bars_ are parented to the server-level layer_debug_ tree, not
+  // to anything owned by this Output -- if this output is being
+  // destroyed (monitor unplugged) while the compositor keeps running,
+  // nothing else would ever destroy these nodes, leaving stale frame-
+  // time bars on screen for a monitor that no longer exists.
+  for (wlr_scene_rect* bar : debug_bars_) {
+    if (bar != nullptr) {
+      wlr_scene_node_destroy(&bar->node);
+    }
+  }
 }
 
 void Output::switch_workspace(int index) {
@@ -283,6 +296,91 @@ void Output::relayout() {
     tile_view(tiled[i + 1], stack_box.x, stack_box.y, stack_box.width, stack_box.height);
     apply_edge_grow(tiled[i + 1], stack_box, usable_area, tiled[i + 1] == focused ? grow : 0);
   }
+}
+
+namespace {
+
+constexpr int kDebugBarWidth = 3;
+constexpr int kDebugBarGap = 1;
+constexpr int kDebugBarMaxHeight = 60;
+constexpr int kDebugBarMargin = 8;
+// A frame at exactly the 60Hz budget (16.6ms) draws at 1/3 of the max
+// bar height, not full height -- leaves headroom to actually see how
+// far over budget a bad frame is, rather than every frame over ~16ms
+// clipping to the same full-height bar.
+constexpr float kDebugBarMsForFullHeight = 50.0f;
+constexpr float kDebugGoodBudgetMs = 16.6f;
+constexpr float kDebugWarnBudgetMs = 33.3f;
+constexpr float kDebugTransparent[4] = {0, 0, 0, 0};
+constexpr float kDebugGreen[4] = {0.2f, 0.85f, 0.2f, 0.9f};
+constexpr float kDebugYellow[4] = {0.9f, 0.85f, 0.1f, 0.9f};
+constexpr float kDebugRed[4] = {0.9f, 0.15f, 0.15f, 0.9f};
+
+}  // namespace
+
+void Output::create_debug_bars() {
+  wlr_box box{};
+  wlr_output_layout_get_box(server->output_layout(), wlr_output_ptr, &box);
+  debug_base_x_ =
+      box.x + box.width - kDebugBarMargin - kDebugBarCount * (kDebugBarWidth + kDebugBarGap);
+  debug_base_y_ = box.y + box.height - kDebugBarMargin;
+
+  for (int i = 0; i < kDebugBarCount; ++i) {
+    debug_bars_[i] = wlr_scene_rect_create(server->layer_debug(), kDebugBarWidth, 1,
+                                            kDebugTransparent);
+    wlr_scene_node_set_position(&debug_bars_[i]->node,
+                                 debug_base_x_ + i * (kDebugBarWidth + kDebugBarGap),
+                                 debug_base_y_ - 1);
+  }
+  debug_bars_created_ = true;
+}
+
+void Output::draw_debug_bars() {
+  // debug_next_index_ is where the *next* sample will be written, i.e.
+  // the oldest sample still in the ring -- reading from there gives
+  // chronological left-to-right order (oldest on the left, most recent
+  // frame on the right, matching how a scrolling graph reads).
+  for (int i = 0; i < kDebugBarCount; ++i) {
+    float ms = debug_frame_times_ms_[(debug_next_index_ + i) % kDebugBarCount];
+    int height = static_cast<int>((ms / kDebugBarMsForFullHeight) * kDebugBarMaxHeight);
+    height = std::clamp(height, 1, kDebugBarMaxHeight);
+
+    const float* color = ms <= kDebugGoodBudgetMs   ? kDebugGreen
+                          : ms <= kDebugWarnBudgetMs ? kDebugYellow
+                                                      : kDebugRed;
+    wlr_scene_rect_set_size(debug_bars_[i], kDebugBarWidth, height);
+    wlr_scene_rect_set_color(debug_bars_[i], color);
+    wlr_scene_node_set_position(&debug_bars_[i]->node,
+                                 debug_base_x_ + i * (kDebugBarWidth + kDebugBarGap),
+                                 debug_base_y_ - height);
+  }
+}
+
+void Output::update_debug_overlay() {
+  if (!server->debug_overlay_enabled()) {
+    // Reset rather than leave stale: otherwise re-enabling after a long
+    // gap would compute one giant bogus "frame time" spanning the
+    // entire disabled period.
+    debug_has_last_frame_time_ = false;
+    return;
+  }
+
+  timespec now{};
+  clock_gettime(CLOCK_MONOTONIC, &now);
+
+  if (debug_has_last_frame_time_) {
+    double delta_ms = (now.tv_sec - debug_last_frame_time_.tv_sec) * 1000.0 +
+                       (now.tv_nsec - debug_last_frame_time_.tv_nsec) / 1e6;
+    debug_frame_times_ms_[debug_next_index_] = static_cast<float>(delta_ms);
+    debug_next_index_ = (debug_next_index_ + 1) % kDebugBarCount;
+  }
+  debug_last_frame_time_ = now;
+  debug_has_last_frame_time_ = true;
+
+  if (!debug_bars_created_) {
+    create_debug_bars();
+  }
+  draw_debug_bars();
 }
 
 }  // namespace fleetwm

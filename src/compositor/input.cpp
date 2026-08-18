@@ -347,6 +347,10 @@ bool Keyboard::handle_keybind(xkb_keysym_t sym) {
     wl_display_terminate(server->display());
     return true;
   }
+  if (sym == binds.debug_overlay) {
+    server->toggle_debug_overlay();
+    return true;
+  }
   return false;
 }
 

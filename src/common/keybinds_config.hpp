@@ -45,6 +45,11 @@ struct KeybindsConfig {
   std::string focus_up = "k";
   std::string focus_right = "l";
   std::string quit = "Escape";
+  // Toggles the compositor's per-frame debug overlay (a bar graph of
+  // recent frame times, see Output::update_debug_overlay() in
+  // output.cpp) -- a developer/debugging tool, not a user-facing
+  // feature, hence "I" for "info" rather than anything more prominent.
+  std::string debug_overlay = "I";
 };
 
 // Path helpers, mirroring default_apps.hpp's own pair but for

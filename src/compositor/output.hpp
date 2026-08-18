@@ -7,6 +7,9 @@ extern "C" {
 #include <wlr/types/wlr_scene.h>
 }
 
+#include <array>
+#include <ctime>
+
 #include "workspace.hpp"
 
 namespace fleetwm {
@@ -66,6 +69,32 @@ class Output {
   // workspace's visible-view set changes (map/unmap/promote/float-toggle/
   // workspace-switch).
   void relayout();
+
+  // Alt+Shift+I (default) debug overlay: a bottom-right bar graph of
+  // this output's last kDebugBarCount frame times, colored green/
+  // yellow/red against a 60Hz (16.6ms) budget. No text/fonts involved
+  // -- this compositor does zero text rendering anywhere today (every
+  // GTK4 client handles its own), and reusing the same wlr_scene_rect
+  // machinery already used for window borders keeps this to plain
+  // rectangles. Called every frame from output_frame() regardless of
+  // whether the overlay is currently shown; it's a cheap no-op time-
+  // stamp update when disabled (see update_debug_overlay()'s own doc
+  // comment for why that matters).
+  void update_debug_overlay();
+
+ private:
+  static constexpr int kDebugBarCount = 64;
+  std::array<wlr_scene_rect*, kDebugBarCount> debug_bars_{};
+  std::array<float, kDebugBarCount> debug_frame_times_ms_{};
+  int debug_next_index_ = 0;
+  bool debug_bars_created_ = false;
+  bool debug_has_last_frame_time_ = false;
+  timespec debug_last_frame_time_{};
+  int debug_base_x_ = 0;
+  int debug_base_y_ = 0;
+
+  void create_debug_bars();
+  void draw_debug_bars();
 };
 
 }  // namespace fleetwm

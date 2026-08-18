@@ -167,6 +167,7 @@ or compositor.
 | `Alt+Shift+L`       | Lock the session                          |
 | `Alt+Shift+S`       | Region-select screenshot, copied to clipboard |
 | `Alt+Escape`        | Quit the compositor                       |
+| `Alt+Shift+I`       | Toggle the frame-time debug overlay (bar graph, bottom-right of each output) |
 | `Super+1`..`0`      | Switch to workspace 1-9, 0                |
 
 More tiling/focus keybinds land in Phase 1. `Alt`, not `Super`, is used
@@ -192,6 +193,7 @@ focus_down = "j"
 focus_up = "k"
 focus_right = "l"
 quit = "Escape"
+debug_overlay = "I"
 ```
 
 ## Building from source manually
