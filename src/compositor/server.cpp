@@ -8,6 +8,7 @@
 #include <wayland-server-core.h>
 
 extern "C" {
+#include <wlr/render/pixman.h>
 #include <wlr/util/log.h>
 }
 
@@ -761,7 +762,21 @@ bool Server::init() {
     return false;
   }
 
+  // wlr_renderer_autocreate() only tries GLES2/Vulkan -- it never falls
+  // back to pixman itself. On hardware whose GPU has no working GBM/EGL
+  // driver at all (e.g. old Mali Midgard boards like the ODROID-XU4,
+  // which have no upstream Mesa driver and fail eglInitialize outright
+  // rather than just lacking an extension), that leaves the compositor
+  // with no usable renderer and no way to start. Falling back to the
+  // pixman software renderer here -- architecture-agnostic, no backend
+  // handle needed -- means any such host still gets a working (if
+  // unaccelerated) desktop instead of failing to start.
   renderer_ = wlr_renderer_autocreate(backend_);
+  if (!renderer_) {
+    wlr_log(WLR_ERROR,
+            "hardware renderer unavailable, falling back to pixman software renderer");
+    renderer_ = wlr_pixman_renderer_create();
+  }
   if (!renderer_) {
     return false;
   }
