@@ -91,6 +91,13 @@ Environment=NO_AT_BRIDGE=1
 # non-fatal warning (logged, not a startup failure) for a normal
 # non-setuid process like this one, not a hard error.
 Environment=LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2
+# Same background_thread rationale as src/greeter/session.cpp's copy of
+# this var -- jemalloc's decay-based purge only runs opportunistically
+# on a later malloc/free call, so an idle process (this one blocks in
+# waitpid() for the user's entire session, see run_login_cycle() in
+# main.cpp) would otherwise hold onto freed memory indefinitely without
+# a dedicated purge thread.
+Environment=MALLOC_CONF=background_thread:true,dirty_decay_ms:5000,muzzy_decay_ms:5000
 UtmpIdentifier=%I
 TTYPath=/dev/%I
 TTYReset=yes
