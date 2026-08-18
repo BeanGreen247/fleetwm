@@ -59,10 +59,38 @@ Environment=LIBSEAT_BACKEND=seatd
 # available -- this only lifts a refusal, it never forces software
 # rendering over a working hardware path.
 Environment=WLR_RENDERER_ALLOW_SOFTWARE=1
+# The greeter only ever draws a static login card -- no GPU compositing
+# need at all, same reasoning as GSK_RENDERER=cairo below for the GTK4
+# login client. Forcing pixman means Mesa/EGL/GLES2's driver stack
+# (libEGL_mesa, libgallium, libLLVM -- confirmed ~36MB via smaps on the
+# real desktop compositor's own GLES2 mapping) never gets mapped into
+# this process at all, which matters even after a successful login:
+# run_login_cycle() (main.cpp) forks into the user's real session and
+# then blocks in waitpid() for the entire session, so whatever this
+# process mapped while showing the login screen stays resident the
+# whole time the user is logged in, not just while the greeter itself
+# is on screen. Unlike the real desktop compositor (kept on GLES2 by
+# explicit user choice, see project memory), there's no real-desktop
+# workload here to trade away -- safe to force unconditionally.
+Environment=WLR_RENDERER=pixman
 # Same GSK_RENDERER rationale as src/greeter/session.cpp's copy of this
 # var -- avoids GTK4 pulling in Mesa's GL/EGL/gallium/LLVM stack for the
 # login card, which needs no GPU compositing.
 Environment=GSK_RENDERER=cairo
+# Same NO_AT_BRIDGE rationale as src/greeter/session.cpp's copy of this
+# var -- skips AT-SPI accessibility D-Bus activation for the login
+# client, explicit user choice (startup-time/memory win over assistive
+# tech support).
+Environment=NO_AT_BRIDGE=1
+# Same jemalloc rationale as src/greeter/session.cpp's copy of this var
+# (tune_malloc_for_low_rss()'s glibc trim-threshold tuning alone only
+# partially reclaims memory freed by this process's own retry loop,
+# which stands up and tears down a full embedded compositor per failed
+# login attempt -- see src/greeter/main.cpp). Safe if libjemalloc2 isn't
+# installed: glibc's ld.so treats a missing LD_PRELOAD target as a
+# non-fatal warning (logged, not a startup failure) for a normal
+# non-setuid process like this one, not a hard error.
+Environment=LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2
 UtmpIdentifier=%I
 TTYPath=/dev/%I
 TTYReset=yes

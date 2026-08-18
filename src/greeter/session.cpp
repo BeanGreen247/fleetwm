@@ -7,6 +7,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 
 namespace fleetwm::session {
 
@@ -50,6 +51,33 @@ std::vector<std::string> build_env(const passwd* pw,
   // this as the system default for consistency outside of fleetwm too.
   env.emplace_back("LANG=C.UTF-8");
   env.emplace_back("LC_ALL=C.UTF-8");
+  // Every GTK4 client otherwise activates the AT-SPI accessibility
+  // D-Bus service on startup (confirmed via the session bus's own
+  // activation log while building scripts/pgo-train-session.sh:
+  // org.a11y.Bus, then org.a11y.atspi.Registry) even though nothing in
+  // fleetwm exposes or consumes it -- explicit user choice to skip
+  // that init on every client for the startup-time/memory win, at the
+  // cost of assistive tech (screen readers etc.) not working if ever
+  // needed.
+  env.emplace_back("NO_AT_BRIDGE=1");
+  // jemalloc's arena-based allocator actually returns freed memory to
+  // the OS (madvise) instead of glibc's single-contiguous-heap model,
+  // where memory freed below a still-live allocation near the top of
+  // the heap can never be given back no matter how the trim threshold
+  // is tuned (see tune_malloc_for_low_rss(), src/common/malloc_tuning.
+  // hpp, which every fleetwm binary already calls -- that alone only
+  // partially helps). Confirmed live on fleetwm-dev: repeated batches
+  // of 30 terminals opened/closed against the real compositor left
+  // 9-31MB of un-reclaimed Pss per cycle even with the tuned
+  // thresholds; the identical test against a jemalloc-preloaded
+  // instance returned to baseline Pss every single time. Checked for
+  // existence rather than hardcoded blindly -- libjemalloc2 is an
+  // install.sh dependency on a normal fleetwm install, but this floor
+  // still needs to degrade cleanly (falls back to plain glibc, tuned
+  // as above) for anyone running a manually-built checkout without it.
+  if (std::filesystem::exists("/usr/lib/x86_64-linux-gnu/libjemalloc.so.2")) {
+    env.emplace_back("LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2");
+  }
   // Fallback only -- pam_systemd normally supplies XDG_RUNTIME_DIR itself
   // in pam_envlist below, which (appended after this floor) overrides it.
   // But pam_systemd registering the session with logind and logind

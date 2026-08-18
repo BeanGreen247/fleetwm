@@ -22,6 +22,7 @@ extern "C" {
 #include "input.hpp"
 #include "ipc_server.hpp"
 #include "layer_surface.hpp"
+#include "malloc_tuning.hpp"
 #include "output.hpp"
 #include "paths_config.h"
 #include "scene_node_owner.hpp"
@@ -635,6 +636,9 @@ Server::~Server() {
   if (sigint_source_) {
     wl_event_source_remove(sigint_source_);
   }
+  if (sigchld_source_) {
+    wl_event_source_remove(sigchld_source_);
+  }
   if (display_) {
     wl_display_destroy_clients(display_);
     wl_display_destroy(display_);
@@ -1128,16 +1132,49 @@ int server_signal_terminate(int, void* data) {
   return 0;
 }
 
+// Every fork()+execlp() child this compositor spawns (terminal/launcher
+// keybinds in input.cpp, autostart apps and fleetwm-locker in this file)
+// had nothing reaping its exit status -- each one sat around as a
+// zombie (`[foot] <defunct>`) forever once its process exited. Zombies
+// themselves cost almost nothing (just a process-table slot), but
+// finding this is what led to actually diagnosing the real memory
+// growth: a burst of terminal spawns left the compositor's own glibc
+// heap arena holding tens of MB of freed-but-never-trimmed memory
+// (confirmed live via malloc_trim(0) reclaiming ~60MB from a session
+// that had spawned and closed ~90 terminals) -- see start_signal_handlers's
+// mallopt() call below for the actual fix for that part. This handler
+// just stops the zombies from piling up: wl_event_loop_add_signal's
+// SIGCHLD delivery happens on the main event loop thread (not real
+// signal-handler context), so a plain waitpid() loop here is safe.
+int server_signal_child(int, void* data) {
+  (void)data;
+  while (waitpid(-1, nullptr, WNOHANG) > 0) {
+  }
+  return 0;
+}
+
 }  // namespace
 
 void Server::start_signal_handlers() {
   wl_event_loop* loop = wl_display_get_event_loop(display_);
   sigterm_source_ = wl_event_loop_add_signal(loop, SIGTERM, server_signal_terminate, this);
   sigint_source_ = wl_event_loop_add_signal(loop, SIGINT, server_signal_terminate, this);
+  sigchld_source_ = wl_event_loop_add_signal(loop, SIGCHLD, server_signal_child, this);
   if (sigterm_source_ == nullptr || sigint_source_ == nullptr) {
     wlr_log(WLR_ERROR, "failed to register SIGTERM/SIGINT handlers; kill will not shut down "
                         "cleanly (clients won't be notified, atexit hooks won't run)");
   }
+  if (sigchld_source_ == nullptr) {
+    wlr_log(WLR_ERROR, "failed to register SIGCHLD handler; spawned child processes (terminal, "
+                        "autostart apps, locker) will accumulate as zombies");
+  }
+
+  // See tune_malloc_for_low_rss()'s own doc comment (src/common/
+  // malloc_tuning.hpp) for why -- confirmed live on fleetwm-dev: Pss
+  // held steady across repeated terminal spawn/close cycles with this
+  // set, vs. climbing from ~90MB to 150MB+ and staying there without
+  // it.
+  tune_malloc_for_low_rss();
 }
 
 bool Server::start_theme_watch() {

@@ -1,3 +1,4 @@
+#include <malloc.h>
 #include <pwd.h>
 #include <security/pam_appl.h>
 #include <sys/socket.h>
@@ -175,6 +176,18 @@ bool run_login_cycle(const std::string& tty_name) {
 }  // namespace
 
 int main(int argc, char** argv) {
+  // See src/common/malloc_tuning.hpp's doc comment for the general
+  // rationale (not linked here -- pulling in libcommon would drag GTK4
+  // into this TTY-only, root-run process for no reason). Especially
+  // relevant here: run_login_cycle() below retries in a loop on
+  // failure, each attempt standing up and tearing down a full embedded
+  // compositor (compositor.cpp) -- exactly the "spawn/destroy a lot of
+  // short-lived state" pattern that lets glibc's default dynamic
+  // mmap/trim thresholds ratchet upward and stop returning freed
+  // memory to the OS.
+  mallopt(M_TRIM_THRESHOLD, 64 * 1024);
+  mallopt(M_MMAP_THRESHOLD, 64 * 1024);
+
   std::string tty_name = argc > 1 ? argv[1] : "";
   for (;;) {
     // On failure (no login screen ever got shown -- e.g. DRM/seat init

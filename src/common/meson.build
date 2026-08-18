@@ -69,6 +69,7 @@ libcommon = static_library(
     'default_apps.cpp',
     'keybinds_config.cpp',
     'clean_quit.cpp',
+    'malloc_tuning.cpp',
   ),
   dependencies: [tomlplusplus_dep, gtk4_dep_common],
   include_directories: include_directories('.'),
