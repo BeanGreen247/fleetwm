@@ -208,7 +208,17 @@ comments for what and why). For an even more aggressive build,
 `scripts/build-pgo.sh` adds profile-guided optimization on top, as a
 separate two-stage opt-in flow (it needs a real usage sample collected
 between builds, which doesn't fit a single-pass installer) -- see that
-script's header comment for the exact steps.
+script's header comment for the exact steps. `scripts/build-pgo-auto.sh`
+does the same two-stage PGO build fully automatically instead, with no
+live usage session required -- it drives a synthetic training pass
+(`scripts/pgo-train-session.sh`) against the instrumented build under
+wlroots' headless backend.
+
+A `tests/` unit-test suite (GTest, fetched via wrapdb) covers the
+config-parsing modules in `src/common/` -- build with `-Dtests=true`
+(the default for `install.sh` and `scripts/build-pgo.sh`, which both run
+`meson test` right after `ninja` and before install) or run manually
+with `meson test -C build`.
 
 fleetwm's GTK4 clients (bar, wallpaper, settings, launcher, locker,
 greeter login card) run with `GSK_RENDERER=cairo` rather than GTK4's
@@ -224,6 +234,48 @@ process's environment (`src/greeter/session.cpp` for the user session,
 hardcoded, so it can be overridden if a future client ever needs real
 GPU-accelerated rendering.
 
+### Memory footprint and allocator tuning
+
+Beyond the `GSK_RENDERER=cairo` win above, every fleetwm binary (the
+compositor and every GTK4 client) also:
+
+- Reaps its own spawned children via a `SIGCHLD` handler
+  (`server.cpp`) -- every terminal/app launch used to leave a
+  `<defunct>` zombie behind once it exited.
+- Pins glibc's `mallopt(M_TRIM_THRESHOLD/M_MMAP_THRESHOLD)` to a fixed
+  64KB (`src/common/malloc_tuning.cpp`) instead of glibc's default
+  fully-dynamic thresholds, which only ever grow and stop returning
+  freed memory to the OS.
+- Prefers **jemalloc** over plain glibc malloc when
+  `libjemalloc2` is installed (`LD_PRELOAD`, set in
+  `src/greeter/session.cpp`'s `build_env()` and
+  `packaging/fleetwm-greeter@.service`; degrades cleanly to the tuned
+  glibc above if the package isn't present), with its background purge
+  thread enabled (`MALLOC_CONF=background_thread:true,dirty_decay_ms:
+  5000,muzzy_decay_ms:5000`) so freed memory gets returned to the OS on
+  a timer even while the process sits idle, not only as a side effect
+  of a later allocation.
+- Skips AT-SPI accessibility bus activation (`NO_AT_BRIDGE=1`) that
+  every GTK4 app otherwise triggers on startup for no reason fleetwm
+  uses it.
+
+The graphical greeter (`fleetwm-greet`) additionally forces
+`WLR_RENDERER=pixman` -- it only ever draws a static login card, no
+GPU compositing need at all, so this keeps Mesa/EGL/GLES2's driver
+stack (`libLLVM`, `libgallium`, ~36MB by itself) from ever loading into
+that process. This matters for the whole length of your session, not
+just while the login screen is on screen: `fleetwm-greet`'s own process
+forks into your authenticated session and then blocks in `waitpid()`
+until you log out, so whatever it mapped while showing the login screen
+stays resident the entire time you're logged in. Measured effect on a
+real box: `fleetwm-greet`'s idle Pss dropped from ~103MB to ~15MB.
+
+Release builds also add `-Wl,-z,now` (full RELRO -- eagerly-resolved,
+read-only GOT) and `-DG_DISABLE_ASSERT` (strips GLib's own
+`g_assert()`/`g_return_if_fail()` checks from the GTK4 clients) --
+see `install.sh`'s own comments for the reasoning and tradeoffs behind
+each.
+
 Build dependencies (apt package names):
 
 ```
@@ -234,6 +286,7 @@ libegl1-mesa-dev libgles2-mesa-dev
 libgtk-4-dev libgtk4-layer-shell-dev
 libpipewire-0.3-dev
 libpam0g-dev
+libjemalloc2
 libsystemd-dev
 polkitd pkexec
 xwayland
