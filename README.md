@@ -66,6 +66,24 @@ is being built against.
   work) -- or the bundled graphical `fleetwm-greet` login screen, see
   [Greeter](#greeter) below
 
+## Supported hardware
+
+Architecture support is meant to be general -- nothing in fleetwm is
+written against a specific CPU or GPU vendor -- but the table below is
+what has actually been run and verified, not just assumed to work.
+
+| Platform | Arch | GPU rendering | Status |
+| --- | --- | --- | --- |
+| Generic x86_64 (QEMU/KVM VM, `fleetwm-dev`) | x86\_64 | llvmpipe (software, no virtio-GPU 3D) | Primary development target; verified continuously |
+| ODROID-XU4 (Mali-T628 MP6) | armhf | pixman (software) -- kernel has no Panfrost driver built in ([`CONFIG_DRM_PANFROST`](https://docs.mesa3d.org/drivers/panfrost.html) unset), so GLES2/EGL init fails and the compositor falls back automatically | Verified end-to-end on real hardware (2026-08-18): greeter, login, bar, wallpaper all confirmed working over the software renderer |
+
+Any GPU whose driver fails hardware EGL initialization (not just one
+missing an extension) gets the same automatic pixman software-rendering
+fallback the ODROID-XU4 uses above -- see `wlr_pixman_renderer_create()`
+in `src/compositor/server.cpp`. That keeps the desktop usable, just
+without GPU acceleration, on hardware like older/unsupported Mali
+Midgard GPUs.
+
 ## Install
 
 ```sh
