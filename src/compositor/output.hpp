@@ -117,6 +117,11 @@ class Output {
   DebugTextRow debug_frame_time_row_;
   DebugTextRow debug_ram_row_;
   DebugTextRow debug_cpu_row_;
+  // Renderer backend name (e.g. "GLES2", "PIXMAN") -- rendered once at
+  // creation, not on the 500ms refresh cadence like the rows above,
+  // since the renderer backend never changes for the lifetime of the
+  // compositor process (see Server::init(), server.cpp).
+  DebugTextRow debug_renderer_row_;
   timespec debug_last_text_update_{};
   bool debug_has_last_text_update_ = false;
 

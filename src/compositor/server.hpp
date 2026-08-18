@@ -71,6 +71,7 @@ class Server {
   void run();
 
   wl_display* display() const { return display_; }
+  wlr_renderer* renderer() const { return renderer_; }
   wlr_scene* scene() const { return scene_; }
   wlr_output_layout* output_layout() const { return output_layout_; }
   wlr_seat* seat() const { return seat_; }

@@ -1,6 +1,8 @@
 #include "output.hpp"
 
 extern "C" {
+#include <wlr/render/gles2.h>
+#include <wlr/render/pixman.h>
 #include <wlr/types/wlr_layer_shell_v1.h>
 }
 
@@ -72,6 +74,15 @@ const std::array<uint8_t, kDebugGlyphHeight>& debug_glyph(char c) {
   static const std::array<uint8_t, kDebugGlyphHeight> kZ = {0b111, 0b001, 0b010, 0b100, 0b111};
   static const std::array<uint8_t, kDebugGlyphHeight> kF = {0b111, 0b100, 0b111, 0b100, 0b100};
   static const std::array<uint8_t, kDebugGlyphHeight> kP = {0b111, 0b101, 0b111, 0b100, 0b100};
+  // Renderer-name letters (GLES2/PIXMAN) -- added alongside those two
+  // labels specifically, not as a general-purpose alphabet.
+  static const std::array<uint8_t, kDebugGlyphHeight> kA = {0b010, 0b101, 0b111, 0b101, 0b101};
+  static const std::array<uint8_t, kDebugGlyphHeight> kE = {0b111, 0b100, 0b111, 0b100, 0b111};
+  static const std::array<uint8_t, kDebugGlyphHeight> kG = {0b111, 0b100, 0b101, 0b101, 0b111};
+  static const std::array<uint8_t, kDebugGlyphHeight> kI = {0b111, 0b010, 0b010, 0b010, 0b111};
+  static const std::array<uint8_t, kDebugGlyphHeight> kL = {0b100, 0b100, 0b100, 0b100, 0b111};
+  static const std::array<uint8_t, kDebugGlyphHeight> kN = {0b101, 0b111, 0b111, 0b111, 0b101};
+  static const std::array<uint8_t, kDebugGlyphHeight> kX = {0b101, 0b101, 0b010, 0b101, 0b101};
   // 's' reuses '5's shape -- both are the same rounded S silhouette on
   // a 3x5 grid, and this overlay never shows both cases of a letter
   // where the distinction would matter.
@@ -94,6 +105,13 @@ const std::array<uint8_t, kDebugGlyphHeight>& debug_glyph(char c) {
     case 's': case 'S': return k5;
     case 'F': case 'f': return kF;
     case 'P': case 'p': return kP;
+    case 'A': case 'a': return kA;
+    case 'E': case 'e': return kE;
+    case 'G': case 'g': return kG;
+    case 'I': case 'i': return kI;
+    case 'L': case 'l': return kL;
+    case 'N': case 'n': return kN;
+    case 'X': case 'x': return kX;
     default: return kBlank;
   }
 }
@@ -132,6 +150,27 @@ int read_cpu_mhz() {
     return static_cast<int>(khz / 1000);
   }
   return -1;
+}
+
+// Name of the renderer backend actually in use, for the debug overlay --
+// answers "is this GPU-accelerated or not" at a glance, which matters
+// a lot here: wlr_renderer_autocreate() (Server::init(), server.cpp)
+// only tries GLES2/Vulkan and silently falls back to the pixman
+// software renderer on any GPU whose driver fails hardware EGL init
+// (e.g. a Mali Midgard board with no Panfrost kernel driver -- see
+// README's "Supported hardware" table), so this is the difference
+// between "accelerated" and "software" that isn't otherwise visible
+// anywhere in the UI. Vulkan deliberately not distinguished here (would
+// need <vulkan/vulkan_core.h> as a new build dependency just for a
+// debug label; fleetwm never requests it via WLR_RENDERER anyway).
+const char* debug_renderer_name(wlr_renderer* renderer) {
+  if (wlr_renderer_is_pixman(renderer)) {
+    return "PIXMAN";
+  }
+  if (wlr_renderer_is_gles2(renderer)) {
+    return "GLES2";
+  }
+  return "RENDER";
 }
 
 // Creates every cell rect for one text row up front (DebugTextRow::
@@ -252,6 +291,7 @@ Output::~Output() {
   destroy_text_row(debug_frame_time_row_);
   destroy_text_row(debug_ram_row_);
   destroy_text_row(debug_cpu_row_);
+  destroy_text_row(debug_renderer_row_);
 }
 
 void Output::switch_workspace(int index) {
@@ -548,10 +588,17 @@ void Output::create_debug_text_rows() {
   int cpu_y = top_of_bars_y - kDebugTextRowGapPx - kRowHeightPx;
   int ram_y = cpu_y - kDebugTextRowGapPx - kRowHeightPx;
   int fps_y = ram_y - kDebugTextRowGapPx - kRowHeightPx;
+  int renderer_y = fps_y - kDebugTextRowGapPx - kRowHeightPx;
 
   create_text_row(server->layer_debug(), debug_frame_time_row_, debug_base_x_, fps_y);
   create_text_row(server->layer_debug(), debug_ram_row_, debug_base_x_, ram_y);
   create_text_row(server->layer_debug(), debug_cpu_row_, debug_base_x_, cpu_y);
+  create_text_row(server->layer_debug(), debug_renderer_row_, debug_base_x_, renderer_y);
+
+  // Set once, not on the 500ms refresh cadence in update_debug_text() --
+  // the renderer backend is fixed for the process's lifetime.
+  render_text_row(debug_renderer_row_, debug_renderer_name(server->renderer()),
+                   kDebugTextColor);
 }
 
 void Output::update_debug_text() {
