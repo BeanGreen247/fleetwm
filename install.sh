@@ -11,6 +11,17 @@ BUILD_DIR="${SCRIPT_DIR}/build"
 
 echo "==> Installing build dependencies (requires sudo)"
 sudo apt-get update
+
+# NOTE: this is deliberately several separate `apt-get install` calls,
+# not one big backslash-continued list -- a `#` comment on its own line
+# in the middle of a backslash-continued command silently ends that
+# command right there (the comment consumes the rest of its own physical
+# line, and since that line has no trailing backslash, nothing continues
+# it), so anything listed after such a comment would instead run as its
+# own bare, immediate command (e.g. `xwayland`) and fail with "command
+# not found" -- fatal here since `set -euo pipefail` is on. Confirmed
+# this the hard way: an earlier version of this file had exactly that
+# shape and would have failed a truly fresh install.
 sudo apt-get install -y \
   build-essential meson ninja-build pkg-config git \
   libwlroots-0.18-dev wayland-protocols libwayland-dev \
@@ -20,37 +31,36 @@ sudo apt-get install -y \
   libpipewire-0.3-dev \
   libpam0g-dev \
   libsystemd-dev \
-  polkitd pkexec \
-                      # runtime dependency for the bar's power menu
-                      # (fleetwm-powermenu): systemd-logind refuses
-                      # Sleep/Reboot/Shut down for a non-root caller
-                      # without a running polkit to authorize the
-                      # request, regardless of session state -- fails
-                      # with "Access denied" even from an active
-                      # session. Log out doesn't need this (ending
-                      # your own session needs no authorization), and
-                      # sudo bypasses it too (root needs no polkit
-                      # check), which is why those two paths could look
-                      # like they worked while this one silently didn't
-                      # on a minimal install that never pulled polkit in
-                      # as a transitive dependency of anything else.
-                      # Package name is "polkitd" (Debian 13/trixie) --
-                      # the older "policykit-1" transitional package no
-                      # longer exists there; both work on Ubuntu 26.04.
-  xwayland \
-  foot \
-  grim slurp wl-clipboard libnotify-bin \
-                      # end-user runtime: Alt+Shift+S's screenshot keybind
-                      # (compositor/input.cpp's kScreenshotCommand) --
-                      # grim captures, slurp picks the region, wl-copy
-                      # puts it on the clipboard, notify-send confirms it
-  wlrctl wtype gdb imagemagick  # dev-box testing: pixel inspection
-                      # (imagemagick's `convert ... txt:-`) + synthetic
-                      # pointer/keyboard input (wlrctl/wtype) over SSH,
-                      # since fleetwm advertises wlr-screencopy-v1,
-                      # wlr-virtual-pointer-v1, and wlr-virtual-keyboard-v1
-                      # for exactly this; gdb for live-attaching to the
-                      # compositor to catch crashes
+  libjemalloc2
+
+# runtime dependency for the bar's power menu (fleetwm-powermenu):
+# systemd-logind refuses Sleep/Reboot/Shut down for a non-root caller
+# without a running polkit to authorize the request, regardless of
+# session state -- fails with "Access denied" even from an active
+# session. Log out doesn't need this (ending your own session needs no
+# authorization), and sudo bypasses it too (root needs no polkit
+# check), which is why those two paths could look like they worked
+# while this one silently didn't on a minimal install that never
+# pulled polkit in as a transitive dependency of anything else.
+# Package name is "polkitd" (Debian 13/trixie) -- the older
+# "policykit-1" transitional package no longer exists there; both work
+# on Ubuntu 26.04.
+sudo apt-get install -y polkitd pkexec
+
+sudo apt-get install -y xwayland foot
+
+# end-user runtime: Alt+Shift+S's screenshot keybind
+# (compositor/input.cpp's kScreenshotCommand) -- grim captures, slurp
+# picks the region, wl-copy puts it on the clipboard, notify-send
+# confirms it
+sudo apt-get install -y grim slurp wl-clipboard libnotify-bin
+
+# dev-box testing: pixel inspection (imagemagick's `convert ...
+# txt:-`) + synthetic pointer/keyboard input (wlrctl/wtype) over SSH,
+# since fleetwm advertises wlr-screencopy-v1, wlr-virtual-pointer-v1,
+# and wlr-virtual-keyboard-v1 for exactly this; gdb for live-attaching
+# to the compositor to catch crashes
+sudo apt-get install -y wlrctl wtype gdb imagemagick
 
 echo "==> Setting system default locale to C.UTF-8"
 # fleetwm-greet's session env (src/greeter/session.cpp) also hardcodes

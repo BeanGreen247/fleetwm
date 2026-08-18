@@ -322,6 +322,7 @@ class Server {
 
   wl_event_source* sigterm_source_ = nullptr;
   wl_event_source* sigint_source_ = nullptr;
+  wl_event_source* sigchld_source_ = nullptr;
 
   wl_listener new_output_{};
   wl_listener new_input_{};

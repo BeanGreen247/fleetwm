@@ -5,8 +5,10 @@
 
 #include "login_window.hpp"
 #include "clean_quit.hpp"
+#include "malloc_tuning.hpp"
 
 int main(int argc, char** argv) {
+  fleetwm::tune_malloc_for_low_rss();
   const char* fd_env = std::getenv("FLEETWM_GREETER_IPC_FD");
   if (fd_env == nullptr) {
     std::fprintf(stderr, "fleetwm-greeter-login: FLEETWM_GREETER_IPC_FD not set\n");
