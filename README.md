@@ -52,12 +52,15 @@ is being built against.
   typed shell commands
 - XWayland support for legacy X11 apps
 - Debug overlay (`Alt+Shift+I`): a per-output frame-time bar graph plus
-  live FPS/RAM/CPU-MHz text, for actually seeing render performance
-  rather than guessing at it -- drawn with a hand-coded bitmap font
-  (no font library) and reads no storage at all (RSS via a pure
-  `getrusage()` syscall; CPU MHz via sysfs, which is generated
-  in-kernel and never touches a disk either)
+  live renderer backend/FPS/RAM/CPU-MHz text, for actually seeing render
+  performance (and whether it's GPU-accelerated or software) rather than
+  guessing at it -- drawn with a hand-coded bitmap font (no font
+  library) and reads no storage at all (RSS via a pure `getrusage()`
+  syscall; CPU MHz via sysfs, which is generated in-kernel and never
+  touches a disk either)
 - `fleetwm-update`: pulls and rebuilds the latest version in place
+
+![Fleetwm desktop with the debug overlay open, showing the GLES2 renderer, live FPS, and RAM usage bottom-right](docs/images/debug-overlay.png)
 
 ## Requirements
 
