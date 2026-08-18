@@ -4,10 +4,15 @@ extern "C" {
 #include <wlr/types/wlr_layer_shell_v1.h>
 }
 
+#include <sys/resource.h>
+
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <ctime>
+#include <fstream>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "layer_surface.hpp"
@@ -15,6 +20,172 @@ extern "C" {
 #include "view.hpp"
 
 namespace fleetwm {
+
+namespace {
+
+constexpr int kDebugBarWidth = 3;
+constexpr int kDebugBarGap = 1;
+constexpr int kDebugBarMaxHeight = 60;
+constexpr int kDebugBarMargin = 8;
+// A frame at exactly the 60Hz budget (16.6ms) draws at 1/3 of the max
+// bar height, not full height -- leaves headroom to actually see how
+// far over budget a bad frame is, rather than every frame over ~16ms
+// clipping to the same full-height bar.
+constexpr float kDebugBarMsForFullHeight = 50.0f;
+constexpr float kDebugGoodBudgetMs = 16.6f;
+constexpr float kDebugWarnBudgetMs = 33.3f;
+constexpr float kDebugTransparent[4] = {0, 0, 0, 0};
+constexpr float kDebugGreen[4] = {0.2f, 0.85f, 0.2f, 0.9f};
+constexpr float kDebugYellow[4] = {0.9f, 0.85f, 0.1f, 0.9f};
+constexpr float kDebugRed[4] = {0.9f, 0.15f, 0.15f, 0.9f};
+constexpr float kDebugTextColor[4] = {0.85f, 0.85f, 0.9f, 0.9f};
+
+constexpr int kDebugTextIntervalMs = 500;
+constexpr int kDebugGlyphWidth = 3;
+constexpr int kDebugGlyphHeight = 5;
+constexpr int kDebugGlyphPixelSize = 3;
+constexpr int kDebugGlyphGapPx = 3;
+constexpr int kDebugTextRowGapPx = 4;
+
+// 3x5 bitmap font, deliberately covering only the characters the debug
+// overlay actually needs (digits, '.', and the unit letters in
+// "FPS"/"MB"/"MHz") -- see DebugTextRow's own doc comment (output.hpp)
+// for why this exists instead of a real font library. Each row is a
+// 3-bit value, bit 2 = leftmost column. Unlisted characters (including
+// ' ') render as blank.
+const std::array<uint8_t, kDebugGlyphHeight>& debug_glyph(char c) {
+  static const std::array<uint8_t, kDebugGlyphHeight> kBlank = {0, 0, 0, 0, 0};
+  static const std::array<uint8_t, kDebugGlyphHeight> k0 = {0b111, 0b101, 0b101, 0b101, 0b111};
+  static const std::array<uint8_t, kDebugGlyphHeight> k1 = {0b010, 0b110, 0b010, 0b010, 0b111};
+  static const std::array<uint8_t, kDebugGlyphHeight> k2 = {0b111, 0b001, 0b111, 0b100, 0b111};
+  static const std::array<uint8_t, kDebugGlyphHeight> k3 = {0b111, 0b001, 0b111, 0b001, 0b111};
+  static const std::array<uint8_t, kDebugGlyphHeight> k4 = {0b101, 0b101, 0b111, 0b001, 0b001};
+  static const std::array<uint8_t, kDebugGlyphHeight> k5 = {0b111, 0b100, 0b111, 0b001, 0b111};
+  static const std::array<uint8_t, kDebugGlyphHeight> k6 = {0b111, 0b100, 0b111, 0b101, 0b111};
+  static const std::array<uint8_t, kDebugGlyphHeight> k7 = {0b111, 0b001, 0b001, 0b001, 0b001};
+  static const std::array<uint8_t, kDebugGlyphHeight> k8 = {0b111, 0b101, 0b111, 0b101, 0b111};
+  static const std::array<uint8_t, kDebugGlyphHeight> k9 = {0b111, 0b101, 0b111, 0b001, 0b111};
+  static const std::array<uint8_t, kDebugGlyphHeight> kDot = {0b000, 0b000, 0b000, 0b000, 0b010};
+  static const std::array<uint8_t, kDebugGlyphHeight> kM = {0b101, 0b111, 0b111, 0b101, 0b101};
+  static const std::array<uint8_t, kDebugGlyphHeight> kB = {0b110, 0b101, 0b110, 0b101, 0b110};
+  static const std::array<uint8_t, kDebugGlyphHeight> kH = {0b101, 0b101, 0b111, 0b101, 0b101};
+  static const std::array<uint8_t, kDebugGlyphHeight> kZ = {0b111, 0b001, 0b010, 0b100, 0b111};
+  static const std::array<uint8_t, kDebugGlyphHeight> kF = {0b111, 0b100, 0b111, 0b100, 0b100};
+  static const std::array<uint8_t, kDebugGlyphHeight> kP = {0b111, 0b101, 0b111, 0b100, 0b100};
+  // 's' reuses '5's shape -- both are the same rounded S silhouette on
+  // a 3x5 grid, and this overlay never shows both cases of a letter
+  // where the distinction would matter.
+  switch (c) {
+    case '0': return k0;
+    case '1': return k1;
+    case '2': return k2;
+    case '3': return k3;
+    case '4': return k4;
+    case '5': return k5;
+    case '6': return k6;
+    case '7': return k7;
+    case '8': return k8;
+    case '9': return k9;
+    case '.': return kDot;
+    case 'M': case 'm': return kM;
+    case 'B': return kB;
+    case 'H': return kH;
+    case 'z': case 'Z': return kZ;
+    case 's': case 'S': return k5;
+    case 'F': case 'f': return kF;
+    case 'P': case 'p': return kP;
+    default: return kBlank;
+  }
+}
+
+// Compositor's own resident memory, in MB. Deliberately getrusage()
+// (a pure syscall, RUSAGE_SELF -> ru_maxrss, no file descriptor of any
+// kind involved) rather than reading /proc/self/status's VmRSS --
+// equally not real storage I/O either way (procfs is generated
+// in-kernel from live process state, never touches a disk), but this
+// avoids even the appearance of file I/O for a debug overlay that's
+// supposed to be as close to free as possible. Note: ru_maxrss is
+// *peak* RSS, monotonically non-decreasing for the process's lifetime,
+// not current-instant RSS -- close enough for a debug overlay's
+// purposes, and avoids /proc entirely.
+int read_self_rss_mb() {
+  rusage usage{};
+  if (getrusage(RUSAGE_SELF, &usage) != 0) {
+    return -1;
+  }
+  return static_cast<int>(usage.ru_maxrss / 1024);
+}
+
+// Live (not rated/base) clock speed of CPU 0, in MHz. Unlike the RSS
+// figure above, there's no syscall-only way to get this on Linux --
+// cpufreq's current-scaling value is only ever exposed via sysfs.
+// Still not real storage I/O (sysfs is generated in-kernel, same as
+// procfs -- nothing here ever touches a disk), just unavoidably a
+// plain file read rather than a pure syscall. Turbo/throttle mean this
+// changes constantly; that's the point of showing it live rather than
+// a fixed spec number. Returns -1 on any read failure (e.g. no cpufreq
+// scaling driver).
+int read_cpu_mhz() {
+  std::ifstream freq("/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq");
+  long khz = 0;
+  if (freq >> khz) {
+    return static_cast<int>(khz / 1000);
+  }
+  return -1;
+}
+
+// Creates every cell rect for one text row up front (DebugTextRow::
+// kMaxChars * kGlyphCells rects total), all initially transparent --
+// render_text_row() below only ever recolors/repositions/hides these
+// same rects afterward, never creates or destroys any.
+void create_text_row(wlr_scene_tree* parent, DebugTextRow& row, int x, int y) {
+  for (int ch = 0; ch < DebugTextRow::kMaxChars; ++ch) {
+    for (int cell = 0; cell < DebugTextRow::kGlyphCells; ++cell) {
+      wlr_scene_rect* rect =
+          wlr_scene_rect_create(parent, kDebugGlyphPixelSize, kDebugGlyphPixelSize,
+                                 kDebugTransparent);
+      int col = cell % kDebugGlyphWidth;
+      int glyph_row = cell / kDebugGlyphWidth;
+      int char_x = x + ch * (kDebugGlyphWidth * kDebugGlyphPixelSize + kDebugGlyphGapPx);
+      wlr_scene_node_set_position(&rect->node, char_x + col * kDebugGlyphPixelSize,
+                                   y + glyph_row * kDebugGlyphPixelSize);
+      row.cells[ch][cell] = rect;
+    }
+  }
+  row.created = true;
+}
+
+// Re-renders `text` (silently truncated to DebugTextRow::kMaxChars)
+// into an already-created row's rects -- recolors the "on" pixels of
+// each character's glyph and hides the rest, including every cell
+// belonging to a character slot past the end of `text`.
+void render_text_row(DebugTextRow& row, const std::string& text, const float color[4]) {
+  for (int ch = 0; ch < DebugTextRow::kMaxChars; ++ch) {
+    const std::array<uint8_t, kDebugGlyphHeight>& glyph =
+        ch < static_cast<int>(text.size()) ? debug_glyph(text[ch]) : debug_glyph(' ');
+    for (int cell = 0; cell < DebugTextRow::kGlyphCells; ++cell) {
+      int col = cell % kDebugGlyphWidth;
+      int glyph_row = cell / kDebugGlyphWidth;
+      bool on = (glyph[glyph_row] >> (kDebugGlyphWidth - 1 - col)) & 1;
+      wlr_scene_rect_set_color(row.cells[ch][cell], on ? color : kDebugTransparent);
+    }
+  }
+}
+
+void destroy_text_row(DebugTextRow& row) {
+  if (!row.created) {
+    return;
+  }
+  for (auto& char_cells : row.cells) {
+    for (wlr_scene_rect* rect : char_cells) {
+      if (rect != nullptr) {
+        wlr_scene_node_destroy(&rect->node);
+      }
+    }
+  }
+}
+
+}  // namespace
 
 namespace {
 
@@ -78,6 +249,9 @@ Output::~Output() {
       wlr_scene_node_destroy(&bar->node);
     }
   }
+  destroy_text_row(debug_frame_time_row_);
+  destroy_text_row(debug_ram_row_);
+  destroy_text_row(debug_cpu_row_);
 }
 
 void Output::switch_workspace(int index) {
@@ -298,26 +472,6 @@ void Output::relayout() {
   }
 }
 
-namespace {
-
-constexpr int kDebugBarWidth = 3;
-constexpr int kDebugBarGap = 1;
-constexpr int kDebugBarMaxHeight = 60;
-constexpr int kDebugBarMargin = 8;
-// A frame at exactly the 60Hz budget (16.6ms) draws at 1/3 of the max
-// bar height, not full height -- leaves headroom to actually see how
-// far over budget a bad frame is, rather than every frame over ~16ms
-// clipping to the same full-height bar.
-constexpr float kDebugBarMsForFullHeight = 50.0f;
-constexpr float kDebugGoodBudgetMs = 16.6f;
-constexpr float kDebugWarnBudgetMs = 33.3f;
-constexpr float kDebugTransparent[4] = {0, 0, 0, 0};
-constexpr float kDebugGreen[4] = {0.2f, 0.85f, 0.2f, 0.9f};
-constexpr float kDebugYellow[4] = {0.9f, 0.85f, 0.1f, 0.9f};
-constexpr float kDebugRed[4] = {0.9f, 0.15f, 0.15f, 0.9f};
-
-}  // namespace
-
 void Output::create_debug_bars() {
   wlr_box box{};
   wlr_output_layout_get_box(server->output_layout(), wlr_output_ptr, &box);
@@ -381,6 +535,67 @@ void Output::update_debug_overlay() {
     create_debug_bars();
   }
   draw_debug_bars();
+
+  if (!debug_frame_time_row_.created) {
+    create_debug_text_rows();
+  }
+  update_debug_text();
+}
+
+void Output::create_debug_text_rows() {
+  constexpr int kRowHeightPx = kDebugGlyphHeight * kDebugGlyphPixelSize;
+  int top_of_bars_y = debug_base_y_ - kDebugBarMaxHeight;
+  int cpu_y = top_of_bars_y - kDebugTextRowGapPx - kRowHeightPx;
+  int ram_y = cpu_y - kDebugTextRowGapPx - kRowHeightPx;
+  int fps_y = ram_y - kDebugTextRowGapPx - kRowHeightPx;
+
+  create_text_row(server->layer_debug(), debug_frame_time_row_, debug_base_x_, fps_y);
+  create_text_row(server->layer_debug(), debug_ram_row_, debug_base_x_, ram_y);
+  create_text_row(server->layer_debug(), debug_cpu_row_, debug_base_x_, cpu_y);
+}
+
+void Output::update_debug_text() {
+  timespec now{};
+  clock_gettime(CLOCK_MONOTONIC, &now);
+
+  if (debug_has_last_text_update_) {
+    double elapsed_ms = (now.tv_sec - debug_last_text_update_.tv_sec) * 1000.0 +
+                         (now.tv_nsec - debug_last_text_update_.tv_nsec) / 1e6;
+    if (elapsed_ms < kDebugTextIntervalMs) {
+      return;
+    }
+  }
+  debug_last_text_update_ = now;
+  debug_has_last_text_update_ = true;
+
+  // Average over the ring buffer's real samples only -- zeros from
+  // never-yet-written slots (e.g. right after enabling the overlay)
+  // would otherwise drag the average down misleadingly.
+  double sum_ms = 0;
+  int count = 0;
+  for (float ms : debug_frame_times_ms_) {
+    if (ms > 0.0f) {
+      sum_ms += ms;
+      ++count;
+    }
+  }
+  int fps = count > 0 ? static_cast<int>(1000.0 / (sum_ms / count)) : 0;
+
+  char buf[DebugTextRow::kMaxChars + 1];
+  std::snprintf(buf, sizeof(buf), "%dFPS", fps);
+  render_text_row(debug_frame_time_row_, buf, kDebugTextColor);
+
+  int rss_mb = read_self_rss_mb();
+  if (rss_mb >= 0) {
+    std::snprintf(buf, sizeof(buf), "%dMB", rss_mb);
+    render_text_row(debug_ram_row_, buf, kDebugTextColor);
+  }
+
+  int cpu_mhz = read_cpu_mhz();
+  if (cpu_mhz >= 0) {
+    std::snprintf(buf, sizeof(buf), "%dMHz", cpu_mhz);
+    render_text_row(debug_cpu_row_, buf, kDebugTextColor);
+  }
 }
 
 }  // namespace fleetwm
