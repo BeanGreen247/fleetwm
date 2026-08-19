@@ -16,10 +16,13 @@ extern "C" {
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <vector>
 
 #include "output.hpp"
 #include "server.hpp"
 #include "view.hpp"
+
+extern char** environ;
 
 namespace fleetwm {
 
@@ -174,6 +177,43 @@ void spawn(const char* cmd) {
   }
 }
 
+// Same fork+exec shape as spawn() above, but strips LD_PRELOAD/MALLOC_CONF
+// from the child's environment first -- for the user's own terminal
+// specifically, not fleetwm's own clients (which spawn() above still hands
+// those vars to unmodified, e.g. kLauncherCommand). Those two vars are set
+// process-wide by the greeter (session.cpp's build_env(), preloading
+// jemalloc for fleetwm's own long-running GTK4 clients' RSS, see that
+// file's comment for the full rationale) and, being plain environment
+// variables, cascade into every child a plain execlp() spawns -- including
+// this terminal and therefore every command the user types inside it.
+// Confirmed on real hardware: `sudo apt update` from a fleetwm-launched
+// terminal printed "ld.so: object 'libjemalloc.so.2' from LD_PRELOAD
+// cannot be preloaded ... ignored" on every invocation, because sudo's
+// setuid re-exec applies glibc's AT_SECURE restrictions to LD_PRELOAD
+// resolution -- alarming, confusing noise for something the user never
+// asked to run under a tuned allocator. A user's shell and whatever they
+// run in it should behave like a stock system shell, not silently inherit
+// fleetwm's own internal memory tuning.
+void spawn_terminal(const char* cmd) {
+  pid_t pid = fork();
+  if (pid < 0) {
+    std::fprintf(stderr, "fleetwm: fork for '%s' spawn failed: %s\n", cmd, std::strerror(errno));
+    return;
+  }
+  if (pid == 0) {
+    std::vector<char*> env;
+    for (char** e = environ; *e != nullptr; ++e) {
+      if (std::strncmp(*e, "LD_PRELOAD=", 11) != 0 && std::strncmp(*e, "MALLOC_CONF=", 12) != 0) {
+        env.push_back(*e);
+      }
+    }
+    env.push_back(nullptr);
+    execvpe(cmd, (char* const[]){const_cast<char*>(cmd), nullptr}, env.data());
+    std::fprintf(stderr, "fleetwm: failed to exec '%s': %s\n", cmd, std::strerror(errno));
+    _exit(1);
+  }
+}
+
 // Same fork+exec shape as spawn() above, but for a shell command line
 // that needs pipes/subshells (e.g. kScreenshotCommand's `grim ... | wl-
 // copy`) -- spawn()'s execlp(cmd, cmd, nullptr) can only run a bare
@@ -296,7 +336,7 @@ bool Keyboard::handle_keybind(xkb_keysym_t sym) {
     // inotify watch as theme.toml (see server.cpp's
     // server_theme_watch_readable), so a change here takes effect on
     // the next Enter press with no restart needed.
-    spawn(server->default_apps_config().terminal_command.c_str());
+    spawn_terminal(server->default_apps_config().terminal_command.c_str());
     return true;
   }
   if (sym == binds.launcher) {
