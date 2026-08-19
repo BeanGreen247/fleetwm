@@ -15,6 +15,7 @@ extern "C" {
 #include <wlr/types/wlr_screencopy_v1.h>
 #include <wlr/types/wlr_seat.h>
 #include <wlr/types/wlr_subcompositor.h>
+#include <wlr/types/wlr_tearing_control_v1.h>
 #include <wlr/types/wlr_virtual_keyboard_v1.h>
 #include <wlr/types/wlr_virtual_pointer_v1.h>
 #include <wlr/types/wlr_xcursor_manager.h>
@@ -83,6 +84,7 @@ class Server {
   // workspace) while still sitting under layer-shell popups like the
   // launcher. See View::set_pinned().
   wlr_scene_tree* layer_pinned() const { return layer_pinned_; }
+  wlr_tearing_control_manager_v1* tearing_manager() const { return tearing_manager_; }
   // Above layer_top_ (the bar) but below layer_overlay_ -- fullscreen
   // views live here instead, so a fullscreened app visually covers the
   // bar (matching normal fullscreen expectations) while a genuine
@@ -295,6 +297,14 @@ class Server {
   // output geometry -- without it grim can't determine capture
   // dimensions at all and fails outright.
   wlr_xdg_output_manager_v1* xdg_output_manager_ = nullptr;
+  // wp-tearing-control-v1: lets a client (games/players via SDL/GLFW etc.)
+  // hint that it wants async/tearing presentation -- queried per-frame by
+  // output_frame() (output.cpp) to decide whether a fullscreen surface's
+  // commit should request a real tearing page-flip. See RenderMode's own
+  // doc comment (theme.hpp) for why this is automatic/fullscreen-only
+  // rather than a user-selectable mode. No listener needed beyond
+  // creation -- wlroots owns the whole protocol/hint-tracking internally.
+  wlr_tearing_control_manager_v1* tearing_manager_ = nullptr;
   // wlr-virtual-pointer-unstable-v1: lets tools like wlrctl inject
   // synthetic pointer motion/button/axis events, same as a real input
   // device would -- used for scripted UI testing over SSH where no

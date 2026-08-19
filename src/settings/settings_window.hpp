@@ -41,6 +41,17 @@ class SettingsWindow {
   static void on_pinned_border_thickness_changed(GtkSpinButton* button, gpointer user_data);
   static void on_pinned_border_color_set(GtkColorButton* button, gpointer user_data);
   static void on_pinned_focused_border_color_set(GtkColorButton* button, gpointer user_data);
+  static void on_render_mode_changed(GtkCheckButton* button, gpointer user_data);
+  static void on_custom_fps_lock_changed(GtkSpinButton* button, gpointer user_data);
+  static void on_show_debug_overlay_toggled(GtkCheckButton* button, gpointer user_data);
+
+  // Seventh notebook page: adaptive render throttling (Render mode radio
+  // + Custom FPS lock spinbutton, moved here from the Theme tab per
+  // explicit user request -- these are performance knobs, not visual
+  // theming) plus any other startup performance defaults that fit the
+  // same "cheap toggle backed by an existing compositor mechanism" shape
+  // (currently just the debug overlay's startup default).
+  GtkWidget* build_performance_tab();
 
   // Writes config_ to disk. Called after every change rather than on a
   // separate "Apply" button -- theme.toml is cheap to rewrite and this
@@ -135,6 +146,7 @@ class SettingsWindow {
   GtkWidget* focus_border_color_button_ = nullptr;
   GtkWidget* pinned_border_color_button_ = nullptr;
   GtkWidget* pinned_focused_border_color_button_ = nullptr;
+  GtkWidget* custom_fps_lock_spin_ = nullptr;
   GtkWidget* wallpaper_path_label_ = nullptr;
   GtkWidget* choose_image_button_ = nullptr;
   GtkWidget* solid_color_button_ = nullptr;

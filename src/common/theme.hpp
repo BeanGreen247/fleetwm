@@ -17,6 +17,24 @@ enum class ThemeName {
   Light,
 };
 
+// Selectable per-output frame-pacing behavior (adaptive render throttling).
+// Deliberately does NOT include an "Uncapped" option: real DRM tearing is
+// applied automatically, always, only to fullscreen apps/games
+// (View::fullscreen) regardless of which mode below is selected -- it's
+// not a user choice, see Output::relayout()'s sibling output_frame() in
+// output.cpp. Ordinary desktop/tiled content only ever uses one of these
+// two modes.
+enum class RenderMode {
+  // Rely on wlroots' own damage-driven frame scheduling -- effectively
+  // vsync-paced on a real DRM backend, and already near-0fps idle for
+  // unchanging content for free (no throttling code needed here).
+  Synced,
+  // Same idle behavior as Synced, plus an explicit upper bound: the
+  // compositor withholds frame_done from clients on this output until
+  // custom_fps_lock's frame interval has elapsed since the last commit.
+  Custom,
+};
+
 struct AccentColor {
   // When auto_extract is true, `hex` holds the last-computed value (see
   // accent_extract.hpp) and is regenerated whenever the wallpaper changes.
@@ -59,6 +77,16 @@ struct ThemeConfig {
   // separately by the layer-shell exclusive zone (kExclusiveZoneGapPx in
   // output.cpp).
   int gap_px = 2;
+  // Adaptive render throttling (see RenderMode above). custom_fps_lock is
+  // only meaningful when render_mode == Custom; clamped to [24, 5000] by
+  // both the Settings spinbutton and load_theme_config().
+  RenderMode render_mode = RenderMode::Synced;
+  int custom_fps_lock = 60;
+  // Starts the Alt+Shift+I frame-time/RAM/CPU-MHz overlay (output.cpp)
+  // already-on instead of requiring the keybind every session -- purely
+  // a startup default, Server::toggle_debug_overlay() still flips it live
+  // exactly as before either way.
+  bool show_debug_overlay_on_startup = false;
 };
 
 // Path helpers. Resolution order: $XDG_CONFIG_HOME/fleetwm/theme.toml (or

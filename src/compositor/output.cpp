@@ -4,6 +4,7 @@ extern "C" {
 #include <wlr/render/gles2.h>
 #include <wlr/render/pixman.h>
 #include <wlr/types/wlr_layer_shell_v1.h>
+#include <wlr/types/wlr_tearing_control_v1.h>
 }
 
 #include <sys/resource.h>
@@ -228,14 +229,98 @@ void destroy_text_row(DebugTextRow& row) {
 
 namespace {
 
+// The View currently in View::fullscreen state on `output`, or nullptr.
+// Fullscreen apps/games always get uncapped, tearing-eligible treatment
+// (see output_frame() below) regardless of the selected RenderMode --
+// this is what makes that exemption possible without any per-app
+// tracking of its own, per the adaptive-render-throttling design.
+View* fullscreen_view_on(Output* output) {
+  for (const std::unique_ptr<View>& view : output->server->views) {
+    if (view->fullscreen && view->output == output) {
+      return view.get();
+    }
+  }
+  return nullptr;
+}
+
+// One-shot timer callback (RenderMode::Custom): re-requests a frame once
+// the configured FPS interval has actually elapsed, since output_frame()
+// deliberately withheld it below.
+int fps_cap_timer_fire(void* data) {
+  auto* output = static_cast<Output*>(data);
+  wlr_output_schedule_frame(output->wlr_output_ptr);
+  return 0;
+}
+
 void output_frame(wl_listener* listener, void*) {
   Output* output = wl_container_of(listener, output, frame);
+  Server* server = output->server;
 
-  wlr_scene* scene = output->server->scene();
+  View* fullscreen = fullscreen_view_on(output);
+
+  // Custom FPS cap: only throttles ordinary desktop content, never a
+  // fullscreen app/game (see fullscreen_view_on() above). Withholding
+  // frame_done from clients below is what actually throttles them --
+  // their next frame is gated on receiving it -- so a throttled tick
+  // skips the commit/frame_done pair entirely and re-arms itself via a
+  // timer for whenever the interval actually elapses.
+  if (fullscreen == nullptr && server->theme_config().render_mode == RenderMode::Custom) {
+    int fps = std::clamp(server->theme_config().custom_fps_lock, 24, 5000);
+    int interval_ms = std::max(1, 1000 / fps);
+
+    timespec now{};
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    if (output->fps_cap_has_last_commit) {
+      double elapsed_ms = (now.tv_sec - output->fps_cap_last_commit.tv_sec) * 1000.0 +
+                           (now.tv_nsec - output->fps_cap_last_commit.tv_nsec) / 1e6;
+      if (elapsed_ms < interval_ms) {
+        int remaining_ms = std::max(1, static_cast<int>(interval_ms - elapsed_ms));
+        if (output->fps_cap_timer == nullptr) {
+          output->fps_cap_timer = wl_event_loop_add_timer(
+              wl_display_get_event_loop(server->display()), fps_cap_timer_fire, output);
+        }
+        wl_event_source_timer_update(output->fps_cap_timer, remaining_ms);
+        return;
+      }
+    }
+    output->fps_cap_last_commit = now;
+    output->fps_cap_has_last_commit = true;
+  }
+
+  wlr_scene* scene = server->scene();
   wlr_scene_output* scene_output =
       wlr_scene_get_scene_output(scene, output->wlr_output_ptr);
 
-  wlr_scene_output_commit(scene_output, nullptr);
+  // Real DRM tearing, automatic and unconditional for a fullscreen
+  // surface that has actually hinted it wants async presentation (games/
+  // players via SDL/GLFW etc.) -- never a user-selectable mode, see
+  // RenderMode's doc comment in theme.hpp. Everything else (ordinary
+  // desktop content, or a fullscreen surface with no tearing hint) takes
+  // the plain wlr_scene_output_commit() path, which already early-
+  // returns for free on a genuinely idle output -- that early return is
+  // replicated by hand below only for the tearing branch, since bypassing
+  // the convenience call to set tearing_page_flip loses it otherwise.
+  wlr_surface* fullscreen_surface = fullscreen != nullptr ? fullscreen->surface() : nullptr;
+  bool want_tearing =
+      fullscreen_surface != nullptr &&
+      wlr_tearing_control_manager_v1_surface_hint_from_surface(server->tearing_manager(),
+                                                                 fullscreen_surface) ==
+          WP_TEARING_CONTROL_V1_PRESENTATION_HINT_ASYNC;
+
+  if (want_tearing) {
+    if (output->wlr_output_ptr->needs_frame ||
+        pixman_region32_not_empty(&scene_output->pending_commit_damage)) {
+      wlr_output_state state;
+      wlr_output_state_init(&state);
+      if (wlr_scene_output_build_state(scene_output, &state, nullptr)) {
+        state.tearing_page_flip = true;
+        wlr_output_commit_state(output->wlr_output_ptr, &state);
+      }
+      wlr_output_state_finish(&state);
+    }
+  } else {
+    wlr_scene_output_commit(scene_output, nullptr);
+  }
 
   timespec now{};
   clock_gettime(CLOCK_MONOTONIC, &now);
@@ -277,6 +362,10 @@ Output::~Output() {
   wl_list_remove(&frame.link);
   wl_list_remove(&request_state.link);
   wl_list_remove(&destroy.link);
+
+  if (fps_cap_timer != nullptr) {
+    wl_event_source_remove(fps_cap_timer);
+  }
 
   // debug_bars_ are parented to the server-level layer_debug_ tree, not
   // to anything owned by this Output -- if this output is being
