@@ -83,7 +83,7 @@ send_ipc "WORKSPACE?"
 send_ipc "WORKSPACE 2"
 send_ipc "WORKSPACE 0"
 
-echo "    starting GTK4 clients: bar, wallpaper, settings, launcher, powermenu..."
+echo "    starting GTK4 clients: bar, wallpaper, settings, launcher, powermenu, audiomixer..."
 # Locker and the greeter binaries are deliberately not included here --
 # locker needs a real PAM auth round trip to reach its own clean-unlock
 # exit path, and the greeter is TTY/PAM-driven, not a GTK4
@@ -95,6 +95,7 @@ spawn_client "${BUILD_DIR}/src/wallpaper/fleetwm-wallpaper"
 spawn_client "${BUILD_DIR}/src/settings/fleetwm-settings"
 spawn_client "${BUILD_DIR}/src/launcher/fleetwm-launcher"
 spawn_client "${BUILD_DIR}/src/powermenu/fleetwm-powermenu"
+spawn_client "${BUILD_DIR}/src/audiomixer/fleetwm-audiomixer"
 
 echo "    letting everything run for ${TRAIN_SECONDS}s..."
 sleep "$TRAIN_SECONDS"

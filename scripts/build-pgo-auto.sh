@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # Fully automatic profile-guided optimization (PGO) build -- no live
 # 10-15 minute human usage session required, unlike scripts/build-pgo.sh
-# (generate/use) which this wraps. Instead, a synthetic training pass
-# (scripts/pgo-train-session.sh) drives the instrumented binaries
-# itself: boots the compositor under wlroots' headless backend (no real
-# DRM/seat needed) inside an isolated D-Bus session bus and scratch
-# XDG_RUNTIME_DIR, exercises it over its own IPC socket (workspace
-# switches), and runs the bar/wallpaper/settings/launcher/powermenu
-# GTK4 clients alongside it for a fixed window, then quits everything
+# (generate/use) which this wraps. install.sh calls this unconditionally
+# for every install (not opt-in) -- see its own "Building with PGO" step.
+# Instead, a synthetic training pass (scripts/pgo-train-session.sh)
+# drives the instrumented binaries itself: boots the compositor under
+# wlroots' headless backend (no real DRM/seat needed) inside an isolated
+# D-Bus session bus and scratch XDG_RUNTIME_DIR, exercises it over its
+# own IPC socket (workspace switches), and runs the bar/wallpaper/
+# settings/launcher/powermenu/audiomixer GTK4 clients alongside it for a
+# fixed window, then quits everything
 # cleanly via SIGTERM -- safe because every fleetwm client now installs
 # fleetwm::install_clean_quit() (src/common/clean_quit.cpp), which
 # lets gcov's atexit-based .gcda flush actually run instead of being

@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Two-stage profile-guided optimization (PGO) build -- opt-in and
-# deliberately separate from install.sh's normal single-pass flow. PGO
-# needs a real usage sample collected *between* two builds (open/close
-# apps, switch workspaces, use the launcher, tile/resize windows, use
-# the bar for a while), which doesn't fit a scripted "just run it"
-# install step without either slowing down every fresh install or
-# risking a profile from a training run too short to actually help.
+# Two-stage profile-guided optimization (PGO) build. install.sh now runs
+# both stages unconditionally via build-pgo-auto.sh (which wraps this
+# script's `generate`/`use` pair around a synthetic training pass) --
+# every fresh install is PGO-built, not just ones someone happened to
+# train by hand. This script also still works standalone for a real
+# live-usage training session instead of the synthetic one, if you want
+# a profile shaped by how you actually use fleetwm day to day rather
+# than the synthetic pass's fixed script:
 #
 # Usage:
 #   scripts/build-pgo.sh generate
