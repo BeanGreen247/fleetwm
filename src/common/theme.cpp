@@ -2,6 +2,7 @@
 
 #include <toml++/toml.h>
 
+#include <algorithm>
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
@@ -112,6 +113,15 @@ ThemeConfig load_theme_config() {
   if (auto v = table["pinned_border_thickness_px"].value<int64_t>()) {
     config.pinned_border_thickness_px = static_cast<int>(*v);
   }
+  if (auto v = table["render_mode"].value<std::string>()) {
+    config.render_mode = (*v == "custom") ? RenderMode::Custom : RenderMode::Synced;
+  }
+  if (auto v = table["custom_fps_lock"].value<int64_t>()) {
+    config.custom_fps_lock = std::clamp(static_cast<int>(*v), 24, 5000);
+  }
+  if (auto v = table["show_debug_overlay_on_startup"].value<bool>()) {
+    config.show_debug_overlay_on_startup = *v;
+  }
 
   return config;
 }
@@ -133,6 +143,10 @@ void save_theme_config(const ThemeConfig& config) {
   table.insert_or_assign("pinned_focused_border_color", config.pinned_focused_border_color);
   table.insert_or_assign("pinned_border_thickness_px",
                           static_cast<int64_t>(config.pinned_border_thickness_px));
+  table.insert_or_assign("render_mode",
+                          config.render_mode == RenderMode::Custom ? "custom" : "synced");
+  table.insert_or_assign("custom_fps_lock", static_cast<int64_t>(config.custom_fps_lock));
+  table.insert_or_assign("show_debug_overlay_on_startup", config.show_debug_overlay_on_startup);
 
   std::ofstream out(path);
   if (!out) {

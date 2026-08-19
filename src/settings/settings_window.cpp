@@ -201,6 +201,8 @@ void SettingsWindow::build(GtkApplication* app) {
   gtk_notebook_append_page(GTK_NOTEBOOK(notebook), build_default_apps_tab(),
                             gtk_label_new("Default Apps"));
   gtk_notebook_append_page(GTK_NOTEBOOK(notebook), build_audio_tab(), gtk_label_new("Audio"));
+  gtk_notebook_append_page(GTK_NOTEBOOK(notebook), build_performance_tab(),
+                            gtk_label_new("Performance"));
   gtk_notebook_append_page(GTK_NOTEBOOK(notebook), build_about_tab(), gtk_label_new("About"));
 
   gtk_window_set_child(GTK_WINDOW(window_), notebook);
@@ -215,6 +217,46 @@ void SettingsWindow::apply_theme() {
   // dynamic override needed here. Still called from save() so switching
   // theme/corner_style live-restyles this window immediately.
   apply_app_style(config_);
+}
+
+GtkWidget* SettingsWindow::build_performance_tab() {
+  GtkWidget* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
+  gtk_widget_set_margin_start(box, 16);
+  gtk_widget_set_margin_end(box, 16);
+  gtk_widget_set_margin_top(box, 16);
+  gtk_widget_set_margin_bottom(box, 16);
+
+  // Adaptive render throttling: Synced (default, vsync-paced) vs Custom
+  // (an explicit FPS cap for ordinary desktop content). Deliberately no
+  // "Uncapped" option here -- real tearing is applied automatically to
+  // fullscreen apps/games only, not a user-selectable mode (see
+  // RenderMode's own doc comment in theme.hpp).
+  const char* render_mode_options[] = {"Synced (Unlocked)", "Custom (FPS Cap)"};
+  gtk_box_append(
+      GTK_BOX(box),
+      radio_row("Render mode", render_mode_options, 2, static_cast<int>(config_.render_mode),
+                G_CALLBACK(on_render_mode_changed), this));
+
+  custom_fps_lock_spin_ = gtk_spin_button_new_with_range(24, 5000, 1);
+  gtk_spin_button_set_value(GTK_SPIN_BUTTON(custom_fps_lock_spin_), config_.custom_fps_lock);
+  gtk_widget_set_sensitive(custom_fps_lock_spin_, config_.render_mode == RenderMode::Custom);
+  g_signal_connect(custom_fps_lock_spin_, "value-changed",
+                    G_CALLBACK(on_custom_fps_lock_changed), this);
+  gtk_box_append(GTK_BOX(box), labeled_row("Custom FPS lock", custom_fps_lock_spin_));
+
+  // Pre-sets Server::debug_overlay_enabled_ on compositor startup instead
+  // of requiring the Alt+Shift+I keybind every session -- same overlay
+  // (frame-time bar graph + FPS/RAM/CPU-MHz text), just a persisted
+  // startup default. Applied by the compositor at Server::init() time
+  // (server.cpp); this checkbox itself only ever writes theme.toml, same
+  // as every other Settings control.
+  GtkWidget* overlay_check = gtk_check_button_new_with_label("Show performance overlay on startup");
+  gtk_check_button_set_active(GTK_CHECK_BUTTON(overlay_check),
+                               config_.show_debug_overlay_on_startup);
+  g_signal_connect(overlay_check, "toggled", G_CALLBACK(on_show_debug_overlay_toggled), this);
+  gtk_box_append(GTK_BOX(box), overlay_check);
+
+  return box;
 }
 
 GtkWidget* SettingsWindow::build_bar_tab() {
@@ -791,6 +833,32 @@ void SettingsWindow::on_focus_border_thickness_changed(GtkSpinButton* button,
 void SettingsWindow::on_gap_changed(GtkSpinButton* button, gpointer user_data) {
   auto* self = static_cast<SettingsWindow*>(user_data);
   self->config_.gap_px = gtk_spin_button_get_value_as_int(button);
+  self->save();
+}
+
+void SettingsWindow::on_render_mode_changed(GtkCheckButton* button, gpointer user_data) {
+  if (!gtk_check_button_get_active(button)) {
+    return;
+  }
+  auto* self = static_cast<SettingsWindow*>(user_data);
+  int index = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(button), "radio-index"));
+  // Index order matches render_mode_options[] in build(), which matches
+  // RenderMode's declaration order in theme.hpp.
+  self->config_.render_mode = static_cast<RenderMode>(index);
+  gtk_widget_set_sensitive(self->custom_fps_lock_spin_,
+                            self->config_.render_mode == RenderMode::Custom);
+  self->save();
+}
+
+void SettingsWindow::on_custom_fps_lock_changed(GtkSpinButton* button, gpointer user_data) {
+  auto* self = static_cast<SettingsWindow*>(user_data);
+  self->config_.custom_fps_lock = gtk_spin_button_get_value_as_int(button);
+  self->save();
+}
+
+void SettingsWindow::on_show_debug_overlay_toggled(GtkCheckButton* button, gpointer user_data) {
+  auto* self = static_cast<SettingsWindow*>(user_data);
+  self->config_.show_debug_overlay_on_startup = gtk_check_button_get_active(button);
   self->save();
 }
 

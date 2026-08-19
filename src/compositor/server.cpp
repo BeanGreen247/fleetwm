@@ -871,6 +871,7 @@ bool Server::init() {
 
   screencopy_manager_ = wlr_screencopy_manager_v1_create(display_);
   xdg_output_manager_ = wlr_xdg_output_manager_v1_create(display_, output_layout_);
+  tearing_manager_ = wlr_tearing_control_manager_v1_create(display_, 1);
 
   cursor_ = wlr_cursor_create();
   wlr_cursor_attach_output_layout(cursor_, output_layout_);
@@ -934,6 +935,15 @@ bool Server::init() {
   theme_config_ = load_theme_config();
   default_apps_config_ = load_default_apps_config();
   reload_keybinds_config();
+
+  // Settings' Performance tab "Show performance overlay on startup" --
+  // still the same debug_overlay_enabled_/layer_debug_ pair
+  // toggle_debug_overlay() flips on Alt+Shift+I, just pre-set here
+  // instead of always starting off.
+  if (theme_config_.show_debug_overlay_on_startup) {
+    debug_overlay_enabled_ = true;
+    wlr_scene_node_set_enabled(&layer_debug_->node, true);
+  }
   if (!start_theme_watch()) {
     wlr_log(WLR_ERROR,
             "failed to start theme.toml inotify watch; live theme reload will not work");

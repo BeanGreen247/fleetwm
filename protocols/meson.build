@@ -26,6 +26,7 @@ protocols = [
   ['xdg-output-unstable-v1', wl_protocol_dir / 'unstable/xdg-output/xdg-output-unstable-v1.xml'],
   ['pointer-constraints-unstable-v1', wl_protocol_dir / 'unstable/pointer-constraints/pointer-constraints-unstable-v1.xml'],
   ['ext-session-lock-v1', wl_protocol_dir / 'staging/ext-session-lock/ext-session-lock-v1.xml'],
+  ['tearing-control-v1', wl_protocol_dir / 'staging/tearing-control/tearing-control-v1.xml'],
 ]
 
 protocol_headers = []

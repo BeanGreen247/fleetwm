@@ -111,6 +111,9 @@ TEST_F(ThemeTest, SaveThenLoadRoundTrips) {
   config.pinned_border_color = "#445566";
   config.pinned_focused_border_color = "#778899";
   config.pinned_border_thickness_px = 5;
+  config.render_mode = RenderMode::Custom;
+  config.custom_fps_lock = 144;
+  config.show_debug_overlay_on_startup = true;
 
   save_theme_config(config);
   ThemeConfig loaded = load_theme_config();
@@ -125,6 +128,39 @@ TEST_F(ThemeTest, SaveThenLoadRoundTrips) {
   EXPECT_EQ(loaded.pinned_border_color, "#445566");
   EXPECT_EQ(loaded.pinned_focused_border_color, "#778899");
   EXPECT_EQ(loaded.pinned_border_thickness_px, 5);
+  EXPECT_EQ(loaded.render_mode, RenderMode::Custom);
+  EXPECT_EQ(loaded.custom_fps_lock, 144);
+  EXPECT_TRUE(loaded.show_debug_overlay_on_startup);
+}
+
+TEST_F(ThemeTest, RenderModeDefaultsToSynced) {
+  ThemeConfig config = load_theme_config();
+  EXPECT_EQ(config.render_mode, RenderMode::Synced);
+  EXPECT_EQ(config.custom_fps_lock, 60);
+  EXPECT_FALSE(config.show_debug_overlay_on_startup);
+}
+
+TEST_F(ThemeTest, ShowDebugOverlayOnStartupRoundTripsFalse) {
+  ThemeConfig config;
+  config.show_debug_overlay_on_startup = true;
+  save_theme_config(config);
+  EXPECT_TRUE(load_theme_config().show_debug_overlay_on_startup);
+
+  config.show_debug_overlay_on_startup = false;
+  save_theme_config(config);
+  EXPECT_FALSE(load_theme_config().show_debug_overlay_on_startup);
+}
+
+TEST_F(ThemeTest, CustomFpsLockClampsToValidRange) {
+  ThemeConfig config;
+  config.render_mode = RenderMode::Custom;
+  config.custom_fps_lock = 9000;
+  save_theme_config(config);
+  EXPECT_EQ(load_theme_config().custom_fps_lock, 5000);
+
+  config.custom_fps_lock = 1;
+  save_theme_config(config);
+  EXPECT_EQ(load_theme_config().custom_fps_lock, 24);
 }
 
 TEST_F(ThemeTest, AutoAccentRoundTrips) {
