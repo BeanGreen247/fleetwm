@@ -113,10 +113,11 @@ echo "==> Building with PGO (profile-guided optimization)"
 # before) and exactly what the synthetic training pass exercises.
 #
 # Both the instrumented and final builds run the unit test suite
-# themselves (build-pgo.sh's own `meson test` call, `set -euo pipefail`
-# propagating failure) -- a failing test aborts here, before any
-# installed binary is touched, same "tests gate the install" contract
-# as before.
+# themselves (build-pgo.sh runs the fleetwm-unit-tests binary directly,
+# so you see every one of the 240+ individual test cases run, not just
+# meson's single-line wrapper; `set -euo pipefail` propagates any
+# failure) -- a failing test aborts here, before any installed binary is
+# touched, same "tests gate the install" contract as before.
 bash "${SCRIPT_DIR}/scripts/build-pgo-auto.sh"
 
 echo "==> Installing (requires sudo)"

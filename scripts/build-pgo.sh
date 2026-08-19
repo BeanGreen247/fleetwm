@@ -62,7 +62,14 @@ meson setup "${BUILD_DIR}" "${SCRIPT_DIR}" --prefix=/usr/local --buildtype=relea
 ninja -C "${BUILD_DIR}"
 
 echo "==> Running unit tests"
-meson test -C "${BUILD_DIR}"
+# Run the gtest binary directly rather than `meson test` -- meson treats
+# the whole binary as a single test ("1/1 fleetwm-unit-tests OK"), which
+# hides the real per-case count/results. Running it directly prints every
+# individual RUN/OK line plus gtest's own summary ("N tests from M test
+# suites ran ... PASSED N tests"), and still exits non-zero on any
+# failure, so `set -euo pipefail` above still aborts the install exactly
+# as before.
+"${BUILD_DIR}/tests/fleetwm-unit-tests"
 
 echo
 if [[ "$MODE" == "generate" ]]; then

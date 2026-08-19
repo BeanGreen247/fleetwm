@@ -13,4 +13,9 @@ BUILD_DIR="${SCRIPT_DIR}/build-tests"
 
 meson setup "${BUILD_DIR}" "${SCRIPT_DIR}" -Dtests=true --reconfigure
 ninja -C "${BUILD_DIR}"
-meson test -C "${BUILD_DIR}" --print-errorlogs
+# Run the gtest binary directly rather than `meson test` -- meson treats
+# the whole binary as a single test ("1/1 fleetwm-unit-tests OK"), which
+# hides the real per-case count/results. Running it directly prints every
+# individual RUN/OK line plus gtest's own summary, and still exits
+# non-zero on any failure (set -euo pipefail above still aborts).
+"${BUILD_DIR}/tests/fleetwm-unit-tests"
