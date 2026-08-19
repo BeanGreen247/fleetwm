@@ -239,22 +239,27 @@ sudo ninja -C build install
 
 `install.sh` builds with a heavier set of flags than the plain command
 above -- LTO, `-march=native`, dead-code stripping, and more (see its own
-comments for what and why). For an even more aggressive build,
-`scripts/build-pgo.sh` adds profile-guided optimization on top, as a
-separate two-stage opt-in flow (it needs a real usage sample collected
-between builds, which doesn't fit a single-pass installer) -- see that
-script's header comment for the exact steps. `scripts/build-pgo-auto.sh`
-does the same two-stage PGO build fully automatically instead, with no
-live usage session required -- it drives a synthetic training pass
-(`scripts/pgo-train-session.sh`) against the instrumented build under
-wlroots' headless backend.
+comments for what and why) -- **and now always builds with profile-guided
+optimization (PGO) on top**, via `scripts/build-pgo-auto.sh`: an
+instrumented build, a synthetic training pass
+(`scripts/pgo-train-session.sh`, driving bar/wallpaper/settings/
+launcher/powermenu/audiomixer against the compositor under wlroots'
+headless backend, no live usage session required), then a final
+profile-optimized rebuild. This is mandatory, not opt-in -- every
+`install.sh` run pays the extra build time (roughly a minute or two more
+than a plain build) for a profile-guided binary, not just installs where
+someone happened to run PGO by hand. `scripts/build-pgo.sh` (which
+`build-pgo-auto.sh` wraps) still works standalone too, for a real
+live-usage training session instead of the synthetic one -- see that
+script's header comment for the manual `generate`/`use` steps.
 
 A `tests/` unit-test suite (GTest, fetched via wrapdb) covers the
 config-parsing modules in `src/common/` plus the pure PipeWire-JSON-field
-and IPC-socket-path helpers the bar/audio mixer rely on. `install.sh` and
-`scripts/build-pgo.sh` both build with `-Dtests=true` and run `meson
-test` automatically right after `ninja` and before install, so a
-failing test blocks the install rather than shipping silently broken.
+and IPC-socket-path helpers the bar/audio mixer rely on. `install.sh`
+(via `build-pgo-auto.sh`/`build-pgo.sh`) runs `meson test` automatically
+right after every build (both the instrumented and final PGO stages) and
+before install, so a failing test blocks the install rather than
+shipping silently broken.
 
 To just build and run the tests on their own, without a full install,
 `scripts/run-tests.sh` does it in one step (a throwaway `build-tests/`

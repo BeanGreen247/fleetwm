@@ -7,7 +7,12 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BUILD_DIR="${SCRIPT_DIR}/build"
+# scripts/build-pgo-auto.sh (invoked below, see "Building with PGO")
+# always builds into build-pgo/, not build/ -- every later reference to
+# BUILD_DIR in this script (recording the update path, checking for the
+# greeter binary, etc.) has to point at the same directory the actual
+# installed binaries were built from.
+BUILD_DIR="${SCRIPT_DIR}/build-pgo"
 
 echo "==> Installing build dependencies (requires sudo)"
 sudo apt-get update
@@ -74,6 +79,14 @@ sudo apt-get install -y grim slurp wl-clipboard libnotify-bin
 # to the compositor to catch crashes
 sudo apt-get install -y wlrctl wtype gdb imagemagick
 
+# build-time only: scripts/build-pgo-auto.sh's synthetic PGO training
+# pass (now run unconditionally below, see "Building with PGO") needs
+# `dbus-run-session` (an isolated session bus, so the training run's
+# GTK4 clients don't silently hand off to a real desktop session's bus
+# instead of doing any work) and python3 (already present on every
+# supported distro here, listed for completeness).
+sudo apt-get install -y dbus-daemon python3
+
 echo "==> Setting system default locale to C.UTF-8"
 # fleetwm-greet's session env (src/greeter/session.cpp) also hardcodes
 # this as a floor for every fleetwm session regardless of the system
@@ -85,66 +98,26 @@ echo "==> Setting system default locale to C.UTF-8"
 # glibc system with no locale-gen step required.
 sudo update-locale LANG=C.UTF-8 LC_ALL=C.UTF-8 LANGUAGE=
 
-echo "==> Configuring build"
-# -Db_ndebug=true: meson's "release" buildtype alone does NOT disable
-# assert() (that's a separate option) -- every assert-guarded check in
-# the compositor's hot paths (input, render, layout) would otherwise
-# still pay its runtime cost in a "release" build. -Dstrip=true: strips
-# debug symbols from the installed binaries (meson's buildtype also
-# doesn't imply this). Neither changes behavior, both are standard
-# release-build hygiene -- part of the standing "run as efficiently as
-# possible" goal, not a one-off tweak.
-# -Db_lto=true: whole-program link-time optimization across every
-# translation unit in each binary (cross-TU inlining, better dead-code
-# elimination) -- meson/ninja handle this natively, no manual flag
-# wrangling needed. -march=native: codegen tuned for the exact CPU this
-# is building on, safe ONLY because install.sh always builds fresh on
-# the machine it installs to (never cross-compiled or redistributed as a
-# prebuilt binary) -- a binary built this way will refuse to run
-# correctly on a different CPU model, which is fine here but would NOT
-# be fine for e.g. a .deb built once and shipped to arbitrary machines.
-# -ffunction-sections/-fdata-sections + -Wl,--gc-sections: puts each
-# function/global in its own linker section so the linker can drop ones
-# nothing calls -- LTO already does cross-TU dead-code elimination, but
-# this catches unused code inside libraries/headers LTO doesn't see
-# through (e.g. template instantiations, inline helpers pulled in by a
-# system header) and is essentially free to add alongside it.
-# -fno-semantic-interposition: tells GCC this is a plain executable, not
-# something another library might override symbols in at load time, so
-# it can inline/optimize across function-call boundaries as aggressively
-# as LTO's own analysis allows instead of conservatively assuming any
-# call could be interposed -- meaningful free win specifically because
-# LTO is already on (this flag's benefit is largest exactly when
-# whole-program analysis is already happening).
-# -DG_DISABLE_ASSERT: strips GLib's own g_assert()/g_return_if_fail()
-# precondition checks from the GTK4 clients (bar/wallpaper/settings/
-# launcher/locker/powermenu/greeter-login all link GLib/GTK) -- a small
-# speed win on whatever hot paths those checks guard, at the cost of
-# losing that defensive layer (a violated precondition becomes
-# undefined behavior instead of a clean early-return-with-a-warning).
-# Explicit user tradeoff, accepted knowingly given fleetwm is still
-# under active development and real bugs keep surfacing.
+echo "==> Building with PGO (profile-guided optimization)"
+# Every install now goes through the full instrumented-build ->
+# synthetic-training -> profile-optimized-rebuild pipeline
+# (scripts/build-pgo-auto.sh), not just a single release build --
+# mandatory, not opt-in, per explicit user request. This takes longer
+# than a plain build (compiles twice, plus a training pass -- budget an
+# extra minute or two on top of a normal build), but every installed
+# binary ends up profile-guided rather than only the ones someone
+# happened to PGO-train by hand. See build-pgo-auto.sh/build-pgo.sh/
+# pgo-train-session.sh for the full flag rationale (LTO, -march=native,
+# -DG_DISABLE_ASSERT, full RELRO, etc. -- all still applied, PGO is
+# layered on top of the same release-build flags this script used
+# before) and exactly what the synthetic training pass exercises.
 #
-# -Wl,-z,now: full RELRO (eagerly resolve every dynamic symbol at
-# startup instead of lazily on first call, then mark the GOT
-# read-only) -- pure upside for long-running daemons like the
-# compositor/bar: the per-symbol lazy-binding resolution cost still
-# happens exactly once either way, this just moves it to startup
-# instead of paying it on first use, and a read-only GOT is real
-# hardening against GOT-overwrite exploits. Debian/Ubuntu's default
-# gcc spec already applies partial RELRO but not bind-now.
-meson setup "${BUILD_DIR}" "${SCRIPT_DIR}" --prefix=/usr/local --buildtype=release \
-  -Db_ndebug=true -Dstrip=true -Db_lto=true -Dtests=true \
-  -Dc_args='-march=native -ffunction-sections -fdata-sections -fno-semantic-interposition -DG_DISABLE_ASSERT' \
-  -Dcpp_args='-march=native -ffunction-sections -fdata-sections -fno-semantic-interposition -DG_DISABLE_ASSERT' \
-  -Dc_link_args='-Wl,--gc-sections -Wl,-z,now' -Dcpp_link_args='-Wl,--gc-sections -Wl,-z,now' \
-  --reconfigure
-
-echo "==> Building"
-ninja -C "${BUILD_DIR}"
-
-echo "==> Running unit tests"
-meson test -C "${BUILD_DIR}"
+# Both the instrumented and final builds run the unit test suite
+# themselves (build-pgo.sh's own `meson test` call, `set -euo pipefail`
+# propagating failure) -- a failing test aborts here, before any
+# installed binary is touched, same "tests gate the install" contract
+# as before.
+bash "${SCRIPT_DIR}/scripts/build-pgo-auto.sh"
 
 echo "==> Installing (requires sudo)"
 sudo ninja -C "${BUILD_DIR}" install
