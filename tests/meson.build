@@ -13,6 +13,8 @@ fleetwm_test_sources = files(
   'test_default_apps.cpp',
   'test_keybinds_config.cpp',
   'test_bar_config.cpp',
+  'test_pipewire_json.cpp',
+  'test_ipc_client.cpp',
 )
 
 fleetwm_unit_tests = executable(
