@@ -80,6 +80,10 @@ Architecture support is meant to be general -- nothing in fleetwm is
 written against a specific CPU or GPU vendor -- but the table below is
 what has actually been run and verified, not just assumed to work.
 
+All single-board-computer testing is done and provided by this repo's
+owner, using [eqvaldi/releases V4-LTS-3](https://github.com/eqvaldi/releases/releases/tag/V4-LTS-3)
+as the SBC OS base.
+
 | Platform | Arch | GPU rendering | Status |
 | --- | --- | --- | --- |
 | Generic x86_64 (QEMU/KVM VM, `fleetwm-dev`) | x86\_64 | llvmpipe (software, no virtio-GPU 3D) | Primary development target; verified continuously |
@@ -414,6 +418,12 @@ behind each:
 - **`fleetwm-greeter-login`** -- the GTK4 login-screen UI
   `fleetwm-greet` spawns and talks to over a private socket; never runs
   outside of a `fleetwm-greet` session
+
+## Credits
+
+Single-board-computer testing uses [eqvaldi/releases V4-LTS-3](https://github.com/eqvaldi/releases/releases/tag/V4-LTS-3)
+as the SBC OS base -- thanks to [eqvaldi](https://github.com/eqvaldi) for
+maintaining that release.
 
 ## License
 
