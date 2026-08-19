@@ -1,5 +1,10 @@
 # Fleetwm
 
+A huge thank-you to [eqvaldi](https://github.com/eqvaldi) for
+[eqvaldi/releases V4-LTS-3](https://github.com/eqvaldi/releases/releases/tag/V4-LTS-3),
+the single-board-computer OS base every SBC test in this repo runs on --
+see [Credits](#credits) below.
+
 A minimal, fast Wayland window manager and desktop shell for Debian and
 Ubuntu/Kubuntu. Built on [wlroots](https://gitlab.freedesktop.org/wlroots/wlroots)
 in C++, with a thin GTK4 top bar, settings app, app launcher, and power
@@ -421,9 +426,12 @@ behind each:
 
 ## Credits
 
-Single-board-computer testing uses [eqvaldi/releases V4-LTS-3](https://github.com/eqvaldi/releases/releases/tag/V4-LTS-3)
-as the SBC OS base -- thanks to [eqvaldi](https://github.com/eqvaldi) for
-maintaining that release.
+Every single-board-computer test in this repo is done and provided by
+this repo's owner, running on [eqvaldi/releases V4-LTS-3](https://github.com/eqvaldi/releases/releases/tag/V4-LTS-3)
+as the SBC OS base. Sincere thanks to [eqvaldi](https://github.com/eqvaldi)
+for building and maintaining that release -- the SBC hardware-verification
+work throughout this README (see [Supported hardware](#supported-hardware))
+would not have been possible without it.
 
 ## License
 
