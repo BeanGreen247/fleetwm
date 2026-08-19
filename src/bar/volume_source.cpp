@@ -9,6 +9,7 @@ extern "C" {
 #include <spa/param/props.h>
 #include <spa/pod/iter.h>
 }
+#include "pipewire_json.hpp"
 #endif
 
 namespace fleetwm::bar {
@@ -147,24 +148,12 @@ int VolumeSource::on_metadata_property(void* data, uint32_t, const char* key, co
   if (!key || std::string(key) != "default.audio.sink" || !value) {
     return 0;
   }
-  // Value is JSON like {"name":"alsa_output.xyz"}. Avoid a full JSON
-  // dependency for one field: find "name" and pull the quoted string
-  // after it.
-  std::string json = value;
-  size_t name_pos = json.find("\"name\"");
-  if (name_pos == std::string::npos) {
-    return 0;
+  // Value is JSON like {"name":"alsa_output.xyz"} -- see pipewire_json.hpp
+  // for why this doesn't pull in a full JSON dependency for one field.
+  std::string name = fleetwm::common::extract_json_string_field(value, "name");
+  if (!name.empty()) {
+    self->default_sink_name_ = name;
   }
-  size_t colon = json.find(':', name_pos);
-  size_t first_quote = json.find('"', colon == std::string::npos ? name_pos : colon + 1);
-  if (first_quote == std::string::npos) {
-    return 0;
-  }
-  size_t second_quote = json.find('"', first_quote + 1);
-  if (second_quote == std::string::npos) {
-    return 0;
-  }
-  self->default_sink_name_ = json.substr(first_quote + 1, second_quote - first_quote - 1);
   return 0;
 }
 

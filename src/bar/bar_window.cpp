@@ -120,6 +120,9 @@ void BarWindow::build(GtkApplication* app) {
   gtk_box_append(GTK_BOX(right_box), cpu_label_);
   gtk_box_append(GTK_BOX(right_box), gpu_label_);
   gtk_box_append(GTK_BOX(right_box), disk_label_);
+  GtkGesture* volume_click = gtk_gesture_click_new();
+  g_signal_connect(volume_click, "pressed", G_CALLBACK(on_volume_label_clicked), this);
+  gtk_widget_add_controller(volume_label_, GTK_EVENT_CONTROLLER(volume_click));
   gtk_box_append(GTK_BOX(right_box), volume_label_);
 
   // Systray (StatusNotifierItem/StatusNotifierWatcher, see systray.hpp)
@@ -439,6 +442,22 @@ void BarWindow::on_power_icon_clicked(GtkButton*, gpointer) {
   if (!g_spawn_async(nullptr, argv, nullptr, G_SPAWN_SEARCH_PATH, nullptr, nullptr, nullptr,
                       &error)) {
     std::fprintf(stderr, "fleetwm-bar: failed to launch fleetwm-powermenu: %s\n",
+                 error != nullptr ? error->message : "unknown error");
+    g_clear_error(&error);
+  }
+}
+
+void BarWindow::on_volume_label_clicked(GtkGestureClick*, int, double, double, gpointer) {
+  // GApplication's default single-instance activation (dev.fleetwm.
+  // AudioMixer, see src/audiomixer/main.cpp) means a second click while
+  // one is already open just re-presents/re-focuses it -- same as the
+  // power menu's on_power_icon_clicked, no extra already-running guard
+  // needed here.
+  GError* error = nullptr;
+  char* argv[] = {const_cast<char*>("fleetwm-audiomixer"), nullptr};
+  if (!g_spawn_async(nullptr, argv, nullptr, G_SPAWN_SEARCH_PATH, nullptr, nullptr, nullptr,
+                      &error)) {
+    std::fprintf(stderr, "fleetwm-bar: failed to launch fleetwm-audiomixer: %s\n",
                  error != nullptr ? error->message : "unknown error");
     g_clear_error(&error);
   }

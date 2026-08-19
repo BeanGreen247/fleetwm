@@ -70,6 +70,7 @@ libcommon = static_library(
     'keybinds_config.cpp',
     'clean_quit.cpp',
     'malloc_tuning.cpp',
+    'pipewire_json.cpp',
   ),
   dependencies: [tomlplusplus_dep, gtk4_dep_common],
   include_directories: include_directories('.'),
@@ -79,4 +80,40 @@ libcommon_dep = declare_dependency(
   link_with: libcommon,
   include_directories: include_directories('.'),
   dependencies: [tomlplusplus_dep, gtk4_dep_common],
+)
+
+# AudioMixer (audio_mixer.hpp/.cpp) is its own static library, not part of
+# libcommon above -- it's the only common/ module that needs libpipewire,
+# and libcommon is linked into every fleetwm binary (settings, launcher,
+# greeter, ...), most of which have no business pulling in PipeWire. Only
+# fleetwm-audiomixer and fleetwm-settings' Audio tab link this. Same
+# required:false + FLEETWM_HAVE_PIPEWIRE pattern as src/bar/meson.build's
+# read-only VolumeSource -- kept as a second, independent PipeWire
+# connection rather than sharing bar's, since the mixer needs write access
+# (set volume) and per-app stream enumeration that VolumeSource never
+# needed.
+libpipewire_dep_mixer = dependency('libpipewire-0.3', required: false)
+
+audiomixer_cpp_args = []
+audiomixer_extra_deps = []
+if libpipewire_dep_mixer.found()
+  audiomixer_extra_deps += libpipewire_dep_mixer
+  audiomixer_cpp_args += '-DFLEETWM_HAVE_PIPEWIRE=1'
+else
+  audiomixer_cpp_args += '-DFLEETWM_HAVE_PIPEWIRE=0'
+endif
+
+libaudiomixer = static_library(
+  'fleetwm-audiomixer-backend',
+  files('audio_mixer.cpp'),
+  dependencies: [gtk4_dep_common] + audiomixer_extra_deps,
+  cpp_args: audiomixer_cpp_args,
+  include_directories: include_directories('.'),
+)
+
+libaudiomixer_dep = declare_dependency(
+  link_with: libaudiomixer,
+  include_directories: include_directories('.'),
+  dependencies: [gtk4_dep_common] + audiomixer_extra_deps,
+  compile_args: audiomixer_cpp_args,
 )
