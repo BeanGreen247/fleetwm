@@ -200,6 +200,7 @@ void SettingsWindow::build(GtkApplication* app) {
                             gtk_label_new("Wallpaper"));
   gtk_notebook_append_page(GTK_NOTEBOOK(notebook), build_default_apps_tab(),
                             gtk_label_new("Default Apps"));
+  gtk_notebook_append_page(GTK_NOTEBOOK(notebook), build_audio_tab(), gtk_label_new("Audio"));
   gtk_notebook_append_page(GTK_NOTEBOOK(notebook), build_about_tab(), gtk_label_new("About"));
 
   gtk_window_set_child(GTK_WINDOW(window_), notebook);
@@ -952,6 +953,175 @@ void SettingsWindow::save() {
   // covers all of them rather than duplicating the apply_theme() call
   // at each handler.
   apply_theme();
+}
+
+// -- Audio tab -------------------------------------------------------------
+
+GtkWidget* SettingsWindow::build_audio_tab() {
+  GtkWidget* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
+  gtk_widget_set_margin_start(box, 16);
+  gtk_widget_set_margin_end(box, 16);
+  gtk_widget_set_margin_top(box, 16);
+  gtk_widget_set_margin_bottom(box, 16);
+
+  GtkWidget* heading = gtk_label_new("Master volume");
+  gtk_label_set_xalign(GTK_LABEL(heading), 0.0f);
+  PangoAttrList* attrs = pango_attr_list_new();
+  pango_attr_list_insert(attrs, pango_attr_weight_new(PANGO_WEIGHT_BOLD));
+  gtk_label_set_attributes(GTK_LABEL(heading), attrs);
+  pango_attr_list_unref(attrs);
+  gtk_box_append(GTK_BOX(box), heading);
+
+  gtk_box_append(GTK_BOX(box), build_audio_master_row());
+
+  audio_unavailable_label_ = gtk_label_new("Audio unavailable (no PipeWire)");
+  gtk_widget_set_visible(audio_unavailable_label_, FALSE);
+  gtk_box_append(GTK_BOX(box), audio_unavailable_label_);
+
+  GtkWidget* separator = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
+  gtk_widget_set_margin_top(separator, 4);
+  gtk_widget_set_margin_bottom(separator, 4);
+  gtk_box_append(GTK_BOX(box), separator);
+
+  GtkWidget* apps_heading = gtk_label_new("Applications");
+  gtk_label_set_xalign(GTK_LABEL(apps_heading), 0.0f);
+  PangoAttrList* apps_attrs = pango_attr_list_new();
+  pango_attr_list_insert(apps_attrs, pango_attr_weight_new(PANGO_WEIGHT_BOLD));
+  gtk_label_set_attributes(GTK_LABEL(apps_heading), apps_attrs);
+  pango_attr_list_unref(apps_attrs);
+  gtk_box_append(GTK_BOX(box), apps_heading);
+
+  audio_streams_box_ = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+  gtk_box_append(GTK_BOX(box), audio_streams_box_);
+
+  audio_mixer_.start(
+      [this](int percent, bool muted, bool available) {
+        on_audio_master_update(percent, muted, available);
+      },
+      [this](const std::vector<common::AudioStream>& streams) {
+        on_audio_streams_update(streams);
+      });
+
+  return box;
+}
+
+GtkWidget* SettingsWindow::build_audio_master_row() {
+  GtkWidget* row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+
+  audio_master_mute_button_ = gtk_button_new();
+  GtkWidget* icon = gtk_image_new_from_icon_name("audio-volume-high-symbolic");
+  gtk_image_set_pixel_size(GTK_IMAGE(icon), 16);
+  gtk_button_set_child(GTK_BUTTON(audio_master_mute_button_), icon);
+  g_signal_connect(audio_master_mute_button_, "clicked", G_CALLBACK(on_audio_master_mute_toggled),
+                    this);
+  gtk_box_append(GTK_BOX(row), audio_master_mute_button_);
+
+  audio_master_slider_ = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0, 100, 1);
+  gtk_widget_set_hexpand(audio_master_slider_, TRUE);
+  gtk_scale_set_draw_value(GTK_SCALE(audio_master_slider_), TRUE);
+  g_signal_connect(audio_master_slider_, "value-changed",
+                    G_CALLBACK(on_audio_master_slider_changed), this);
+  gtk_box_append(GTK_BOX(row), audio_master_slider_);
+
+  return row;
+}
+
+GtkWidget* SettingsWindow::build_audio_stream_row(const common::AudioStream& stream) {
+  GtkWidget* row = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+
+  GtkWidget* label = gtk_label_new(stream.label.c_str());
+  gtk_widget_set_halign(label, GTK_ALIGN_START);
+  gtk_box_append(GTK_BOX(row), label);
+
+  GtkWidget* slider = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0, 100, 1);
+  gtk_range_set_value(GTK_RANGE(slider), stream.volume_percent);
+  gtk_scale_set_draw_value(GTK_SCALE(slider), TRUE);
+  g_object_set_data(G_OBJECT(slider), "fleetwm-node-id", GUINT_TO_POINTER(stream.node_id));
+  g_signal_connect(slider, "value-changed", G_CALLBACK(on_audio_stream_slider_changed), this);
+  gtk_box_append(GTK_BOX(row), slider);
+
+  audio_stream_sliders_[stream.node_id] = slider;
+  return row;
+}
+
+void SettingsWindow::on_audio_master_update(int percent, bool muted, bool available) {
+  gtk_widget_set_visible(audio_unavailable_label_, !available);
+  gtk_widget_set_sensitive(audio_master_slider_, available);
+  gtk_widget_set_sensitive(audio_master_mute_button_, available);
+  if (!available) {
+    return;
+  }
+  audio_updating_from_report_ = true;
+  gtk_range_set_value(GTK_RANGE(audio_master_slider_), percent);
+  audio_updating_from_report_ = false;
+
+  GtkWidget* current_icon = gtk_button_get_child(GTK_BUTTON(audio_master_mute_button_));
+  const char* icon_name = muted             ? "audio-volume-muted-symbolic"
+                           : percent >= 50   ? "audio-volume-high-symbolic"
+                           : percent > 0     ? "audio-volume-medium-symbolic"
+                                              : "audio-volume-low-symbolic";
+  gtk_image_set_from_icon_name(GTK_IMAGE(current_icon), icon_name);
+}
+
+void SettingsWindow::on_audio_streams_update(const std::vector<common::AudioStream>& streams) {
+  bool set_changed = streams.size() != audio_stream_sliders_.size();
+  if (!set_changed) {
+    for (const auto& stream : streams) {
+      if (!audio_stream_sliders_.count(stream.node_id)) {
+        set_changed = true;
+        break;
+      }
+    }
+  }
+
+  if (set_changed) {
+    GtkWidget* child = gtk_widget_get_first_child(audio_streams_box_);
+    while (child) {
+      GtkWidget* next = gtk_widget_get_next_sibling(child);
+      gtk_box_remove(GTK_BOX(audio_streams_box_), child);
+      child = next;
+    }
+    audio_stream_sliders_.clear();
+    for (const auto& stream : streams) {
+      gtk_box_append(GTK_BOX(audio_streams_box_), build_audio_stream_row(stream));
+    }
+    return;
+  }
+
+  audio_updating_from_report_ = true;
+  for (const auto& stream : streams) {
+    auto it = audio_stream_sliders_.find(stream.node_id);
+    if (it != audio_stream_sliders_.end()) {
+      gtk_range_set_value(GTK_RANGE(it->second), stream.volume_percent);
+    }
+  }
+  audio_updating_from_report_ = false;
+}
+
+void SettingsWindow::on_audio_master_slider_changed(GtkRange* range, gpointer user_data) {
+  auto* self = static_cast<SettingsWindow*>(user_data);
+  if (self->audio_updating_from_report_) {
+    return;
+  }
+  self->audio_mixer_.set_master_volume(static_cast<int>(gtk_range_get_value(range) + 0.5));
+}
+
+void SettingsWindow::on_audio_master_mute_toggled(GtkButton*, gpointer user_data) {
+  auto* self = static_cast<SettingsWindow*>(user_data);
+  GtkWidget* current_icon = gtk_button_get_child(GTK_BUTTON(self->audio_master_mute_button_));
+  const char* current_name = nullptr;
+  g_object_get(current_icon, "icon-name", &current_name, nullptr);
+  bool currently_muted = current_name && std::string(current_name) == "audio-volume-muted-symbolic";
+  self->audio_mixer_.set_master_muted(!currently_muted);
+}
+
+void SettingsWindow::on_audio_stream_slider_changed(GtkRange* range, gpointer user_data) {
+  auto* self = static_cast<SettingsWindow*>(user_data);
+  if (self->audio_updating_from_report_) {
+    return;
+  }
+  uint32_t node_id = GPOINTER_TO_UINT(g_object_get_data(G_OBJECT(range), "fleetwm-node-id"));
+  self->audio_mixer_.set_stream_volume(node_id, static_cast<int>(gtk_range_get_value(range) + 0.5));
 }
 
 }  // namespace fleetwm::settings

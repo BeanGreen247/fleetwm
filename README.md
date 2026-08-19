@@ -46,6 +46,11 @@ is being built against.
   bar, for apps like Steam/Discord that dock a tray icon
 - Themed pinned-window borders (accent-colored, configurable
   thickness) for always-on-top windows, set in Settings' Theme tab
+- Audio mixer (`fleetwm-audiomixer`, click the volume stat in the bar):
+  master volume slider plus a live per-application slider for every
+  currently-playing app (PipeWire's stream graph, same data
+  `pavucontrol`/`wpctl` show), as a compact popup near the bar. The same
+  controls are also available as Settings' Audio tab.
 - App launcher (`fleetwm-launcher`, `Alt+D`): minimal Albert/dmenu-style
   popup, fuzzy search over installed applications (via `GDesktopAppInfo`)
   with a category hint per result, plus a "Run Command" fallback for
@@ -99,8 +104,9 @@ This installs build dependencies via `apt`, builds with Meson/Ninja, and
 installs:
 
 - `fleetwm`, `fleetwm-bar`, `fleetwm-settings`, `fleetwm-launcher`,
-  `fleetwm-wallpaper`, `fleetwm-powermenu`, `fleetwm-greet`,
-  `fleetwm-greeter-login`, `fleetwm-locker` to `/usr/local/bin`
+  `fleetwm-wallpaper`, `fleetwm-powermenu`, `fleetwm-audiomixer`,
+  `fleetwm-greet`, `fleetwm-greeter-login`, `fleetwm-locker` to
+  `/usr/local/bin`
 - A `Fleetwm` session entry to `/usr/share/wayland-sessions/` (log out and
   pick it from your display manager's session list)
 - Default theme files and `theme.toml` to `/etc/xdg/fleetwm/`
@@ -244,7 +250,8 @@ live usage session required -- it drives a synthetic training pass
 wlroots' headless backend.
 
 A `tests/` unit-test suite (GTest, fetched via wrapdb) covers the
-config-parsing modules in `src/common/`. `install.sh` and
+config-parsing modules in `src/common/` plus the pure PipeWire-JSON-field
+and IPC-socket-path helpers the bar/audio mixer rely on. `install.sh` and
 `scripts/build-pgo.sh` both build with `-Dtests=true` and run `meson
 test` automatically right after `ninja` and before install, so a
 failing test blocks the install rather than shipping silently broken.
@@ -256,18 +263,18 @@ directory, left alongside `build/` rather than reusing it):
 ```sh
 $ scripts/run-tests.sh
 ...
-[==========] Running 40 tests from 9 test suites.
+[==========] Running 240 tests from 12 test suites.
 [----------] Global test environment set-up.
-[----------] 9 tests from ParseHexColor
+[----------] 20 tests from ParseHexColor
 [ RUN      ] ParseHexColor.ValidLowercase
 [       OK ] ParseHexColor.ValidLowercase (0 ms)
 ...
-[----------] 4 tests from BarConfigTest
-[ RUN      ] BarConfigTest.LoadWithNoConfigFileReturnsDefaults
-[       OK ] BarConfigTest.LoadWithNoConfigFileReturnsDefaults (0 ms)
+[----------] 3 tests from IpcClient
+[ RUN      ] IpcClient.DefaultConstructedIsNotConnected
+[       OK ] IpcClient.DefaultConstructedIsNotConnected (0 ms)
 ...
-[==========] 40 tests from 9 test suites ran.
-[  PASSED  ] 40 tests.
+[==========] 240 tests from 12 test suites ran. (14 ms total)
+[  PASSED  ] 240 tests.
 ```
 
 fleetwm's GTK4 clients (bar, wallpaper, settings, launcher, locker,
@@ -370,7 +377,7 @@ manually (not via `install.sh`), also install and enable `seatd`
 
 ## Architecture
 
-Nine processes, communicating over a Unix domain socket and a
+Ten processes, communicating over a Unix domain socket and a
 signal/pidfile mechanism -- see [docs/adr](docs/adr) for the reasoning
 behind each:
 
@@ -388,6 +395,10 @@ behind each:
 - **`fleetwm-locker`** -- the lock screen, spawned on demand (`Alt+Shift+L`
   or the power menu's Lock); PAM-verifies the password in-process and
   signals the compositor to unlock over the IPC socket
+- **`fleetwm-audiomixer`** -- the audio mixer popup (master + per-app
+  volume sliders), spawned on demand from the bar's volume stat; same
+  standalone layer-shell-overlay approach as `fleetwm-powermenu`, not a
+  GTK popover -- exits on dismiss
 - **`fleetwm-update`** -- the update script
 - **`fleetwm-greet`** -- the optional graphical login greeter, an
   alternative to running a full display manager (see

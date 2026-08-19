@@ -5,12 +5,14 @@
 #include <array>
 
 #include "app_style.hpp"
+#include "audio_mixer.hpp"
 #include "bar_config.hpp"
 #include "battery_source.hpp"
 #include "default_apps.hpp"
 #include "theme.hpp"
 #include "wallpaper_config.hpp"
 
+#include <map>
 #include <vector>
 
 namespace fleetwm::settings {
@@ -98,6 +100,31 @@ class SettingsWindow {
   void set_power_mode(PowerMode mode);
   static void on_power_mode_button_toggled(GtkToggleButton* button, gpointer user_data);
   void on_battery_reading(const BatterySource::Reading& reading);
+
+  // Sixth notebook page: the same master + per-app volume sliders as
+  // fleetwm-audiomixer's popup (see its header for the "not a GTK popover"
+  // rationale, irrelevant here since this is a plain notebook page, not a
+  // popup), for users who'd rather have this live in Settings than as a
+  // bar-launched popup. Runs its own AudioMixer instance/PipeWire
+  // connection, independent of the popup's -- this window's lifetime
+  // doesn't overlap the popup's in any way that would make sharing one
+  // worth the added coordination.
+  GtkWidget* build_audio_tab();
+  GtkWidget* build_audio_master_row();
+  GtkWidget* build_audio_stream_row(const common::AudioStream& stream);
+  void on_audio_master_update(int percent, bool muted, bool available);
+  void on_audio_streams_update(const std::vector<common::AudioStream>& streams);
+  static void on_audio_master_slider_changed(GtkRange* range, gpointer user_data);
+  static void on_audio_master_mute_toggled(GtkButton* button, gpointer user_data);
+  static void on_audio_stream_slider_changed(GtkRange* range, gpointer user_data);
+
+  common::AudioMixer audio_mixer_;
+  bool audio_updating_from_report_ = false;
+  GtkWidget* audio_master_slider_ = nullptr;
+  GtkWidget* audio_master_mute_button_ = nullptr;
+  GtkWidget* audio_unavailable_label_ = nullptr;
+  GtkWidget* audio_streams_box_ = nullptr;
+  std::map<uint32_t, GtkWidget*> audio_stream_sliders_;
 
   ThemeConfig config_;
   BarConfig bar_config_;

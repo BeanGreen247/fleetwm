@@ -46,6 +46,14 @@ class BarWindow {
   void build_power_menu(GtkWidget* parent_box);
   static void on_power_icon_clicked(GtkButton* button, gpointer user_data);
 
+  // Volume label doubles as the launcher for fleetwm-audiomixer -- a
+  // plain click gesture on the label itself (GTK4 widgets accept event
+  // controllers whether or not they're normally interactive), same
+  // "spawn a standalone layer-shell popup, not a GTK popover" pattern as
+  // build_power_menu() above.
+  static void on_volume_label_clicked(GtkGestureClick* gesture, int n_press, double x, double y,
+                                       gpointer user_data);
+
   void init_stats();
   void update_cpu_stat();
   void update_gpu_stat();

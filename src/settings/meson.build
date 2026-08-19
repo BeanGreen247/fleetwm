@@ -16,6 +16,6 @@ executable(
     'settings_window.cpp',
   ),
   include_directories: include_directories('.'),
-  dependencies: [gtk4_dep, libcommon_dep, gio_dep_settings],
+  dependencies: [gtk4_dep, libcommon_dep, gio_dep_settings, libaudiomixer_dep],
   install: true,
 )
