@@ -2,6 +2,7 @@
 
 #include <toml++/toml.h>
 
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -143,6 +144,18 @@ void save_theme_config(const ThemeConfig& config) {
 bool parse_hex_color(const std::string& hex, float out_rgba[4]) {
   if (hex.size() != 7 || hex[0] != '#') {
     return false;
+  }
+  // Reject anything but plain hex digits up front -- sscanf's "%2x"
+  // conversions each skip leading whitespace by themselves (standard
+  // scanf behavior, not specific to %x), so e.g. "#89 4fa" previously
+  // sailed through as r=0x89 g=0x4f b=0x0a instead of being rejected as
+  // malformed, since the embedded space was silently consumed between
+  // the first and second conversion. Found by a test exercising exactly
+  // that string.
+  for (size_t i = 1; i < hex.size(); ++i) {
+    if (!std::isxdigit(static_cast<unsigned char>(hex[i]))) {
+      return false;
+    }
   }
   unsigned int r, g, b;
   // %2x consumes exactly two hex digits per component; sscanf returning
