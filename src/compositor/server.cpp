@@ -110,6 +110,35 @@ static void xdg_toplevel_map(wl_listener* listener, void*) {
     view->always_on_top = true;
   }
 
+  // GTK dialogs (GtkColorChooserDialog, GtkFileChooserDialog, etc.) map as
+  // their own separate xdg_toplevel with xdg_toplevel.set_parent pointing
+  // back at the window that opened them -- they are NOT xdg_popups (no
+  // positioner, no implicit grab), so they were previously falling through
+  // to the exact same tiled-window treatment as a terminal or any other
+  // regular toplevel: placed wherever the tiling layout put them and
+  // stacked in normal z-order, which could leave them appearing behind
+  // their own already-on-top parent (e.g. fleetwm-settings' accent-color
+  // picker dialog rendering underneath the settings window, confirmed via
+  // live testing) instead of centered over it. Any toplevel with a
+  // non-null `parent` gets the same floating+always-on-top+centered
+  // treatment fleetwm-settings itself gets below, just centered over its
+  // parent's geometry rather than the whole output.
+  View* dialog_parent = nullptr;
+  if (!is_settings && view->kind == View::Kind::XdgToplevel && view->xdg_toplevel &&
+      view->xdg_toplevel->parent) {
+    for (const std::unique_ptr<View>& candidate : view->server->views) {
+      if (candidate->xdg_toplevel == view->xdg_toplevel->parent) {
+        dialog_parent = candidate.get();
+        break;
+      }
+    }
+  }
+  bool is_dialog = dialog_parent != nullptr;
+  if (is_dialog) {
+    view->set_floating(true);
+    view->always_on_top = true;
+  }
+
   if (!view->server->outputs.empty()) {
     Output* output = view->server->outputs.front().get();
     Workspace& workspace = output->active_workspace();
@@ -127,6 +156,21 @@ static void xdg_toplevel_map(wl_listener* listener, void*) {
       wlr_xdg_surface_get_geometry(view->xdg_toplevel->base, &geo);
       wlr_scene_node_set_position(&view->container_tree->node, box.x + (box.width - geo.width) / 2,
                                    box.y + (box.height - geo.height) / 2);
+      wlr_scene_node_raise_to_top(&view->container_tree->node);
+    } else if (is_dialog) {
+      // Center over the PARENT's current on-screen box, not the whole
+      // output -- a color picker centered on the output rather than on
+      // the settings window it belongs to would visually "jump" away from
+      // what the user just clicked.
+      wlr_box geo{};
+      wlr_xdg_surface_get_geometry(view->xdg_toplevel->base, &geo);
+      int parent_x = 0, parent_y = 0;
+      wlr_scene_node_coords(&dialog_parent->container_tree->node, &parent_x, &parent_y);
+      wlr_box parent_geo{};
+      wlr_xdg_surface_get_geometry(dialog_parent->xdg_toplevel->base, &parent_geo);
+      wlr_scene_node_set_position(&view->container_tree->node,
+                                   parent_x + (parent_geo.width - geo.width) / 2,
+                                   parent_y + (parent_geo.height - geo.height) / 2);
       wlr_scene_node_raise_to_top(&view->container_tree->node);
     } else {
       // relayout() below handles tiled placement; this is just a sane
@@ -970,10 +1014,23 @@ void Server::focus_view(View* view) {
     views.splice(views.begin(), views, it);  // move to front (topmost) without destroying
   }
   wlr_scene_node_raise_to_top(&view->container_tree->node);
-  // Re-assert always-on-top (fleetwm-settings) above whatever was just
+  // Re-assert always-on-top (fleetwm-settings, and now any GTK dialog --
+  // see the is_dialog block in xdg_toplevel_map) above whatever was just
   // raised, if it shares this view's workspace -- see the comment on
   // View::always_on_top (view.hpp) and raise_always_on_top_views() above.
+  //
+  // Real bug found live: with two always-on-top views in play (Settings
+  // itself, and a color-picker dialog it just spawned), this loop iterates
+  // Workspace::views() -- newest-first (add_view() push_fronts) -- and
+  // raises each always_on_top view in turn, so the OLDER one (Settings)
+  // ends up raised LAST and wins the top spot back from the dialog that
+  // was just explicitly raised above on the previous line, even though
+  // the dialog is the one that's actually focused. Re-raising `view`
+  // itself again after the generic pass makes whichever view actually has
+  // focus win regardless of always-on-top insertion order, instead of
+  // silently depending on it.
   raise_always_on_top_views(view->workspace);
+  wlr_scene_node_raise_to_top(&view->container_tree->node);
 
   if (view->kind == View::Kind::XdgToplevel && view->xdg_toplevel) {
     wlr_xdg_toplevel_set_activated(view->xdg_toplevel, true);
