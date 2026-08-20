@@ -70,23 +70,26 @@ gboolean BatterySource::on_poll_tick(gpointer user_data) {
 }
 
 void BatterySource::poll_once() {
-  if (battery_dir_.empty()) {
-    on_update_(Reading{});
-    return;
-  }
+  on_update_(battery_internal::read_battery_reading(battery_dir_));
+}
 
-  Reading reading;
-  reading.available = true;
+namespace battery_internal {
+
+BatterySource::Reading read_battery_reading(const std::string& battery_dir) {
+  BatterySource::Reading reading;
+  if (battery_dir.empty()) {
+    return reading;
+  }
 
   long long capacity = 0;
-  if (!read_sysfs_value(battery_dir_ + "/capacity", &capacity)) {
-    on_update_(Reading{});  // battery vanished (e.g. hot-unplug) -- degrade gracefully
-    return;
+  if (!read_sysfs_value(battery_dir + "/capacity", &capacity)) {
+    return BatterySource::Reading{};  // battery vanished (e.g. hot-unplug) -- degrade gracefully
   }
+  reading.available = true;
   reading.percent = static_cast<int>(capacity);
 
   std::string status;
-  read_sysfs_string(battery_dir_ + "/status", &status);
+  read_sysfs_string(battery_dir + "/status", &status);
   reading.charging = (status == "Charging");
   bool full = (status == "Full");
 
@@ -94,14 +97,14 @@ void BatterySource::poll_once() {
   // the charge-based (µAh/µA) equivalents instead -- same rate math
   // either way since the units cancel out in the ratio.
   long long now = 0, full_val = 0, rate = 0;
-  bool have_now = read_sysfs_value(battery_dir_ + "/energy_now", &now) &&
-                  read_sysfs_value(battery_dir_ + "/power_now", &rate);
+  bool have_now = read_sysfs_value(battery_dir + "/energy_now", &now) &&
+                  read_sysfs_value(battery_dir + "/power_now", &rate);
   if (!have_now) {
-    have_now = read_sysfs_value(battery_dir_ + "/charge_now", &now) &&
-               read_sysfs_value(battery_dir_ + "/current_now", &rate);
+    have_now = read_sysfs_value(battery_dir + "/charge_now", &now) &&
+               read_sysfs_value(battery_dir + "/current_now", &rate);
   }
-  bool have_full = read_sysfs_value(battery_dir_ + "/energy_full", &full_val) ||
-                    read_sysfs_value(battery_dir_ + "/charge_full", &full_val);
+  bool have_full = read_sysfs_value(battery_dir + "/energy_full", &full_val) ||
+                    read_sysfs_value(battery_dir + "/charge_full", &full_val);
 
   if (full || rate == 0 || !have_now) {
     reading.hours_remaining = full ? 0.0 : -1.0;
@@ -114,7 +117,9 @@ void BatterySource::poll_once() {
     reading.hours_remaining = -1.0;
   }
 
-  on_update_(reading);
+  return reading;
 }
+
+}  // namespace battery_internal
 
 }  // namespace fleetwm

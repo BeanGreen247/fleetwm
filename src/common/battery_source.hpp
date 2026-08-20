@@ -52,4 +52,11 @@ class BatterySource {
   guint timer_id_ = 0;
 };
 
+// Exposed purely so unit tests can exercise the sysfs-parsing/rate-math
+// logic against a fake directory of files instead of a real battery --
+// not part of the public API, do not call from application code.
+namespace battery_internal {
+BatterySource::Reading read_battery_reading(const std::string& battery_dir);
+}  // namespace battery_internal
+
 }  // namespace fleetwm
