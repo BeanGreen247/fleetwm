@@ -47,13 +47,23 @@ fi
 # flags as install.sh (see its own comments for why), plus -Db_pgo --
 # strip only on the final "use" build (no reason to strip an
 # instrumented throwaway binary you're about to rebuild anyway).
+#
+# -Dunity=on: both PGO stages already do a full clean-ish rebuild every
+# time (install.sh's own doc comment: "not opt-in anymore"), so there's
+# no incremental-build cost to protect here -- measured ~32% faster
+# clean build on fleetwm-dev (65s -> 45s, 2 vCPUs) with unity on, all
+# 272 unit tests still passing. Deliberately NOT enabled in
+# scripts/run-tests.sh's throwaway build-tests/ dir, which exists
+# specifically for fast incremental iteration on a single changed file
+# -- unity would force recompiling every merged file in that file's
+# unity group on each touch, working against that script's whole point.
 EXTRA_OPTS=()
 if [[ "$MODE" == "use" ]]; then
   EXTRA_OPTS+=(-Dstrip=true)
 fi
 
 meson setup "${BUILD_DIR}" "${SCRIPT_DIR}" --prefix=/usr/local --buildtype=release \
-  -Db_ndebug=true -Db_lto=true -Db_pgo="${MODE}" -Dtests=true \
+  -Db_ndebug=true -Db_lto=true -Db_pgo="${MODE}" -Dtests=true -Dunity=on \
   -Dc_args='-march=native -ffunction-sections -fdata-sections -fno-semantic-interposition -DG_DISABLE_ASSERT' \
   -Dcpp_args='-march=native -ffunction-sections -fdata-sections -fno-semantic-interposition -DG_DISABLE_ASSERT' \
   -Dc_link_args='-Wl,--gc-sections -Wl,-z,now' -Dcpp_link_args='-Wl,--gc-sections -Wl,-z,now' \

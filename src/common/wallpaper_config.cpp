@@ -7,26 +7,13 @@
 #include <fstream>
 #include <stdexcept>
 
+#include "config_paths.hpp"
 #include "paths_config.h"
 
 namespace fleetwm {
 
 namespace fs = std::filesystem;
-
-namespace {
-
-fs::path config_home() {
-  if (const char* xdg = std::getenv("XDG_CONFIG_HOME"); xdg && *xdg) {
-    return fs::path(xdg);
-  }
-  const char* home = std::getenv("HOME");
-  if (!home) {
-    throw std::runtime_error("HOME is not set; cannot resolve config path");
-  }
-  return fs::path(home) / ".config";
-}
-
-}  // namespace
+using config_internal::config_home;
 
 std::string wallpaper_user_config_path() {
   return (config_home() / "fleetwm" / "wallpaper.toml").string();
