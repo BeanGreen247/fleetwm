@@ -114,18 +114,37 @@ void layer_surface_surface_commit(wl_listener* listener, void*) {
   // unconditionally fails with "A configure is sent to an uninitialized
   // wlr_layer_surface_v1", regardless of what wlr_layer_shell_v1.h's
   // doc comment implies about configuring during new_surface.
-  // initial_commit is wlroots' own flag for exactly this moment.
-  bool first_configure = ls->layer_surface->initial_commit;
-  if (first_configure) {
-    // wlr_scene_layer_surface_v1_configure() (not the raw
-    // wlr_layer_surface_v1_configure) so the scene helper also positions
-    // the node per the client's now-populated anchors/margins in
-    // layer_surface->current. Passing full_area as usable_area here
-    // (rather than an already-shrunk box) matches wlroots' own
-    // tinywl.c reference for the very first configure -- this
-    // surface's own exclusive zone should not shrink the area it is
-    // itself positioned against. Other surfaces' zones are accounted
-    // for separately via Output::update_usable_area() below.
+  // initial_commit is wlroots' own flag for exactly this moment, so it
+  // still gates whether a configure is even legal to send here.
+  //
+  // wlr_scene_layer_surface_v1_configure() (not the raw
+  // wlr_layer_surface_v1_configure) so the scene helper also
+  // (re-)positions the node per the client's current anchors/margins/
+  // size. This used to run only on the very first commit -- correct for
+  // a surface whose size the client never changes after mapping (e.g.
+  // the full-width bar, always anchored to both side edges so its size
+  // is fixed by the output width regardless), but wrong for anything
+  // that legitimately resizes itself later: a client-driven natural-
+  // width surface (fleetwm-bar's Island layout, bar_config.hpp) whose
+  // content changes after the window is already shown -- most commonly
+  // its systray gaining icons a moment after mapping, once
+  // StatusNotifierItem registrations start arriving over D-Bus -- sent
+  // a new, larger size on a later commit that the scene graph never
+  // picked up, since nothing re-called the scene helper for it. The
+  // surface's own wl_surface buffer still rendered at its real (new,
+  // larger) size, but the scene node's cached position/bounds from the
+  // first commit never moved to match, producing a visibly
+  // mispositioned/overflowing surface -- reproduced live while building
+  // Island mode. Re-configuring on every commit (not just the first)
+  // keeps position/size in sync with whatever the client's current
+  // committed state actually is, matching wlroots' own tinywl.c
+  // reference, which does not gate this call on initial_commit either.
+  // Passing full_area as usable_area (rather than an already-shrunk
+  // box) is unchanged from before -- a surface's own exclusive zone
+  // should not shrink the area it is itself positioned against; other
+  // surfaces' zones are accounted for separately via
+  // Output::update_usable_area() below.
+  if (ls->layer_surface->initialized) {
     wlr_box full_area{};
     wlr_output_layout_get_box(ls->server->output_layout(), ls->layer_surface->output, &full_area);
     wlr_box usable_area = full_area;
