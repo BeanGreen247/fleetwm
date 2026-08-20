@@ -279,18 +279,33 @@ directory, left alongside `build/` rather than reusing it):
 ```sh
 $ scripts/run-tests.sh
 ...
-[==========] Running 240 tests from 12 test suites.
+[==========] Running 267 tests from 14 test suites.
 [----------] Global test environment set-up.
 [----------] 20 tests from ParseHexColor
 [ RUN      ] ParseHexColor.ValidLowercase
 [       OK ] ParseHexColor.ValidLowercase (0 ms)
 ...
-[----------] 3 tests from IpcClient
-[ RUN      ] IpcClient.DefaultConstructedIsNotConnected
-[       OK ] IpcClient.DefaultConstructedIsNotConnected (0 ms)
+[----------] 9 tests from IpcClientWithServerTest
+[ RUN      ] IpcClientWithServerTest.ConnectSucceedsWhenServerIsListening
+[       OK ] IpcClientWithServerTest.ConnectSucceedsWhenServerIsListening (0 ms)
 ...
-[==========] 240 tests from 12 test suites ran. (14 ms total)
-[  PASSED  ] 240 tests.
+[==========] 267 tests from 14 test suites ran. (140 ms total)
+[  PASSED  ] 267 tests.
+```
+
+That unit suite is deliberately narrow (no compositor, Wayland session,
+or wlroots scene tree -- see `tests/meson.build`'s own comment). A
+separate, slower layer covers the compositor itself:
+`scripts/smoke-test.sh` boots the real compositor under wlroots'
+headless backend (the same pattern the PGO training pass below already
+uses) and drives it over a real IPC socket -- workspace switching,
+out-of-range/malformed-command handling, and a clean SIGTERM shutdown:
+
+```sh
+$ ninja -C build
+$ scripts/smoke-test.sh build
+...
+==> 10 passed, 0 failed
 ```
 
 fleetwm's GTK4 clients (bar, wallpaper, settings, launcher, locker,
