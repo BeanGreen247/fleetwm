@@ -46,14 +46,33 @@ enum class PowerMode {
   BatterySaver,  // power-profiles-daemon "power-saver"
 };
 
+// Full: the existing edge-to-edge bar, anchored to both the left and
+// right screen edges (default, unchanged behavior).
+// Island: a smaller floating pill detached from the screen edges with a
+// top gap, sized to its own content's natural width and capped at the
+// monitor's width so it can never grow past the screen -- see
+// BarWindow::apply_layout() for the actual sizing. Only ever applied on
+// displays at least kIslandMinMonitorWidthPx wide (bar_window.cpp);
+// falls back to Full at runtime on anything narrower even if this is
+// set, so a bar.toml written on a wide display doesn't leave a
+// too-narrow display with an unusable sliver bar.
+enum class BarLayout {
+  Full,
+  Island,
+};
+
 struct BarConfig {
   ClockFormat clock;
   WorkspaceColors workspace_colors;
   PowerMode power_mode = PowerMode::Normal;
+  BarLayout layout = BarLayout::Full;
 };
 
 std::string power_mode_to_string(PowerMode mode);
 PowerMode power_mode_from_string(const std::string& s);
+
+std::string bar_layout_to_string(BarLayout layout);
+BarLayout bar_layout_from_string(const std::string& s);
 
 // Name powerprofilesctl itself expects ("balanced" | "performance" |
 // "power-saver"), distinct from the bar.toml string above.

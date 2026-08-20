@@ -335,12 +335,43 @@ GtkWidget* SettingsWindow::build_bar_tab() {
   g_signal_connect(buttons_rounded_check, "toggled", G_CALLBACK(on_buttons_rounded_toggled), this);
   gtk_box_append(GTK_BOX(box), buttons_rounded_check);
 
+  GtkWidget* layout_heading = gtk_label_new("Layout");
+  gtk_label_set_xalign(GTK_LABEL(layout_heading), 0.0f);
+  gtk_widget_set_margin_top(layout_heading, 12);
+  PangoAttrList* layout_attrs = pango_attr_list_new();
+  pango_attr_list_insert(layout_attrs, pango_attr_weight_new(PANGO_WEIGHT_BOLD));
+  gtk_label_set_attributes(GTK_LABEL(layout_heading), layout_attrs);
+  pango_attr_list_unref(layout_attrs);
+  gtk_box_append(GTK_BOX(box), layout_heading);
+
+  // Island needs real horizontal room to look like a floating pill
+  // rather than a barely-detached sliver -- fleetwm-bar itself also
+  // enforces this at runtime (falls back to Full below
+  // kIslandMinMonitorWidthPx even if this is set), this label just tells
+  // the user why up front rather than leaving a silently-ignored setting.
+  const char* layout_options[] = {"Full width", "Island (floating pill, 1366px+ displays)"};
+  gtk_box_append(GTK_BOX(box),
+                 radio_row("Bar layout", layout_options, 2, static_cast<int>(bar_config_.layout),
+                           G_CALLBACK(on_bar_layout_changed), this));
+
   return box;
 }
 
 void SettingsWindow::on_buttons_rounded_toggled(GtkCheckButton* button, gpointer user_data) {
   auto* self = static_cast<SettingsWindow*>(user_data);
   self->bar_config_.workspace_colors.buttons_rounded = gtk_check_button_get_active(button);
+  self->save_bar();
+}
+
+void SettingsWindow::on_bar_layout_changed(GtkCheckButton* button, gpointer user_data) {
+  if (!gtk_check_button_get_active(button)) {
+    return;
+  }
+  auto* self = static_cast<SettingsWindow*>(user_data);
+  int index = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(button), "radio-index"));
+  // Index order matches layout_options[] in build_bar_tab(), which
+  // matches BarLayout's declaration order in bar_config.hpp.
+  self->bar_config_.layout = static_cast<BarLayout>(index);
   self->save_bar();
 }
 

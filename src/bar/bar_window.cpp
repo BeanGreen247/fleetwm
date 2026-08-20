@@ -19,6 +19,44 @@ namespace {
 constexpr int kBarHeightPx = 24;
 constexpr guint kReconnectIntervalMs = 2000;
 
+// Island-mode-only constants (BarLayout::Island, bar_config.hpp). Island
+// is only ever applied on a monitor at least this wide -- matches the
+// threshold from the original island-mode design; apply_layout() falls
+// back to Full at runtime below it even if bar.toml asks for Island, so
+// a config written on a wide display doesn't strand a narrower one with
+// an unusable sliver bar.
+constexpr int kIslandMinMonitorWidthPx = 1366;
+constexpr int kIslandTopMarginPx = 5;
+// Matches bar_box's own left/right content margin (see build() below) --
+// keeps the pill visually inset from the screen edges by the same
+// amount its own content is inset from the pill's edges.
+constexpr int kIslandSideInsetPx = 8;
+
+// First monitor's width in pixels, or 0 if none is available yet (e.g.
+// called before the display connection has enumerated any outputs).
+// fleetwm doesn't support real multi-monitor layout yet (backlog item
+// "multi-monitor performance", blocked on hardware) -- same "first
+// output" simplification the compositor's own IPC WORKSPACE handling
+// already makes (ipc_server.cpp routes to outputs.front()).
+int primary_monitor_width_px() {
+  GdkDisplay* display = gdk_display_get_default();
+  if (!display) {
+    return 0;
+  }
+  GListModel* monitors = gdk_display_get_monitors(display);
+  if (!monitors || g_list_model_get_n_items(monitors) == 0) {
+    return 0;
+  }
+  GdkMonitor* monitor = GDK_MONITOR(g_list_model_get_item(monitors, 0));
+  if (!monitor) {
+    return 0;
+  }
+  GdkRectangle geometry{};
+  gdk_monitor_get_geometry(monitor, &geometry);
+  g_object_unref(monitor);
+  return geometry.width;
+}
+
 }  // namespace
 
 BarWindow::BarWindow(GtkApplication* app) {
@@ -43,11 +81,9 @@ void BarWindow::build(GtkApplication* app) {
 
   gtk_layer_init_for_window(GTK_WINDOW(window_));
   gtk_layer_set_layer(GTK_WINDOW(window_), GTK_LAYER_SHELL_LAYER_TOP);
-  gtk_layer_set_anchor(GTK_WINDOW(window_), GTK_LAYER_SHELL_EDGE_TOP, TRUE);
-  gtk_layer_set_anchor(GTK_WINDOW(window_), GTK_LAYER_SHELL_EDGE_LEFT, TRUE);
-  gtk_layer_set_anchor(GTK_WINDOW(window_), GTK_LAYER_SHELL_EDGE_RIGHT, TRUE);
-  gtk_layer_set_exclusive_zone(GTK_WINDOW(window_), kBarHeightPx);
   gtk_layer_set_keyboard_mode(GTK_WINDOW(window_), GTK_LAYER_SHELL_KEYBOARD_MODE_NONE);
+  // Anchor/exclusive-zone/size are set by apply_layout() below, once
+  // root_box_ has real content -- Island mode needs to measure it.
   // "fleetwm-bar" on the window itself matches themes/base.css's own
   // ".fleetwm-bar { background-color: ...; color: ...; }" selector --
   // gives the bar its background/text color straight from the active
@@ -139,15 +175,68 @@ void BarWindow::build(GtkApplication* app) {
   gtk_box_append(GTK_BOX(bar_box), right_box);
 
   gtk_window_set_child(GTK_WINDOW(window_), bar_box);
+  // apply_theme() first: it loads the CSS (padding/margins/font) that
+  // apply_layout()'s Island-mode natural-width measurement below needs
+  // to already be in effect, or that measurement would undercount and
+  // the pill would be sized wrong until the next bar.toml/theme.toml
+  // reload happened to trigger a re-layout.
+  apply_theme();
+  apply_layout();
   gtk_window_present(GTK_WINDOW(window_));
 
-  apply_theme();
   start_config_watch();
 
   init_stats();
   try_connect();
   g_timeout_add_seconds(1, on_clock_tick, this);
   g_timeout_add_seconds(5, on_disk_tick, this);
+}
+
+void BarWindow::apply_layout() {
+  BarLayout layout = bar_config_.layout;
+  int monitor_width = primary_monitor_width_px();
+  if (layout == BarLayout::Island && monitor_width > 0 &&
+      monitor_width < kIslandMinMonitorWidthPx) {
+    layout = BarLayout::Full;
+  }
+
+  if (layout == BarLayout::Full) {
+    gtk_layer_set_anchor(GTK_WINDOW(window_), GTK_LAYER_SHELL_EDGE_TOP, TRUE);
+    gtk_layer_set_anchor(GTK_WINDOW(window_), GTK_LAYER_SHELL_EDGE_LEFT, TRUE);
+    gtk_layer_set_anchor(GTK_WINDOW(window_), GTK_LAYER_SHELL_EDGE_RIGHT, TRUE);
+    gtk_layer_set_margin(GTK_WINDOW(window_), GTK_LAYER_SHELL_EDGE_TOP, 0);
+    gtk_layer_set_exclusive_zone(GTK_WINDOW(window_), kBarHeightPx);
+    // Width is ignored by gtk4-layer-shell once both LEFT and RIGHT are
+    // anchored (it fills the edge-to-edge gap instead), but height must
+    // stay explicit -- see build()'s own comment on why -1 ("size to
+    // content") isn't safe against this compositor's strict protocol
+    // validation.
+    gtk_widget_set_size_request(window_, -1, kBarHeightPx);
+    gtk_widget_remove_css_class(window_, "fleetwm-bar-island");
+    return;
+  }
+
+  // Island: detached from the left/right edges, floating with a small
+  // top gap. Unlike the Full case, width can't be left to gtk4-layer-
+  // shell's "size to content" behavior either -- same -1 rejection
+  // problem -- so the bar's own natural width is measured and set
+  // explicitly, capped at the monitor's width so it can never grow past
+  // the screen regardless of how much content (tray icons, etc.) the
+  // bar is currently showing.
+  gtk_layer_set_anchor(GTK_WINDOW(window_), GTK_LAYER_SHELL_EDGE_TOP, TRUE);
+  gtk_layer_set_anchor(GTK_WINDOW(window_), GTK_LAYER_SHELL_EDGE_LEFT, FALSE);
+  gtk_layer_set_anchor(GTK_WINDOW(window_), GTK_LAYER_SHELL_EDGE_RIGHT, FALSE);
+  gtk_layer_set_margin(GTK_WINDOW(window_), GTK_LAYER_SHELL_EDGE_TOP, kIslandTopMarginPx);
+  gtk_layer_set_exclusive_zone(GTK_WINDOW(window_), kBarHeightPx + kIslandTopMarginPx);
+
+  int natural_width = 0;
+  gtk_widget_measure(root_box_, GTK_ORIENTATION_HORIZONTAL, -1, nullptr, &natural_width, nullptr,
+                      nullptr);
+  int cap = monitor_width > 0 ? monitor_width - 2 * kIslandSideInsetPx : natural_width;
+  int width = natural_width > 0 ? std::min(natural_width, cap) : cap;
+  width = std::max(width, 1);
+  gtk_widget_set_size_request(window_, width, kBarHeightPx);
+  gtk_widget_add_css_class(window_, "fleetwm-bar-island");
 }
 
 namespace {
@@ -189,6 +278,13 @@ void BarWindow::apply_theme() {
   // shape (no bar-specific "outer shape" setting).
   bool rounded = theme_config_.corner_style == CornerStyle::Rounded;
   int bar_radius = rounded ? kBarHeightPx / 2 : 0;
+  // Island mode is always a full pill regardless of corner_style -- a
+  // detached floating "sharp-cornered island" would look like a bug, not
+  // a deliberate style choice, so this one aspect isn't user-configurable
+  // the way the full-width bar's corners are.
+  if (bar_config_.layout == BarLayout::Island) {
+    bar_radius = kBarHeightPx / 2;
+  }
 
   // Workspace/power buttons' own corner radius is a separate, bar-only
   // setting (bar_config_.workspace_colors.buttons_rounded) rather than
@@ -271,6 +367,7 @@ void BarWindow::reload_theme() {
 void BarWindow::reload_bar_config() {
   bar_config_ = load_bar_config();
   apply_theme();  // workspace_colors live in bar_config_, not theme_config_
+  apply_layout();  // layout also lives in bar_config_
   update_power_mode_icon();
 }
 

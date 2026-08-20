@@ -67,6 +67,7 @@ class SettingsWindow {
   static void on_clock_toggle_changed(GtkCheckButton* button, gpointer user_data);
   static void on_workspace_color_set(GtkColorButton* button, gpointer user_data);
   static void on_buttons_rounded_toggled(GtkCheckButton* button, gpointer user_data);
+  static void on_bar_layout_changed(GtkCheckButton* button, gpointer user_data);
   void save_bar();
 
   // Third notebook page: fleetwm-wallpaper's own wallpaper.toml (a

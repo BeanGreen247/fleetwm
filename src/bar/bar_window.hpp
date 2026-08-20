@@ -31,6 +31,13 @@ class BarWindow {
   static void on_activate(GtkApplication* app, gpointer user_data);
   void build(GtkApplication* app);
 
+  // Applies bar_config_.layout's anchoring/margin/size to the already-
+  // built window_/root_box_ -- called once from build() after the
+  // window's content exists (Island mode needs to measure it) and again
+  // from reload_bar_config() so a live bar.toml edit takes effect
+  // without restarting the bar.
+  void apply_layout();
+
   static gboolean on_ipc_readable(GIOChannel* channel, GIOCondition condition,
                                    gpointer user_data);
   static gboolean on_reconnect_tick(gpointer user_data);

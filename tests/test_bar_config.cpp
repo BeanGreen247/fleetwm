@@ -31,6 +31,19 @@ TEST(PowerMode, ProfilesDaemonNamesMatchPowerProfilesDaemon) {
   EXPECT_EQ(power_mode_to_profiles_daemon_name(PowerMode::BatterySaver), "power-saver");
 }
 
+// -- BarLayout <-> string conversions --------------------------------------
+
+TEST(BarLayout, RoundTripsAllValues) {
+  for (BarLayout layout : {BarLayout::Full, BarLayout::Island}) {
+    EXPECT_EQ(bar_layout_from_string(bar_layout_to_string(layout)), layout);
+  }
+}
+
+TEST(BarLayout, UnknownStringFallsBackToFull) {
+  EXPECT_EQ(bar_layout_from_string("bogus"), BarLayout::Full);
+  EXPECT_EQ(bar_layout_from_string(""), BarLayout::Full);
+}
+
 // -- load_bar_config() / save_bar_config() --------------------------------
 
 TEST_F(BarConfigTest, LoadWithNoConfigFileReturnsDefaults) {
@@ -39,6 +52,7 @@ TEST_F(BarConfigTest, LoadWithNoConfigFileReturnsDefaults) {
   EXPECT_FALSE(config.clock.show_date);
   EXPECT_EQ(config.workspace_colors.inactive_bg, "#3c3c3c");
   EXPECT_EQ(config.power_mode, PowerMode::Normal);
+  EXPECT_EQ(config.layout, BarLayout::Full);
 }
 
 TEST_F(BarConfigTest, SaveThenLoadRoundTripsNestedTables) {
@@ -54,6 +68,7 @@ TEST_F(BarConfigTest, SaveThenLoadRoundTripsNestedTables) {
   config.workspace_colors.active_fg = "#444444";
   config.workspace_colors.buttons_rounded = false;
   config.power_mode = PowerMode::Performance;
+  config.layout = BarLayout::Island;
 
   save_bar_config(config);
   BarConfig loaded = load_bar_config();
@@ -65,6 +80,30 @@ TEST_F(BarConfigTest, SaveThenLoadRoundTripsNestedTables) {
   EXPECT_EQ(loaded.workspace_colors.active_fg, "#444444");
   EXPECT_FALSE(loaded.workspace_colors.buttons_rounded);
   EXPECT_EQ(loaded.power_mode, PowerMode::Performance);
+  EXPECT_EQ(loaded.layout, BarLayout::Island);
+}
+
+TEST_F(BarConfigTest, LayoutIslandRoundTrips) {
+  BarConfig config;
+  config.layout = BarLayout::Island;
+  save_bar_config(config);
+  EXPECT_EQ(load_bar_config().layout, BarLayout::Island);
+}
+
+TEST_F(BarConfigTest, WrongTypeLayoutIgnored) {
+  std::filesystem::create_directories(dir_ / "fleetwm");
+  std::ofstream out(dir_ / "fleetwm" / "bar.toml");
+  out << "layout = 42\n";
+  out.close();
+  EXPECT_EQ(load_bar_config().layout, BarLayout::Full);
+}
+
+TEST_F(BarConfigTest, UnknownLayoutStringFallsBackToFull) {
+  std::filesystem::create_directories(dir_ / "fleetwm");
+  std::ofstream out(dir_ / "fleetwm" / "bar.toml");
+  out << "layout = \"sidebar\"\n";
+  out.close();
+  EXPECT_EQ(load_bar_config().layout, BarLayout::Full);
 }
 
 TEST_F(BarConfigTest, MissingNestedTableKeepsDefaults) {
