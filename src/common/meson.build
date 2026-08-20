@@ -60,6 +60,7 @@ gtk4_dep_common = dependency('gtk4')
 libcommon = static_library(
   'fleetwm-common',
   files(
+    'config_paths.cpp',
     'theme.cpp',
     'ipc_client.cpp',
     'bar_config.cpp',
