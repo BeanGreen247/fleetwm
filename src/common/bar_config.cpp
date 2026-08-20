@@ -43,6 +43,19 @@ PowerMode power_mode_from_string(const std::string& s) {
   return PowerMode::Normal;
 }
 
+std::string bar_layout_to_string(BarLayout layout) {
+  switch (layout) {
+    case BarLayout::Island: return "island";
+    case BarLayout::Full: return "full";
+  }
+  return "full";
+}
+
+BarLayout bar_layout_from_string(const std::string& s) {
+  if (s == "island") return BarLayout::Island;
+  return BarLayout::Full;
+}
+
 std::string power_mode_to_profiles_daemon_name(PowerMode mode) {
   switch (mode) {
     case PowerMode::Performance: return "performance";
@@ -94,6 +107,10 @@ BarConfig load_bar_config() {
     config.power_mode = power_mode_from_string(*v);
   }
 
+  if (auto v = table["layout"].value<std::string>()) {
+    config.layout = bar_layout_from_string(*v);
+  }
+
   return config;
 }
 
@@ -119,6 +136,7 @@ void save_bar_config(const BarConfig& config) {
   table.insert_or_assign("clock", clock);
   table.insert_or_assign("workspace_colors", workspace_colors);
   table.insert_or_assign("power_mode", power_mode_to_string(config.power_mode));
+  table.insert_or_assign("layout", bar_layout_to_string(config.layout));
 
   std::ofstream out(path);
   if (!out) {
