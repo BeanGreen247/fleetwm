@@ -1,7 +1,5 @@
 #pragma once
 
-#include <glib.h>
-
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -46,6 +44,9 @@ class AudioMixer {
  public:
   using MasterCallback = std::function<void(int percent, bool muted, bool available)>;
   using StreamsCallback = std::function<void(const std::vector<AudioStream>& streams)>;
+  // Runs a callable on the application's main loop thread (PipeWire events
+  // arrive on its own thread). GTK clients wrap g_idle_add, lean clients App::post.
+  using Poster = std::function<void(std::function<void()>)>;
 
   // Starts the backend and begins delivering updates via the two
   // callbacks (each called once immediately once its initial state is
@@ -54,7 +55,7 @@ class AudioMixer {
   // false if PipeWire isn't available (not compiled in, or couldn't
   // connect) -- caller should show an unavailable/disabled UI rather than
   // calling any of the setters below.
-  bool start(MasterCallback on_master, StreamsCallback on_streams);
+  bool start(MasterCallback on_master, StreamsCallback on_streams, Poster post);
 
   ~AudioMixer();
 
@@ -85,7 +86,10 @@ class AudioMixer {
 
   void report_master();
   void report_streams();
-  static gboolean on_idle_report(gpointer data);
+  void schedule_report();
+  // See VolumeSource::try_bind_sink(): metadata and the sink node can be announced in either order.
+  std::map<uint32_t, std::string> sink_candidates_;
+  void try_bind_sink();
 
   // Applies a Props param event (channelVolumes + mute) to `node`. Shared
   // by both the master sink and every per-app stream -- the wire format is
@@ -105,6 +109,7 @@ class AudioMixer {
   static int on_metadata_property(void* data, uint32_t subject, const char* key, const char* type,
                                    const char* value);
 
+  Poster post_;
   MasterCallback on_master_;
   StreamsCallback on_streams_;
 

@@ -8,6 +8,7 @@
 # Unix-specific and Debian splits it out of the base gio-2.0 pkg-config
 # file. Used by the Default Apps tab's terminal-emulator filtering.
 gio_dep_settings = dependency('gio-unix-2.0')
+gtk4_dep = dependency('gtk4')
 
 executable(
   'fleetwm-settings',

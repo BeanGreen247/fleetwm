@@ -1,16 +1,9 @@
-gtk4_dep = dependency('gtk4')
-gtk4_layer_shell_dep = dependency('gtk4-layer-shell-0', required: false)
-if not gtk4_layer_shell_dep.found()
-  gtk4_layer_shell_dep = dependency('gtk4-layer-shell')
-endif
-
-# Volume% (ADR 0005): PipeWire event-driven subscription is primary, a
-# polled `wpctl` subprocess is the fallback used only when PipeWire dev
-# headers aren't available at build time -- same required:false pattern
-# already used above for gtk4-layer-shell-0.
+# GTK-free: lean toolkit (wayland-client + cairo + xkbcommon), sd-bus for the
+# system tray, optional PipeWire for the volume readout.
 libpipewire_dep = dependency('libpipewire-0.3', required: false)
+libsystemd_dep_bar = dependency('libsystemd')
 
-bar_deps = [gtk4_dep, gtk4_layer_shell_dep, libcommon_dep]
+bar_deps = [liblean_dep, libcommon_core_dep, libsystemd_dep_bar]
 bar_cpp_args = []
 if libpipewire_dep.found()
   bar_deps += libpipewire_dep
@@ -23,9 +16,9 @@ executable(
   'fleetwm-bar',
   files(
     'main.cpp',
-    'bar_window.cpp',
     'volume_source.cpp',
-    'systray.cpp',
+    'tray.cpp',
+    'tray_vtable.c',
   ),
   include_directories: include_directories('.'),
   dependencies: bar_deps,

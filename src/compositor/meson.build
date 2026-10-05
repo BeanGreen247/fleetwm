@@ -41,7 +41,7 @@ executable(
     gles2_dep,
     xcb_dep,
     protocols_dep,
-    libcommon_dep,
+    libcommon_core_dep,
   ],
   install: true,
 )

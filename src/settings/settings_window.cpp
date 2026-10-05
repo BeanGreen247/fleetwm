@@ -1099,6 +1099,17 @@ GtkWidget* SettingsWindow::build_audio_tab() {
       },
       [this](const std::vector<common::AudioStream>& streams) {
         on_audio_streams_update(streams);
+      },
+      // PipeWire reports from its own thread; hop onto the GLib main context.
+      [](std::function<void()> fn) {
+        g_idle_add(
+            [](gpointer data) -> gboolean {
+              auto* f = static_cast<std::function<void()>*>(data);
+              (*f)();
+              delete f;
+              return G_SOURCE_REMOVE;
+            },
+            new std::function<void()>(std::move(fn)));
       });
 
   return box;

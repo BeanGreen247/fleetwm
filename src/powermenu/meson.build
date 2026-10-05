@@ -1,18 +1,11 @@
-# Same gtk4-layer-shell-0 fallback dance as src/launcher/meson.build.
-gtk4_dep_powermenu = dependency('gtk4')
-gtk4_layer_shell_dep_powermenu = dependency('gtk4-layer-shell-0', required: false)
-if not gtk4_layer_shell_dep_powermenu.found()
-  gtk4_layer_shell_dep_powermenu = dependency('gtk4-layer-shell')
-endif
+# GTK-free: lean toolkit (wayland-client + cairo + xkbcommon) + libsystemd
+# (sd_pid_get_session for "Log out").
 libsystemd_dep_powermenu = dependency('libsystemd')
 
 executable(
   'fleetwm-powermenu',
-  files(
-    'main.cpp',
-    'power_menu_window.cpp',
-  ),
+  files('main.cpp'),
   include_directories: include_directories('.'),
-  dependencies: [gtk4_dep_powermenu, gtk4_layer_shell_dep_powermenu, libsystemd_dep_powermenu, libcommon_dep],
+  dependencies: [liblean_dep, libsystemd_dep_powermenu, libcommon_core_dep],
   install: true,
 )

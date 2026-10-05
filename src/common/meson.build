@@ -57,28 +57,49 @@ configure_file(output: 'paths_config.h', configuration: common_conf)
 
 gtk4_dep_common = dependency('gtk4')
 
-libcommon = static_library(
-  'fleetwm-common',
+# libcommon_core: everything that needs only toml++ -- config parsing, paths,
+# IPC client, malloc tuning. GTK-free so lean (non-GTK) clients such as
+# fleetwm-wallpaper link it without pulling GTK/GLib/Pango into the process.
+libcommon_core = static_library(
+  'fleetwm-common-core',
   files(
     'config_paths.cpp',
     'theme.cpp',
     'ipc_client.cpp',
     'bar_config.cpp',
-    'app_style.cpp',
     'wallpaper_config.cpp',
-    'battery_source.cpp',
     'default_apps.cpp',
     'keybinds_config.cpp',
-    'clean_quit.cpp',
+    'battery_reading.cpp',
     'malloc_tuning.cpp',
     'pipewire_json.cpp',
   ),
+  dependencies: [tomlplusplus_dep],
+  include_directories: include_directories('.'),
+)
+
+libcommon_core_dep = declare_dependency(
+  link_with: libcommon_core,
+  include_directories: include_directories('.'),
+  dependencies: [tomlplusplus_dep],
+)
+
+# libcommon: core + the GTK/GLib-specific helpers (CSS styling, clean-quit
+# signal glue, battery source). Linked by every GTK client.
+libcommon = static_library(
+  'fleetwm-common',
+  files(
+    'app_style.cpp',
+    'battery_source.cpp',
+    'clean_quit.cpp',
+  ),
   dependencies: [tomlplusplus_dep, gtk4_dep_common],
+  link_with: libcommon_core,
   include_directories: include_directories('.'),
 )
 
 libcommon_dep = declare_dependency(
-  link_with: libcommon,
+  link_with: [libcommon, libcommon_core],
   include_directories: include_directories('.'),
   dependencies: [tomlplusplus_dep, gtk4_dep_common],
 )
@@ -107,7 +128,7 @@ endif
 libaudiomixer = static_library(
   'fleetwm-audiomixer-backend',
   files('audio_mixer.cpp'),
-  dependencies: [gtk4_dep_common] + audiomixer_extra_deps,
+  dependencies: [libcommon_core_dep] + audiomixer_extra_deps,
   cpp_args: audiomixer_cpp_args,
   include_directories: include_directories('.'),
 )
@@ -115,6 +136,6 @@ libaudiomixer = static_library(
 libaudiomixer_dep = declare_dependency(
   link_with: libaudiomixer,
   include_directories: include_directories('.'),
-  dependencies: [gtk4_dep_common] + audiomixer_extra_deps,
+  dependencies: [libcommon_core_dep] + audiomixer_extra_deps,
   compile_args: audiomixer_cpp_args,
 )

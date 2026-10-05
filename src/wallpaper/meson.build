@@ -1,16 +1,16 @@
-gtk4_dep = dependency('gtk4')
-gtk4_layer_shell_dep = dependency('gtk4-layer-shell-0', required: false)
-if not gtk4_layer_shell_dep.found()
-  gtk4_layer_shell_dep = dependency('gtk4-layer-shell')
-endif
-
+# GTK-free: only wayland-client + the image codecs + libcommon_core (toml++
+# config parsing). No GTK/GLib/Pango/Cairo is linked or mapped.
 executable(
   'fleetwm-wallpaper',
   files(
     'main.cpp',
-    'wallpaper_window.cpp',
   ),
   include_directories: include_directories('.'),
-  dependencies: [gtk4_dep, gtk4_layer_shell_dep, libcommon_dep],
+  dependencies: [
+    wayland_client,
+    client_protocols_dep,
+    libleanimage_dep,
+    libcommon_core_dep,
+  ],
   install: true,
 )

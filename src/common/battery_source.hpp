@@ -5,6 +5,8 @@
 #include <functional>
 #include <string>
 
+#include "battery_reading.hpp"
+
 namespace fleetwm {
 
 // Reports the system's primary battery state by polling
@@ -19,14 +21,7 @@ namespace fleetwm {
 // false and the bar/settings hide the battery UI entirely.
 class BatterySource {
  public:
-  struct Reading {
-    bool available = false;
-    int percent = 0;
-    bool charging = false;
-    // -1 when the kernel hasn't published enough data yet (e.g. right
-    // after a charge-state transition) to estimate a rate.
-    double hours_remaining = -1.0;
-  };
+  using Reading = BatteryReading;
 
   using Callback = std::function<void(const Reading&)>;
 
@@ -55,8 +50,5 @@ class BatterySource {
 // Exposed purely so unit tests can exercise the sysfs-parsing/rate-math
 // logic against a fake directory of files instead of a real battery --
 // not part of the public API, do not call from application code.
-namespace battery_internal {
-BatterySource::Reading read_battery_reading(const std::string& battery_dir);
-}  // namespace battery_internal
 
 }  // namespace fleetwm
