@@ -114,7 +114,7 @@ struct PowerMenu {
     const double card_w = content_w + 2 * pad;
     const double card_h = 2 * pad + kCount * item_h + (kCount - 1) * gap;
     card = {(w - card_w) / 2, (h - card_h) / 2, card_w, card_h};
-    rounded_rect(cr, card.x, card.y, card.w, card.h, pal.rounded ? 12 : 0);
+    rounded_rect(cr, card.x, card.y, card.w, card.h, pal.rounded ? pal.radius + 2 : 0);
     set_source(cr, pal.bg_secondary);
     cairo_fill(cr);
 

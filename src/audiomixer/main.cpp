@@ -146,7 +146,7 @@ struct Mixer {
   }
 
   void draw(cairo_t* cr, int W, int H) {
-    rounded_rect(cr, 0, 0, W, H, pal.rounded ? 8 : 0);
+    rounded_rect(cr, 0, 0, W, H, pal.rounded ? pal.radius : 0);
     set_source(cr, pal.bg_primary);
     cairo_fill(cr);
 
