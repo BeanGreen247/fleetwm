@@ -22,7 +22,7 @@ fleetwm_test_sources = files(
 fleetwm_unit_tests = executable(
   'fleetwm-unit-tests',
   fleetwm_test_sources,
-  dependencies: [gtest_dep, libcommon_dep, libfleetkit_dep],
+  dependencies: [gtest_dep, libcommon_core_dep, libfleetkit_dep],
 )
 
 test('fleetwm-unit-tests', fleetwm_unit_tests, protocol: 'gtest')

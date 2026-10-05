@@ -55,8 +55,6 @@ common_conf.set_quoted(
 )
 configure_file(output: 'paths_config.h', configuration: common_conf)
 
-gtk4_dep_common = dependency('gtk4')
-
 # libcommon_core: everything that needs only toml++ -- config parsing, paths,
 # IPC client, malloc tuning. GTK-free so fleetkit (non-GTK) clients such as
 # fleetwm-wallpaper link it without pulling GTK/GLib/Pango into the process.
@@ -82,26 +80,6 @@ libcommon_core_dep = declare_dependency(
   link_with: libcommon_core,
   include_directories: include_directories('.'),
   dependencies: [tomlplusplus_dep],
-)
-
-# libcommon: core + the GTK/GLib-specific helpers (CSS styling, clean-quit
-# signal glue, battery source). Linked by every GTK client.
-libcommon = static_library(
-  'fleetwm-common',
-  files(
-    'app_style.cpp',
-    'battery_source.cpp',
-    'clean_quit.cpp',
-  ),
-  dependencies: [tomlplusplus_dep, gtk4_dep_common],
-  link_with: libcommon_core,
-  include_directories: include_directories('.'),
-)
-
-libcommon_dep = declare_dependency(
-  link_with: [libcommon, libcommon_core],
-  include_directories: include_directories('.'),
-  dependencies: [tomlplusplus_dep, gtk4_dep_common],
 )
 
 # AudioMixer (audio_mixer.hpp/.cpp) is its own static library, not part of
