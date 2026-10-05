@@ -771,18 +771,6 @@ struct Settings {
     ui.row("Window gap (px)");
     if (ui.spin(&config.gap_px, 0, 64)) save_theme();
     ui.newline();
-    ui.row("Corner radius (px)");
-    if (ui.slider(&config.window_corner_radius, 0, 24)) save_theme();
-    ui.newline();
-    ui.row("Window shadows");
-    bool shadows = config.window_shadows;
-    if (ui.toggle(&shadows)) {
-      config.window_shadows = shadows;
-      save_theme();
-    }
-    ui.newline();
-    ui.label("Rounded corners and shadows need the SceneFX build and a GPU; the renderer is chosen at login.", true);
-    ui.newline();
     ui.row("Pinned border (px)");
     if (ui.spin(&config.pinned_border_thickness_px, 0, 10)) save_theme();
     ui.newline();

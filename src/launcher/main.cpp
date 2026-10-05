@@ -178,7 +178,7 @@ struct Launcher {
   void draw(cairo_t* cr, int W, int H) {
     (void)W;
     (void)H;
-    const double r = pal.rounded ? pal.radius + 6 : 4;
+    const double r = pal.rounded ? 16 : 4;
     const double cx0 = kPad, cy0 = kPad;
     draw_shadow(cr, cx0, cy0, kCardW, kCardH, r);
     rounded_rect(cr, cx0, cy0, kCardW, kCardH, r);
