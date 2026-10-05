@@ -77,12 +77,6 @@ struct ThemeConfig {
   // separately by the layer-shell exclusive zone (kExclusiveZoneGapPx in
   // output.cpp).
   int gap_px = 8;
-  // Rounded window corners (px, 0 = square) and soft drop shadows. Only take
-  // effect when the compositor was built with SceneFX and a GPU-capable
-  // renderer is in use; changing either needs a new session (the renderer is
-  // chosen at start-up).
-  int window_corner_radius = 10;
-  bool window_shadows = true;
   // Adaptive render throttling (see RenderMode above). custom_fps_lock is
   // only meaningful when render_mode == Custom; clamped to [24, 5000] by
   // both the Settings spinbutton and load_theme_config().

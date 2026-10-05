@@ -4,7 +4,7 @@
 
 extern "C" {
 #include <wlr/types/wlr_output.h>
-#include "scene.hpp"
+#include <wlr/types/wlr_scene.h>
 }
 
 #include <array>

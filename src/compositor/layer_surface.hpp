@@ -4,7 +4,7 @@
 
 extern "C" {
 #include <wlr/types/wlr_layer_shell_v1.h>
-#include "scene.hpp"
+#include <wlr/types/wlr_scene.h>
 }
 
 #include "scene_node_owner.hpp"
