@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <vector>
+
 #include "window_geometry.hpp"
 
 using namespace fleetwm::geom;
@@ -137,35 +139,166 @@ TEST(Cascade, NegativeIndexIsTreatedAsFirst) {
   EXPECT_EQ(cascade_position(area, 600, 400, -1), cascade_position(area, 600, 400, 0));
 }
 
-// ---- titlebar_button_at ------------------------------------------------
+// ---- titlebar layout --------------------------------------------------------
 
-TEST(TitlebarButtons, RightmostIsCloseThenMaximize) {
-  constexpr int W = 600, B = 38;
-  EXPECT_EQ(titlebar_button_at(W, W - 1, B), 1);
-  EXPECT_EQ(titlebar_button_at(W, W - B, B), 1);
-  EXPECT_EQ(titlebar_button_at(W, W - B - 1, B), 0);
-  EXPECT_EQ(titlebar_button_at(W, W - 2 * B, B), 0);
+namespace {
+TitlebarMetrics metrics() { return TitlebarMetrics{}; }
+
+std::vector<int> ids(const TitlebarLayout& l) {
+  std::vector<int> out;
+  for (int i = 0; i < l.count; ++i) out.push_back(l.buttons[i].id);
+  return out;
+}
+}  // namespace
+
+TEST(TitlebarLayout, DefaultRightSideOrderHasCloseAtTheEdge) {
+  const TitlebarLayout l = layout_titlebar(600, metrics());
+  EXPECT_EQ(ids(l), (std::vector<int>{kBtnPin, kBtnMinimize, kBtnMaximize, kBtnClose}));
+  EXPECT_DOUBLE_EQ(l.buttons[3].x + l.buttons[3].w, 600.0);  // flush with the right edge
 }
 
-TEST(TitlebarButtons, MinimizeIsThirdFromTheRight) {
-  constexpr int W = 600, B = 38;
-  EXPECT_EQ(titlebar_button_at(W, W - 2 * B - 1, B), 2);
-  EXPECT_EQ(titlebar_button_at(W, W - 3 * B, B), 2);
+TEST(TitlebarLayout, LeftSideOrderHasCloseAtTheEdge) {
+  TitlebarMetrics m = metrics();
+  m.buttons_right = false;
+  const TitlebarLayout l = layout_titlebar(600, m);
+  EXPECT_EQ(ids(l), (std::vector<int>{kBtnClose, kBtnMinimize, kBtnMaximize, kBtnPin}));
+  EXPECT_DOUBLE_EQ(l.buttons[0].x, 0.0);
 }
 
-TEST(TitlebarButtons, TitleAreaAndOutOfRangeAreNotButtons) {
-  constexpr int W = 600, B = 38;
-  EXPECT_EQ(titlebar_button_at(W, W - 3 * B - 1, B), -1);
-  EXPECT_EQ(titlebar_button_at(W, 0, B), -1);
-  EXPECT_EQ(titlebar_button_at(W, W, B), -1);
-  EXPECT_EQ(titlebar_button_at(W, -4, B), -1);
+TEST(TitlebarLayout, ButtonsCanBeHidden) {
+  TitlebarMetrics m = metrics();
+  m.show_pin = false;
+  m.show_minimize = false;
+  EXPECT_EQ(ids(layout_titlebar(600, m)), (std::vector<int>{kBtnMaximize, kBtnClose}));
+  m.show_maximize = false;
+  EXPECT_EQ(ids(layout_titlebar(600, m)), (std::vector<int>{kBtnClose}));  // close is always there
 }
 
-TEST(TitlebarButtons, NarrowWindowStillResolves) {
-  EXPECT_EQ(titlebar_button_at(70, 69, 38), 1);
-  EXPECT_EQ(titlebar_button_at(70, 20, 38), 0);
-  EXPECT_EQ(titlebar_button_at(70, 40, 38), 1);
-  EXPECT_EQ(titlebar_button_at(70, -10, 38), 2);
+TEST(TitlebarLayout, ButtonSizeAndVerticalCentering) {
+  TitlebarMetrics m = metrics();
+  m.height = 40;
+  m.button_w = 50;
+  m.button_h = 20;
+  const TitlebarLayout l = layout_titlebar(800, m);
+  for (int i = 0; i < l.count; ++i) {
+    EXPECT_DOUBLE_EQ(l.buttons[i].w, 50.0);
+    EXPECT_DOUBLE_EQ(l.buttons[i].h, 20.0);
+    EXPECT_DOUBLE_EQ(l.buttons[i].y, 10.0);
+  }
+  EXPECT_DOUBLE_EQ(l.buttons[0].x, 800.0 - 4 * 50);
+}
+
+TEST(TitlebarLayout, ButtonsAreContiguous) {
+  const TitlebarLayout l = layout_titlebar(500, metrics());
+  for (int i = 1; i < l.count; ++i)
+    EXPECT_DOUBLE_EQ(l.buttons[i].x, l.buttons[i - 1].x + l.buttons[i - 1].w);
+}
+
+TEST(TitlebarLayout, MetricsAreClamped) {
+  TitlebarMetrics m = metrics();
+  m.height = 3;
+  m.button_w = 1;
+  m.button_h = 500;
+  const TitlebarLayout l = layout_titlebar(300, m);
+  EXPECT_DOUBLE_EQ(l.buttons[0].w, 12.0);
+  EXPECT_DOUBLE_EQ(l.buttons[0].h, 16.0);  // clamped to the (raised) height of 16
+  EXPECT_DOUBLE_EQ(l.buttons[0].y, 0.0);
+}
+
+TEST(TitlebarLayout, TitleSpanLeavesRoomForTheButtons) {
+  const TitlebarLayout right = layout_titlebar(600, metrics());
+  EXPECT_DOUBLE_EQ(right.title_x0, 8.0);
+  EXPECT_DOUBLE_EQ(right.title_x1, 600.0 - 4 * 38 - 8);
+  TitlebarMetrics m = metrics();
+  m.buttons_right = false;
+  const TitlebarLayout left = layout_titlebar(600, m);
+  EXPECT_DOUBLE_EQ(left.title_x0, 4 * 38 + 8);
+  EXPECT_DOUBLE_EQ(left.title_x1, 592.0);
+}
+
+TEST(TitlebarLayout, NarrowWindowNeverProducesAnInvertedSpan) {
+  for (bool right : {true, false}) {
+    TitlebarMetrics m = metrics();
+    m.buttons_right = right;
+    for (int w : {1, 40, 100, 160}) {
+      const TitlebarLayout l = layout_titlebar(w, m);
+      EXPECT_LE(l.title_x0, l.title_x1) << "width " << w << " right " << right;
+    }
+  }
+}
+
+TEST(TitlebarHit, FindsEachButtonByPosition) {
+  const TitlebarLayout l = layout_titlebar(600, metrics());
+  const double cy = l.buttons[0].y + l.buttons[0].h / 2;
+  for (int i = 0; i < l.count; ++i)
+    EXPECT_EQ(titlebar_button_at(l, l.buttons[i].x + l.buttons[i].w / 2, cy), l.buttons[i].id);
+}
+
+TEST(TitlebarHit, EdgesAreHalfOpen) {
+  const TitlebarLayout l = layout_titlebar(600, metrics());
+  const ButtonSlot& close = l.buttons[3];
+  const double cy = close.y + close.h / 2;
+  EXPECT_EQ(titlebar_button_at(l, close.x, cy), kBtnClose);
+  EXPECT_EQ(titlebar_button_at(l, close.x + close.w, cy), kBtnNone);  // one px past the right edge
+  EXPECT_EQ(titlebar_button_at(l, close.x - 0.1, cy), kBtnMaximize);
+}
+
+TEST(TitlebarHit, OutsideTheButtonHeightIsNotAButton) {
+  TitlebarMetrics m = metrics();
+  m.button_h = 20;  // height 32 -> y in [6, 26)
+  const TitlebarLayout l = layout_titlebar(600, m);
+  const double x = l.buttons[3].x + 5;
+  EXPECT_EQ(titlebar_button_at(l, x, 5.9), kBtnNone);
+  EXPECT_EQ(titlebar_button_at(l, x, 6.0), kBtnClose);
+  EXPECT_EQ(titlebar_button_at(l, x, 25.9), kBtnClose);
+  EXPECT_EQ(titlebar_button_at(l, x, 26.0), kBtnNone);
+}
+
+TEST(TitlebarHit, TitleAreaAndOutOfRangeAreNotButtons) {
+  const TitlebarLayout l = layout_titlebar(600, metrics());
+  EXPECT_EQ(titlebar_button_at(l, 100, 16), kBtnNone);
+  EXPECT_EQ(titlebar_button_at(l, -5, 16), kBtnNone);
+  EXPECT_EQ(titlebar_button_at(l, 700, 16), kBtnNone);
+}
+
+TEST(TitlebarHit, HiddenButtonsAreNotHit) {
+  TitlebarMetrics m = metrics();
+  m.show_pin = false;
+  const TitlebarLayout l = layout_titlebar(600, m);
+  // Where the pin used to be is now the title area.
+  EXPECT_EQ(titlebar_button_at(l, 600 - 4 * 38 + 5, 16), kBtnNone);
+}
+
+TEST(TitleX, LeftAndRightHugTheSpanEdges) {
+  const TitlebarLayout l = layout_titlebar(600, metrics());
+  EXPECT_DOUBLE_EQ(title_x(l, 100, TitleAlignment::Left, 600), l.title_x0);
+  EXPECT_DOUBLE_EQ(title_x(l, 100, TitleAlignment::Right, 600), l.title_x1 - 100);
+}
+
+TEST(TitleX, CenterIsCenteredOnTheWholeBarWhenItFits) {
+  const TitlebarLayout l = layout_titlebar(600, metrics());
+  EXPECT_DOUBLE_EQ(title_x(l, 100, TitleAlignment::Center, 600), 250.0);
+}
+
+TEST(TitleX, CenterIsPushedClearOfTheButtons) {
+  const TitlebarLayout l = layout_titlebar(400, metrics());  // span is 8 .. 240
+  const double x = title_x(l, 200, TitleAlignment::Center, 400);  // ideal 100, but 100+200 > 240
+  EXPECT_DOUBLE_EQ(x, 240.0 - 200);
+  EXPECT_LE(x + 200, l.title_x1 + 1e-9);
+}
+
+TEST(TitleX, TextWiderThanTheSpanStartsAtTheLeftOfTheSpan) {
+  const TitlebarLayout l = layout_titlebar(300, metrics());
+  for (TitleAlignment a : {TitleAlignment::Left, TitleAlignment::Center, TitleAlignment::Right})
+    EXPECT_DOUBLE_EQ(title_x(l, 1000, a, 300), l.title_x0);
+}
+
+TEST(TitleX, LeftSideButtonsPushTheTitleRight) {
+  TitlebarMetrics m = metrics();
+  m.buttons_right = false;
+  const TitlebarLayout l = layout_titlebar(600, m);
+  EXPECT_GE(title_x(l, 100, TitleAlignment::Center, 600), l.title_x0);
+  EXPECT_DOUBLE_EQ(title_x(l, 100, TitleAlignment::Left, 600), 4 * 38 + 8);
 }
 
 // ---- taskbar_slots -------------------------------------------------------

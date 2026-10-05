@@ -99,6 +99,123 @@ TEST_F(ThemeTest, LoadWithNoConfigFileReturnsDefaults) {
   EXPECT_EQ(config.gap_px, 8);
 }
 
+TEST_F(ThemeTest, TitlebarDefaults) {
+  const TitlebarConfig tb = load_theme_config().titlebar;
+  EXPECT_EQ(tb.height, 32);
+  EXPECT_EQ(tb.button_width, 38);
+  EXPECT_EQ(tb.button_height, 24);
+  EXPECT_EQ(tb.buttons_side, ButtonSide::Right);
+  EXPECT_EQ(tb.title_align, TitleAlign::Center);
+  EXPECT_TRUE(tb.show_pin);
+  EXPECT_TRUE(tb.show_minimize);
+  EXPECT_TRUE(tb.show_maximize);
+}
+
+TEST_F(ThemeTest, TitlebarRoundTripsEveryField) {
+  ThemeConfig c;
+  c.titlebar = {40, 52, 30, ButtonSide::Left, TitleAlign::Right, false, false, true};
+  save_theme_config(c);
+  const TitlebarConfig tb = load_theme_config().titlebar;
+  EXPECT_EQ(tb.height, 40);
+  EXPECT_EQ(tb.button_width, 52);
+  EXPECT_EQ(tb.button_height, 30);
+  EXPECT_EQ(tb.buttons_side, ButtonSide::Left);
+  EXPECT_EQ(tb.title_align, TitleAlign::Right);
+  EXPECT_FALSE(tb.show_pin);
+  EXPECT_FALSE(tb.show_minimize);
+  EXPECT_TRUE(tb.show_maximize);
+}
+
+TEST_F(ThemeTest, TitlebarValuesAreClamped) {
+  write_config("theme.toml", "[titlebar]\nheight = 500\nbutton_width = 2\nbutton_height = 900\n");
+  const TitlebarConfig tb = load_theme_config().titlebar;
+  EXPECT_EQ(tb.height, 64);
+  EXPECT_EQ(tb.button_width, 20);
+  EXPECT_EQ(tb.button_height, 64);  // never taller than the titlebar
+}
+
+TEST_F(ThemeTest, TitlebarButtonHeightFollowsAShorterTitlebar) {
+  write_config("theme.toml", "[titlebar]\nheight = 22\n");
+  const TitlebarConfig tb = load_theme_config().titlebar;
+  EXPECT_EQ(tb.height, 22);
+  EXPECT_EQ(tb.button_height, 22);  // default 24 clamped to the height
+}
+
+TEST_F(ThemeTest, TitlebarUnknownStringsFallBackToDefaults) {
+  write_config("theme.toml", "[titlebar]\nbuttons_side = \"top\"\ntitle_align = \"diagonal\"\n");
+  const TitlebarConfig tb = load_theme_config().titlebar;
+  EXPECT_EQ(tb.buttons_side, ButtonSide::Right);
+  EXPECT_EQ(tb.title_align, TitleAlign::Center);
+}
+
+TEST_F(ThemeTest, TitlebarSettingsDoNotDisturbTopLevelKeys) {
+  ThemeConfig c;
+  c.gap_px = 11;
+  c.titlebar.height = 44;
+  c.window_layout = WindowLayout::Desktop;
+  save_theme_config(c);
+  const ThemeConfig loaded = load_theme_config();
+  EXPECT_EQ(loaded.gap_px, 11);
+  EXPECT_EQ(loaded.titlebar.height, 44);
+  EXPECT_EQ(loaded.window_layout, WindowLayout::Desktop);
+}
+
+TEST(TitlebarNames, ParseAndFormat) {
+  EXPECT_EQ(button_side_from_string("left"), ButtonSide::Left);
+  EXPECT_EQ(button_side_from_string("right"), ButtonSide::Right);
+  EXPECT_EQ(button_side_from_string(""), ButtonSide::Right);
+  EXPECT_EQ(title_align_from_string("left"), TitleAlign::Left);
+  EXPECT_EQ(title_align_from_string("center"), TitleAlign::Center);
+  EXPECT_EQ(title_align_from_string("right"), TitleAlign::Right);
+  EXPECT_EQ(title_align_from_string("middle"), TitleAlign::Center);
+  for (ButtonSide s : {ButtonSide::Left, ButtonSide::Right})
+    EXPECT_EQ(button_side_from_string(button_side_to_string(s)), s);
+  for (TitleAlign a : {TitleAlign::Left, TitleAlign::Center, TitleAlign::Right})
+    EXPECT_EQ(title_align_from_string(title_align_to_string(a)), a);
+}
+
+TEST_F(ThemeTest, GapDefaults) {
+  const ThemeConfig c = load_theme_config();
+  EXPECT_EQ(c.gap_px, 8);
+  EXPECT_EQ(c.outer_gap_px, 8);
+  EXPECT_EQ(c.bar_gap_px, 6);
+}
+
+TEST_F(ThemeTest, GapsRoundTripIndependently) {
+  ThemeConfig c;
+  c.gap_px = 3;
+  c.outer_gap_px = 20;
+  c.bar_gap_px = 0;
+  save_theme_config(c);
+  const ThemeConfig loaded = load_theme_config();
+  EXPECT_EQ(loaded.gap_px, 3);
+  EXPECT_EQ(loaded.outer_gap_px, 20);
+  EXPECT_EQ(loaded.bar_gap_px, 0);
+}
+
+TEST_F(ThemeTest, OldSingleGapAlsoSetsTheScreenEdgeGap) {
+  write_config("theme.toml", "gap_px = 5\n");
+  const ThemeConfig c = load_theme_config();
+  EXPECT_EQ(c.gap_px, 5);
+  EXPECT_EQ(c.outer_gap_px, 5);
+  EXPECT_EQ(c.bar_gap_px, 6);
+}
+
+TEST_F(ThemeTest, ExplicitEdgeGapBeatsTheOldSingleGap) {
+  write_config("theme.toml", "gap_px = 5\nouter_gap_px = 12\n");
+  const ThemeConfig c = load_theme_config();
+  EXPECT_EQ(c.gap_px, 5);
+  EXPECT_EQ(c.outer_gap_px, 12);
+}
+
+TEST_F(ThemeTest, GapsAreClampedToZeroAndSixtyFour) {
+  write_config("theme.toml", "gap_px = 900\nouter_gap_px = -4\nbar_gap_px = 99\n");
+  const ThemeConfig c = load_theme_config();
+  EXPECT_EQ(c.gap_px, 64);
+  EXPECT_EQ(c.outer_gap_px, 0);
+  EXPECT_EQ(c.bar_gap_px, 64);
+}
+
 TEST_F(ThemeTest, WindowLayoutDefaultsToTilingAndRoundTrips) {
   EXPECT_EQ(load_theme_config().window_layout, WindowLayout::Tiling);
   ThemeConfig c;
@@ -561,9 +678,9 @@ TEST_F(ThemeTest, AccentHexAllLetters) {
 
 TEST_F(ThemeTest, LargeGapPxRoundTrips) {
   ThemeConfig config;
-  config.gap_px = 500;
+  config.gap_px = 500;  // saved as given, clamped to 64 when loaded
   save_theme_config(config);
-  EXPECT_EQ(load_theme_config().gap_px, 500);
+  EXPECT_EQ(load_theme_config().gap_px, 64);
 }
 
 TEST_F(ThemeTest, ZeroThicknessRoundTrips) {

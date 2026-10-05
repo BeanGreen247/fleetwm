@@ -45,9 +45,60 @@ Box resized_box(const Box& start, uint32_t edges, double dx, double dy, int min_
 // of the result are meaningful.
 Box cascade_position(const Box& area, int outer_w, int outer_h, int index);
 
-// Titlebar buttons, right-aligned, each `button_w` wide: 1 = close (rightmost),
-// 0 = maximize (second from the right), 2 = minimize (third), -1 = none.
-int titlebar_button_at(int width, double x, int button_w);
+// ---- titlebar -----------------------------------------------------------
+
+// Numeric ids are shared with the compositor's hit testing and renderer.
+enum TitleButton : int {
+  kBtnNone = -1,
+  kBtnMaximize = 0,
+  kBtnClose = 1,
+  kBtnMinimize = 2,
+  kBtnPin = 3,
+};
+
+enum class TitleAlignment { Left, Center, Right };
+
+// Everything the titlebar layout depends on (a plain copy of the user's
+// [titlebar] settings, so this module stays independent of the config code).
+struct TitlebarMetrics {
+  int height = 32;        // titlebar height
+  int button_w = 38;      // width of one button cell
+  int button_h = 24;      // height of a button (centered in the titlebar)
+  bool buttons_right = true;
+  TitleAlignment align = TitleAlignment::Center;
+  bool show_pin = true;
+  bool show_minimize = true;
+  bool show_maximize = true;
+};
+
+struct ButtonSlot {
+  int id = kBtnNone;
+  double x = 0, y = 0, w = 0, h = 0;  // titlebar-local px
+};
+
+struct TitlebarLayout {
+  ButtonSlot buttons[4];
+  int count = 0;
+  // The part of the bar the title may use (between the buttons and the far
+  // margin), in titlebar-local px.
+  double title_x0 = 0, title_x1 = 0;
+};
+
+// Lays out the buttons for a titlebar `width` px wide. On the right side the
+// order is pin, minimize, maximize, close (close at the screen edge); on the
+// left it is close, minimize, maximize, pin (close at the edge again).
+// Metrics are clamped to sane ranges (height >= 16, button_w >= 12,
+// 8 <= button_h <= height).
+TitlebarLayout layout_titlebar(int width, const TitlebarMetrics& m);
+
+// The button under (x, y) (titlebar-local), or kBtnNone.
+int titlebar_button_at(const TitlebarLayout& layout, double x, double y);
+
+// Left edge of a title `text_w` px wide, honouring the alignment and never
+// overlapping the buttons: centered text is centered on the whole bar when it
+// fits, otherwise pushed inside the free span; text wider than the span
+// starts at its left edge.
+double title_x(const TitlebarLayout& layout, double text_w, TitleAlignment align, int width);
 
 // How window buttons share `avail` px of a horizontal taskbar: each button is
 // `bw` wide (between min_w and max_w, shrinking as windows are added) with `gap`

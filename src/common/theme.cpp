@@ -57,6 +57,29 @@ WindowLayout window_layout_from_string(const std::string& s) {
   return s == "desktop" ? WindowLayout::Desktop : WindowLayout::Tiling;
 }
 
+std::string button_side_to_string(ButtonSide side) {
+  return side == ButtonSide::Left ? "left" : "right";
+}
+
+ButtonSide button_side_from_string(const std::string& s) {
+  return s == "left" ? ButtonSide::Left : ButtonSide::Right;
+}
+
+std::string title_align_to_string(TitleAlign align) {
+  switch (align) {
+    case TitleAlign::Left: return "left";
+    case TitleAlign::Right: return "right";
+    case TitleAlign::Center: break;
+  }
+  return "center";
+}
+
+TitleAlign title_align_from_string(const std::string& s) {
+  if (s == "left") return TitleAlign::Left;
+  if (s == "right") return TitleAlign::Right;
+  return TitleAlign::Center;
+}
+
 std::string theme_css_filename(ThemeName theme) {
   return theme_name_to_string(theme) + ".css";
 }
@@ -96,11 +119,31 @@ ThemeConfig load_theme_config() {
   if (auto v = table["focus_border_color"].value<std::string>()) {
     config.focus_border_color = *v;
   }
+  if (auto* t = table["titlebar"].as_table()) {
+    TitlebarConfig& tb = config.titlebar;
+    if (auto v = (*t)["height"].value<int64_t>()) tb.height = std::clamp(static_cast<int>(*v), 20, 64);
+    if (auto v = (*t)["button_width"].value<int64_t>()) tb.button_width = std::clamp(static_cast<int>(*v), 20, 80);
+    if (auto v = (*t)["button_height"].value<int64_t>()) tb.button_height = static_cast<int>(*v);
+    tb.button_height = std::clamp(tb.button_height, 14, tb.height);
+    if (auto v = (*t)["buttons_side"].value<std::string>()) tb.buttons_side = button_side_from_string(*v);
+    if (auto v = (*t)["title_align"].value<std::string>()) tb.title_align = title_align_from_string(*v);
+    if (auto v = (*t)["show_pin"].value<bool>()) tb.show_pin = *v;
+    if (auto v = (*t)["show_minimize"].value<bool>()) tb.show_minimize = *v;
+    if (auto v = (*t)["show_maximize"].value<bool>()) tb.show_maximize = *v;
+  }
   if (auto v = table["window_layout"].value<std::string>()) {
     config.window_layout = window_layout_from_string(*v);
   }
   if (auto v = table["gap_px"].value<int64_t>()) {
-    config.gap_px = static_cast<int>(*v);
+    config.gap_px = std::clamp(static_cast<int>(*v), 0, 64);
+    // Older files had a single gap that also framed the screen edges.
+    config.outer_gap_px = config.gap_px;
+  }
+  if (auto v = table["outer_gap_px"].value<int64_t>()) {
+    config.outer_gap_px = std::clamp(static_cast<int>(*v), 0, 64);
+  }
+  if (auto v = table["bar_gap_px"].value<int64_t>()) {
+    config.bar_gap_px = std::clamp(static_cast<int>(*v), 0, 64);
   }
   if (auto v = table["pinned_border_color"].value<std::string>()) {
     config.pinned_border_color = *v;
@@ -137,6 +180,8 @@ void save_theme_config(const ThemeConfig& config) {
                           static_cast<int64_t>(config.focus_border_thickness_px));
   table.insert_or_assign("focus_border_color", config.focus_border_color);
   table.insert_or_assign("gap_px", static_cast<int64_t>(config.gap_px));
+  table.insert_or_assign("outer_gap_px", static_cast<int64_t>(config.outer_gap_px));
+  table.insert_or_assign("bar_gap_px", static_cast<int64_t>(config.bar_gap_px));
   table.insert_or_assign("window_layout", window_layout_to_string(config.window_layout));
   table.insert_or_assign("pinned_border_color", config.pinned_border_color);
   table.insert_or_assign("pinned_focused_border_color", config.pinned_focused_border_color);
@@ -146,6 +191,18 @@ void save_theme_config(const ThemeConfig& config) {
                           config.render_mode == RenderMode::Custom ? "custom" : "synced");
   table.insert_or_assign("custom_fps_lock", static_cast<int64_t>(config.custom_fps_lock));
   table.insert_or_assign("show_debug_overlay_on_startup", config.show_debug_overlay_on_startup);
+
+  const TitlebarConfig& tb = config.titlebar;
+  toml::table titlebar;
+  titlebar.insert_or_assign("height", static_cast<int64_t>(tb.height));
+  titlebar.insert_or_assign("button_width", static_cast<int64_t>(tb.button_width));
+  titlebar.insert_or_assign("button_height", static_cast<int64_t>(tb.button_height));
+  titlebar.insert_or_assign("buttons_side", button_side_to_string(tb.buttons_side));
+  titlebar.insert_or_assign("title_align", title_align_to_string(tb.title_align));
+  titlebar.insert_or_assign("show_pin", tb.show_pin);
+  titlebar.insert_or_assign("show_minimize", tb.show_minimize);
+  titlebar.insert_or_assign("show_maximize", tb.show_maximize);
+  table.insert_or_assign("titlebar", std::move(titlebar));
 
   std::ofstream out(path);
   if (!out) {
