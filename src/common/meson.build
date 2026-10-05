@@ -83,6 +83,7 @@ libcommon_core = static_library(
     'window_geometry.cpp',
     'window_list.cpp',
     'shortcut_list.cpp',
+    'power_config.cpp',
   ),
   dependencies: [tomlplusplus_dep],
   include_directories: include_directories('.'),

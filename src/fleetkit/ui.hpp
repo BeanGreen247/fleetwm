@@ -73,6 +73,12 @@ class Ui {
   void set_label_width(double w) { label_w_ = w; }
   double content_bottom() const { return cy_; }  // y after the last row (for scroll extents)
   double width() const { return w_; }
+  // Manual positioning, for laying out side-by-side columns: set the cursor to a
+  // column's x (after a newline) and later back to a saved y.
+  double content_left() const { return left_; }
+  double cursor_y() const { return cy_; }
+  void set_cursor_x(double x) { cx_ = x; }
+  void set_cursor_y(double y) { cy_ = y; line_h_ = 0; cx_ = left_; }
   void newline(double extra = 0);  // finish the current line
   void space(double h);            // vertical gap
   void separator();

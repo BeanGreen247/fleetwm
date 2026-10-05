@@ -230,5 +230,61 @@ TEST_F(PowerSupplyTreeTest, MainsWithUnreadableOnlineCountsAsOffline) {
   EXPECT_FALSE(ac_online(path()));
 }
 
+// describe_battery(): the wording for the bar tooltip and the Power page.
+namespace {
+BatteryReading reading(int percent, bool charging, double hours) {
+  BatteryReading r;
+  r.available = true;
+  r.percent = percent;
+  r.charging = charging;
+  r.hours_remaining = hours;
+  return r;
+}
+}  // namespace
+
+TEST(DescribeBattery, NoBatteryOnMainsJustSaysOnAcPower) {
+  const BatteryText t = describe_battery(BatteryReading{}, true);
+  EXPECT_EQ(t.headline, "On AC power");
+  EXPECT_EQ(t.detail, "");
+}
+
+TEST(DescribeBattery, NoBatteryAndNoMains) {
+  EXPECT_EQ(describe_battery(BatteryReading{}, false).headline, "No battery");
+}
+
+TEST(DescribeBattery, DischargingShowsTimeRemaining) {
+  const BatteryText t = describe_battery(reading(63, false, 2.25), false);
+  EXPECT_EQ(t.headline, "63% - on battery");
+  EXPECT_EQ(t.detail, "2h 15m remaining");
+}
+
+TEST(DescribeBattery, ChargingShowsTimeUntilFull) {
+  const BatteryText t = describe_battery(reading(87, true, 1.0), true);
+  EXPECT_EQ(t.headline, "87% - charging");
+  EXPECT_EQ(t.detail, "1h 0m until full");
+}
+
+TEST(DescribeBattery, MinutesAreRoundedAndPadded) {
+  EXPECT_EQ(describe_battery(reading(50, false, 0.5), false).detail, "0h 30m remaining");
+  EXPECT_EQ(describe_battery(reading(50, false, 1.0 + 59.6 / 60), false).detail, "2h 0m remaining");
+}
+
+TEST(DescribeBattery, UnknownTimeSaysCalculating) {
+  EXPECT_EQ(describe_battery(reading(40, false, -1.0), false).detail, "Time remaining: calculating...");
+  EXPECT_EQ(describe_battery(reading(40, true, -1.0), true).detail, "Time until full: calculating...");
+}
+
+TEST(DescribeBattery, FullOnMains) {
+  const BatteryText t = describe_battery(reading(100, false, 0.0), true);
+  EXPECT_EQ(t.headline, "100% - fully charged");
+  EXPECT_NE(t.detail.find("full"), std::string::npos);
+}
+
+TEST(DescribeBattery, PluggedInButNotChargingIsNotDischarging) {
+  const BatteryText t = describe_battery(reading(80, false, -1.0), true);
+  EXPECT_EQ(t.headline, "80% - plugged in, not charging");
+  EXPECT_EQ(t.detail, "Time left: not discharging");
+}
+
 }  // namespace
 }  // namespace fleetwm

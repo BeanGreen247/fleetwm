@@ -25,6 +25,14 @@ std::string find_battery_dir(const std::string& supply_dir = kPowerSupplyDir);
 // or no Mains supply is listed at all (desktops, VMs: assumed plugged in).
 bool ac_online(const std::string& supply_dir = kPowerSupplyDir);
 
+// The wording for a battery, shared by the bar's tooltip and Settings -> Power:
+// `headline` is "87% - charging" and `detail` the time line ("1h 20m until full").
+struct BatteryText {
+  std::string headline;
+  std::string detail;
+};
+BatteryText describe_battery(const BatteryReading& reading, bool on_ac);
+
 namespace battery_internal {
 BatteryReading read_battery_reading(const std::string& battery_dir);
 }  // namespace battery_internal

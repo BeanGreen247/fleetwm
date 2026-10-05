@@ -252,6 +252,7 @@ void keyboard_key(wl_listener* listener, void* data) {
   Keyboard* keyboard = wl_container_of(listener, keyboard, key);
   auto* event = static_cast<wlr_keyboard_key_event*>(data);
 
+  keyboard->server->note_activity();
   uint32_t keycode = event->keycode + 8;  // xkbcommon uses evdev + 8
   const xkb_keysym_t* syms;
   int nsyms = xkb_state_key_get_syms(keyboard->wlr_keyboard_ptr->xkb_state, keycode, &syms);

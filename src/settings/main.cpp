@@ -26,6 +26,8 @@
 #include "audio_mixer.hpp"
 #include "bar_config.hpp"
 #include "battery_reading.hpp"
+#include "power_config.hpp"
+#include "settings_pages.hpp"
 #include "default_apps.hpp"
 #include "ipc_client.hpp"
 #include "desktop_entry.hpp"
@@ -173,12 +175,13 @@ struct Settings {
 
   int tab = 0;
   double scroll[10] = {};
-  std::vector<std::string> tab_names{"Theme", "Bar", "Wallpaper", "Display", "Date & Time", "Default Apps", "Audio", "Performance", "About"};
+  std::vector<std::string> tab_names{"Theme", "Bar", "Wallpaper", "Display", "Power", "Date & Time", "Default Apps", "Audio", "Performance", "About"};
 
   // power
   bool has_battery = false;
   std::string battery_dir;
   BatteryReading battery;
+  PowerConfig power;
 
   // default apps
   std::vector<DesktopEntry> entries;
@@ -233,6 +236,7 @@ struct Settings {
     bar = load_bar_config();
     wallpaper = load_wallpaper_config();
     default_apps = load_default_apps_config();
+    power = load_power_config();
     apply_theme();
     redraw();
   }
@@ -852,31 +856,109 @@ struct Settings {
     if (ui.checkbox("Minimize", &tb.show_minimize, desktop)) save_theme();
     if (ui.checkbox("Maximize", &tb.show_maximize, desktop)) save_theme();
     ui.newline();
+  }
 
-    if (has_battery) {
-      ui.space(6);
-      ui.section("Power");
-      std::string text = "Battery: N/A";
-      if (battery.available) {
-        text = "Battery: " + std::to_string(battery.percent) + "%";
-        text += battery.charging ? " (charging)" : " (on battery)";
-        if (battery.hours_remaining >= 0.0) {
-          const int mins = static_cast<int>(battery.hours_remaining * 60.0 + 0.5);
-          text += " -- " + std::to_string(mins / 60) + "h " + std::to_string(mins % 60) + "m " +
-                  (battery.charging ? "until full" : "remaining");
-        }
-      }
-      ui.label(text, true);
-      ui.newline();
-      ui.row("Power mode");
-      int mode = static_cast<int>(bar.power_mode);
-      if (ui.segmented({"Normal", "Performance", "Battery Saver"}, &mode)) {
-        bar.power_mode = static_cast<PowerMode>(mode);
-        save_bar();  // the bar picks this up live
-        spawn_detached({"powerprofilesctl", "set", power_mode_to_profiles_daemon_name(bar.power_mode)});
-      }
-      ui.newline();
+  // ---------------------------------------------------------------- power --
+  // One column of display/sleep timers (a profile for mains power or for battery).
+  void power_column(const char* title, PowerProfile* profile, double x, double width) {
+    (void)width;
+    ui.set_cursor_x(x);
+    ui.label(title);
+    ui.newline();
+    const auto& choices = power_timeout_choices();
+    std::vector<std::string> labels;
+    for (int m : choices) labels.push_back(power_timeout_label(m));
+    ui.label("Turn off the display", true);
+    ui.newline();
+    int d = nearest_power_timeout_index(profile->display_off_minutes);
+    ui.set_cursor_x(x);
+    if (ui.dropdown(labels, &d, 170)) {
+      profile->display_off_minutes = choices[static_cast<size_t>(d)];
+      save_power();
     }
+    ui.newline();
+    ui.label("Put the computer to sleep", true);
+    ui.newline();
+    int s = nearest_power_timeout_index(profile->sleep_minutes);
+    ui.set_cursor_x(x);
+    if (ui.dropdown(labels, &s, 170)) {
+      profile->sleep_minutes = choices[static_cast<size_t>(s)];
+      save_power();
+    }
+    ui.newline();
+  }
+
+  void save_power() { save_power_config(power); }
+
+  void tab_power(cairo_t* cr) {
+    const bool on_ac = ac_online();
+    const BatteryText t = describe_battery(battery, on_ac);
+    const Palette& p = ui.palette();
+
+    // Status card at the top: the battery with its percentage and time, or the plug.
+    UiRect r;
+    ui.canvas(96, &r);
+    {
+      const double cy = r.y + r.h / 2;
+      if (has_battery && battery.available) {
+        const double bw = 64, bh = 30, bx = r.x + 8, by = cy - bh / 2;
+        cairo_set_line_width(cr, 2);
+        set_source(cr, p.fg_secondary);
+        cairo_rectangle(cr, bx, by, bw, bh);
+        cairo_stroke(cr);
+        cairo_rectangle(cr, bx + bw, by + 8, 4, bh - 16);
+        cairo_fill(cr);
+        const double frac = std::clamp(battery.percent / 100.0, 0.0, 1.0);
+        set_source(cr, battery.percent <= 15 && !battery.charging ? Color{0.85, 0.25, 0.25, 1.0} : p.accent);
+        cairo_rectangle(cr, bx + 3, by + 3, (bw - 6) * frac, bh - 6);
+        cairo_fill(cr);
+        draw_text(cr, t.headline, bx + bw + 24, cy - 2, 18, p.fg_primary, true);
+        if (!t.detail.empty()) draw_text(cr, t.detail, bx + bw + 24, cy + 22, 14, p.fg_secondary);
+      } else {
+        // Mains plug: body, two prongs, cord.
+        const double px = r.x + 40, py = cy;
+        set_source(cr, p.fg_secondary);
+        cairo_rectangle(cr, px - 14, py - 8, 28, 22);
+        cairo_fill(cr);
+        cairo_rectangle(cr, px - 8, py - 22, 5, 14);
+        cairo_rectangle(cr, px + 3, py - 22, 5, 14);
+        cairo_fill(cr);
+        cairo_rectangle(cr, px - 2, py + 14, 4, 12);
+        cairo_fill(cr);
+        draw_text(cr, "On AC power", r.x + 88, cy + 6, 18, p.fg_primary, true);
+      }
+    }
+
+    ui.space(6);
+    ui.section("Sleep and display");
+    if (!has_battery) {
+      power_column("On AC power", &power.ac, ui.content_left(), 0);
+      return;
+    }
+    // Two columns: mains on the left, battery on the right. The one in use is marked.
+    const double left = ui.content_left();
+    const double col2 = left + 280;
+    const double y0 = ui.cursor_y();
+    power_column(on_ac ? "On AC power (now)" : "On AC power", &power.ac, left, 0);
+    const double y1 = ui.cursor_y();
+    ui.set_cursor_y(y0);
+    power_column(on_ac ? "On battery" : "On battery (now)", &power.battery, col2, 0);
+    ui.set_cursor_y(std::max(y1, ui.cursor_y()));
+    ui.set_cursor_x(left);
+    ui.space(4);
+    ui.label("Apps that keep the screen awake (video, presentations) are respected.", true);
+    ui.newline();
+
+    ui.space(6);
+    ui.section("Power mode");
+    ui.row("Power mode");
+    int mode = static_cast<int>(bar.power_mode);
+    if (ui.segmented({"Normal", "Performance", "Battery Saver"}, &mode)) {
+      bar.power_mode = static_cast<PowerMode>(mode);
+      save_bar();  // the bar picks this up live
+      spawn_detached({"powerprofilesctl", "set", power_mode_to_profiles_daemon_name(bar.power_mode)});
+    }
+    ui.newline();
   }
 
   void tab_bar(cairo_t*) {
@@ -1102,10 +1184,11 @@ struct Settings {
       case 1: tab_bar(cr); break;
       case 2: tab_wallpaper(cr); break;
       case 3: tab_display(cr); break;
-      case 4: tab_datetime(cr); break;
-      case 5: tab_default_apps(cr); break;
-      case 6: tab_audio(cr); break;
-      case 7: tab_performance(cr); break;
+      case 4: tab_power(cr); break;
+      case 5: tab_datetime(cr); break;
+      case 6: tab_default_apps(cr); break;
+      case 7: tab_audio(cr); break;
+      case 8: tab_performance(cr); break;
       default: tab_about(cr); break;
     }
     ui.space(24);
@@ -1117,7 +1200,7 @@ struct Settings {
 
 }  // namespace
 
-int main() {
+int main(int argc, char** argv) {
   fleetwm::tune_malloc_for_low_rss();
   signal(SIGCHLD, SIG_IGN);
 
@@ -1126,7 +1209,15 @@ int main() {
   S.bar = load_bar_config();
   S.wallpaper = load_wallpaper_config();
   S.default_apps = load_default_apps_config();
+  S.power = load_power_config();
   S.apply_theme();
+  // `fleetwm-settings --page power` opens on that page (the bar's battery icon uses it).
+  for (int i = 1; i + 1 < argc; ++i) {
+    if (std::string(argv[i]) == "--page") {
+      const int page = find_settings_page(S.tab_names, argv[i + 1]);
+      if (page >= 0) S.tab = page;
+    }
+  }
   S.battery_dir = find_battery_dir();
   S.has_battery = !S.battery_dir.empty();
   if (const char* d = std::getenv("FLEETWM_BATTERY_DIR")) {  // test hook, same as the bar

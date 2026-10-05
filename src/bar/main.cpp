@@ -70,6 +70,14 @@ void spawn(const char* prog) {
     std::fprintf(stderr, "fleetwm-bar: failed to launch %s\n", prog);
 }
 
+// Opens Settings on the named page (e.g. the Power page from the battery icon).
+void spawn_settings_page(const char* page) {
+  char* argv[] = {const_cast<char*>("fleetwm-settings"), const_cast<char*>("--page"), const_cast<char*>(page), nullptr};
+  pid_t pid;
+  if (posix_spawnp(&pid, "fleetwm-settings", nullptr, nullptr, argv, environ) != 0)
+    std::fprintf(stderr, "fleetwm-bar: failed to launch fleetwm-settings\n");
+}
+
 struct Bar {
   App app;
   ThemeConfig theme;
@@ -1288,6 +1296,7 @@ struct Bar {
           return;
         }
       if (vol_rect.hit(x, y)) return spawn("fleetwm-audiomixer");
+      if (battery_rect.hit(x, y)) return spawn_settings_page("power");
       if (power_rect.hit(x, y)) return spawn("fleetwm-powermenu");
     }
     for (size_t i = 0; i < tray_rects.size(); ++i)
@@ -1299,23 +1308,8 @@ struct Bar {
   }
 
   std::string battery_tooltip_text() {
-    if (!battery.available) return on_ac ? "On AC power" : "No battery";
-    const bool full = !battery.charging && on_ac && battery.hours_remaining == 0.0;
-    std::string head = std::to_string(battery.percent) + "% - ";
-    head += battery.charging ? "charging" : full ? "fully charged" : on_ac ? "plugged in, not charging" : "on battery";
-    std::string detail;
-    if (full) {
-      detail = "Time left: not applicable (full)";
-    } else if (battery.hours_remaining > 0.0) {
-      const int mins = static_cast<int>(battery.hours_remaining * 60.0 + 0.5);
-      detail = std::to_string(mins / 60) + "h " + std::to_string(mins % 60) + "m " +
-               (battery.charging ? "until full" : "remaining");
-    } else if (!battery.charging && on_ac) {
-      detail = "Time left: not discharging";
-    } else {
-      detail = std::string(battery.charging ? "Time until full" : "Time remaining") + ": calculating...";
-    }
-    return head + "\n" + detail;
+    const BatteryText t = describe_battery(battery, on_ac);
+    return t.detail.empty() ? t.headline : t.headline + "\n" + t.detail;
   }
 
   void hide_tooltip() {
