@@ -34,7 +34,7 @@ TEST(FormatAltCombo, CommonKeyNamesAreFriendly) {
 }
 
 TEST(FormatAltCombo, QuestionNeedsShift) {
-  EXPECT_EQ(format_alt_combo("question"), "Alt+Shift+/");  // still understood if someone binds it
+  EXPECT_EQ(format_alt_combo("question"), "Alt+Shift+/");
 }
 
 TEST(FormatAltCombo, UnknownNamesPassThrough) {
@@ -52,7 +52,35 @@ TEST(FormatAltShiftCombo, AlwaysIncludesShift) {
   EXPECT_EQ(format_alt_shift_combo("Q"), "Alt+Shift+Q");
 }
 
-TEST(ShortcutList, DefaultsListTheExpectedKeys) {
+TEST(FormatKeyCombo, PrettyPrintsModifiersInConventionalOrder) {
+  EXPECT_EQ(format_key_combo("ctrl+alt+t"), "Ctrl+Alt+T");
+  EXPECT_EQ(format_key_combo("alt+ctrl+t"), "Ctrl+Alt+T");  // written in any order
+  EXPECT_EQ(format_key_combo("super+shift+b"), "Super+Shift+B");
+  EXPECT_EQ(format_key_combo("shift+super+b"), "Super+Shift+B");
+  EXPECT_EQ(format_key_combo("ctrl+alt+shift+super+x"), "Super+Ctrl+Alt+Shift+X");
+}
+
+TEST(FormatKeyCombo, ModifierSynonyms) {
+  EXPECT_EQ(format_key_combo("logo+e"), "Super+E");
+  EXPECT_EQ(format_key_combo("win+e"), "Super+E");
+  EXPECT_EQ(format_key_combo("meta+e"), "Super+E");
+  EXPECT_EQ(format_key_combo("Control+Alt+Delete"), "Ctrl+Alt+Delete");
+}
+
+TEST(FormatKeyCombo, KeyNamesAreFriendly) {
+  EXPECT_EQ(format_key_combo("super+slash"), "Super+/");
+  EXPECT_EQ(format_key_combo("alt+Return"), "Alt+Enter");
+  EXPECT_EQ(format_key_combo("ctrl+space"), "Ctrl+Space");
+  EXPECT_EQ(format_key_combo("F12"), "F12");  // a bare key is a valid combo
+}
+
+TEST(FormatKeyCombo, UnparseableIsUnbound) {
+  EXPECT_EQ(format_key_combo(""), "(unbound)");
+  EXPECT_EQ(format_key_combo("ctrl+alt+"), "(unbound)");
+  EXPECT_EQ(format_key_combo("hyper+t"), "(unbound)");
+}
+
+TEST(ShortcutList, TilingDefaultsListTheExpectedKeys) {
   const auto list = build_shortcut_list(KeybindsConfig{}, WindowLayout::Tiling);
   EXPECT_EQ(find(list, "Open a terminal")->keys, "Alt+Enter");
   EXPECT_EQ(find(list, "Application launcher")->keys, "Alt+D");
@@ -62,15 +90,27 @@ TEST(ShortcutList, DefaultsListTheExpectedKeys) {
   EXPECT_EQ(find(list, "master")->keys, "Alt+Shift+Enter");
 }
 
+TEST(ShortcutList, DesktopTerminalHasItsOwnKeysNotAltEnter) {
+  const auto list = build_shortcut_list(KeybindsConfig{}, WindowLayout::Desktop);
+  const ShortcutEntry* term = find(list, "Open a terminal");
+  ASSERT_NE(term, nullptr);
+  EXPECT_EQ(term->keys, "Ctrl+Alt+T");
+  EXPECT_TRUE(term->active);
+  for (const ShortcutEntry& e : list)
+    EXPECT_NE(e.keys, "Alt+Enter") << "Alt+Enter must not be offered in the Desktop layout";
+}
+
 TEST(ShortcutList, RemappedKeysShowUp) {
   KeybindsConfig b;
   b.launcher = "space";
   b.close_window = "w";
-  b.shortcuts = "F1";
-  const auto list = build_shortcut_list(b, WindowLayout::Tiling);
-  EXPECT_EQ(find(list, "Application launcher")->keys, "Alt+Space");
-  EXPECT_EQ(find(list, "Close the focused window")->keys, "Alt+W");
-  EXPECT_EQ(find(list, "list of shortcuts")->keys, "Super+F1");
+  b.shortcuts_help = "F1";
+  b.desktop_terminal = "super+Return";
+  const auto tiling = build_shortcut_list(b, WindowLayout::Tiling);
+  EXPECT_EQ(find(tiling, "Application launcher")->keys, "Alt+Space");
+  EXPECT_EQ(find(tiling, "Close the focused window")->keys, "Alt+W");
+  EXPECT_EQ(find(tiling, "list of shortcuts")->keys, "F1");
+  EXPECT_EQ(find(build_shortcut_list(b, WindowLayout::Desktop), "Open a terminal")->keys, "Super+Enter");
 }
 
 TEST(ShortcutList, TilingHasEverythingActive) {
@@ -78,13 +118,29 @@ TEST(ShortcutList, TilingHasEverythingActive) {
   for (const ShortcutEntry& e : list) EXPECT_TRUE(e.active) << e.description;
 }
 
-TEST(ShortcutList, DesktopOnlyKeepsTerminalAndShortcutsActive) {
+TEST(ShortcutList, DesktopKeepsOnlyTheDesktopCombosActive) {
   const auto list = build_shortcut_list(KeybindsConfig{}, WindowLayout::Desktop);
-  EXPECT_TRUE(find(list, "Open a terminal")->active);
-  EXPECT_TRUE(find(list, "list of shortcuts")->active);
+  for (const char* on : {"Open a terminal", "list of shortcuts", "web browser", "file manager",
+                         "text editor", "start menu"})
+    EXPECT_TRUE(find(list, on)->active) << on;
   for (const char* off : {"Application launcher", "Close the focused window", "Lock the screen",
                           "Pin the focused window", "Focus the window to the left", "Quit fleetwm"})
     EXPECT_FALSE(find(list, off)->active) << off;
+}
+
+TEST(ShortcutList, DesktopAppShortcutsUseTheirOwnCombos) {
+  const auto list = build_shortcut_list(KeybindsConfig{}, WindowLayout::Desktop);
+  EXPECT_EQ(find(list, "web browser")->keys, "Super+Shift+B");
+  EXPECT_EQ(find(list, "file manager")->keys, "Super+Shift+E");
+  EXPECT_EQ(find(list, "text editor")->keys, "Super+Shift+T");
+  for (const char* d : {"web browser", "file manager", "text editor"})
+    EXPECT_NE(find(list, d)->keys.find("Shift+"), std::string::npos) << d << " must require Shift";
+}
+
+TEST(ShortcutList, TilingDoesNotListTheDesktopOnlyEntries) {
+  const auto list = build_shortcut_list(KeybindsConfig{}, WindowLayout::Tiling);
+  for (const char* d : {"web browser", "file manager", "text editor", "start menu", "Move the window"})
+    EXPECT_EQ(find(list, d), nullptr) << d;
 }
 
 TEST(ShortcutList, DesktopAddsMouseAndTaskbarGestures) {
@@ -102,6 +158,15 @@ TEST(ShortcutList, TilingMouseNotesDifferFromDesktop) {
   EXPECT_EQ(find(list, "Move the window"), nullptr);
 }
 
+TEST(ShortcutList, StartMenuKeyLabelFollowsTheConfig) {
+  KeybindsConfig b;
+  EXPECT_EQ(find(build_shortcut_list(b, WindowLayout::Desktop), "start menu")->keys, "Super (tap)");
+  b.start_menu_key = "Menu";
+  EXPECT_EQ(find(build_shortcut_list(b, WindowLayout::Desktop), "start menu")->keys, "Menu (tap)");
+  b.start_menu_key = "F12, Super_L";
+  EXPECT_EQ(find(build_shortcut_list(b, WindowLayout::Desktop), "start menu")->keys, "F12 (tap)");
+}
+
 TEST(ShortcutList, EveryEntryHasASectionKeysAndDescription) {
   for (WindowLayout l : {WindowLayout::Tiling, WindowLayout::Desktop})
     for (const ShortcutEntry& e : build_shortcut_list(KeybindsConfig{}, l)) {
@@ -116,95 +181,16 @@ TEST(ShortcutList, DocumentationLinksAreHttps) {
   EXPECT_EQ(std::string(kShortcutsDocUrl).rfind("https://", 0), 0u);
 }
 
-TEST(ShortcutList, DesktopListsTheAppShortcutsAndSuper) {
+// The Desktop defaults must not shadow what runs inside a terminal: tmux's Alt
+// bindings (1-7, n, p, o) and readline's (b f d t u l c ?). tmux's prefix is Ctrl+b.
+TEST(ShortcutList, DesktopDefaultsAvoidTmuxAndReadline) {
   const auto list = build_shortcut_list(KeybindsConfig{}, WindowLayout::Desktop);
-  EXPECT_EQ(find(list, "web browser")->keys, "Super+Shift+B");
-  EXPECT_EQ(find(list, "file manager")->keys, "Super+Shift+E");
-  EXPECT_EQ(find(list, "text editor")->keys, "Super+Shift+T");
-  EXPECT_NE(find(list, "start menu"), nullptr);
-  for (const char* d : {"web browser", "file manager", "text editor", "start menu"})
-    EXPECT_TRUE(find(list, d)->active) << d;
-}
-
-TEST(ShortcutList, TilingDoesNotListTheDesktopAppShortcuts) {
-  const auto list = build_shortcut_list(KeybindsConfig{}, WindowLayout::Tiling);
-  EXPECT_EQ(find(list, "web browser"), nullptr);
-  EXPECT_EQ(find(list, "file manager"), nullptr);
-  EXPECT_EQ(find(list, "text editor"), nullptr);
-  EXPECT_EQ(find(list, "start menu"), nullptr);
-}
-
-TEST(ShortcutList, RemappedAppShortcutsShowUp) {
-  KeybindsConfig b;
-  b.browser = "w";
-  b.file_manager = "F";
-  const auto list = build_shortcut_list(b, WindowLayout::Desktop);
-  EXPECT_EQ(find(list, "web browser")->keys, "Super+Shift+W");
-  EXPECT_EQ(find(list, "file manager")->keys, "Super+Shift+F");
-}
-
-TEST(FormatSuperCombo, UsesTheSuperPrefix) {
-  EXPECT_EQ(format_super_combo("b"), "Super+B");
-  EXPECT_EQ(format_super_combo("slash"), "Super+/");
-  EXPECT_EQ(format_super_combo("Q"), "Super+Shift+Q");
-  EXPECT_EQ(format_super_combo("Return"), "Super+Enter");
-  EXPECT_EQ(format_super_combo(""), "(unbound)");
-}
-
-// The Super binds exist so they never shadow what runs inside a terminal: tmux's
-// Alt bindings and readline's. None of the defaults may be an Alt combination that
-// either of them uses.
-TEST(ShortcutList, DefaultsAvoidTmuxAndReadlineAltBindings) {
-  const KeybindsConfig b;
-  for (const std::string& key : {b.browser, b.file_manager, b.text_editor, b.shortcuts}) {
-    const std::string combo = format_super_combo(key);
-    EXPECT_EQ(combo.rfind("Super+", 0), 0u) << combo;
-  }
-  // tmux's default Alt bindings: 1-7 (layouts), n/p (windows with alerts), o (rotate),
-  // plus arrow resizing; readline's common ones: b f d t u l c ?
   const char* risky[] = {"1", "2", "3", "4", "5", "6", "7", "n", "p", "o", "b", "f", "d", "t", "u", "l", "c", "?"};
-  for (const char* k : risky) {
-    for (const ShortcutEntry& e : build_shortcut_list(b, WindowLayout::Desktop)) {
-      if (!e.active) continue;
+  for (const ShortcutEntry& e : list) {
+    if (!e.active) continue;
+    for (const char* k : risky)
       EXPECT_NE(e.keys, std::string("Alt+") + static_cast<char>(std::toupper(k[0])))
-          << "an active Desktop shortcut shadows Alt+" << k << " (" << e.description << ")";
-    }
+          << e.description << " shadows Alt+" << k;
+    EXPECT_NE(e.keys, "Ctrl+B") << e.description << " shadows tmux's prefix";
   }
-}
-
-TEST(FormatModCombo, PrettyPrintsTheConfiguredModifier) {
-  EXPECT_EQ(format_mod_combo("super", "b"), "Super+B");
-  EXPECT_EQ(format_mod_combo("logo", "b"), "Super+B");
-  EXPECT_EQ(format_mod_combo("win", "b"), "Super+B");
-  EXPECT_EQ(format_mod_combo("ctrl+alt", "t"), "Ctrl+Alt+T");
-  EXPECT_EQ(format_mod_combo("Control+Alt", "t"), "Ctrl+Alt+T");
-  EXPECT_EQ(format_mod_combo("alt", "b", true), "Alt+Shift+B");
-}
-
-TEST(FormatModCombo, EmptyOrBlankModifierFallsBackToSuper) {
-  EXPECT_EQ(format_mod_combo("", "b"), "Super+B");
-  EXPECT_EQ(format_mod_combo("+", "b"), "Super+B");
-}
-
-TEST(ShortcutList, AppShortcutsAlwaysShowShift) {
-  const auto list = build_shortcut_list(KeybindsConfig{}, WindowLayout::Desktop);
-  for (const char* d : {"web browser", "file manager", "text editor"})
-    EXPECT_NE(find(list, d)->keys.find("Shift+"), std::string::npos) << d;
-}
-
-TEST(ShortcutList, RemappedModifierShowsInTheLabels) {
-  KeybindsConfig b;
-  b.modifier = "ctrl+alt";
-  const auto list = build_shortcut_list(b, WindowLayout::Desktop);
-  EXPECT_EQ(find(list, "web browser")->keys, "Ctrl+Alt+Shift+B");
-  EXPECT_EQ(find(list, "list of shortcuts")->keys, "Ctrl+Alt+/");
-}
-
-TEST(ShortcutList, StartMenuKeyLabelFollowsTheConfig) {
-  KeybindsConfig b;
-  EXPECT_EQ(find(build_shortcut_list(b, WindowLayout::Desktop), "start menu")->keys, "Super (tap)");
-  b.start_menu_key = "Menu";
-  EXPECT_EQ(find(build_shortcut_list(b, WindowLayout::Desktop), "start menu")->keys, "Menu (tap)");
-  b.start_menu_key = "F12, Super_L";
-  EXPECT_EQ(find(build_shortcut_list(b, WindowLayout::Desktop), "start menu")->keys, "F12 (tap)");
 }

@@ -271,26 +271,31 @@ void keyboard_key(wl_listener* listener, void* data) {
     }
   }
 
-  // <modifier>+<key> (Super by default, remappable in keybinds.toml): the shortcuts
-  // window in either layout, and in the Desktop layout <modifier>+Shift+<key> for
-  // the web browser, file manager and text editor. The default avoids what tmux
-  // and readline bind on Alt inside a terminal.
+  // Combo shortcuts (written as "ctrl+alt+t" in keybinds.toml): the shortcuts window
+  // in either layout, and in the Desktop layout the terminal and the default web
+  // browser / file manager / text editor. They are separate from the Alt-based
+  // Tiling shortcuts, which are all off in the Desktop layout.
   {
     const unsigned mods = wlr_keyboard_get_modifiers(keyboard->wlr_keyboard_ptr);
     const Server::ResolvedKeybinds& binds = keyboard->server->keybinds();
-    if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED && !keyboard->server->is_locked() &&
-        (mods & binds.modifier_mask) == binds.modifier_mask) {
-      auto is = [](xkb_keysym_t a, xkb_keysym_t b) { return xkb_keysym_to_lower(a) == xkb_keysym_to_lower(b); };
+    if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED && !keyboard->server->is_locked()) {
+      auto is = [mods](const Server::ResolvedKeybinds::Combo& c, xkb_keysym_t sym) {
+        return combo_mods_match(mods, c.mods) && xkb_keysym_to_lower(sym) == xkb_keysym_to_lower(c.sym);
+      };
+      const bool desktop = keyboard->server->desktop_layout();
       for (int i = 0; i < nsyms && !handled; ++i) {
         const xkb_keysym_t sym = syms[i];
-        if (is(sym, binds.shortcuts)) {
+        if (is(binds.shortcuts_help, sym)) {
           spawn(kShortcutsCommand);
           handled = true;
-        } else if (keyboard->server->desktop_layout() && (mods & kModShift)) {
-          const char* cmd = is(sym, binds.browser)        ? "fleetwm-launcher --default browser"
-                            : is(sym, binds.file_manager) ? "fleetwm-launcher --default files"
-                            : is(sym, binds.text_editor)  ? "fleetwm-launcher --default editor"
-                                                          : nullptr;
+        } else if (desktop && is(binds.desktop_terminal, sym)) {
+          spawn_terminal(keyboard->server->default_apps_config().terminal_command.c_str());
+          handled = true;
+        } else if (desktop) {
+          const char* cmd = is(binds.desktop_browser, sym)        ? "fleetwm-launcher --default browser"
+                            : is(binds.desktop_file_manager, sym) ? "fleetwm-launcher --default files"
+                            : is(binds.desktop_text_editor, sym)  ? "fleetwm-launcher --default editor"
+                                                                  : nullptr;
           if (cmd) {
             spawn_shell(cmd);
             handled = true;
@@ -367,9 +372,9 @@ bool Keyboard::handle_keybind(xkb_keysym_t sym) {
   const Server::ResolvedKeybinds& binds = server->keybinds();
 
   // Desktop layout: only the terminal shortcut stays bound for now.
-  // Desktop layout: of the Alt shortcuts only the terminal stays bound; every
-  // tiling shortcut is off. (The Super shortcuts are handled in keyboard_key.)
-  if (server->desktop_layout() && sym != binds.terminal) {
+  // Desktop layout: every Alt (tiling) shortcut is off, Alt+Enter included. The
+  // Desktop combos (terminal, apps, shortcuts list) are handled in keyboard_key.
+  if (server->desktop_layout()) {
     return false;
   }
 

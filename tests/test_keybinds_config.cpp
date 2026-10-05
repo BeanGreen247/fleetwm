@@ -27,11 +27,11 @@ TEST_F(KeybindsConfigTest, LoadWithNoConfigFileReturnsDefaults) {
   EXPECT_EQ(config.focus_right, "l");
   EXPECT_EQ(config.quit, "Escape");
   EXPECT_EQ(config.debug_overlay, "I");
-  EXPECT_EQ(config.shortcuts, "slash");
-  EXPECT_EQ(config.browser, "b");
-  EXPECT_EQ(config.file_manager, "e");
-  EXPECT_EQ(config.text_editor, "t");
-  EXPECT_EQ(config.modifier, "super");
+  EXPECT_EQ(config.shortcuts_help, "super+slash");
+  EXPECT_EQ(config.desktop_terminal, "ctrl+alt+t");
+  EXPECT_EQ(config.desktop_browser, "super+shift+b");
+  EXPECT_EQ(config.desktop_file_manager, "super+shift+e");
+  EXPECT_EQ(config.desktop_text_editor, "super+shift+t");
   EXPECT_EQ(config.start_menu_key, "Super_L,Super_R");
 }
 
@@ -464,26 +464,81 @@ TEST_F(KeybindsConfigTest, SystemDefaultConfigPathDiffersFromUserPath) {
   EXPECT_NE(keybinds_user_config_path(), keybinds_system_default_config_path());
 }
 
-TEST_F(KeybindsConfigTest, AppShortcutsRoundTrip) {
+TEST_F(KeybindsConfigTest, DesktopCombosRoundTrip) {
   KeybindsConfig config;
-  config.browser = "w";
-  config.file_manager = "f";
-  config.text_editor = "n";
-  save_keybinds_config(config);
-  const KeybindsConfig loaded = load_keybinds_config();
-  EXPECT_EQ(loaded.browser, "w");
-  EXPECT_EQ(loaded.file_manager, "f");
-  EXPECT_EQ(loaded.text_editor, "n");
-}
-
-TEST_F(KeybindsConfigTest, ModifierAndStartMenuKeyRoundTrip) {
-  KeybindsConfig config;
-  config.modifier = "ctrl+alt";
+  config.desktop_terminal = "super+Return";
+  config.desktop_browser = "ctrl+alt+w";
+  config.desktop_file_manager = "ctrl+alt+f";
+  config.desktop_text_editor = "ctrl+alt+n";
+  config.shortcuts_help = "F1";
   config.start_menu_key = "Menu";
   save_keybinds_config(config);
   const KeybindsConfig loaded = load_keybinds_config();
-  EXPECT_EQ(loaded.modifier, "ctrl+alt");
+  EXPECT_EQ(loaded.desktop_terminal, "super+Return");
+  EXPECT_EQ(loaded.desktop_browser, "ctrl+alt+w");
+  EXPECT_EQ(loaded.desktop_file_manager, "ctrl+alt+f");
+  EXPECT_EQ(loaded.desktop_text_editor, "ctrl+alt+n");
+  EXPECT_EQ(loaded.shortcuts_help, "F1");
   EXPECT_EQ(loaded.start_menu_key, "Menu");
+}
+
+TEST_F(KeybindsConfigTest, DesktopComboFromAHandWrittenFile) {
+  write_config("keybinds.toml", "desktop_terminal = \"ctrl+shift+Return\"\n");
+  const KeybindsConfig c = load_keybinds_config();
+  EXPECT_EQ(c.desktop_terminal, "ctrl+shift+Return");
+  EXPECT_EQ(c.desktop_browser, "super+shift+b");  // untouched defaults stay
+}
+
+TEST_F(KeybindsConfigTest, WrongTypeForADesktopComboKeepsTheDefault) {
+  write_config("keybinds.toml", "desktop_terminal = 42\n");
+  EXPECT_EQ(load_keybinds_config().desktop_terminal, "ctrl+alt+t");
+}
+
+TEST(ParseKeyCombo, SplitsModifiersAndKey) {
+  const KeyCombo c = parse_key_combo("ctrl+alt+t");
+  EXPECT_TRUE(c.valid);
+  EXPECT_EQ(c.mods, static_cast<unsigned>(kModCtrl | kModAlt));
+  EXPECT_EQ(c.key, "t");
+}
+
+TEST(ParseKeyCombo, BareKeyHasNoModifiers) {
+  const KeyCombo c = parse_key_combo("F12");
+  EXPECT_TRUE(c.valid);
+  EXPECT_EQ(c.mods, 0u);
+  EXPECT_EQ(c.key, "F12");
+}
+
+TEST(ParseKeyCombo, KeepsTheKeyNamesCase) {
+  EXPECT_EQ(parse_key_combo("super+Return").key, "Return");
+  EXPECT_EQ(parse_key_combo("SUPER+shift+B").key, "B");
+  EXPECT_EQ(parse_key_combo("SUPER+shift+B").mods, static_cast<unsigned>(kModLogo | kModShift));
+}
+
+TEST(ParseKeyCombo, IgnoresSpacesAroundParts) {
+  const KeyCombo c = parse_key_combo(" ctrl + alt + t ");
+  EXPECT_TRUE(c.valid);
+  EXPECT_EQ(c.mods, static_cast<unsigned>(kModCtrl | kModAlt));
+  EXPECT_EQ(c.key, "t");
+}
+
+TEST(ParseKeyCombo, InvalidInputs) {
+  EXPECT_FALSE(parse_key_combo("").valid);
+  EXPECT_FALSE(parse_key_combo("ctrl+alt+").valid);   // no key
+  EXPECT_FALSE(parse_key_combo("hyper+t").valid);     // unknown modifier
+  EXPECT_FALSE(parse_key_combo("   ").valid);
+}
+
+TEST(ComboModsMatch, ExactMatchRequired) {
+  EXPECT_TRUE(combo_mods_match(kModCtrl | kModAlt, kModCtrl | kModAlt));
+  EXPECT_FALSE(combo_mods_match(kModCtrl | kModAlt | kModShift, kModCtrl | kModAlt));  // extra Shift
+  EXPECT_FALSE(combo_mods_match(kModCtrl, kModCtrl | kModAlt));                        // missing Alt
+  EXPECT_TRUE(combo_mods_match(0, 0));
+}
+
+TEST(ComboModsMatch, LockKeysDoNotCount) {
+  constexpr unsigned kCaps = 2, kNumLock = 16;  // WLR_MODIFIER_CAPS, WLR_MODIFIER_MOD2
+  EXPECT_TRUE(combo_mods_match(kModCtrl | kModAlt | kNumLock, kModCtrl | kModAlt));
+  EXPECT_TRUE(combo_mods_match(kModLogo | kCaps | kNumLock, kModLogo));
 }
 
 TEST(ModifierMask, ParsesNamesCaseInsensitively) {
