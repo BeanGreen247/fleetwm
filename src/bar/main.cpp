@@ -78,7 +78,7 @@ struct Bar {
   std::unique_ptr<Tray> tray;
 
   // Display text.
-  std::string clock_text = "--:--:--", cpu_text = "CPU --%", gpu_text = "GPU --%",
+  std::string clock_text = "--:--:--", cpu_text = "CPU --%", ram_text = "RAM --%", gpu_text = "GPU --%",
               disk_text = "Disk --%", vol_text = "Vol --%";
   int active_workspace = 0;
   BatteryReading battery;
@@ -95,7 +95,8 @@ struct Bar {
   bool gpu_query_running = false;
 
   // Hit rects, rebuilt on every draw.
-  Rect ws_rect[10], vol_rect, power_rect, battery_rect;
+  Rect ws_rect[10], vol_rect, power_rect, battery_rect, ram_rect;
+  int tooltip_for = 0;  // 1 = battery, 2 = RAM
   std::vector<Rect> tray_rects;
   int hover_power = 0;
   std::unique_ptr<Tooltip> tooltip;
@@ -134,7 +135,7 @@ struct Bar {
   double right_total(Metrics& m) {
     double t = 0;
     int children = 0;
-    for (const std::string* s : {&cpu_text, &gpu_text, &disk_text, &vol_text}) {
+    for (const std::string* s : {&cpu_text, &ram_text, &gpu_text, &disk_text, &vol_text}) {
       t += m.text_w(*s) + kStatPad;
       ++children;
     }
@@ -419,6 +420,7 @@ struct Bar {
       rx += tw + kStatPad + kRightGap;
     };
     stat(cpu_text, nullptr);
+    stat(ram_text, &ram_rect);
     stat(gpu_text, nullptr);
     stat(disk_text, nullptr);
     stat(vol_text, &vol_rect);
@@ -594,6 +596,55 @@ struct Bar {
     return false;
   }
 
+  struct MemInfo {
+    unsigned long long total = 0, available = 0, cached = 0, buffers = 0, swap_total = 0, swap_free = 0;
+  };
+  static bool read_meminfo(MemInfo* m) {
+    std::FILE* f = std::fopen("/proc/meminfo", "r");
+    if (!f) return false;
+    char line[128];
+    while (std::fgets(line, sizeof line, f)) {
+      unsigned long long v = 0;
+      if (std::sscanf(line, "MemTotal: %llu", &v) == 1) m->total = v;
+      else if (std::sscanf(line, "MemAvailable: %llu", &v) == 1) m->available = v;
+      else if (std::sscanf(line, "Cached: %llu", &v) == 1) m->cached = v;
+      else if (std::sscanf(line, "Buffers: %llu", &v) == 1) m->buffers = v;
+      else if (std::sscanf(line, "SwapTotal: %llu", &v) == 1) m->swap_total = v;
+      else if (std::sscanf(line, "SwapFree: %llu", &v) == 1) m->swap_free = v;
+    }
+    std::fclose(f);
+    return m->total > 0;
+  }
+
+  bool update_ram() {
+    MemInfo m;
+    if (!read_meminfo(&m)) return set_if_changed(ram_text, "RAM N/A");
+    const int pct = static_cast<int>(100.0 * static_cast<double>(m.total - m.available) /
+                                         static_cast<double>(m.total) + 0.5);
+    return set_if_changed(ram_text, "RAM " + std::to_string(pct) + "%");
+  }
+
+  static std::string fmt_kib(unsigned long long kib) {
+    char b[32];
+    if (kib >= 1024ull * 1024) std::snprintf(b, sizeof b, "%.1f GiB", kib / 1048576.0);
+    else std::snprintf(b, sizeof b, "%llu MiB", kib / 1024);
+    return b;
+  }
+
+  std::string ram_tooltip_text() {
+    MemInfo m;
+    if (!read_meminfo(&m)) return "Memory info unavailable";
+    const unsigned long long used = m.total - m.available;
+    std::string t = "Memory: " + fmt_kib(used) + " used of " + fmt_kib(m.total) + "\n" +
+                    "Available: " + fmt_kib(m.available) + "\n" +
+                    "Cache + buffers: " + fmt_kib(m.cached + m.buffers);
+    if (m.swap_total > 0)
+      t += "\nSwap: " + fmt_kib(m.swap_total - m.swap_free) + " of " + fmt_kib(m.swap_total);
+    else
+      t += "\nSwap: none";
+    return t;
+  }
+
   bool update_disk() {
     struct statvfs v {};
     if (statvfs("/", &v) != 0) return set_if_changed(disk_text, "Disk N/A");
@@ -655,6 +706,7 @@ struct Bar {
 
   void stats_tick() {
     bool ch = update_cpu();
+    ch |= update_ram();
     ch |= update_gpu();
     if (ch) {
       if (island) apply_layout();  // text widths changed, island width follows
@@ -753,15 +805,19 @@ struct Bar {
       hover_power = h;
       redraw();
     }
-    const bool over_battery = battery_rect.hit(x, y);
-    if (!over_battery) {
+    const int want = battery_rect.hit(x, y) ? 1 : ram_rect.hit(x, y) ? 2 : 0;
+    if (want != tooltip_for) {
       hide_tooltip();
-    } else if (!tooltip && !tooltip_timer) {
-      const double cx = battery_rect.x + battery_rect.w / 2;
-      tooltip_timer = app.add_oneshot(500, [this, cx] {
+      tooltip_for = want;
+    }
+    if (want && !tooltip && !tooltip_timer) {
+      const Rect r = want == 1 ? battery_rect : ram_rect;
+      const double cx = r.x + r.w / 2;
+      tooltip_timer = app.add_oneshot(400, [this, cx, want] {
         tooltip_timer = 0;
         const int left = island ? island_left() : layout_style == BarLayout::Capsules ? kCapsuleSideMargin : 0;
-        tooltip = std::make_unique<Tooltip>(app, pal, battery_tooltip_text(), left + static_cast<int>(cx),
+        tooltip = std::make_unique<Tooltip>(app, pal, want == 1 ? battery_tooltip_text() : ram_tooltip_text(),
+                                            left + static_cast<int>(cx),
                                             (island ? kIslandTopMargin : layout_style == BarLayout::Capsules ? kCapsuleTopMargin : 0) + kBarHeight + 4);
       });
     }
@@ -832,6 +888,7 @@ int main() {
 
   B.init_gpu();
   B.update_disk();
+  B.update_ram();
   B.battery_dir = find_battery_dir();
   if (const char* d = std::getenv("FLEETWM_BATTERY_DIR")) B.battery_dir = d;  // test hook
   B.update_battery();

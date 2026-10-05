@@ -846,13 +846,30 @@ int watch_dirs(App& app, const std::vector<std::string>& dirs, std::function<voi
 }
 
 Tooltip::Tooltip(App& app, const Palette& pal, const std::string& text, int x, int y) {
-  // Measure with a scratch context to size the surface.
+  // Multi-line: '\n' separates lines. Measure with a scratch context.
+  std::vector<std::string> lines;
+  {
+    size_t start = 0;
+    for (;;) {
+      const size_t nl = text.find('\n', start);
+      lines.push_back(text.substr(start, nl == std::string::npos ? nl : nl - start));
+      if (nl == std::string::npos) break;
+      start = nl + 1;
+    }
+  }
   cairo_surface_t* cs = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 1, 1);
   cairo_t* cr = cairo_create(cs);
-  const TextExtents te = measure_text(cr, text, 13);
+  double max_w = 0, asc = 0;
+  for (const std::string& l : lines) {
+    const TextExtents te = measure_text(cr, l, 13);
+    max_w = std::max(max_w, te.width);
+    asc = std::max(asc, te.ascent);
+  }
   cairo_destroy(cr);
   cairo_surface_destroy(cs);
-  const int w = static_cast<int>(std::ceil(te.width)) + 16, h = static_cast<int>(std::ceil(te.height)) + 10;
+  constexpr int kLineH = 18;
+  const int w = static_cast<int>(std::ceil(max_w)) + 16;
+  const int h = static_cast<int>(lines.size()) * kLineH + 8;
 
   Surface::Config cfg;
   cfg.layer = ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY;
@@ -867,14 +884,15 @@ Tooltip::Tooltip(App& app, const Palette& pal, const std::string& text, int x, i
   surface_ = std::make_unique<Surface>(app, cfg);
   surface_->set_input_passthrough();
   const Palette p = pal;
-  surface_->on_draw = [p, text, te](cairo_t* c, int sw, int sh) {
+  surface_->on_draw = [p, lines, asc](cairo_t* c, int sw, int sh) {
     rounded_rect(c, 0.5, 0.5, sw - 1, sh - 1, p.rounded ? 6 : 0);
     set_source(c, p.bg_secondary);
     cairo_fill_preserve(c);
     set_source(c, p.fg_secondary);
     cairo_set_line_width(c, 1);
     cairo_stroke(c);
-    draw_text(c, text, 8, (sh - te.height) / 2.0 + te.ascent, 13, p.fg_primary);
+    for (size_t k = 0; k < lines.size(); ++k)
+      draw_text(c, lines[k], 8, 4 + k * kLineH + (kLineH + asc) / 2.0 - 3, 13, p.fg_primary);
   };
 }
 
