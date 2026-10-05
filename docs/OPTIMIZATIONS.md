@@ -47,7 +47,7 @@ something visible changed). The compositor is unchanged for applications: GTK
 | bar | 72 -> 33 | 147 MB -> 12.1 MB | 105 -> 6.2 MB | 25 ticks/30 s -> 1 |
 | audiomixer | GTK -> 28 | n/a -> 11 MB | | 0 |
 | settings | 72 -> 28 | 75 MB -> 15 MB | 61 -> 5.9 MB | 0 -> 0 |
-| greeter-login | GTK -> 27 | 62 MB -> see below | | |
+| greeter-login | GTK -> 30 | 62 MB -> 17 MB | | 0 |
 | compositor | 99 -> 50 | | | |
 
 Resident shell memory (bar + wallpaper) went from about 260 MB to about 17 MB.
