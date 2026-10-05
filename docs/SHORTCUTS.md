@@ -42,4 +42,4 @@ done with the mouse:
 ## Changing keys
 
 `~/.config/fleetwm/keybinds.toml` (per user). Key names are xkb keysym names (`Return`, `d`,
-`Q`, `question`, `F5`). Changes apply after the next login.
+`Q`, `question`, `F5`). Changes apply right away.

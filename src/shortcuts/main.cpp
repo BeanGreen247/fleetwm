@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <memory>
 #include <string>
@@ -87,7 +88,7 @@ struct Shortcuts {
     ui.same_line();
     if (ui.button("Shortcut reference")) spawn_detached({"xdg-open", kShortcutsDocUrl});
     ui.newline();
-    ui.label("Change any key in ~/.config/fleetwm/keybinds.toml (it applies after the next login).", true);
+    ui.label("Change any key in ~/.config/fleetwm/keybinds.toml (it applies right away).", true);
     ui.newline();
     ui.space(6);
 
@@ -159,6 +160,12 @@ int main() {
     S.redraw();
   };
   S.surface->on_closed = [&S] { S.app.quit(); };
+
+  // Remapped keys and layout changes show up without reopening the window.
+  kit::watch_dirs(S.app, {std::filesystem::path(user_config_path()).parent_path().string()}, [&S] {
+    S.reload();
+    S.redraw();
+  });
 
   sigset_t mask;
   sigemptyset(&mask);
