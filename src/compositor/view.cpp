@@ -26,11 +26,6 @@ namespace {
 // resize_border() -- pinned+focused gets its own distinct color so it
 // doesn't read as merely "pinned" or merely "focused".
 constexpr float kNoBorderColor[4] = {0.0f, 0.0f, 0.0f, 0.0f};  // fully transparent
-// Fallback if a theme_config() color string is somehow unparseable --
-// should never actually be hit since every ThemeConfig color field's own
-// default is a valid hex string, but parse_hex_color() leaves its output
-// untouched on failure and this is what that untouched buffer starts as.
-constexpr float kBorderColorFallback[4] = {0.9f, 0.9f, 0.95f, 1.0f};  // near-white
 
 }  // namespace
 
@@ -173,21 +168,11 @@ void View::set_fullscreen(bool fullscreen_) {
 
 void View::resize_border() {
   int thickness = border_thickness();
-  const float* color;
-  float themed_color[4] = {kBorderColorFallback[0], kBorderColorFallback[1],
-                            kBorderColorFallback[2], kBorderColorFallback[3]};
-  if (pinned && focused) {
-    parse_hex_color(server->theme_config().pinned_focused_border_color, themed_color);
-    color = themed_color;
-  } else if (pinned) {
-    parse_hex_color(server->theme_config().pinned_border_color, themed_color);
-    color = themed_color;
-  } else if (focused) {
-    parse_hex_color(server->theme_config().focus_border_color, themed_color);
-    color = themed_color;
-  } else {
-    color = kNoBorderColor;
-  }
+  const Server::BorderColors& colors = server->border_colors();
+  const float* color = pinned && focused ? colors.pinned_focused
+                       : pinned          ? colors.pinned
+                       : focused         ? colors.focus
+                                         : kNoBorderColor;
   wlr_scene_rect_set_color(border_top, color);
   wlr_scene_rect_set_color(border_bottom, color);
   wlr_scene_rect_set_color(border_left, color);
