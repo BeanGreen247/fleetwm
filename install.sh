@@ -103,14 +103,6 @@ echo "==> Setting system default locale to C.UTF-8"
 # glibc system with no locale-gen step required.
 sudo update-locale LANG=C.UTF-8 LC_ALL=C.UTF-8 LANGUAGE=
 
-echo "==> Building SceneFX (rounded window corners and shadows)"
-# Optional: the compositor falls back to square windows if this fails, so a
-# network or build problem must not abort the whole install.
-sudo apt-get install -y curl libegl-dev libgles-dev libdrm-dev libpixman-1-dev
-if ! pkg-config --exists scenefx-0.2; then
-  sh "${SCRIPT_DIR}/scripts/build-scenefx.sh" || echo "warning: SceneFX build failed; windows will stay square"
-fi
-
 echo "==> Building with PGO (profile-guided optimization)"
 # Every install now goes through the full instrumented-build ->
 # synthetic-training -> profile-optimized-rebuild pipeline
