@@ -33,7 +33,7 @@ for d in build-pgo build-test build; do
 done
 
 echo "==> Installing build dependencies (requires sudo)"
-sudo apt-get update
+sudo apt-get update -qq
 
 # NOTE: this is deliberately several separate `apt-get install` calls,
 # not one big backslash-continued list -- a `#` comment on its own line
@@ -160,6 +160,11 @@ if [[ -f /usr/local/share/wayland-sessions/fleetwm.desktop ]]; then
   sudo install -D -m 644 /usr/local/share/wayland-sessions/fleetwm.desktop \
     /usr/share/wayland-sessions/fleetwm.desktop
 fi
+
+echo "==> Letting the compositor run at higher priority (smoother, lower input delay)"
+# Members of the video group may raise their priority to nice -10; the compositor asks for it.
+printf '# Fleetwm: lets the compositor run at higher priority\n@video - nice -10\n' |
+  sudo tee /etc/security/limits.d/fleetwm.conf >/dev/null
 
 echo "==> Recording source checkout path for 'fleetwm update'"
 echo "${SCRIPT_DIR}" | sudo tee /etc/fleetwm-source-path >/dev/null

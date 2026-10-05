@@ -5,12 +5,57 @@ the way. Numbers come from the `fleetwm-dev` VM (Debian 13, 2 cores, 1280x800
 virtio display) unless stated; "idle ticks" are CPU ticks (100 = 1 s) of a
 standalone process over the stated window.
 
+## How we decide: non-pessimization first
+
+This is the rule for all code and performance work here. Premature optimization
+means making code cleverer to make it faster. **Non-pessimization** is the
+opposite and the first step: do not make the code do work it never needed to do.
+Before tuning anything, remove what slows it down for no reason:
+
+- work done every frame or every event that could be done once, or only when
+  something changed (relayout, redraw, config reloads, IPC broadcasts);
+- allocations, string building and copies in hot paths; pass by reference, reuse
+  buffers, build text only when it will be shown;
+- timers and wakeups that keep a process busy while nothing happens;
+- polling where an event or a file watch already exists;
+- layers, wrappers and abstractions that only forward a call;
+- data laid out so the common case touches many cache lines (scattered pointers
+  instead of one array);
+- safety checks that are on in release builds only because nobody removed them.
+
+Order of work: first remove waste (this costs nothing and never makes code
+harder to read), then measure, then optimize only what the measurement points at.
+Always measure with the same method before and after (see the notes below), and
+record what was rejected so it is not tried again.
+
+## Release build: speed over safety (2026-10-05)
+
+The installer's build now trades security hardening for speed, on purpose.
+
+- Hardening removed: stack protector, stack-clash protection, control-flow
+  protection (`-fcf-protection=none`), `_FORTIFY_SOURCE`, full RELRO (now lazy
+  binding and `-z norelro`), and PIE (`-fno-pie -no-pie`).
+- Compiler: `-fno-plt`, `-fno-math-errno -fno-trapping-math`,
+  `-fomit-frame-pointer`, and for the profile-use stage
+  `-fprofile-partial-training` (the synthetic training run only covers part of
+  the code, so code it never ran is still optimized for speed, not size).
+- Linker: `--as-needed`, `-O1`, `--sort-common`, `-z noseparate-code` (fewer
+  pages mapped).
+- Compiler warnings and notes are switched off (`-w`, `warning_level=0`), and the
+  build prints only a progress counter; the full output is in `build-pgo.log`
+  and shown only when something fails. Unit tests print a summary only.
+- The compositor runs at nice -10 (`setpriority`), allowed for the `video` group
+  by `/etc/security/limits.d/fleetwm.conf` (PAM `pam_limits` in the greeter
+  session). Every program it starts goes back to normal priority.
+- Not used: `-ffast-math`, `-fno-exceptions`/`-fno-rtti` (toml++ and our code use
+  exceptions), static libstdc++ (more memory per process).
+
 ## Build and memory (earlier work)
 
 - Release flags: `-Db_lto=true`, `-march=native`, `-ffunction-sections
   -fdata-sections -Wl,--gc-sections`, `-fno-semantic-interposition`,
-  `-Db_ndebug=true -Dstrip=true`, full RELRO (`-Wl,-z,now`),
-  `-DG_DISABLE_ASSERT`. Check the meson buildtype after every `meson setup`:
+  `-Db_ndebug=true -Dstrip=true`, `-DG_DISABLE_ASSERT` (full RELRO was
+  removed, see the section above). Check the meson buildtype after every `meson setup`:
   a dev build silently drifted to `debugoptimized` once.
 - Unity builds for the PGO pipeline (about 32% faster build). Unity merges a
   target's `.cpp` files into one translation unit, so duplicate
@@ -26,7 +71,7 @@ standalone process over the stated window.
 - The greeter forces `WLR_RENDERER=pixman` (it only draws a login card) so
   Mesa/EGL (about 36 MB) is never mapped into the long-lived greeter process.
 - GTK clients that remain use `GSK_RENDERER=cairo` and `NO_AT_BRIDGE=1`.
-- Declined on purpose: disabling XWayland, disabling PIE, `-Ofast`,
+- Declined on purpose: disabling XWayland, `-Ofast`,
   `-fno-strict-aliasing`, software rendering for the real compositor, idle
   frame throttling (the compositor already measures 0 CPU ticks idle).
 

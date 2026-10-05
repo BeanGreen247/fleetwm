@@ -3,6 +3,9 @@
 
 #include <cstring>
 
+#include <pthread.h>
+#include <sys/resource.h>
+
 #include "server.hpp"
 #include "version.hpp"
 
@@ -18,6 +21,14 @@ int main(int argc, char** argv) {
   // jemalloc would only add ~10 MB of resident arenas per small process.
   unsetenv("LD_PRELOAD");
   unsetenv("MALLOC_CONF");
+
+  // Run ahead of ordinary processes so a busy build or browser never delays a frame or a
+  // key press. Needs the nice limit installed by install.sh (limits.d/fleetwm.conf); without
+  // it the request is refused and the compositor simply runs at normal priority.
+  if (setpriority(PRIO_PROCESS, 0, -10) == 0) {
+    // Only the compositor itself runs ahead: every program it starts goes back to normal.
+    pthread_atfork(nullptr, nullptr, [] { setpriority(PRIO_PROCESS, 0, 0); });
+  }
 
   fleetwm::Server server;
 
