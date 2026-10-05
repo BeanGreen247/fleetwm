@@ -164,3 +164,11 @@ client rewrite alone and 280 MB originally.
   0.70 reads 34%.
 - The island bar layout needs an output of at least 1366 px and was not
   visually verified on the 1280 px test VM.
+
+## Notes: rounded corners tried and dropped
+
+- Rounded window corners via SceneFX 0.2.1 worked but clipped terminal text and the prompt, so it was removed.
+  wlroots itself has no corner-radius API (0.18 through master). SceneFX also needs linking before wlroots
+  (both export `wlr_scene_*`) and a GL renderer, which costs the pixman memory saving.
+- The SIGCHLD reaper must not `waitpid(-1)`: it stole Xwayland's exit status from wlroots.
+- Known gap: XWayland is started but X11 windows are not managed (no `new_xwayland_surface` listener).
