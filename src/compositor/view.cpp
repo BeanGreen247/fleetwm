@@ -233,7 +233,9 @@ bool View::wants_titlebar() const {
   return xdg_toplevel->app_id && std::strncmp(xdg_toplevel->app_id, "dev.fleetwm.", 12) == 0;
 }
 
-int View::titlebar_height() const { return wants_titlebar() ? kTitlebarHeight : 0; }
+int View::titlebar_height() const {
+  return wants_titlebar() ? std::max(16, server->theme_config().titlebar.height) : 0;
+}
 
 void View::update_titlebar() {
   if (!wants_titlebar() || content_w <= 0) {
@@ -254,16 +256,16 @@ void View::update_titlebar() {
   // allocating: only build a std::string when something actually changed.
   const char* title = xdg_toplevel->title ? xdg_toplevel->title : xdg_toplevel->app_id;
   if (!title) title = "";
-  if (content_w == titlebar_w_ && focused == titlebar_focused_ && maximized == titlebar_max_ &&
-      hover_button == titlebar_hover_ && titlebar_title_ == title) {
+  const int height = titlebar_height();
+  if (content_w == titlebar_w_ && height == titlebar_h_ && focused == rendered_.focused &&
+      maximized == rendered_.maximized && pinned == rendered_.pinned &&
+      hover_button == rendered_.hover_button && rendered_.title == title) {
     return;
   }
   titlebar_w_ = content_w;
-  titlebar_focused_ = focused;
-  titlebar_max_ = maximized;
-  titlebar_hover_ = hover_button;
-  titlebar_title_ = title;
-  if (wlr_buffer* buffer = render_titlebar(content_w, titlebar_title_, focused, maximized, hover_button)) {
+  titlebar_h_ = height;
+  rendered_ = {title, focused, maximized, pinned, hover_button};
+  if (wlr_buffer* buffer = render_titlebar(content_w, rendered_, server->theme_config().titlebar)) {
     wlr_scene_buffer_set_buffer(titlebar, buffer);
     wlr_buffer_drop(buffer);
   }
@@ -315,7 +317,7 @@ void View::set_maximized(bool want) {
   if (maximized == want || !output || kind != Kind::XdgToplevel || !xdg_toplevel) {
     return;
   }
-  const int th = kTitlebarHeight;
+  const int th = titlebar_height();
   const int bt = std::max(border_thickness(), server->theme_config().focus_border_thickness_px);
   if (want) {
     wlr_box geo{};

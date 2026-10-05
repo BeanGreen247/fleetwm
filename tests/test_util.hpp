@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <string>
 
 namespace fleetwm::testutil {
@@ -29,6 +30,14 @@ class ScopedConfigHome : public ::testing::Test {
     ::unsetenv("XDG_CONFIG_HOME");
     std::error_code ec;
     std::filesystem::remove_all(dir_, ec);
+  }
+
+  // Writes <XDG_CONFIG_HOME>/fleetwm/<name> with `content` (creating the
+  // directory), for tests that need a hand-written config file.
+  void write_config(const std::string& name, const std::string& content) {
+    std::filesystem::create_directories(dir_ / "fleetwm");
+    std::ofstream out(dir_ / "fleetwm" / name);
+    out << content;
   }
 
   std::filesystem::path dir_;

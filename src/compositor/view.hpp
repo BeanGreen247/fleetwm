@@ -12,6 +12,7 @@ extern "C" {
 
 #include "config.h"
 #include "scene_node_owner.hpp"
+#include "titlebar.hpp"
 
 #if FLEETWM_XWAYLAND
 extern "C" {
@@ -195,7 +196,7 @@ class View {
   wlr_scene_buffer* titlebar = nullptr;
   wlr_scene_rect* grab_rect = nullptr;  // invisible ring around the window: resize handles
   int content_w = 0;                    // last known content width
-  int hover_button = -1;                // TitlebarButton under the pointer, or -1
+  int hover_button = geom::kBtnNone;   // geom::TitleButton under the pointer, or -1
 
   // Desktop layout is active in theme.toml.
   bool desktop_mode() const;
@@ -230,10 +231,8 @@ class View {
  private:
   // What the current titlebar buffer was rendered from.
   int titlebar_w_ = -1;
-  bool titlebar_focused_ = false;
-  bool titlebar_max_ = false;
-  int titlebar_hover_ = -1;
-  std::string titlebar_title_;
+  int titlebar_h_ = -1;
+  TitlebarState rendered_;
  public:
   void focus();
   void close();

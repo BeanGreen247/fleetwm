@@ -392,7 +392,7 @@ static void xdg_toplevel_surface_commit(wl_listener* listener, void*) {
 
 static void xdg_toplevel_request_move(wl_listener* listener, void*) {
   View* view = wl_container_of(listener, view, request_move);
-  if (view->server->desktop_layout() && !view->fullscreen && !view->pinned) {
+  if (view->server->desktop_layout() && !view->fullscreen) {
     view->server->begin_move(view);
   }
 }
@@ -400,7 +400,7 @@ static void xdg_toplevel_request_move(wl_listener* listener, void*) {
 static void xdg_toplevel_request_resize(wl_listener* listener, void* data) {
   View* view = wl_container_of(listener, view, request_resize);
   auto* event = static_cast<wlr_xdg_toplevel_resize_event*>(data);
-  if (view->server->desktop_layout() && !view->fullscreen && !view->pinned) {
+  if (view->server->desktop_layout() && !view->fullscreen) {
     view->server->begin_resize(view, event->edges);
   }
 }
@@ -738,8 +738,10 @@ DecorationZone decoration_zone(Server* server, View* view) {
   if (edges) return zone;
 
   if (th > 0 && ly >= bt && ly < bt + th && lx >= bt && lx < bt + view->content_w) {
-    zone.button = titlebar_button_at(view->content_w, lx - bt);
-    zone.drag = zone.button < 0;
+    const geom::TitlebarLayout layout =
+        geom::layout_titlebar(view->content_w, titlebar_metrics(server->theme_config().titlebar));
+    zone.button = geom::titlebar_button_at(layout, lx - bt, ly - bt);
+    zone.drag = zone.button == geom::kBtnNone;
   }
   return zone;
 }
@@ -851,16 +853,18 @@ void server_cursor_button(wl_listener* listener, void* data) {
         const DecorationZone zone = decoration_zone(server, view);
         if (zone.edges) {
           server->begin_resize(view, zone.edges);
-        } else if (zone.button == kButtonClose) {
+        } else if (zone.button == geom::kBtnClose) {
           view->close();
-        } else if (zone.button == kButtonMinimize) {
+        } else if (zone.button == geom::kBtnMinimize) {
           server->minimize_view(view);
-        } else if (zone.button == kButtonMaximize) {
+        } else if (zone.button == geom::kBtnPin) {
+          view->set_pinned(!view->pinned);
+        } else if (zone.button == geom::kBtnMaximize) {
           server->toggle_maximize(view);
         } else if (zone.drag) {
           if (server->is_double_click(view, event->time_msec)) {
             server->toggle_maximize(view);
-          } else if (!view->pinned && !view->fullscreen) {
+          } else if (!view->fullscreen) {
             server->begin_move(view);
           }
         }
@@ -1642,7 +1646,7 @@ void Server::update_grab() {
       view->set_maximized(false);
       const int outer_w = view->restore_box.width + 2 * view->border_thickness();
       grab_box_.x = static_cast<int>(grab_cursor_x_ - ratio * outer_w);
-      grab_box_.y = static_cast<int>(grab_cursor_y_ - kTitlebarHeight / 2);
+      grab_box_.y = static_cast<int>(grab_cursor_y_ - view->titlebar_height() / 2);
       grab_unmaximize_pending_ = false;
     }
     int x = static_cast<int>(grab_box_.x + dx), y = static_cast<int>(grab_box_.y + dy);
@@ -1688,7 +1692,7 @@ void Server::set_hover_view(View* view) {
 }
 
 void Server::toggle_maximize(View* view) {
-  if (view && !view->fullscreen && !view->pinned) {
+  if (view && !view->fullscreen) {
     view->set_maximized(!view->maximized);
   }
 }
@@ -1874,6 +1878,11 @@ void Server::reload_theme_config() {
   for (const std::unique_ptr<View>& view : views) {
     view->invalidate_titlebar();
     view->resize_border();
+  }
+  // The gap kept next to layer-shell bars depends on the layout, so the work
+  // area may have changed.
+  for (const std::unique_ptr<Output>& output : outputs) {
+    output->update_usable_area();  // also covers a changed bar gap
   }
   // gap_px lives on ThemeConfig too, so a live theme reload must re-tile
   // every output, not just refresh border rects.

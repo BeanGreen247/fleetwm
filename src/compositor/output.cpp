@@ -545,18 +545,22 @@ void Output::update_usable_area() {
     // Exclusive zone only reserves space for a surface anchored to
     // exactly one edge (spanning the perpendicular axis) -- matches the
     // wlr-layer-shell-v1 spec's own definition of exclusive_zone.
+    // The floating (capsule/island) bar of the tiling layout keeps a small gap
+    // between it and the windows; the Desktop layout's taskbar is flush with the
+    // screen edge, so windows meet it directly.
+    const int gap_px = server->desktop_layout() ? 0 : server->theme_config().bar_gap_px;
     if (anchored_top && !anchored_bottom && anchored_left && anchored_right) {
-      int reserve = static_cast<int>(exclusive_zone) + kExclusiveZoneGapPx;
+      int reserve = static_cast<int>(exclusive_zone) + gap_px;
       box.y += reserve;
       box.height -= reserve;
     } else if (anchored_bottom && !anchored_top && anchored_left && anchored_right) {
-      box.height -= static_cast<int>(exclusive_zone) + kExclusiveZoneGapPx;
+      box.height -= static_cast<int>(exclusive_zone) + gap_px;
     } else if (anchored_left && !anchored_right && anchored_top && anchored_bottom) {
-      int reserve = static_cast<int>(exclusive_zone) + kExclusiveZoneGapPx;
+      int reserve = static_cast<int>(exclusive_zone) + gap_px;
       box.x += reserve;
       box.width -= reserve;
     } else if (anchored_right && !anchored_left && anchored_top && anchored_bottom) {
-      box.width -= static_cast<int>(exclusive_zone) + kExclusiveZoneGapPx;
+      box.width -= static_cast<int>(exclusive_zone) + gap_px;
     }
   }
 
@@ -613,9 +617,10 @@ void Output::relayout() {
   // flush against the bar/screen edges with no gap at all, which is what
   // made gap_px look broken with only one window open. Clamped so a
   // large gap_px on a small output can't invert width/height negative.
-  int gap = std::max(0, server->theme_config().gap_px);
-  int outer_w = std::max(1, box.width - 2 * gap);
-  int outer_h = std::max(1, box.height - 2 * gap);
+  const int gap = std::max(0, server->theme_config().gap_px);              // between windows
+  const int edge = std::max(0, server->theme_config().outer_gap_px);       // around the tiled area
+  int outer_w = std::max(1, box.width - 2 * edge);
+  int outer_h = std::max(1, box.height - 2 * edge);
   box.x += (box.width - outer_w) / 2;
   box.y += (box.height - outer_h) / 2;
   box.width = outer_w;
@@ -633,7 +638,7 @@ void Output::relayout() {
   // left even around a grown, focused window (and gap_px == 0 means
   // grow == 0: nothing to step into).
   View* focused = focused_view(server);
-  int grow = std::min(6, std::max(0, gap - 1));
+  int grow = std::min(6, std::max(0, edge - 1));
 
   if (tiled.size() == 1) {
     tile_view(tiled[0], box.x, box.y, box.width, box.height);

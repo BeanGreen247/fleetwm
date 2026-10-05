@@ -44,6 +44,27 @@ enum class WindowLayout {
   Desktop,
 };
 
+// Where the window titlebar's buttons sit and where its title goes (Desktop
+// layout). Stored under [titlebar] in theme.toml, per user.
+enum class ButtonSide { Right, Left };
+enum class TitleAlign { Left, Center, Right };
+
+struct TitlebarConfig {
+  int height = 32;         // 20..64
+  int button_width = 38;   // 20..80
+  int button_height = 24;  // 14..height
+  ButtonSide buttons_side = ButtonSide::Right;
+  TitleAlign title_align = TitleAlign::Center;
+  bool show_pin = true;
+  bool show_minimize = true;
+  bool show_maximize = true;
+};
+
+std::string button_side_to_string(ButtonSide side);
+ButtonSide button_side_from_string(const std::string& s);
+std::string title_align_to_string(TitleAlign align);
+TitleAlign title_align_from_string(const std::string& s);
+
 struct AccentColor {
   // When auto_extract is true, `hex` holds the last-computed value (see
   // accent_extract.hpp) and is regenerated whenever the wallpaper changes.
@@ -86,7 +107,13 @@ struct ThemeConfig {
   // separately by the layer-shell exclusive zone (kExclusiveZoneGapPx in
   // output.cpp).
   int gap_px = 8;
+  // Tiling layout spacing, all in px (0..64): between neighbouring windows
+  // (gap_px above), around the whole tiled area at the screen edges, and between
+  // windows and a floating bar (the capsule/island bar).
+  int outer_gap_px = 8;
+  int bar_gap_px = 6;
   WindowLayout window_layout = WindowLayout::Tiling;
+  TitlebarConfig titlebar;
   // Adaptive render throttling (see RenderMode above). custom_fps_lock is
   // only meaningful when render_mode == Custom; clamped to [24, 5000] by
   // both the Settings spinbutton and load_theme_config().

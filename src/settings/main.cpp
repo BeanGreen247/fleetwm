@@ -774,14 +774,59 @@ struct Settings {
       ui.newline();
     }
 
+    if (config.window_layout == WindowLayout::Desktop) {
+      ui.space(4);
+      ui.section("Window titlebar");
+      TitlebarConfig& tb = config.titlebar;
+      ui.row("Titlebar height (px)");
+      if (ui.spin(&tb.height, 20, 64)) {
+        tb.button_height = std::min(tb.button_height, tb.height);
+        save_theme();
+      }
+      ui.newline();
+      ui.row("Button width (px)");
+      if (ui.spin(&tb.button_width, 20, 80)) save_theme();
+      ui.newline();
+      ui.row("Button height (px)");
+      if (ui.spin(&tb.button_height, 14, tb.height)) save_theme();
+      ui.newline();
+      ui.row("Buttons position");
+      int side = tb.buttons_side == ButtonSide::Left ? 1 : 0;
+      if (ui.segmented({"Right", "Left"}, &side)) {
+        tb.buttons_side = side == 1 ? ButtonSide::Left : ButtonSide::Right;
+        save_theme();
+      }
+      ui.newline();
+      ui.row("Title position");
+      int align = static_cast<int>(tb.title_align);
+      if (ui.segmented({"Left", "Middle", "Right"}, &align)) {
+        tb.title_align = static_cast<TitleAlign>(align);
+        save_theme();
+      }
+      ui.newline();
+      ui.row("Buttons shown");
+      if (ui.checkbox("Pin", &tb.show_pin)) save_theme();
+      if (ui.checkbox("Minimize", &tb.show_minimize)) save_theme();
+      if (ui.checkbox("Maximize", &tb.show_maximize)) save_theme();
+      ui.newline();
+      ui.space(4);
+      ui.section("Window spacing and borders");
+    }
+
     ui.row("Focus border (px)");
     if (ui.spin(&config.focus_border_thickness_px, 0, 10)) save_theme();
     ui.newline();
     ui.row("Focus border color");
     if (ui.color_button(&config.focus_border_color)) save_theme();
     ui.newline();
-    ui.row("Window gap (px)");
+    ui.row("Gap between windows (px)");
     if (ui.spin(&config.gap_px, 0, 64)) save_theme();
+    ui.newline();
+    ui.row("Gap at screen edges (px)");
+    if (ui.spin(&config.outer_gap_px, 0, 64)) save_theme();
+    ui.newline();
+    ui.row("Gap next to the bar (px)");
+    if (ui.spin(&config.bar_gap_px, 0, 64)) save_theme();
     ui.newline();
     ui.row("Pinned border (px)");
     if (ui.spin(&config.pinned_border_thickness_px, 0, 10)) save_theme();
