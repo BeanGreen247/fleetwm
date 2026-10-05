@@ -95,8 +95,8 @@ struct Bar {
   bool gpu_query_running = false;
 
   // Hit rects, rebuilt on every draw.
-  Rect ws_rect[10], vol_rect, power_rect, battery_rect, ram_rect;
-  int tooltip_for = 0;  // 1 = battery, 2 = RAM
+  Rect ws_rect[10], vol_rect, power_rect, battery_rect, ram_rect, cpu_rect, gpu_rect, disk_rect;
+  int tooltip_for = 0;  // 1 battery, 2 RAM, 3 CPU, 4 GPU, 5 disk, 6 volume
   std::vector<Rect> tray_rects;
   int hover_power = 0;
   std::unique_ptr<Tooltip> tooltip;
@@ -419,10 +419,10 @@ struct Bar {
       draw_stat(cr, m, s, rx + kStatPad / 2, base);
       rx += tw + kStatPad + kRightGap;
     };
-    stat(cpu_text, nullptr);
+    stat(cpu_text, &cpu_rect);
     stat(ram_text, &ram_rect);
-    stat(gpu_text, nullptr);
-    stat(disk_text, nullptr);
+    stat(gpu_text, &gpu_rect);
+    stat(disk_text, &disk_rect);
     stat(vol_text, &vol_rect);
 
     // Tray icons.
@@ -645,6 +645,59 @@ struct Bar {
     return t;
   }
 
+  std::string cpu_tooltip_text() {
+    std::string t;
+    double l1 = 0, l5 = 0, l15 = 0;
+    if (std::FILE* f = std::fopen("/proc/loadavg", "r")) {
+      if (std::fscanf(f, "%lf %lf %lf", &l1, &l5, &l15) == 3) {
+        char b[64];
+        std::snprintf(b, sizeof b, "Load average: %.2f  %.2f  %.2f", l1, l5, l15);
+        t = b;
+      }
+      std::fclose(f);
+    }
+    if (t.empty()) t = "Load average unavailable";
+    t += "\nCores: " + std::to_string(std::max(1L, sysconf(_SC_NPROCESSORS_ONLN)));
+    if (std::FILE* f = std::fopen("/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq", "r")) {
+      long khz = 0;
+      if (std::fscanf(f, "%ld", &khz) == 1 && khz > 0) {
+        char b[48];
+        std::snprintf(b, sizeof b, "\nCore 0 clock: %.2f GHz", khz / 1.0e6);
+        t += b;
+      }
+      std::fclose(f);
+    }
+    return t;
+  }
+
+  std::string gpu_tooltip_text() {
+    if (!gpu_path.empty()) return gpu_text + " busy\nSource: " + gpu_path;
+    if (gpu_nvidia) return gpu_text + " busy\nSource: nvidia-smi";
+    return "No GPU utilisation source found\n(software rendering or unsupported driver)";
+  }
+
+  std::string disk_tooltip_text() {
+    struct statvfs v {};
+    if (statvfs("/", &v) != 0) return "Disk usage unavailable";
+    const unsigned long long fr = v.f_frsize ? v.f_frsize : v.f_bsize;
+    const unsigned long long total = v.f_blocks * fr / 1024, free_b = v.f_bavail * fr / 1024;
+    return "Root filesystem (/)\nUsed: " + fmt_kib(total - v.f_bfree * fr / 1024) + " of " + fmt_kib(total) +
+           "\nFree: " + fmt_kib(free_b);
+  }
+
+  std::string vol_tooltip_text() { return vol_text + "\nClick to open the audio mixer"; }
+
+  std::string tooltip_text(int kind) {
+    switch (kind) {
+      case 1: return battery_tooltip_text();
+      case 2: return ram_tooltip_text();
+      case 3: return cpu_tooltip_text();
+      case 4: return gpu_tooltip_text();
+      case 5: return disk_tooltip_text();
+      default: return vol_tooltip_text();
+    }
+  }
+
   bool update_disk() {
     struct statvfs v {};
     if (statvfs("/", &v) != 0) return set_if_changed(disk_text, "Disk N/A");
@@ -805,18 +858,21 @@ struct Bar {
       hover_power = h;
       redraw();
     }
-    const int want = battery_rect.hit(x, y) ? 1 : ram_rect.hit(x, y) ? 2 : 0;
+    const Rect* rects[] = {&battery_rect, &ram_rect, &cpu_rect, &gpu_rect, &disk_rect, &vol_rect};
+    int want = 0;  // kind = index + 1
+    for (int i = 0; i < 6; ++i)
+      if (rects[i]->hit(x, y)) want = i + 1;
     if (want != tooltip_for) {
       hide_tooltip();
       tooltip_for = want;
     }
     if (want && !tooltip && !tooltip_timer) {
-      const Rect r = want == 1 ? battery_rect : ram_rect;
+      const Rect r = *rects[want - 1];
       const double cx = r.x + r.w / 2;
       tooltip_timer = app.add_oneshot(400, [this, cx, want] {
         tooltip_timer = 0;
         const int left = island ? island_left() : layout_style == BarLayout::Capsules ? kCapsuleSideMargin : 0;
-        tooltip = std::make_unique<Tooltip>(app, pal, want == 1 ? battery_tooltip_text() : ram_tooltip_text(),
+        tooltip = std::make_unique<Tooltip>(app, pal, tooltip_text(want),
                                             left + static_cast<int>(cx),
                                             (island ? kIslandTopMargin : layout_style == BarLayout::Capsules ? kCapsuleTopMargin : 0) + kBarHeight + 4);
       });
