@@ -87,9 +87,14 @@ that opens with Super+/.
 
 ## Login screen
 
-Fleetwm has an optional login screen, `fleetwm-greet`. It is installed but off by default. See
-[docs/GREETER.md](docs/GREETER.md) to turn it on. You can also just use your normal display
-manager.
+The installer turns on the Fleetwm login screen (`fleetwm-greet`) for the first text console
+(tty1). Reboot to see it, or start it right away with
+`sudo systemctl start fleetwm-greeter@tty1.service`. Ctrl+Alt+F2 and up still give you a normal
+text login if you ever need one.
+
+It is skipped if a display manager (GDM, SDDM, LightDM) is already enabled, in which case pick
+Fleetwm from that login screen's session list. Set `FLEETWM_NO_GREETER=1` when running the
+installer to skip it. To switch it off later, see [docs/GREETER.md](docs/GREETER.md).
 
 ## More documentation
 
