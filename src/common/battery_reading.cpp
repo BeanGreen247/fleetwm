@@ -68,6 +68,26 @@ bool ac_online(const std::string& supply_dir) {
   return any_mains ? online : true;
 }
 
+BatteryText describe_battery(const BatteryReading& r, bool on_ac) {
+  if (!r.available) return {on_ac ? "On AC power" : "No battery", ""};
+  const bool full = !r.charging && on_ac && r.hours_remaining == 0.0;
+  BatteryText t;
+  t.headline = std::to_string(r.percent) + "% - ";
+  t.headline += r.charging ? "charging" : full ? "fully charged" : on_ac ? "plugged in, not charging" : "on battery";
+  if (full) {
+    t.detail = "Time left: not applicable (full)";
+  } else if (r.hours_remaining > 0.0) {
+    const int mins = static_cast<int>(r.hours_remaining * 60.0 + 0.5);
+    t.detail = std::to_string(mins / 60) + "h " + std::to_string(mins % 60) + "m " +
+               (r.charging ? "until full" : "remaining");
+  } else if (!r.charging && on_ac) {
+    t.detail = "Time left: not discharging";
+  } else {
+    t.detail = std::string(r.charging ? "Time until full" : "Time remaining") + ": calculating...";
+  }
+  return t;
+}
+
 namespace battery_internal {
 
 BatteryReading read_battery_reading(const std::string& battery_dir) {

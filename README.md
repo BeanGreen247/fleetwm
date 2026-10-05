@@ -67,7 +67,7 @@ edges and next to the bar can be changed in Settings.
 - Tap the Super (Windows) key, or click the start button, to open the start menu.
 - There are several workspaces here too: numbered buttons on the taskbar (Settings sets how many are shown), plus the keys below. The taskbar lists the windows of the current workspace.
 - Switching from Tiling to Desktop keeps your windows where they were.
-- The battery shows its percentage in the bar. Hover it to see how much time is left.
+- The battery shows its percentage in the bar. Hover it to see how much time is left; click it (or the plug icon on a desktop) to open Settings -> Power, where you set when the display turns off and when the computer sleeps, separately for mains power and battery.
 
 Shortcuts in this layout (none of the Alt shortcuts above work here):
 

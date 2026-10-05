@@ -22,6 +22,8 @@ fleetwm_test_sources = files(
   'test_window_list.cpp',
   'test_shortcut_list.cpp',
   'test_version.cpp',
+  'test_power_config.cpp',
+  'test_settings_pages.cpp',
 )
 
 fleetwm_unit_tests = executable(

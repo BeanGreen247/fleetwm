@@ -9,6 +9,7 @@ extern "C" {
 #include <wlr/types/wlr_compositor.h>
 #include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_cursor_shape_v1.h>
+#include <wlr/types/wlr_idle_inhibit_v1.h>
 #include <wlr/types/wlr_data_device.h>
 #include <wlr/types/wlr_layer_shell_v1.h>
 #include <wlr/types/wlr_output_layout.h>
@@ -33,6 +34,7 @@ extern "C" {
 #include <list>
 
 #include "output_config.hpp"
+#include "power_config.hpp"
 #include <memory>
 #include <vector>
 
@@ -172,6 +174,16 @@ class Server {
   void set_hover_view(View* view);
   void toggle_maximize(View* view);
   void minimize_view(View* view);
+
+  // ---- idle: display off and sleep (Settings -> Power) ----
+  void init_idle();
+  // Call on every key press, pointer move or click: restarts the idle clock and wakes
+  // the displays if they were blanked.
+  void note_activity();
+  void reload_power_config();
+  void on_idle_timer();
+  void set_displays_blanked(bool blanked);
+  bool displays_blanked() const { return displays_blanked_; }
 
   // ---- keyboard window management (cycling, snapping, workspaces, screens) ----
   // Alt+Tab-style cycling in most-recently-used order. `hold_mask` is the modifier
@@ -470,6 +482,15 @@ class Server {
   wlr_buffer* fallback_cursor_ = nullptr;  // built-in arrow, used when no cursor theme is installed
   int fallback_hotspot_x_ = 0, fallback_hotspot_y_ = 0;
   const char* cursor_name_ = nullptr;  // last xcursor name set by set_cursor_name()
+  PowerConfig power_config_;
+  wl_event_source* idle_timer_ = nullptr;
+  std::chrono::steady_clock::time_point last_input_;
+  bool displays_blanked_ = false;
+  wlr_idle_inhibit_manager_v1* idle_inhibit_manager_ = nullptr;
+  wl_listener new_idle_inhibitor_{};
+  int idle_inhibitors_ = 0;
+  void arm_idle_timer(long seconds_from_now);
+  friend int idle_timer_cb(void* data);
   uint32_t next_view_id_ = 1;
   std::vector<View*> hidden_by_show_desktop_;
   std::vector<View*> cycle_order_;  // snapshot taken when an Alt+Tab cycle starts

@@ -815,6 +815,7 @@ static void process_cursor_motion(Server* server, uint32_t time_msec) {
 
 void server_cursor_motion(wl_listener* listener, void* data) {
   Server* server = wl_container_of(listener, server, cursor_motion_);
+  server->note_activity();
   auto* event = static_cast<wlr_pointer_motion_event*>(data);
   wlr_cursor_move(server->cursor_, &event->pointer->base, event->delta_x, event->delta_y);
   process_cursor_motion(server, event->time_msec);
@@ -822,6 +823,7 @@ void server_cursor_motion(wl_listener* listener, void* data) {
 
 void server_cursor_motion_absolute(wl_listener* listener, void* data) {
   Server* server = wl_container_of(listener, server, cursor_motion_absolute_);
+  server->note_activity();
   auto* event = static_cast<wlr_pointer_motion_absolute_event*>(data);
   wlr_cursor_warp_absolute(server->cursor_, &event->pointer->base, event->x, event->y);
   process_cursor_motion(server, event->time_msec);
@@ -829,6 +831,7 @@ void server_cursor_motion_absolute(wl_listener* listener, void* data) {
 
 void server_cursor_button(wl_listener* listener, void* data) {
   Server* server = wl_container_of(listener, server, cursor_button_);
+  server->note_activity();
   auto* event = static_cast<wlr_pointer_button_event*>(data);
 
   if (event->state != WL_POINTER_BUTTON_STATE_PRESSED) {
@@ -896,6 +899,7 @@ void server_cursor_button(wl_listener* listener, void* data) {
 
 void server_cursor_axis(wl_listener* listener, void* data) {
   Server* server = wl_container_of(listener, server, cursor_axis_);
+  server->note_activity();
   auto* event = static_cast<wlr_pointer_axis_event*>(data);
   wlr_seat_pointer_notify_axis(server->seat(), event->time_msec, event->orientation,
                                 event->delta, event->delta_discrete, event->source,
@@ -1388,6 +1392,8 @@ bool Server::init() {
     server->apply_cursor_shape(event->seat_client, wlr_cursor_shape_v1_name(event->shape));
   };
   wl_signal_add(&cursor_shape_manager_->events.request_set_shape, &request_set_shape_);
+
+  init_idle();
 
   virtual_pointer_manager_ = wlr_virtual_pointer_manager_v1_create(display_);
   new_virtual_pointer_.notify = server_new_virtual_pointer;
@@ -2071,6 +2077,7 @@ int server_theme_watch_readable(int fd, uint32_t, void* data) {
   bool got_theme_event = false;
   bool got_default_apps_event = false;
   bool got_keybinds_event = false;
+  bool got_power_event = false;
   ssize_t n;
   while ((n = read(fd, buf, sizeof(buf))) > 0) {
     ssize_t offset = 0;
@@ -2082,6 +2089,8 @@ int server_theme_watch_readable(int fd, uint32_t, void* data) {
         got_default_apps_event = true;
       } else if (event->len > 0 && std::strcmp(event->name, "keybinds.toml") == 0) {
         got_keybinds_event = true;
+      } else if (event->len > 0 && std::strcmp(event->name, "power.toml") == 0) {
+        got_power_event = true;
       }
       offset += static_cast<ssize_t>(sizeof(struct inotify_event)) + event->len;
     }
@@ -2094,6 +2103,9 @@ int server_theme_watch_readable(int fd, uint32_t, void* data) {
   }
   if (got_keybinds_event) {
     server->reload_keybinds_config();
+  }
+  if (got_power_event) {
+    server->reload_power_config();
   }
   return 0;
 }
