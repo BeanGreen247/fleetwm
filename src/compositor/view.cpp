@@ -302,6 +302,20 @@ void View::snap_to(geom::SnapZone zone) {
   refit_snapped();
 }
 
+void View::place_outer(const geom::Box& outer) {
+  if (!output || !xdg_toplevel) {
+    return;
+  }
+  snap_zone = geom::SnapZone::None;  // an explicit placement replaces any earlier snap
+  const int bt = border_thickness();
+  wlr_scene_node_set_position(&container_tree->node, outer.x, outer.y);
+  const int w = std::max(1, outer.w - 2 * bt), h = std::max(1, outer.h - titlebar_height() - 2 * bt);
+  wlr_xdg_toplevel_set_size(xdg_toplevel, w, h);
+  last_requested_content_w = w;
+  last_requested_content_h = h;
+  resize_border();
+}
+
 void View::refit_snapped() {
   if (snap_zone == geom::SnapZone::None || !output || !xdg_toplevel) {
     return;

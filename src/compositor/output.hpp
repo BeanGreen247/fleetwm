@@ -93,6 +93,9 @@ class Output {
   // Desktop layout: after the work area changes (taskbar moved/resized), pull
   // floating windows back inside it and refit maximized ones.
   void fit_floating_views();
+  // Switching to the Desktop layout: put every tiled window where tiling had it
+  // (master left half, stack on the right, no gaps), as snapped windows.
+  void snap_tiled_windows();
 
   // Switches to workspace `index` (0-9), toggles scene-tree visibility per
   // view, and re-tiles the newly-active workspace via relayout().

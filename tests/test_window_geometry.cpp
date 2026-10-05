@@ -478,3 +478,70 @@ TEST(ExclusiveEdge, AmbiguousAnchorsReserveNothing) {
   EXPECT_EQ(exclusive_edge(true, true, false, false), BarEdge::None);     // spans x but no vertical edge
   EXPECT_EQ(exclusive_edge(false, false, true, true), BarEdge::None);
 }
+
+// ---- tile_boxes / tile_zones ----------------------------------------------------
+
+namespace {
+const Box kArea{0, 40, 1280, 721};  // odd height on purpose
+}
+
+TEST(TileBoxes, NoWindowsNoBoxes) {
+  EXPECT_TRUE(tile_boxes(kArea, 0).empty());
+  EXPECT_TRUE(tile_zones(0).empty());
+}
+
+TEST(TileBoxes, OneWindowFillsTheArea) {
+  EXPECT_EQ(tile_boxes(kArea, 1), (std::vector<Box>{kArea}));
+}
+
+TEST(TileBoxes, MasterTakesTheLeftHalf) {
+  const auto b = tile_boxes(kArea, 4);
+  EXPECT_EQ(b[0], (Box{0, 40, 640, 721}));
+}
+
+TEST(TileBoxes, StackSharesTheRightHalfAndTilesExactly) {
+  for (size_t n = 2; n <= 9; ++n) {
+    const auto b = tile_boxes(kArea, n);
+    ASSERT_EQ(b.size(), n);
+    int y = kArea.y;
+    for (size_t i = 1; i < n; ++i) {
+      EXPECT_EQ(b[i].x, 640) << n;
+      EXPECT_EQ(b[i].w, 640) << n;
+      EXPECT_EQ(b[i].y, y) << n;
+      y += b[i].h;
+    }
+    EXPECT_EQ(y, kArea.y + kArea.h) << "stack must end at the bottom for n=" << n;
+  }
+}
+
+TEST(TileBoxes, StackWindowsAreNearlyEqualHeight) {
+  const auto b = tile_boxes(kArea, 4);  // 3 stacked in 721px
+  EXPECT_EQ(b[1].h, 240);
+  EXPECT_EQ(b[2].h, 240);
+  EXPECT_EQ(b[3].h, 241);  // the last one takes the remainder
+}
+
+TEST(TileBoxes, OddWidthStillCoversTheArea) {
+  const Box a{5, 5, 1001, 500};
+  const auto b = tile_boxes(a, 2);
+  EXPECT_EQ(b[0].x + b[0].w, b[1].x);
+  EXPECT_EQ(b[1].x + b[1].w, a.x + a.w);
+}
+
+TEST(TileZones, MatchTheSnapBoxesForUpToThreeWindows) {
+  for (size_t n = 1; n <= 3; ++n) {
+    const auto zones = tile_zones(n);
+    const auto boxes = tile_boxes(kArea, n);
+    ASSERT_EQ(zones.size(), n);
+    for (size_t i = 0; i < n; ++i)
+      EXPECT_EQ(snap_box(zones[i], kArea), boxes[i]) << "n=" << n << " i=" << i;
+  }
+}
+
+TEST(TileZones, MoreThanThreeWindowsHaveNoZones) {
+  for (size_t n : {4u, 5u, 12u}) {
+    const auto zones = tile_zones(n);
+    ASSERT_EQ(zones.size(), n);
+    for (SnapZone z : zones) EXPECT_EQ(z, SnapZone::None);
+  }
+}

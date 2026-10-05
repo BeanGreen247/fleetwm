@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 // Pure geometry used by the Desktop (floating) window layout: where a pointer
 // press on a window counts as a resize handle, how a resize drag changes a
@@ -137,6 +138,20 @@ enum class BarEdge { None, Top, Bottom, Left, Right };
 // perpendicular edges (a full-width bar). Anything else (unanchored overlays,
 // two adjacent edges, all four) reserves nothing.
 BarEdge exclusive_edge(bool left, bool right, bool top, bool bottom);
+
+// ---- tiled arrangement as snapped windows --------------------------------
+
+// Where the tiling layout's master/stack arrangement puts `count` windows in
+// `area` when there are no gaps: one window fills the area; otherwise the first
+// (master) takes the left half and the rest share the right half top to bottom,
+// the last one absorbing any leftover pixels. Used when switching to the Desktop
+// layout so windows stay where they were tiled.
+std::vector<Box> tile_boxes(const Box& area, size_t count);
+
+// The snap zone equivalent of each box from tile_boxes() for up to three
+// windows (full / left+right / left+top-right+bottom-right); SnapZone::None for
+// every window when there are more, since the stack then has no matching zone.
+std::vector<SnapZone> tile_zones(size_t count);
 
 // How window buttons share `avail` px of a horizontal taskbar: each button is
 // `bw` wide (between min_w and max_w, shrinking as windows are added) with `gap`
