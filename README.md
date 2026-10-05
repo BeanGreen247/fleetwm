@@ -128,7 +128,7 @@ installer to skip it. To switch it off later, see [docs/GREETER.md](docs/GREETER
 - [Shortcuts](docs/SHORTCUTS.md)
 - [Building, testing and how it is put together](docs/DEVELOPMENT.md)
 - [The original feature list](docs/FEATURES.md)
-- [Hardware it has been tried on](docs/HARDWARE.md)
+- [Hardware it has been tried on](docs/HARDWARE.md) (including a Celeron laptop used as the real-hardware testing bed)
 - [Memory and speed notes](docs/OPTIMIZATIONS.md)
 - [Design decisions](docs/adr)
 
