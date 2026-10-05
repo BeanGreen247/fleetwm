@@ -7,6 +7,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/install-stats.sh
+source "${SCRIPT_DIR}/scripts/install-stats.sh"
 # scripts/build-pgo-auto.sh (invoked below, see "Building with PGO")
 # always builds into build-pgo/, not build/ -- every later reference to
 # BUILD_DIR in this script (recording the update path, checking for the
@@ -52,6 +54,7 @@ if [[ "${ID:-}" == "debian" ]]; then
   fi
 fi
 
+stats_phase_start deps
 echo "==> Installing build dependencies (requires sudo)"
 sudo apt-get update -qq
 
@@ -65,7 +68,7 @@ sudo apt-get update -qq
 # not found" -- fatal here since `set -euo pipefail` is on. Confirmed
 # this the hard way: an earlier version of this file had exactly that
 # shape and would have failed a truly fresh install.
-sudo apt-get install -y \
+apt_install \
   build-essential meson ninja-build pkg-config git \
   libwlroots-0.18-dev wayland-protocols libwayland-dev \
   libinput-dev libdrm-dev libxkbcommon-dev libpixman-1-dev \
@@ -79,11 +82,11 @@ sudo apt-get install -y \
 # launcher, audio mixer) draw with cairo and decode images with libpng /
 # libjpeg / libwebp (SVG is handled by the vendored nanosvg); fontconfig
 # resolves cairo's "Inter" family (it falls back to the system sans when missing), so install Inter plus a default font
-sudo apt-get install -y libcairo2-dev libpng-dev libjpeg-dev libwebp-dev fonts-inter fonts-dejavu-core
+apt_install libcairo2-dev libpng-dev libjpeg-dev libwebp-dev fonts-inter fonts-dejavu-core
 # A mouse cursor theme. Without one there is no pointer image to draw (the compositor
 # has a built-in fallback arrow, but apps load their own); best effort, since the
 # package name differs between distributions.
-sudo apt-get install -y dmz-cursor-theme || echo "warning: no cursor theme package installed; the built-in pointer will be used" 
+apt_install dmz-cursor-theme || echo "warning: no cursor theme package installed; the built-in pointer will be used" 
 
 # Graphics drivers (Mesa) and Vulkan. The compositor renders with GLES2 and falls back to
 # software when no GPU driver loads, so the Mesa drivers decide how fast everything feels.
@@ -91,7 +94,7 @@ sudo apt-get install -y dmz-cursor-theme || echo "warning: no cursor theme packa
 # the Vulkan ones: anv for Intel, radv for AMD, nvk for NVIDIA through Nouveau), the
 # VA-API video drivers, and vulkaninfo for checking that Vulkan works.
 # Best effort: a package missing on some distribution must not stop the install.
-sudo apt-get install -y libgl1-mesa-dri libegl-mesa0 libgbm1 libvulkan1 mesa-vulkan-drivers \
+apt_install libgl1-mesa-dri libegl-mesa0 libgbm1 libvulkan1 mesa-vulkan-drivers \
   mesa-va-drivers vulkan-tools vainfo ||
   echo "warning: some Mesa/Vulkan packages could not be installed; the compositor falls back to software rendering if no GPU driver loads"
 # The video driver that matches the GPU found in sysfs (0x8086 Intel, 0x1002 AMD, 0x10de NVIDIA).
@@ -102,11 +105,11 @@ for vendor_file in /sys/class/drm/card*/device/vendor; do
       # The non-free media driver supports more codecs and is the faster one; it replaces the
       # free package if that is installed. i965-va-driver covers GPUs older than Broadwell, and
       # firmware-misc-nonfree has the i915 GuC/HuC firmware (video and scheduling offload).
-      sudo apt-get install -y intel-media-va-driver-non-free i965-va-driver firmware-misc-nonfree ||
-        sudo apt-get install -y intel-media-va-driver i965-va-driver ||
+      apt_install intel-media-va-driver-non-free i965-va-driver firmware-misc-nonfree ||
+        apt_install intel-media-va-driver i965-va-driver ||
         echo "warning: no Intel video acceleration driver installed" ;;
     0x1002)
-      sudo apt-get install -y firmware-amd-graphics ||
+      apt_install firmware-amd-graphics ||
         echo "warning: firmware-amd-graphics not available (needs the non-free-firmware repository)" ;;
     0x10de)
       echo "==> NVIDIA GPU: using the open Nouveau driver (Mesa); install NVIDIA's own driver separately if you need it" ;;
@@ -116,7 +119,7 @@ done
 # Dark/light mode for other toolkits: the portal (settings backend that Chromium and
 # libadwaita read), an Adwaita dark theme for GTK 3, the Qt platform themes that follow GTK,
 # and the D-Bus pieces that start the portal. Best effort.
-sudo apt-get install -y xdg-desktop-portal xdg-desktop-portal-gtk gnome-themes-extra \
+apt_install xdg-desktop-portal xdg-desktop-portal-gtk gnome-themes-extra \
   qt5-gtk-platformtheme qt6-gtk-platformtheme dbus-user-session dbus-bin libglib2.0-bin \
   gsettings-desktop-schemas dconf-gsettings-backend ||
   echo "warning: some theme packages could not be installed; GTK, Chromium and Qt apps may not follow dark/light mode"
@@ -124,7 +127,7 @@ sudo apt-get install -y xdg-desktop-portal xdg-desktop-portal-gtk gnome-themes-e
 # runtime audio stack the bar's volume readout and fleetwm-audiomixer talk
 # to (PipeWire + the WirePlumber session manager; pipewire-bin ships
 # pw-cli/pw-cat, handy for testing without sound hardware)
-sudo apt-get install -y pipewire pipewire-bin wireplumber
+apt_install pipewire pipewire-bin wireplumber
 
 # runtime dependency for the bar's power menu (fleetwm-powermenu):
 # systemd-logind refuses Sleep/Reboot/Shut down for a non-root caller
@@ -138,7 +141,7 @@ sudo apt-get install -y pipewire pipewire-bin wireplumber
 # Package name is "polkitd" (Debian 13/trixie) -- the older
 # "policykit-1" transitional package no longer exists there; both work
 # on Ubuntu 26.04.
-sudo apt-get install -y polkitd pkexec
+apt_install polkitd pkexec
 
 # fleetwm-settings' Date & Time tab changes the system time zone and the
 # automatic-time (NTP) switch through timedatectl. Without a polkit
@@ -147,20 +150,20 @@ sudo apt-get install -y polkitd pkexec
 # local session. Delete the file to go back to prompting.
 sudo install -m 644 "${SCRIPT_DIR}/packaging/50-fleetwm-time.rules" /etc/polkit-1/rules.d/50-fleetwm-time.rules
 
-sudo apt-get install -y xwayland foot
+apt_install xwayland foot
 
 # end-user runtime: Alt+Shift+S's screenshot keybind
 # (compositor/input.cpp's kScreenshotCommand) -- grim captures, slurp
 # picks the region, wl-copy puts it on the clipboard, notify-send
 # confirms it
-sudo apt-get install -y grim slurp wl-clipboard libnotify-bin
+apt_install grim slurp wl-clipboard libnotify-bin
 
 # dev-box testing: pixel inspection (imagemagick's `convert ...
 # txt:-`) + synthetic pointer/keyboard input (wlrctl/wtype) over SSH,
 # since fleetwm advertises wlr-screencopy-v1, wlr-virtual-pointer-v1,
 # and wlr-virtual-keyboard-v1 for exactly this; gdb for live-attaching
 # to the compositor to catch crashes
-sudo apt-get install -y wlrctl wtype gdb imagemagick
+apt_install wlrctl wtype gdb imagemagick
 
 # build-time only: scripts/build-pgo-auto.sh's synthetic PGO training
 # pass (now run unconditionally below, see "Building with PGO") needs
@@ -168,8 +171,9 @@ sudo apt-get install -y wlrctl wtype gdb imagemagick
 # GTK4 clients don't silently hand off to a real desktop session's bus
 # instead of doing any work) and python3 (already present on every
 # supported distro here, listed for completeness).
-sudo apt-get install -y dbus-daemon python3
+apt_install dbus-daemon python3
 
+stats_phase_end deps
 echo "==> Setting system default locale to C.UTF-8"
 # fleetwm-greet's session env (src/greeter/session.cpp) also hardcodes
 # this as a floor for every fleetwm session regardless of the system
@@ -201,8 +205,11 @@ echo "==> Building with PGO (profile-guided optimization)"
 # meson's single-line wrapper; `set -euo pipefail` propagates any
 # failure) -- a failing test aborts here, before any installed binary is
 # touched, same "tests gate the install" contract as before.
+STATS_BUILD_CPU0=$(stats_cpu_seconds)
 bash "${SCRIPT_DIR}/scripts/build-pgo-auto.sh"
+STATS_BUILD_CPU=$(awk -v a="${STATS_BUILD_CPU0}" -v b="$(stats_cpu_seconds)" 'BEGIN { printf "%.0f", b - a }')
 
+stats_phase_start install
 echo "==> Installing (requires sudo)"
 sudo ninja -C "${BUILD_DIR}" install
 # 'sudo ninja' can leave root-owned files in the build folder; hand them back so the
@@ -251,7 +258,7 @@ if [[ -x "${BUILD_DIR}/src/greeter/fleetwm-greet" ]]; then
   # packaging/fleetwm-greeter@.service's own comment for why logind
   # specifically doesn't work here: it segfaults on a real login).
   echo "==> Installing seatd (required by the greeter's login-screen compositor)"
-  sudo apt-get install -y seatd
+  apt_install seatd
   sudo systemctl enable --now seatd.service
 
   echo "==> Installing greeter PAM config and systemd unit"
@@ -292,7 +299,9 @@ if [[ -x "${BUILD_DIR}/src/greeter/fleetwm-greet" ]]; then
   sudo install -m 644 "${SCRIPT_DIR}/packaging/fleetwm-locker-pam.conf" /etc/pam.d/fleetwm-locker
 fi
 
-echo
+stats_phase_end install
+stats_summary "${SCRIPT_DIR}" "${BUILD_DIR}"
+
 echo "Fleetwm installed. Log out and select 'Fleetwm' from your display"
 echo "manager's session list to start using it."
 echo "Run 'fleetwm update' at any time to pull and rebuild the latest version."

@@ -39,9 +39,14 @@ for tool in dbus-run-session python3; do
   fi
 done
 
+TIMES="${BUILD_DIR}.times"
+: > "${TIMES}"
+T=$SECONDS
 echo "==> Stage 1/3: instrumented (profile-generate) build"
 bash "${SCRIPT_DIR}/scripts/build-pgo.sh" generate
 
+echo "stage1 $(( SECONDS - T ))" >> "${TIMES}"
+T=$SECONDS
 echo "==> Stage 2/3: synthetic training pass (${TRAIN_SECONDS}s)"
 RUNTIME_DIR="$(mktemp -d /tmp/fleetwm-pgo-train.XXXXXX)"
 chmod 700 "$RUNTIME_DIR"
@@ -56,8 +61,11 @@ dbus-run-session -- env \
   GSK_RENDERER=cairo LANG=C.UTF-8 LC_ALL=C.UTF-8 \
   bash "${SCRIPT_DIR}/scripts/pgo-train-session.sh" "$RUNTIME_DIR" "$TRAIN_SECONDS" "$BUILD_DIR"
 
+echo "train $(( SECONDS - T ))" >> "${TIMES}"
+T=$SECONDS
 echo "==> Stage 3/3: profile-use build (final PGO-optimized binaries)"
 bash "${SCRIPT_DIR}/scripts/build-pgo.sh" use
+echo "stage3 $(( SECONDS - T ))" >> "${TIMES}"
 
 echo
 echo "==> Done. Install the final optimized build with:"

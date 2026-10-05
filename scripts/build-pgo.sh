@@ -107,7 +107,7 @@ echo "==> Running unit tests"
 # suites ran ... PASSED N tests"), and still exits non-zero on any
 # failure, so `set -euo pipefail` above still aborts the install exactly
 # as before.
-"${BUILD_DIR}/tests/fleetwm-unit-tests" --gtest_brief=1
+"${BUILD_DIR}/tests/fleetwm-unit-tests" --gtest_brief=1 2>&1 | tee "${BUILD_DIR}.tests"
 
 echo
 if [[ "$MODE" == "generate" ]]; then
