@@ -194,6 +194,30 @@ if [[ -x "${BUILD_DIR}/src/greeter/fleetwm-greet" ]]; then
   sudo install -m 644 "${SCRIPT_DIR}/packaging/fleetwm-greeter@.service" /usr/lib/systemd/system/fleetwm-greeter@.service
   sudo systemctl daemon-reload
 
+  # The Fleetwm login screen is the default way in: enable it on tty1. It takes
+  # over at the next boot (or when you start it by hand, below); starting it right
+  # now would replace the console this installer is running on. Skipped when a
+  # display manager is already enabled (they would fight over the screen), or when
+  # you set FLEETWM_NO_GREETER=1.
+  GREETER_TTY="${FLEETWM_GREETER_TTY:-tty1}"
+  GREETER_ENABLED=0
+  if [[ "${FLEETWM_NO_GREETER:-0}" == "1" ]]; then
+    echo "==> FLEETWM_NO_GREETER=1: leaving the login screen disabled"
+  elif systemctl is-enabled display-manager.service >/dev/null 2>&1; then
+    echo "==> A display manager is enabled; leaving the Fleetwm login screen disabled."
+    echo "    Pick 'Fleetwm' from its session list instead."
+  else
+    echo "==> Enabling the Fleetwm login screen on ${GREETER_TTY}"
+    sudo systemctl disable "getty@${GREETER_TTY}.service" 2>/dev/null || true
+    sudo systemctl enable "fleetwm-greeter@${GREETER_TTY}.service"
+    # The unit is wanted by graphical.target, so make sure that is what boots.
+    if [[ "$(systemctl get-default)" != "graphical.target" ]]; then
+      echo "==> Setting the default boot target to graphical.target"
+      sudo systemctl set-default graphical.target
+    fi
+    GREETER_ENABLED=1
+  fi
+
   # fleetwm-locker (the Lock power-menu action) re-verifies the running
   # user's password via its own PAM service -- separate from
   # fleetwm-greeter's above since it never opens a session (pam_unix +
@@ -208,13 +232,18 @@ echo "Fleetwm installed. Log out and select 'Fleetwm' from your display"
 echo "manager's session list to start using it."
 echo "Run 'fleetwm update' at any time to pull and rebuild the latest version."
 
-if [[ -x "${BUILD_DIR}/src/greeter/fleetwm-greet" ]]; then
+if [[ "${GREETER_ENABLED:-0}" == "1" ]]; then
   echo
-  echo "Fleetwm greeter (fleetwm-greet) installed but NOT enabled. To use it"
-  echo "instead of a display manager on your main console (tty1):"
+  echo "The Fleetwm login screen is enabled on ${GREETER_TTY}. Reboot to see it, or start it now"
+  echo "(this replaces the login on that console):"
+  echo "  sudo systemctl start fleetwm-greeter@${GREETER_TTY}.service"
+  echo "Other consoles (Ctrl+Alt+F2 and up) keep a normal text login in case you need it."
+  echo "To go back to the normal login:"
+  echo "  sudo systemctl disable --now fleetwm-greeter@${GREETER_TTY}.service"
+  echo "  sudo systemctl enable --now getty@${GREETER_TTY}.service"
+elif [[ -x "${BUILD_DIR}/src/greeter/fleetwm-greet" ]]; then
+  echo
+  echo "The Fleetwm login screen (fleetwm-greet) is installed but not enabled. To use it on tty1:"
   echo "  sudo systemctl disable --now getty@tty1.service"
   echo "  sudo systemctl enable --now fleetwm-greeter@tty1.service"
-  echo "Then switch to that VT (Ctrl+Alt+F1) to see the login prompt."
-  echo "(Use a different ttyN above if you'd rather leave tty1's normal"
-  echo "login console alone.)"
 fi

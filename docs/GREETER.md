@@ -14,16 +14,23 @@ outright** -- it never appears in the picker and is rejected server-side
 even if typed under "Other User" -- root is meant to stay a deliberate
 terminal/rescue-shell login, not a routine desktop session.
 
-It's installed but not enabled by default; `install.sh` prints the exact
-commands to opt in on your main console (tty1):
+`install.sh` enables it on tty1 and sets the default boot target to graphical. It takes effect
+at the next boot, or start it now (this replaces the login on that console):
 
 ```sh
-sudo systemctl disable --now getty@tty1.service
-sudo systemctl enable --now fleetwm-greeter@tty1.service
+sudo systemctl start fleetwm-greeter@tty1.service
 ```
 
-Swap `tty1` for another VT (e.g. `tty2`) if you'd rather leave your normal
-login console untouched and just try the greeter alongside it.
+It is not enabled when a display manager is already enabled, or when you run the installer with
+`FLEETWM_NO_GREETER=1`. To turn it off and get the normal text login back:
+
+```sh
+sudo systemctl disable --now fleetwm-greeter@tty1.service
+sudo systemctl enable --now getty@tty1.service
+```
+
+Set `FLEETWM_GREETER_TTY=tty2` when running the installer to use another console and leave tty1
+alone.
 
 Switch to that VT (`Ctrl+Alt+F2`) to see the login screen. Requires
 `seatd` running (`install.sh` installs and enables it automatically) --
