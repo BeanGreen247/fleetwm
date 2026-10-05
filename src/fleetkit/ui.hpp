@@ -89,6 +89,17 @@ class Ui {
 
   // ---- controls (return true when changed / clicked) ----
   bool checkbox(const std::string& label, bool* value, bool enabled = true);
+  // iOS/GNOME-style switch (preferred over a check box for on/off settings:
+  // bigger target, reads as an action). Pair it with row("Label").
+  bool toggle(bool* value, bool enabled = true);
+  // Segmented control: one pill split into options, the selected one filled.
+  // Falls back to nothing if it would not fit; returns true when changed.
+  bool segmented(const std::vector<std::string>& options, int* index, bool enabled = true);
+  // Vertical navigation list occupying `area` (sidebar); returns true when changed.
+  bool nav(const std::vector<std::string>& names, int* current, UiRect area);
+  // Page title (large) and section label (small, dim, upper case).
+  void title(const std::string& text);
+  void section(const std::string& text);
   // One radio button; `value` is the selected index of its group.
   bool radio(const std::string& label, int* value, int index, bool enabled = true);
   // A whole group, wrapping onto new lines at the control column when needed.
@@ -155,7 +166,7 @@ class Ui {
   cairo_t* cr_ = nullptr;
   double w_ = 0, h_ = 0;
   double left_ = 16, top_ = 16, right_ = 16, label_w_ = 150, control_x_ = 166;
-  double cx_ = 0, cy_ = 0, row_h_ = 28, line_h_ = 0;
+  double cx_ = 0, cy_ = 0, row_h_ = 36, line_h_ = 0;
   bool want_same_line_ = false;
   int id_ = 0;
 

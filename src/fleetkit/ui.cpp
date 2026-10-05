@@ -17,7 +17,7 @@ namespace fleetwm::kit {
 
 namespace {
 
-constexpr double kFont = 14.67;
+constexpr double kFont = 13.5;
 constexpr uint32_t kBtnLeft = 0x110;
 constexpr double kGap = 8;
 
@@ -377,37 +377,32 @@ bool Ui::key_activate(int id) {
 }
 
 bool Ui::checkbox(const std::string& text, bool* value, bool enabled) {
+  // Rendered as a switch followed by its label (switches read as actions and
+  // give a larger target than a check box).
   const int id = next_id();
   register_focusable_if(id, enabled);
   const TextExtents te = measure_text(cr_, text, kFont);
-  const UiRect r = place(22 + te.width, 24);
+  const UiRect r = place(48 + te.width, 26);
   bool changed = false;
   if (enabled && (click_widget(id, r) || key_activate(id))) {
     *value = !*value;
     changed = true;
   }
   if (visible(r)) {
-    const UiRect box{r.x, r.y + 4, 16, 16};
-    rounded_rect(cr_, box.x, box.y, box.w, box.h, 4);
-    if (*value) {
-      set_source(cr_, enabled ? pal_.accent : with_alpha(pal_.fg_secondary, 0.5));
-      cairo_fill(cr_);
-      set_source(cr_, pal_.bg_primary);
-      cairo_set_line_width(cr_, 2);
-      cairo_move_to(cr_, box.x + 3.5, box.y + 8.5);
-      cairo_line_to(cr_, box.x + 6.8, box.y + 11.8);
-      cairo_line_to(cr_, box.x + 12.5, box.y + 4.8);
-      cairo_stroke(cr_);
-    } else {
-      set_source(cr_, pal_.bg_secondary);
-      cairo_fill_preserve(cr_);
-      set_source(cr_, with_alpha(pal_.fg_secondary, enabled ? 0.8 : 0.35));
-      cairo_set_line_width(cr_, 1.2);
-      cairo_stroke(cr_);
-    }
-    draw_text(cr_, text, r.x + 22, r.y + (r.h - te.height) / 2 + te.ascent, kFont,
+    const bool on = *value;
+    const UiRect sw{r.x, r.y + 2, 38, 22};
+    rounded_rect(cr_, sw.x, sw.y, sw.w, sw.h, 11);
+    Color track = on ? pal_.accent : with_alpha(pal_.fg_secondary, 0.35);
+    if (!enabled) track = with_alpha(track, 0.4);
+    if (enabled && hovered(r)) track = mix(track, pal_.fg_primary, 0.08);
+    set_source(cr_, track);
+    cairo_fill(cr_);
+    cairo_arc(cr_, on ? sw.x + sw.w - 12 : sw.x + 12, sw.y + 11, 8, 0, 2 * M_PI);
+    set_source(cr_, on ? pal_.bg_primary : pal_.fg_primary);
+    cairo_fill(cr_);
+    draw_text(cr_, text, r.x + 48, r.y + (r.h - te.height) / 2 + te.ascent, kFont,
               enabled ? pal_.fg_primary : with_alpha(pal_.fg_secondary, 0.6));
-    if (focused(id)) draw_focus_ring(box, 4);
+    if (focused(id)) draw_focus_ring(sw, 11);
   }
   return mark(changed);
 }
@@ -460,7 +455,7 @@ bool Ui::button(const std::string& text, bool enabled, bool accent) {
   const int id = next_id();
   register_focusable_if(id, enabled);
   const TextExtents te = measure_text(cr_, text, kFont);
-  const UiRect r = place(std::max(64.0, te.width + 28), 28);
+  const UiRect r = place(std::max(64.0, te.width + 28), 30);
   const bool clicked = enabled && (click_widget(id, r) || key_activate(id));
   if (visible(r)) {
     const bool hot = enabled && hovered(r);
@@ -484,7 +479,7 @@ bool Ui::button(const std::string& text, bool enabled, bool accent) {
 bool Ui::spin(int* value, int min, int max, int step, bool enabled) {
   const int id = next_id();
   register_focusable_if(id, enabled);
-  const UiRect r = place(116, 28);
+  const UiRect r = place(116, 30);
   const UiRect val{r.x, r.y, 66, r.h}, minus{r.x + 68, r.y, 23, r.h}, plus{r.x + 93, r.y, 23, r.h};
   bool changed = false;
   auto set = [&](int v) {
@@ -777,7 +772,7 @@ bool Ui::tabs(const std::vector<std::string>& names, int* current) {
 bool Ui::text_entry(std::string* text, double width, bool enabled) {
   const int id = next_id();
   register_focusable_if(id, enabled);
-  const UiRect r = place(width, 28);
+  const UiRect r = place(width, 30);
   bool changed = false;
   if (enabled && press_pending_ && input_ok() && clip_.hit(press_pos_.x, press_pos_.y) &&
       r.hit(press_pos_.x - ox_, press_pos_.y - oy_)) {
@@ -863,7 +858,7 @@ bool Ui::text_entry(std::string* text, double width, bool enabled) {
 bool Ui::dropdown(const std::vector<std::string>& options, int* index, double width, bool enabled) {
   const int id = next_id();
   register_focusable_if(id, enabled);
-  const UiRect r = place(width, 28);
+  const UiRect r = place(width, 30);
   bool changed = false;
   if (dd_done_ && dd_target_ == id) {
     *index = dd_result_;
@@ -1027,6 +1022,167 @@ Ui::CanvasEvent Ui::canvas(double height, UiRect* rect) {
   }
   if (ev.pressed || ev.released || ev.down) again_ = true;
   return ev;
+}
+
+bool Ui::toggle(bool* value, bool enabled) {
+  const int id = next_id();
+  register_focusable_if(id, enabled);
+  const UiRect r = place(42, 24);
+  bool changed = false;
+  if (enabled && (click_widget(id, r) || key_activate(id))) {
+    *value = !*value;
+    changed = true;
+  }
+  if (visible(r)) {
+    const bool on = *value;
+    rounded_rect(cr_, r.x, r.y + 1, r.w, 22, 11);
+    Color track = on ? pal_.accent : with_alpha(pal_.fg_secondary, 0.35);
+    if (!enabled) track = with_alpha(track, 0.4);
+    if (enabled && hovered(r)) track = mix(track, pal_.fg_primary, 0.08);
+    set_source(cr_, track);
+    cairo_fill(cr_);
+    const double kx = on ? r.x + r.w - 12 : r.x + 12;
+    cairo_arc(cr_, kx, r.y + 12, 8, 0, 2 * M_PI);
+    set_source(cr_, on ? pal_.bg_primary : pal_.fg_primary);
+    cairo_fill(cr_);
+    if (focused(id)) draw_focus_ring({r.x, r.y + 1, r.w, 22}, 11);
+  }
+  return mark(changed);
+}
+
+bool Ui::segmented(const std::vector<std::string>& options, int* index, bool enabled) {
+  const int id = next_id();
+  register_focusable_if(id, enabled);
+  std::vector<double> widths;
+  double total = 4;
+  for (const auto& o : options) {
+    widths.push_back(measure_text(cr_, o, kFont).width + 24);
+    total += widths.back();
+  }
+  if (cx_ + total > w_ - right_ && cx_ > left_) {  // too wide for the control column: own line
+    newline(-4);
+    cx_ = left_;
+  }
+  const UiRect r = place(total, 32);
+  bool changed = false;
+  if (enabled && focused(id) && input_ok()) {
+    for (size_t i = 0; i < keys_.size();) {
+      const KeyEvent& k = keys_[i];
+      bool eaten = true;
+      if (k.sym == XKB_KEY_Left && *index > 0) {
+        --*index;
+        changed = true;
+      } else if (k.sym == XKB_KEY_Right && *index + 1 < static_cast<int>(options.size())) {
+        ++*index;
+        changed = true;
+      } else {
+        eaten = false;
+      }
+      if (eaten) keys_.erase(keys_.begin() + static_cast<long>(i));
+      else ++i;
+    }
+  }
+  double x = r.x + 2;
+  if (visible(r)) {
+    rounded_rect(cr_, r.x, r.y, r.w, r.h, pal_.rounded ? 10 : 3);
+    set_source(cr_, pal_.bg_secondary);
+    cairo_fill(cr_);
+  }
+  for (size_t i = 0; i < options.size(); ++i) {
+    const UiRect seg{x, r.y + 2, widths[i], r.h - 4};
+    if (enabled && press_pending_ && input_ok() && clip_.hit(press_pos_.x, press_pos_.y) &&
+        seg.hit(press_pos_.x - ox_, press_pos_.y - oy_)) {
+      press_pending_ = false;
+      focus_id_ = id;
+      if (*index != static_cast<int>(i)) {
+        *index = static_cast<int>(i);
+        changed = true;
+      }
+    }
+    if (visible(r)) {
+      const bool sel = static_cast<int>(i) == *index;
+      if (sel) {
+        rounded_rect(cr_, seg.x, seg.y, seg.w, seg.h, pal_.rounded ? 8 : 2);
+        set_source(cr_, enabled ? pal_.accent : with_alpha(pal_.accent, 0.4));
+        cairo_fill(cr_);
+      } else if (enabled && hovered(seg)) {
+        rounded_rect(cr_, seg.x, seg.y, seg.w, seg.h, pal_.rounded ? 8 : 2);
+        set_source(cr_, with_alpha(pal_.accent, 0.14));
+        cairo_fill(cr_);
+      }
+      const TextExtents te = measure_text(cr_, options[i], kFont, sel);
+      draw_text(cr_, options[i], seg.x + (seg.w - te.width) / 2, seg.y + (seg.h - te.height) / 2 + te.ascent, kFont,
+                sel ? pal_.bg_primary : enabled ? pal_.fg_primary : with_alpha(pal_.fg_secondary, 0.6), sel);
+    }
+    x += widths[i];
+  }
+  if (visible(r) && focused(id)) draw_focus_ring(r, pal_.rounded ? 10 : 3);
+  return mark(changed);
+}
+
+bool Ui::nav(const std::vector<std::string>& names, int* current, UiRect area) {
+  const int id = next_id();
+  register_focusable_if(id, true);
+  bool changed = false;
+  if (focused(id) && input_ok()) {
+    for (size_t i = 0; i < keys_.size();) {
+      const KeyEvent& k = keys_[i];
+      bool eaten = true;
+      if (k.sym == XKB_KEY_Up && *current > 0) {
+        --*current;
+        changed = true;
+      } else if (k.sym == XKB_KEY_Down && *current + 1 < static_cast<int>(names.size())) {
+        ++*current;
+        changed = true;
+      } else {
+        eaten = false;
+      }
+      if (eaten) keys_.erase(keys_.begin() + static_cast<long>(i));
+      else ++i;
+    }
+  }
+  const double item_h = 36, pad = 10;
+  double y = area.y + pad;
+  for (size_t i = 0; i < names.size(); ++i) {
+    const UiRect it{area.x + pad, y, area.w - 2 * pad, item_h};
+    if (press_pending_ && input_ok() && it.hit(press_pos_.x, press_pos_.y)) {
+      press_pending_ = false;
+      focus_id_ = id;
+      if (*current != static_cast<int>(i)) {
+        *current = static_cast<int>(i);
+        changed = true;
+      }
+    }
+    const bool sel = static_cast<int>(i) == *current;
+    if (sel || hovered(it)) {
+      rounded_rect(cr_, it.x, it.y, it.w, it.h, pal_.rounded ? 10 : 3);
+      set_source(cr_, sel ? with_alpha(pal_.accent, 0.22) : with_alpha(pal_.fg_secondary, 0.10));
+      cairo_fill(cr_);
+    }
+    const TextExtents te = measure_text(cr_, names[i], kFont, sel);
+    draw_text(cr_, names[i], it.x + 14, it.y + (it.h - te.height) / 2 + te.ascent, kFont,
+              sel ? pal_.fg_primary : pal_.fg_secondary, sel);
+    y += item_h + 2;
+  }
+  if (focused(id)) draw_focus_ring({area.x + pad, area.y + pad + (*current) * (item_h + 2), area.w - 2 * pad, item_h}, 10);
+  return mark(changed);
+}
+
+void Ui::title(const std::string& text) {
+  if (line_h_ > 0 || cx_ > left_) newline();
+  const TextExtents te = measure_text(cr_, text, 21, true);
+  if (visible({cx_, cy_, 1, 34})) draw_text(cr_, text, cx_, cy_ + (34 - te.height) / 2 + te.ascent, 21, pal_.fg_primary, true);
+  cy_ += 42;
+}
+
+void Ui::section(const std::string& text) {
+  if (line_h_ > 0 || cx_ > left_) newline();
+  cy_ += 10;
+  std::string up = text;
+  for (auto& ch : up) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+  const TextExtents te = measure_text(cr_, up, 11.5, true);
+  if (visible({cx_, cy_, 1, 20})) draw_text(cr_, up, cx_, cy_ + (20 - te.height) / 2 + te.ascent, 11.5, with_alpha(pal_.fg_secondary, 0.9), true);
+  cy_ += 26;
 }
 
 // ------------------------------------------------------------------- scroll --
