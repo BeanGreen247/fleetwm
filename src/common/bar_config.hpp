@@ -16,7 +16,7 @@ struct ClockFormat {
   // system time zone. fleetwm-settings sets the system zone when it is
   // allowed to and keeps this override when it is not.
   std::string timezone;
-  bool show_seconds = true;
+  bool show_seconds = false;  // off by default: one redraw a minute instead of one a second
   bool show_date = false;
   bool show_year = true;
   bool show_month = true;

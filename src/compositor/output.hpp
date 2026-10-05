@@ -134,6 +134,10 @@ class Output {
   // -- both because /proc reads aren't free and because these numbers
   // don't meaningfully change frame to frame anyway.
   DebugTextRow debug_frame_time_row_;
+  DebugTextRow debug_cpu_pct_row_;
+  wlr_scene_rect* debug_panel_ = nullptr;
+  unsigned long debug_cpu_prev_ticks_ = 0;
+  timespec debug_cpu_prev_wall_{};
   DebugTextRow debug_ram_row_;
   DebugTextRow debug_cpu_row_;
   // Renderer backend name (e.g. "GLES2", "PIXMAN") -- rendered once at

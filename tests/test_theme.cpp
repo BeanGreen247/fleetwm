@@ -351,7 +351,7 @@ TEST_F(ThemeTest, WrongTypeGapPxIgnored) {
   std::ofstream out(dir_ / "fleetwm" / "theme.toml");
   out << "gap_px = \"two\"\n";
   out.close();
-  EXPECT_EQ(load_theme_config().gap_px, 2);
+  EXPECT_EQ(load_theme_config().gap_px, 8);
 }
 
 TEST_F(ThemeTest, BoolPinnedBorderThicknessCoercesToZeroNotIgnored) {
@@ -581,8 +581,8 @@ TEST_F(ThemeTest, DefaultAccentIsAutoExtract) {
   EXPECT_TRUE(ThemeConfig{}.accent.auto_extract);
 }
 
-TEST_F(ThemeTest, DefaultGapPxIsTwo) {
-  EXPECT_EQ(ThemeConfig{}.gap_px, 2);
+TEST_F(ThemeTest, DefaultGapPxIsEight) {
+  EXPECT_EQ(ThemeConfig{}.gap_px, 8);
 }
 
 TEST_F(ThemeTest, DefaultCornerStyleIsRounded) {

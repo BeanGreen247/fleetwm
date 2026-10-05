@@ -10,7 +10,10 @@ extern "C" {
 #include <sys/resource.h>
 
 #include <algorithm>
+#include <unistd.h>
+
 #include <cstdio>
+#include <cstring>
 #include <cstdlib>
 #include <ctime>
 #include <fstream>
@@ -69,6 +72,9 @@ const std::array<uint8_t, kDebugGlyphHeight>& debug_glyph(char c) {
   static const std::array<uint8_t, kDebugGlyphHeight> k8 = {0b111, 0b101, 0b111, 0b101, 0b111};
   static const std::array<uint8_t, kDebugGlyphHeight> k9 = {0b111, 0b101, 0b111, 0b001, 0b111};
   static const std::array<uint8_t, kDebugGlyphHeight> kDot = {0b000, 0b000, 0b000, 0b000, 0b010};
+  static const std::array<uint8_t, kDebugGlyphHeight> kC = {0b111, 0b100, 0b100, 0b100, 0b111};
+  static const std::array<uint8_t, kDebugGlyphHeight> kU = {0b101, 0b101, 0b101, 0b101, 0b111};
+  static const std::array<uint8_t, kDebugGlyphHeight> kPct = {0b101, 0b001, 0b010, 0b100, 0b101};
   static const std::array<uint8_t, kDebugGlyphHeight> kM = {0b101, 0b111, 0b111, 0b101, 0b101};
   static const std::array<uint8_t, kDebugGlyphHeight> kB = {0b110, 0b101, 0b110, 0b101, 0b110};
   static const std::array<uint8_t, kDebugGlyphHeight> kH = {0b101, 0b101, 0b111, 0b101, 0b101};
@@ -99,6 +105,9 @@ const std::array<uint8_t, kDebugGlyphHeight>& debug_glyph(char c) {
     case '8': return k8;
     case '9': return k9;
     case '.': return kDot;
+    case 'C': case 'c': return kC;
+    case 'U': case 'u': return kU;
+    case '%': return kPct;
     case 'M': case 'm': return kM;
     case 'B': return kB;
     case 'H': return kH;
@@ -274,6 +283,16 @@ void output_frame(wl_listener* listener, void*) {
       double elapsed_ms = (now.tv_sec - output->fps_cap_last_commit.tv_sec) * 1000.0 +
                            (now.tv_nsec - output->fps_cap_last_commit.tv_nsec) / 1e6;
       if (elapsed_ms < interval_ms) {
+        // Only keep the render loop alive while there is actually something to
+        // present. Without this check the timer's forced frame request committed
+        // an (empty) frame, whose page flip produced the next frame event, which
+        // re-armed the timer: an idle desktop in Custom mode committed ~150
+        // frames a second forever. With no pending damage the output goes idle
+        // and wakes again by itself when something changes.
+        wlr_scene_output* pending = wlr_scene_get_scene_output(server->scene(), output->wlr_output_ptr);
+        if (pending == nullptr || !pixman_region32_not_empty(&pending->pending_commit_damage)) {
+          return;
+        }
         int remaining_ms = std::max(1, static_cast<int>(interval_ms - elapsed_ms));
         if (output->fps_cap_timer == nullptr) {
           output->fps_cap_timer = wl_event_loop_add_timer(
@@ -390,6 +409,8 @@ Output::~Output() {
     }
   }
   destroy_text_row(debug_frame_time_row_);
+  destroy_text_row(debug_cpu_pct_row_);
+  if (debug_panel_) wlr_scene_node_destroy(&debug_panel_->node);
   destroy_text_row(debug_ram_row_);
   destroy_text_row(debug_cpu_row_);
   destroy_text_row(debug_renderer_row_);
@@ -690,6 +711,18 @@ void Output::create_debug_text_rows() {
   int ram_y = cpu_y - kDebugTextRowGapPx - kRowHeightPx;
   int fps_y = ram_y - kDebugTextRowGapPx - kRowHeightPx;
   int renderer_y = fps_y - kDebugTextRowGapPx - kRowHeightPx;
+  int cpu_pct_y = renderer_y - kDebugTextRowGapPx - kRowHeightPx;
+
+  // Soft dark backing panel so the numbers stay readable over any window
+  // (created first so it sits below the glyph rects in the same tree).
+  constexpr float kPanel[4] = {0.05f, 0.05f, 0.08f, 0.62f};
+  const int text_w = DebugTextRow::kMaxChars * (kDebugGlyphWidth * kDebugGlyphPixelSize + kDebugGlyphGapPx);
+  const int panel_x = debug_base_x_ - 8, panel_y = cpu_pct_y - 8;
+  debug_panel_ = wlr_scene_rect_create(server->layer_debug(), std::max(text_w, kDebugBarCount * (kDebugBarWidth + kDebugBarGap)) + 16,
+                                       debug_base_y_ - panel_y + 8, kPanel);
+  wlr_scene_node_set_position(&debug_panel_->node, panel_x, panel_y);
+  wlr_scene_node_lower_to_bottom(&debug_panel_->node);
+  create_text_row(server->layer_debug(), debug_cpu_pct_row_, debug_base_x_, cpu_pct_y);
 
   create_text_row(server->layer_debug(), debug_frame_time_row_, debug_base_x_, fps_y);
   create_text_row(server->layer_debug(), debug_ram_row_, debug_base_x_, ram_y);
@@ -737,6 +770,32 @@ void Output::update_debug_text() {
   if (rss_mb >= 0) {
     std::snprintf(buf, sizeof(buf), "%dMB", rss_mb);
     render_text_row(debug_ram_row_, buf, kDebugTextColor);
+  }
+
+  // Compositor CPU use over the last interval: the number that tells whether
+  // the desktop is really idle (idle wakeups show up here, not in FPS).
+  {
+    static const long ticks_per_s = sysconf(_SC_CLK_TCK);
+    FILE* f = std::fopen("/proc/self/stat", "r");
+    if (f) {
+      char line[1024];
+      if (std::fgets(line, sizeof line, f)) {
+        const char* p = std::strrchr(line, ')');
+        unsigned long ut = 0, st = 0;
+        if (p && std::sscanf(p + 2, "%*c %*d %*d %*d %*d %*d %*u %*u %*u %*u %*u %lu %lu", &ut, &st) == 2) {
+          const unsigned long total = ut + st;
+          const double wall = (now.tv_sec - debug_cpu_prev_wall_.tv_sec) + (now.tv_nsec - debug_cpu_prev_wall_.tv_nsec) / 1e9;
+          if (debug_cpu_prev_ticks_ != 0 && wall > 0.05) {
+            const double pct = 100.0 * static_cast<double>(total - debug_cpu_prev_ticks_) / static_cast<double>(ticks_per_s) / wall;
+            std::snprintf(buf, sizeof(buf), "CPU%d%%", static_cast<int>(pct + 0.5));
+            render_text_row(debug_cpu_pct_row_, buf, kDebugTextColor);
+          }
+          debug_cpu_prev_ticks_ = total;
+          debug_cpu_prev_wall_ = now;
+        }
+      }
+      std::fclose(f);
+    }
   }
 
   int cpu_mhz = read_cpu_mhz();

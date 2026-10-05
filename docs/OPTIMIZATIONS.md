@@ -136,6 +136,28 @@ Result on the VM (RSS): compositor 148 -> 19 MB, bar 25 -> 14 MB, wallpaper
 9 -> 4 MB; the whole resident session is **38 MB**, against 182 MB after the
 client rewrite alone and 280 MB originally.
 
+## Idle wakeups and the look (2026-10-05)
+
+- **Custom FPS cap kept the compositor busy forever.** In `render_mode =
+  "custom"` the cap timer forced an (empty) frame request, whose page flip
+  produced the next frame event, which re-armed the timer: an idle desktop
+  committed about 150 frames a second (1493 DRM atomic commits in 10 s,
+  1.5% CPU). The throttle path now only keeps the loop alive while the
+  output has pending damage. Idle commits: 1493 -> 5 per 10 s, idle CPU
+  1.5% -> 0%. Found with `strace -c -e trace=ioctl -p <pid>` and `perf`.
+- The bar's clock and stats run on separate timers (clock aligned to the
+  minute when seconds are hidden, stats every 2 s, redraw only on change),
+  and seconds are off by default.
+- Debug overlay (Alt+Shift+I): dark backing panel, a `CPU%` row for the
+  compositor process, and the same frame-time graph, renderer name, FPS and
+  RSS rows.
+- Look: floating capsule bar (workspaces | clock | status, theme-following
+  workspace pills, dim labels with bright values), a launcher with icons,
+  soft shadow and key hints, a settings sidebar with switches and segmented
+  controls, Inter as the UI font, 8 px window gaps by default. Direction
+  taken from GNOME-style capsule bars and dark "glass" Hyprland setups for
+  structure, with dwl/dwm's discipline for borders (thin, one accent).
+
 ## Known gaps
 
 - Volume readouts show PipeWire's linear value, so a sink `wpctl` reports as
