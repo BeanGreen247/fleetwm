@@ -45,6 +45,28 @@ unsigned modifier_mask(const std::string& names) {
   return mask;
 }
 
+KeyCombo parse_key_combo(const std::string& combo) {
+  KeyCombo out;
+  const size_t last = combo.rfind('+');
+  const std::string mods = last == std::string::npos ? "" : combo.substr(0, last);
+  std::string key = last == std::string::npos ? combo : combo.substr(last + 1);
+  const size_t a = key.find_first_not_of(" \t"), b = key.find_last_not_of(" \t");
+  key = a == std::string::npos ? std::string() : key.substr(a, b - a + 1);
+  if (key.empty()) return out;
+  if (!mods.empty()) {
+    out.mods = modifier_mask(mods);
+    if (out.mods == 0) return out;  // unknown modifier name
+  }
+  out.key = key;
+  out.valid = true;
+  return out;
+}
+
+bool combo_mods_match(unsigned held, unsigned wanted) {
+  constexpr unsigned kCompared = kModShift | kModCtrl | kModAlt | kModLogo;
+  return (held & kCompared) == (wanted & kCompared);
+}
+
 std::vector<std::string> split_key_names(const std::string& list) {
   std::vector<std::string> out;
   size_t pos = 0;
@@ -108,14 +130,12 @@ KeybindsConfig load_keybinds_config() {
   if (auto v = table["quit"].value<std::string>()) {
     config.quit = *v;
   }
-  if (auto v = table["modifier"].value<std::string>()) config.modifier = *v;
   if (auto v = table["start_menu_key"].value<std::string>()) config.start_menu_key = *v;
-  if (auto v = table["browser"].value<std::string>()) config.browser = *v;
-  if (auto v = table["file_manager"].value<std::string>()) config.file_manager = *v;
-  if (auto v = table["text_editor"].value<std::string>()) config.text_editor = *v;
-  if (auto v = table["shortcuts"].value<std::string>()) {
-    config.shortcuts = *v;
-  }
+  if (auto v = table["desktop_terminal"].value<std::string>()) config.desktop_terminal = *v;
+  if (auto v = table["desktop_browser"].value<std::string>()) config.desktop_browser = *v;
+  if (auto v = table["desktop_file_manager"].value<std::string>()) config.desktop_file_manager = *v;
+  if (auto v = table["desktop_text_editor"].value<std::string>()) config.desktop_text_editor = *v;
+  if (auto v = table["shortcuts_help"].value<std::string>()) config.shortcuts_help = *v;
   if (auto v = table["debug_overlay"].value<std::string>()) {
     config.debug_overlay = *v;
   }
@@ -141,12 +161,12 @@ void save_keybinds_config(const KeybindsConfig& config) {
   table.insert_or_assign("focus_right", config.focus_right);
   table.insert_or_assign("quit", config.quit);
   table.insert_or_assign("debug_overlay", config.debug_overlay);
-  table.insert_or_assign("shortcuts", config.shortcuts);
-  table.insert_or_assign("modifier", config.modifier);
+  table.insert_or_assign("shortcuts_help", config.shortcuts_help);
   table.insert_or_assign("start_menu_key", config.start_menu_key);
-  table.insert_or_assign("browser", config.browser);
-  table.insert_or_assign("file_manager", config.file_manager);
-  table.insert_or_assign("text_editor", config.text_editor);
+  table.insert_or_assign("desktop_terminal", config.desktop_terminal);
+  table.insert_or_assign("desktop_browser", config.desktop_browser);
+  table.insert_or_assign("desktop_file_manager", config.desktop_file_manager);
+  table.insert_or_assign("desktop_text_editor", config.desktop_text_editor);
 
   std::ofstream out(path);
   if (!out) {

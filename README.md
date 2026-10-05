@@ -525,7 +525,7 @@ Settings -> Theme -> Window layout (or `window_layout` in `theme.toml`), applied
 
 - **Super+/** opens the keyboard-shortcuts window (`fleetwm-shortcuts`): every bind as remapped in
   `~/.config/fleetwm/keybinds.toml`, the mouse gestures for the active layout, and links to the docs
-  ([docs/SHORTCUTS.md](docs/SHORTCUTS.md)). In the Desktop layout the terminal key (Alt+Enter) stays bound, a Super tap opens the start menu, and Super+Shift+B/E/T open the default browser, file manager and text editor. The modifier and the start-menu key are remappable in `keybinds.toml`.
+  ([docs/SHORTCUTS.md](docs/SHORTCUTS.md)). In the Desktop layout the Alt shortcuts are all off (Alt+Enter included); Ctrl+Alt+T opens a terminal, Super+Shift+B/E/T open the default browser, file manager and text editor, and a Super tap opens the start menu. Each is a combo you can change in `keybinds.toml` (`desktop_terminal = "ctrl+alt+t"`, ...).
 - Desktop layout details: no focus/pin highlight border (the titlebar's pin is filled in when pinned), no
   gaps between windows, and the taskbar shows CPU/RAM/GPU/disk as a compact 2x2 grid with the clock as time
   over date. Titlebar buttons, their size and side, and the title position are set under Settings -> Theme.

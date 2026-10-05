@@ -43,29 +43,20 @@ std::string format_alt_combo(const std::string& name) { return format_combo(name
 
 std::string format_alt_shift_combo(const std::string& name) { return format_combo(name, true); }
 
-std::string format_super_combo(const std::string& name) { return format_combo(name, false, "Super"); }
-
-std::string format_mod_combo(const std::string& modifier, const std::string& name, bool force_shift) {
-  // "ctrl+alt" -> "Ctrl+Alt"; "super"/"logo"/"win"/"meta" -> "Super".
+std::string format_key_combo(const std::string& combo) {
+  const KeyCombo parsed = parse_key_combo(combo);
+  if (!parsed.valid) return "(unbound)";
+  // Conventional order: Super, Ctrl, Alt, Shift, then the key.
   std::string label;
-  size_t pos = 0;
-  while (pos <= modifier.size()) {
-    size_t end = modifier.find('+', pos);
-    if (end == std::string::npos) end = modifier.size();
-    std::string n = modifier.substr(pos, end - pos);
-    for (char& c : n) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    if (!n.empty()) {
-      std::string pretty = n == "super" || n == "logo" || n == "win" || n == "meta" ? "Super"
-                           : n == "alt"                                           ? "Alt"
-                           : n == "ctrl" || n == "control"                        ? "Ctrl"
-                           : n == "shift"                                         ? "Shift"
-                                                                                  : n;
-      label += (label.empty() ? "" : "+") + pretty;
-    }
-    pos = end + 1;
-  }
-  if (label.empty()) label = "Super";
-  return format_combo(name, force_shift, label.c_str());
+  if (parsed.mods & kModLogo) label += "Super+";
+  if (parsed.mods & kModCtrl) label += "Ctrl+";
+  if (parsed.mods & kModAlt) label += "Alt+";
+  bool shift = parsed.mods & kModShift;
+  // key_label() adds Shift itself for shifted names ("Q"), so reuse format_combo's
+  // key naming and strip its "Alt+" prefix.
+  std::string key = format_combo(parsed.key, shift);
+  key = key.substr(4);  // drop "Alt+"
+  return label + key;
 }
 
 std::vector<ShortcutEntry> build_shortcut_list(const KeybindsConfig& b, WindowLayout layout) {
@@ -75,11 +66,13 @@ std::vector<ShortcutEntry> build_shortcut_list(const KeybindsConfig& b, WindowLa
     out.push_back({section, std::move(keys), what, !desktop || desktop_ok});
   };
 
-  add("Applications", format_alt_combo(b.terminal), "Open a terminal", true);
+  // The terminal key differs per layout: Alt+Enter in Tiling, its own combo in Desktop.
+  add("Applications", desktop ? format_key_combo(b.desktop_terminal) : format_alt_combo(b.terminal),
+      "Open a terminal", true);
   if (desktop) {  // Desktop-layout app shortcuts (not bound in Tiling)
-    add("Applications", format_mod_combo(b.modifier, b.browser, true), "Open the web browser", true);
-    add("Applications", format_mod_combo(b.modifier, b.file_manager, true), "Open the file manager", true);
-    add("Applications", format_mod_combo(b.modifier, b.text_editor, true), "Open the text editor", true);
+    add("Applications", format_key_combo(b.desktop_browser), "Open the web browser", true);
+    add("Applications", format_key_combo(b.desktop_file_manager), "Open the file manager", true);
+    add("Applications", format_key_combo(b.desktop_text_editor), "Open the text editor", true);
     {
       const std::vector<std::string> keys = split_key_names(b.start_menu_key);
       std::string label = keys.empty() ? "Super" : keys.front();
@@ -91,7 +84,7 @@ std::vector<ShortcutEntry> build_shortcut_list(const KeybindsConfig& b, WindowLa
   add("Applications", format_alt_combo(b.launcher), "Application launcher");
   add("Applications", format_alt_combo(b.screenshot), "Screenshot a region to the clipboard");
   add("Applications", format_alt_combo(b.lock), "Lock the screen");
-  add("Help", format_mod_combo(b.modifier, b.shortcuts), "Show this list of shortcuts", true);
+  add("Help", format_key_combo(b.shortcuts_help), "Show this list of shortcuts", true);
 
   add("Windows", format_alt_combo(b.close_window), "Close the focused window");
   add("Windows", format_alt_combo(b.toggle_pin), "Pin the focused window (always on top, on every workspace)");

@@ -250,11 +250,16 @@ class Server {
     xkb_keysym_t focus_right = XKB_KEY_l;
     xkb_keysym_t quit = XKB_KEY_Escape;
     xkb_keysym_t debug_overlay = XKB_KEY_I;
-    xkb_keysym_t shortcuts = XKB_KEY_slash;
-    xkb_keysym_t browser = XKB_KEY_b;
-    xkb_keysym_t file_manager = XKB_KEY_e;
-    xkb_keysym_t text_editor = XKB_KEY_t;
-    unsigned modifier_mask = kModLogo;  // modifier for the shortcuts/app binds (see keybinds_config.hpp)
+    // Resolved "ctrl+alt+t"-style combos (see KeybindsConfig): modifier bits + keysym.
+    struct Combo {
+      unsigned mods = 0;
+      xkb_keysym_t sym = XKB_KEY_NoSymbol;
+    };
+    Combo shortcuts_help{kModLogo, XKB_KEY_slash};
+    Combo desktop_terminal{kModCtrl | kModAlt, XKB_KEY_t};
+    Combo desktop_browser{kModLogo | kModShift, XKB_KEY_b};
+    Combo desktop_file_manager{kModLogo | kModShift, XKB_KEY_e};
+    Combo desktop_text_editor{kModLogo | kModShift, XKB_KEY_t};
     std::vector<xkb_keysym_t> start_menu_syms{XKB_KEY_Super_L, XKB_KEY_Super_R};  // tap to open the start menu
   };
   const ResolvedKeybinds& keybinds() const { return resolved_keybinds_; }

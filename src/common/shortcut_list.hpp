@@ -30,13 +30,9 @@ extern const char* const kShortcutsDocUrl;
 // labelled: Return -> Enter, Escape -> Esc, single letters in upper case.
 std::string format_alt_combo(const std::string& keysym_name);
 
-// "Super+<key>": the Windows/Meta-key binds (app shortcuts and the shortcuts list).
-std::string format_super_combo(const std::string& keysym_name);
-
-// `modifier` is the keybinds.toml modifier setting ("super", "ctrl+alt", ...);
-// app shortcuts pass force_shift so they read e.g. "Super+Shift+B".
-std::string format_mod_combo(const std::string& modifier, const std::string& keysym_name,
-                             bool force_shift = false);
+// A keybinds.toml combo ("ctrl+alt+t", "super+shift+b") as a label: "Ctrl+Alt+T",
+// "Super+Shift+B". "(unbound)" when it does not parse.
+std::string format_key_combo(const std::string& combo);
 
 // Same, but always with Shift (the "promote to master" variant of the terminal key).
 std::string format_alt_shift_combo(const std::string& keysym_name);

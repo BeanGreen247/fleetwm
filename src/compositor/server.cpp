@@ -1918,21 +1918,26 @@ void Server::reload_keybinds_config() {
   resolved_keybinds_.quit = resolve_keybind(keybinds_config_.quit, defaults.quit, "quit");
   resolved_keybinds_.debug_overlay =
       resolve_keybind(keybinds_config_.debug_overlay, defaults.debug_overlay, "debug_overlay");
-  resolved_keybinds_.shortcuts =
-      resolve_keybind(keybinds_config_.shortcuts, defaults.shortcuts, "shortcuts");
-  resolved_keybinds_.browser = resolve_keybind(keybinds_config_.browser, defaults.browser, "browser");
-  resolved_keybinds_.file_manager =
-      resolve_keybind(keybinds_config_.file_manager, defaults.file_manager, "file_manager");
-  resolved_keybinds_.text_editor =
-      resolve_keybind(keybinds_config_.text_editor, defaults.text_editor, "text_editor");
+  auto resolve_combo = [&](const std::string& text, const Server::ResolvedKeybinds::Combo& fallback,
+                           const char* field) {
+    const KeyCombo combo = parse_key_combo(text);
+    const xkb_keysym_t sym =
+        combo.valid ? xkb_keysym_from_name(combo.key.c_str(), XKB_KEYSYM_NO_FLAGS) : XKB_KEY_NoSymbol;
+    if (!combo.valid || sym == XKB_KEY_NoSymbol) {
+      wlr_log(WLR_ERROR, "fleetwm: keybinds.toml: unrecognized combo '%s' for '%s', keeping the default",
+              text.c_str(), field);
+      return fallback;
+    }
+    return Server::ResolvedKeybinds::Combo{combo.mods, sym};
+  };
+  resolved_keybinds_.shortcuts_help = resolve_combo(keybinds_config_.shortcuts_help, defaults.shortcuts_help, "shortcuts_help");
+  resolved_keybinds_.desktop_terminal = resolve_combo(keybinds_config_.desktop_terminal, defaults.desktop_terminal, "desktop_terminal");
+  resolved_keybinds_.desktop_browser = resolve_combo(keybinds_config_.desktop_browser, defaults.desktop_browser, "desktop_browser");
+  resolved_keybinds_.desktop_file_manager =
+      resolve_combo(keybinds_config_.desktop_file_manager, defaults.desktop_file_manager, "desktop_file_manager");
+  resolved_keybinds_.desktop_text_editor =
+      resolve_combo(keybinds_config_.desktop_text_editor, defaults.desktop_text_editor, "desktop_text_editor");
 
-  unsigned mask = modifier_mask(keybinds_config_.modifier);
-  if (mask == 0) {
-    wlr_log(WLR_ERROR, "fleetwm: keybinds.toml: unrecognized modifier '%s', using super",
-            keybinds_config_.modifier.c_str());
-    mask = kModLogo;
-  }
-  resolved_keybinds_.modifier_mask = mask;
   resolved_keybinds_.start_menu_syms.clear();
   for (const std::string& name : split_key_names(keybinds_config_.start_menu_key)) {
     const xkb_keysym_t sym = xkb_keysym_from_name(name.c_str(), XKB_KEYSYM_NO_FLAGS);

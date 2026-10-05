@@ -51,25 +51,24 @@ struct KeybindsConfig {
   // output.cpp) -- a developer/debugging tool, not a user-facing
   // feature, hence "I" for "info" rather than anything more prominent.
   std::string debug_overlay = "I";
-  // The modifier for the binds below, as '+'-joined names from super (the
-  // Windows/Meta key, default), alt, ctrl, shift -- e.g. "ctrl+alt". Super is the
-  // default so these never collide with what runs inside a terminal: tmux's Alt
-  // bindings (Alt+1..5, Alt+n/p/o, Alt+arrows), the shell's readline ones
-  // (Alt+b/f/d/t/u/l/c/?), and tmux's own prefix (Ctrl+b).
-  std::string modifier = "super";
+  // ---- Desktop (floating) layout shortcuts ----
+  // Each is a full combo written as '+'-joined modifier names followed by an xkb key
+  // name, e.g. "ctrl+alt+t" or "super+shift+b". Modifiers: super (the Windows/Meta
+  // key; also logo/win/meta), alt, ctrl (control), shift. They are independent of the
+  // Alt-based Tiling shortcuts above, which are all switched off in the Desktop layout
+  // (so Alt+Enter does not open a terminal there). The defaults stay clear of what runs
+  // inside a terminal: tmux's Alt bindings (Alt+1..5, Alt+n/p/o, Alt+arrows), readline's
+  // (Alt+b/f/d/t/u/l/c/?) and tmux's own prefix, Ctrl+b.
+  std::string desktop_terminal = "ctrl+alt+t";
+  std::string desktop_browser = "super+shift+b";       // default web browser (Settings -> Default Apps)
+  std::string desktop_file_manager = "super+shift+e";  // default file manager
+  std::string desktop_text_editor = "super+shift+t";   // default text editor
+  // Opens the keyboard-shortcuts window (fleetwm-shortcuts) in either layout.
+  std::string shortcuts_help = "super+slash";
   // Key(s) that open the start menu when tapped on their own (Desktop layout), as
   // xkb keysym names separated by commas. Remap it here if your keyboard has no
   // Super key, e.g. "Menu" or "F12".
   std::string start_menu_key = "Super_L,Super_R";
-  // <modifier>+<key> opens the keyboard-shortcuts window (fleetwm-shortcuts) in
-  // either layout.
-  std::string shortcuts = "slash";
-  // Desktop (floating) layout only: <modifier>+Shift+<key> opens the default web
-  // browser / file manager / text editor chosen in Settings (the Shift keeps them
-  // clear of plain <modifier>+<key> combinations). Not bound in the Tiling layout.
-  std::string browser = "b";
-  std::string file_manager = "e";
-  std::string text_editor = "t";  // Super+T
 };
 
 // Bit values of wlr_keyboard_modifiers (WLR_MODIFIER_*), so the result can be
@@ -81,6 +80,23 @@ enum ModifierBit : unsigned { kModShift = 1, kModCtrl = 4, kModAlt = 8, kModLogo
 // when the string is empty or contains an unknown name (callers then fall back to
 // Super).
 unsigned modifier_mask(const std::string& names);
+
+// A parsed combo string such as "ctrl+alt+t": the modifier bits and the key name.
+struct KeyCombo {
+  unsigned mods = 0;
+  std::string key;    // xkb keysym name, e.g. "t", "slash", "F12"
+  bool valid = false;
+};
+
+// Everything before the last '+' is a modifier name (see modifier_mask), the last
+// part is the key. Invalid (valid == false) when empty, when a modifier is unknown,
+// or when there is no key ("ctrl+alt+").
+KeyCombo parse_key_combo(const std::string& combo);
+
+// Whether the modifiers held (WLR_MODIFIER_* bits, which may include Caps/Num lock)
+// are exactly the combo's: only Shift, Ctrl, Alt and Super are compared, so Num
+// Lock does not matter but an extra Shift does.
+bool combo_mods_match(unsigned held, unsigned wanted);
 
 // Splits "Super_L,Super_R" into trimmed, non-empty names.
 std::vector<std::string> split_key_names(const std::string& list);

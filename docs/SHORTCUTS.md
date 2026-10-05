@@ -25,16 +25,18 @@ The mouse: hovering a window focuses it; click a workspace number in the bar to 
 
 ## Desktop layout (floating windows)
 
-Of the Alt shortcuts only **Alt+Enter** (terminal) is bound, plus these (the Super key never
-clashes with tmux or the shell's readline bindings, which use Alt+letters):
+None of the Alt (tiling) shortcuts work here, Alt+Enter included. These do, and every one is a
+combo you can change in `keybinds.toml` (the defaults avoid tmux's Alt bindings and Ctrl+B prefix,
+and the shell's readline Alt+letter bindings):
 
-| Keys | Action |
-| --- | --- |
-| Tap Super (Windows key) | Open or close the start menu |
-| Super+/ | This shortcuts list |
-| Super+Shift+B | Default web browser |
-| Super+Shift+E | Default file manager |
-| Super+Shift+T | Default text editor |
+| Keys | Action | Setting |
+| --- | --- | --- |
+| Ctrl+Alt+T | Open a terminal | `desktop_terminal` |
+| Super+Shift+B | Default web browser | `desktop_browser` |
+| Super+Shift+E | Default file manager | `desktop_file_manager` |
+| Super+Shift+T | Default text editor | `desktop_text_editor` |
+| Super+/ | This shortcuts list (both layouts) | `shortcuts_help` |
+| Tap Super (Windows key) | Open or close the start menu | `start_menu_key` |
 
 The app shortcuts use the apps chosen in Settings -> Default Apps (or the first installed one).
 Everything else is done with the mouse:
@@ -52,8 +54,10 @@ Everything else is done with the mouse:
 
 ## Changing keys
 
-`~/.config/fleetwm/keybinds.toml` (per user). `modifier = "super"` changes the modifier for the
-Super+ binds (`ctrl+alt`, `alt`, ...); `start_menu_key = "Super_L,Super_R"` is the key whose tap opens
-the start menu (use e.g. `Menu` or `F12` on a keyboard without a Super key); `browser`, `file_manager`
-and `text_editor` pick the app keys. Key names are xkb keysym names (`Return`, `d`,
-`Q`, `question`, `F5`). Changes apply right away.
+`~/.config/fleetwm/keybinds.toml` (per user). The Desktop shortcuts are full combos: modifier names
+joined with `+` and then an xkb key name, for example `desktop_terminal = "ctrl+alt+t"` or
+`desktop_browser = "super+shift+b"`. Modifiers are `super` (also `logo`, `win`, `meta`), `alt`, `ctrl`
+and `shift`; the combo must match exactly, so Ctrl+Alt+Shift+T does not trigger Ctrl+Alt+T.
+`start_menu_key = "Super_L,Super_R"` is the key whose tap opens the start menu (use e.g. `Menu` or
+`F12` on a keyboard without a Super key). The Tiling shortcuts (`terminal`, `launcher`, ...) are the
+Alt+key names above, e.g. `Q` for Alt+Shift+Q. Changes apply right away.
