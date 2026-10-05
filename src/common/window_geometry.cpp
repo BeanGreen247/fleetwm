@@ -94,6 +94,16 @@ Box snap_box(SnapZone zone, const Box& a) {
   return {};
 }
 
+BarEdge exclusive_edge(bool left, bool right, bool top, bool bottom) {
+  const bool spans_x = left == right;  // both or neither horizontal anchors
+  const bool spans_y = top == bottom;
+  if (top && !bottom && spans_x) return BarEdge::Top;
+  if (bottom && !top && spans_x) return BarEdge::Bottom;
+  if (left && !right && spans_y) return BarEdge::Left;
+  if (right && !left && spans_y) return BarEdge::Right;
+  return BarEdge::None;
+}
+
 TitlebarLayout layout_titlebar(int width, const TitlebarMetrics& in) {
   TitlebarMetrics m = in;
   m.height = std::max(16, m.height);
