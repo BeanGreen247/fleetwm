@@ -31,6 +31,7 @@ executable(
     'idle.cpp',
     'window_actions.cpp',
     'cursor.cpp',
+    'xwayland.cpp',
   ),
   include_directories: include_directories('.'),
   cpp_args: wlroots_cpp_args,

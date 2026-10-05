@@ -34,8 +34,7 @@ void Server::cycle_windows(bool backward, unsigned hold_mask) {
   if (cycle_order_.empty()) {
     // `views` is most-recently-used first, which is the order Alt+Tab should walk.
     for (const std::unique_ptr<View>& view : views) {
-      if (!view->workspace || view->kind != View::Kind::XdgToplevel || !view->xdg_toplevel ||
-          view->xdg_toplevel->parent) {
+      if (!view->workspace || !view->is_window() || view->is_child_window()) {
         continue;
       }
       // Only the windows on the workspace being looked at (pinned ones are on all of them);

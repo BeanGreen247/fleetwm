@@ -254,9 +254,30 @@ class View {
 #if FLEETWM_XWAYLAND
   wlr_xwayland_surface* xwayland_surface = nullptr;
   wl_listener request_configure{};
+  wl_listener x_associate{};
+  wl_listener x_dissociate{};
+  wl_listener x_request_activate{};
+  wl_listener x_request_minimize{};
+  wl_listener x_set_class{};
+  wl_listener x_scene_destroy{};
+  wlr_scene_surface* x_scene = nullptr;  // the X11 window's pixels, present while it is mapped
+  int x_sent_x = 0, x_sent_y = 0, x_sent_w = -1, x_sent_h = -1;
 #endif
 
   wlr_surface* surface() const;
+
+  // ---- Windows from either shell: xdg-shell toplevels and X11 windows (XWayland) ----
+  // Everything that places, sizes or labels a window goes through these, so tiling, snapping,
+  // titlebars and the taskbar treat both kinds the same.
+  bool is_window() const;        // a real application window (not a popup or menu)
+  bool is_child_window() const;  // a dialog or tool window belonging to another window
+  wlr_box content_geometry() const;  // size of the client's content (x, y are 0)
+  void request_size(int w, int h);   // asks the client for a content size (and tells X11 where it is)
+  void set_activated(bool activated);
+  const char* window_title() const;   // may be null
+  const char* window_app_id() const;  // xdg app id, or the X11 class; may be null
+  // X11 clients have to be told where their window is; call after the position changes.
+  void sync_x11_position();
 
  private:
   // What the current titlebar buffer was rendered from.
@@ -267,5 +288,8 @@ class View {
   void focus();
   void close();
 };
+
+// Creates the border rectangles, the fill and the resize ring inside view->container_tree.
+void create_view_rects(View* view);
 
 }  // namespace fleetwm

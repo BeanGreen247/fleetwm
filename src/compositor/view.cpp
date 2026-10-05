@@ -117,6 +117,11 @@ void View::set_fullscreen(bool fullscreen_) {
   if (kind == Kind::XdgToplevel && xdg_toplevel) {
     wlr_xdg_toplevel_set_fullscreen(xdg_toplevel, fullscreen);
   }
+#if FLEETWM_XWAYLAND
+  if (kind == Kind::XWayland && xwayland_surface) {
+    wlr_xwayland_surface_set_fullscreen(xwayland_surface, fullscreen);
+  }
+#endif
 
   if (!fullscreen) {
     // Reparent back under normal toplevels and let the usual tiling
@@ -125,11 +130,11 @@ void View::set_fullscreen(bool fullscreen_) {
     // lands (xdg_toplevel_surface_commit, server.cpp), same as any other
     // resize.
     update_stacking_layer();
-    if (desktop_mode() && kind == Kind::XdgToplevel && xdg_toplevel) {
+    if (desktop_mode() && is_window()) {
       // Free-floating windows go back to where (and how big) they were.
       wlr_scene_node_set_position(&container_tree->node, pre_fullscreen_box.x, pre_fullscreen_box.y);
       if (pre_fullscreen_box.width > 0 && pre_fullscreen_box.height > 0) {
-        wlr_xdg_toplevel_set_size(xdg_toplevel, pre_fullscreen_box.width, pre_fullscreen_box.height);
+        request_size(pre_fullscreen_box.width, pre_fullscreen_box.height);
         last_requested_content_w = pre_fullscreen_box.width;
         last_requested_content_h = pre_fullscreen_box.height;
       }
@@ -140,9 +145,8 @@ void View::set_fullscreen(bool fullscreen_) {
     return;
   }
 
-  if (desktop_mode() && kind == Kind::XdgToplevel && xdg_toplevel) {
-    wlr_box geo{};
-    wlr_xdg_surface_get_geometry(xdg_toplevel->base, &geo);
+  if (desktop_mode() && is_window()) {
+    const wlr_box geo = content_geometry();
     pre_fullscreen_box = {container_tree->node.x, container_tree->node.y, geo.width, geo.height};
   }
 
@@ -153,11 +157,11 @@ void View::set_fullscreen(bool fullscreen_) {
   wlr_scene_node_raise_to_top(&container_tree->node);
   wlr_scene_node_set_position(&container_tree->node, output_box.x, output_box.y);
 
-  if (kind == Kind::XdgToplevel && xdg_toplevel) {
+  if (is_window()) {
     int w = std::max(1, output_box.width);
     int h = std::max(1, output_box.height);
     if (w != last_requested_content_w || h != last_requested_content_h) {
-      wlr_xdg_toplevel_set_size(xdg_toplevel, w, h);
+      request_size(w, h);
       last_requested_content_w = w;
       last_requested_content_h = h;
     }
@@ -179,8 +183,8 @@ void View::resize_border() {
   wlr_scene_rect_set_color(border_right, color);
 
   wlr_box geo{};
-  if (kind == Kind::XdgToplevel && xdg_toplevel) {
-    wlr_xdg_surface_get_geometry(xdg_toplevel->base, &geo);
+  if (is_window()) {
+    geo = content_geometry();
   }
   int width = geo.width > 0 ? geo.width : 1;
   int height = geo.height > 0 ? geo.height : 1;
@@ -261,9 +265,15 @@ bool View::desktop_mode() const {
 }
 
 bool View::wants_titlebar() const {
-  if (!desktop_mode() || fullscreen || kind != Kind::XdgToplevel || !xdg_toplevel) {
+  if (!desktop_mode() || fullscreen || !is_window()) {
     return false;
   }
+#if FLEETWM_XWAYLAND
+  if (kind == Kind::XWayland) {
+    // X11 programs expect the window manager to decorate them, unless they ask for none.
+    return !(xwayland_surface->decorations & WLR_XWAYLAND_SURFACE_DECORATIONS_NO_TITLE);
+  }
+#endif
   if (has_decoration) {
     return true;
   }
@@ -293,7 +303,7 @@ void View::update_titlebar() {
 
   // resize_border() runs on every client commit, so compare without
   // allocating: only build a std::string when something actually changed.
-  const char* title = xdg_toplevel->title ? xdg_toplevel->title : xdg_toplevel->app_id;
+  const char* title = window_title() ? window_title() : window_app_id();
   if (!title) title = "";
   const int height = titlebar_height();
   if (content_w == titlebar_w_ && height == titlebar_h_ && focused == rendered_.focused &&
@@ -319,7 +329,7 @@ void View::set_hover_button(int button) {
 }
 
 void View::snap_to(geom::SnapZone zone) {
-  if (zone == geom::SnapZone::None || !output || kind != Kind::XdgToplevel || !xdg_toplevel) {
+  if (zone == geom::SnapZone::None || !output || !is_window()) {
     return;
   }
   if (zone == geom::SnapZone::Maximize) {
@@ -330,8 +340,7 @@ void View::snap_to(geom::SnapZone zone) {
     set_maximized(false);
   }
   if (snap_zone == geom::SnapZone::None) {
-    wlr_box geo{};
-    wlr_xdg_surface_get_geometry(xdg_toplevel->base, &geo);
+    const wlr_box geo = content_geometry();
     restore_box = {container_tree->node.x, container_tree->node.y, geo.width, geo.height};
   }
   snap_zone = zone;
@@ -339,7 +348,7 @@ void View::snap_to(geom::SnapZone zone) {
 }
 
 void View::place_tile(size_t index, size_t count) {
-  if (!output || !xdg_toplevel || count == 0 || index >= count) {
+  if (!output || !is_window() || count == 0 || index >= count) {
     return;
   }
   snap_zone = geom::SnapZone::None;  // an explicit placement replaces any earlier snap
@@ -350,7 +359,7 @@ void View::place_tile(size_t index, size_t count) {
 }
 
 void View::refit_placed() {
-  if (!has_placed || !output || !xdg_toplevel) {
+  if (!has_placed || !output || !is_window()) {
     return;
   }
   const wlr_box a = output->usable_area;
@@ -362,14 +371,14 @@ void View::refit_placed() {
   const int bt = border_thickness();
   wlr_scene_node_set_position(&container_tree->node, outer.x, outer.y);
   const int w = std::max(1, outer.w - 2 * bt), h = std::max(1, outer.h - titlebar_height() - 2 * bt);
-  wlr_xdg_toplevel_set_size(xdg_toplevel, w, h);
+  request_size(w, h);
   last_requested_content_w = w;
   last_requested_content_h = h;
   resize_border();
 }
 
 void View::refit_snapped() {
-  if (snap_zone == geom::SnapZone::None || !output || !xdg_toplevel) {
+  if (snap_zone == geom::SnapZone::None || !output || !is_window()) {
     return;
   }
   const wlr_box a = output->usable_area;
@@ -377,7 +386,7 @@ void View::refit_snapped() {
   const int bt = border_thickness();
   wlr_scene_node_set_position(&container_tree->node, outer.x, outer.y);
   const int w = std::max(1, outer.w - 2 * bt), h = std::max(1, outer.h - titlebar_height() - 2 * bt);
-  wlr_xdg_toplevel_set_size(xdg_toplevel, w, h);
+  request_size(w, h);
   last_requested_content_w = w;
   last_requested_content_h = h;
   resize_border();
@@ -388,27 +397,26 @@ void View::restore_from_snap() {
     set_maximized(false);
     return;
   }
-  if (snap_zone == geom::SnapZone::None || !xdg_toplevel) {
+  if (snap_zone == geom::SnapZone::None || !is_window()) {
     return;
   }
   snap_zone = geom::SnapZone::None;
   wlr_scene_node_set_position(&container_tree->node, restore_box.x, restore_box.y);
   const int w = std::max(1, restore_box.width), h = std::max(1, restore_box.height);
-  wlr_xdg_toplevel_set_size(xdg_toplevel, w, h);
+  request_size(w, h);
   last_requested_content_w = w;
   last_requested_content_h = h;
   resize_border();
 }
 
 void View::refit_maximized() {
-  if (!maximized || !output || !xdg_toplevel) {
+  if (!maximized || !output || !is_window()) {
     return;
   }
   const int bt = border_thickness();
   const wlr_box area = output->usable_area;
   wlr_scene_node_set_position(&container_tree->node, area.x, area.y);
-  wlr_xdg_toplevel_set_size(xdg_toplevel, std::max(1, area.width - 2 * bt),
-                            std::max(1, area.height - titlebar_height() - 2 * bt));
+  request_size(std::max(1, area.width - 2 * bt), std::max(1, area.height - titlebar_height() - 2 * bt));
 }
 
 void View::set_minimized(bool want) {
@@ -435,27 +443,31 @@ void View::set_minimized(bool want) {
 }
 
 void View::set_maximized(bool want) {
-  if (maximized == want || !output || kind != Kind::XdgToplevel || !xdg_toplevel) {
+  if (maximized == want || !output || !is_window()) {
     return;
   }
   const int th = titlebar_height();
   const int bt = border_thickness();
   if (want) {
-    wlr_box geo{};
-    wlr_xdg_surface_get_geometry(xdg_toplevel->base, &geo);
+    const wlr_box geo = content_geometry();
     restore_box = {container_tree->node.x, container_tree->node.y, geo.width, geo.height};
     maximized = true;
     const wlr_box area = output->usable_area;
     wlr_scene_node_set_position(&container_tree->node, area.x, area.y);
-    wlr_xdg_toplevel_set_size(xdg_toplevel, std::max(1, area.width - 2 * bt),
-                              std::max(1, area.height - th - 2 * bt));
+    request_size(std::max(1, area.width - 2 * bt), std::max(1, area.height - th - 2 * bt));
   } else {
     maximized = false;
     wlr_scene_node_set_position(&container_tree->node, restore_box.x, restore_box.y);
-    wlr_xdg_toplevel_set_size(xdg_toplevel, std::max(1, restore_box.width),
-                              std::max(1, restore_box.height));
+    request_size(std::max(1, restore_box.width), std::max(1, restore_box.height));
   }
-  wlr_xdg_toplevel_set_maximized(xdg_toplevel, maximized);
+  if (kind == Kind::XdgToplevel) {
+    wlr_xdg_toplevel_set_maximized(xdg_toplevel, maximized);
+  }
+#if FLEETWM_XWAYLAND
+  if (kind == Kind::XWayland) {
+    wlr_xwayland_surface_set_maximized(xwayland_surface, maximized);
+  }
+#endif
   resize_border();
 }
 
@@ -484,6 +496,140 @@ void View::close() {
     wlr_xwayland_surface_close(xwayland_surface);
   }
 #endif
+}
+
+// ---- toolkit-independent window access -------------------------------------
+
+bool View::is_window() const {
+  if (kind == Kind::XdgToplevel) return xdg_toplevel != nullptr;
+#if FLEETWM_XWAYLAND
+  return xwayland_surface != nullptr;
+#else
+  return false;
+#endif
+}
+
+bool View::is_child_window() const {
+  if (kind == Kind::XdgToplevel) return xdg_toplevel && xdg_toplevel->parent != nullptr;
+#if FLEETWM_XWAYLAND
+  return xwayland_surface && xwayland_surface->parent != nullptr;
+#else
+  return false;
+#endif
+}
+
+wlr_box View::content_geometry() const {
+  wlr_box geo{};
+  if (kind == Kind::XdgToplevel) {
+    if (xdg_toplevel) wlr_xdg_surface_get_geometry(xdg_toplevel->base, &geo);
+    return geo;
+  }
+#if FLEETWM_XWAYLAND
+  if (xwayland_surface) {
+    wlr_surface* s = xwayland_surface->surface;
+    geo.width = s && s->current.width > 0 ? s->current.width : xwayland_surface->width;
+    geo.height = s && s->current.height > 0 ? s->current.height : xwayland_surface->height;
+  }
+#endif
+  return geo;
+}
+
+void View::request_size(int w, int h) {
+  if (kind == Kind::XdgToplevel) {
+    if (xdg_toplevel) wlr_xdg_toplevel_set_size(xdg_toplevel, w, h);
+    return;
+  }
+#if FLEETWM_XWAYLAND
+  if (xwayland_surface) {
+    int cx = 0, cy = 0;
+    wlr_scene_node_coords(&container_tree->node, &cx, &cy);
+    const int bt = border_thickness();
+    x_sent_x = cx + bt;
+    x_sent_y = cy + bt + titlebar_height();
+    x_sent_w = std::max(1, w);
+    x_sent_h = std::max(1, h);
+    wlr_xwayland_surface_configure(xwayland_surface, static_cast<int16_t>(x_sent_x), static_cast<int16_t>(x_sent_y),
+                                   static_cast<uint16_t>(x_sent_w), static_cast<uint16_t>(x_sent_h));
+  }
+#else
+  (void)w;
+  (void)h;
+#endif
+}
+
+void View::sync_x11_position() {
+#if FLEETWM_XWAYLAND
+  if (kind != Kind::XWayland || !xwayland_surface || !workspace) return;
+  int cx = 0, cy = 0;
+  wlr_scene_node_coords(&container_tree->node, &cx, &cy);
+  const int bt = border_thickness();
+  const int x = cx + bt, y = cy + bt + titlebar_height();
+  if (x == x_sent_x && y == x_sent_y) return;
+  const wlr_box geo = content_geometry();
+  x_sent_x = x;
+  x_sent_y = y;
+  wlr_xwayland_surface_configure(xwayland_surface, static_cast<int16_t>(x), static_cast<int16_t>(y),
+                                 static_cast<uint16_t>(std::max(1, x_sent_w > 0 ? x_sent_w : geo.width)),
+                                 static_cast<uint16_t>(std::max(1, x_sent_h > 0 ? x_sent_h : geo.height)));
+#endif
+}
+
+void View::set_activated(bool activated) {
+  if (kind == Kind::XdgToplevel) {
+    if (xdg_toplevel) wlr_xdg_toplevel_set_activated(xdg_toplevel, activated);
+    return;
+  }
+#if FLEETWM_XWAYLAND
+  if (xwayland_surface) {
+    wlr_xwayland_surface_activate(xwayland_surface, activated);
+    if (activated) wlr_xwayland_surface_restack(xwayland_surface, nullptr, XCB_STACK_MODE_ABOVE);
+  }
+#else
+  (void)activated;
+#endif
+}
+
+const char* View::window_title() const {
+  if (kind == Kind::XdgToplevel) return xdg_toplevel ? xdg_toplevel->title : nullptr;
+#if FLEETWM_XWAYLAND
+  // X11 programs often set an empty title; treat that as none so the class shows instead.
+  return xwayland_surface && xwayland_surface->title && *xwayland_surface->title ? xwayland_surface->title : nullptr;
+#else
+  return nullptr;
+#endif
+}
+
+const char* View::window_app_id() const {
+  if (kind == Kind::XdgToplevel) return xdg_toplevel ? xdg_toplevel->app_id : nullptr;
+#if FLEETWM_XWAYLAND
+  return xwayland_surface ? xwayland_surface->class_ ? xwayland_surface->class_ : nullptr : nullptr;
+#else
+  return nullptr;
+#endif
+}
+
+void create_view_rects(View* view) {
+  constexpr float kTransparent[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+  view->border_top = wlr_scene_rect_create(view->container_tree, 0, 0, kTransparent);
+  view->border_bottom = wlr_scene_rect_create(view->container_tree, 0, 0, kTransparent);
+  view->border_left = wlr_scene_rect_create(view->container_tree, 0, 0, kTransparent);
+  view->border_right = wlr_scene_rect_create(view->container_tree, 0, 0, kTransparent);
+
+  // Invisible, tagged ring around the window that acts as the resize handles
+  // in the Desktop layout; enabled/sized by View::resize_border().
+  // The border rects are part of the resize handle too (they sit between the
+  // content and the ring), so they carry the same tag.
+  for (wlr_scene_rect* border : {view->border_top, view->border_bottom, view->border_left, view->border_right}) {
+    border->node.data = &view->tag;
+  }
+  view->fill_rect = wlr_scene_rect_create(view->container_tree, 0, 0, kTransparent);
+  view->fill_rect->node.data = &view->tag;
+  wlr_scene_node_lower_to_bottom(&view->fill_rect->node);
+  wlr_scene_node_set_enabled(&view->fill_rect->node, false);
+  view->grab_rect = wlr_scene_rect_create(view->container_tree, 0, 0, kTransparent);
+  view->grab_rect->node.data = &view->tag;
+  wlr_scene_node_lower_to_bottom(&view->grab_rect->node);
+  wlr_scene_node_set_enabled(&view->grab_rect->node, false);
 }
 
 }  // namespace fleetwm
