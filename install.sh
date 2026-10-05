@@ -103,11 +103,14 @@ for vendor_file in /sys/class/drm/card*/device/vendor; do
   case "$(cat "${vendor_file}")" in
     0x8086)
       # The non-free media driver supports more codecs and is the faster one; it replaces the
-      # free package if that is installed. i965-va-driver covers GPUs older than Broadwell, and
-      # firmware-misc-nonfree has the i915 GuC/HuC firmware (video and scheduling offload).
-      apt_install intel-media-va-driver-non-free i965-va-driver firmware-misc-nonfree ||
+      # free package if that is installed. i965-va-driver covers GPUs older than Broadwell.
+      apt_install intel-media-va-driver-non-free i965-va-driver ||
         apt_install intel-media-va-driver i965-va-driver ||
-        echo "warning: no Intel video acceleration driver installed" ;;
+        echo "warning: no Intel video acceleration driver installed"
+      # The i915 GuC/HuC firmware (video and scheduling offload). A separate, optional step: some
+      # bases (Armbian's full firmware package) conflict with other firmware packages.
+      apt_install firmware-intel-graphics ||
+        echo "warning: firmware-intel-graphics not installed (a conflicting firmware package may be in the way)" ;;
     0x1002)
       apt_install firmware-amd-graphics ||
         echo "warning: firmware-amd-graphics not available (needs the non-free-firmware repository)" ;;
