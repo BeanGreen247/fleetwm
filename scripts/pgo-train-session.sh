@@ -3,10 +3,9 @@
 # instrumented (profile-generate) binaries so their .gcda files reflect
 # real code paths instead of only "process started and immediately
 # quit." Meant to run inside `dbus-run-session` (an isolated session
-# D-Bus bus is required: without one, every GTK4 client's GApplication
-# silently hands off to whatever real fleetwm-bar/-settings/etc is
-# already running on the actual desktop session's bus instead of doing
-# any work itself -- confirmed the hard way while building this script).
+# D-Bus bus is required: the programs use the session bus (tray, portals), and without an
+# isolated one they would talk to whatever real fleetwm-bar/-settings/etc is already
+# running on the actual desktop session instead of doing any work themselves).
 #
 # Not set -e: one client failing to start shouldn't abort the whole
 # training pass and skip cleanup of everything already running.
@@ -83,11 +82,11 @@ send_ipc "WORKSPACE?"
 send_ipc "WORKSPACE 2"
 send_ipc "WORKSPACE 0"
 
-echo "    starting GTK4 clients: bar, wallpaper, settings, launcher, powermenu, audiomixer..."
+echo "    starting the desktop programs: bar, wallpaper, settings, launcher, power menu, audio mixer..."
 # Locker and the greeter binaries are deliberately not included here --
 # locker needs a real PAM auth round trip to reach its own clean-unlock
-# exit path, and the greeter is TTY/PAM-driven, not a GTK4
-# GApplication; both stay accepted gaps in headless training, same as
+# exit path, and the greeter is TTY/PAM-driven, not a Wayland
+# client like the others; both stay accepted gaps in headless training, same as
 # they were in the last manual live-usage training run (see
 # project_fleetwm_tests.md / project_fleetwm_backlog.md).
 spawn_client "${BUILD_DIR}/src/bar/fleetwm-bar"

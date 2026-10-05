@@ -171,8 +171,8 @@ apt_install wlrctl wtype gdb imagemagick
 # build-time only: scripts/build-pgo-auto.sh's synthetic PGO training
 # pass (now run unconditionally below, see "Building with PGO") needs
 # `dbus-run-session` (an isolated session bus, so the training run's
-# GTK4 clients don't silently hand off to a real desktop session's bus
-# instead of doing any work) and python3 (already present on every
+# programs don't talk to a real desktop session's bus instead of
+# doing any work) and python3 (already present on every
 # supported distro here, listed for completeness).
 apt_install dbus-daemon python3
 
