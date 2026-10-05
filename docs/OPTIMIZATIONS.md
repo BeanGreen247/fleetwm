@@ -164,17 +164,3 @@ client rewrite alone and 280 MB originally.
   0.70 reads 34%.
 - The island bar layout needs an output of at least 1366 px and was not
   visually verified on the 1280 px test VM.
-
-## SceneFX (rounded corners and shadows)
-
-- wlroots (0.18 through master) has no corner-radius API; SceneFX 0.2.1 is a drop-in `wlr_scene` with an
-  effects renderer (`fx_renderer_create`). Optional at build time (`-Drounded_corners`), built by
-  `scripts/build-scenefx.sh`.
-- Link order matters: libscenefx and libwlroots both export `wlr_scene_*` with different struct sizes. The
-  compositor must list scenefx before wlroots or libwlroots' scene code runs on SceneFX's structs and crashes
-  (`wlr_scene_buffer_set_opaque_region`).
-- It needs a GL renderer, so it replaces the pixman-without-render-node memory saving. On a GPU-less VM
-  (llvmpipe) this costs RAM; with `window_corner_radius = 0` and `window_shadows = false` the pixman path is kept.
-- With rounding on, the border is one rounded rect lowered beneath the content, not four edge rects.
-- The SIGCHLD reaper must not `waitpid(-1)`: it stole Xwayland's exit status from wlroots.
-- Known gap: XWayland is started but X11 windows are not managed (no `new_xwayland_surface` listener), so they never appear.
