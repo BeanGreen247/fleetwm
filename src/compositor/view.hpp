@@ -213,6 +213,14 @@ class View {
   // Re-applies the maximized geometry after the output's work area changed.
   void refit_maximized();
 
+  // Snapping (Desktop layout): halves/quarters of the work area. The size and
+  // place the window had before are kept in restore_box (shared with maximize).
+  geom::SnapZone snap_zone = geom::SnapZone::None;
+  void snap_to(geom::SnapZone zone);
+  void refit_snapped();
+  // Undoes maximize or a snap, putting the window back where it was.
+  void restore_from_snap();
+
   wl_listener request_move{};
   wl_listener request_maximize{};
   wl_listener set_title{};

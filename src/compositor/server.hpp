@@ -39,6 +39,7 @@ extern "C" {
 #include "default_apps.hpp"
 #include "keybinds_config.hpp"
 #include "theme.hpp"
+#include "window_geometry.hpp"
 #include "window_list.hpp"
 #include "workspace.hpp"
 
@@ -415,6 +416,10 @@ class Server {
   wlr_box grab_box_{};  // container x,y + content w,h when the grab began
   uint32_t grab_edges_ = 0;
   bool grab_unmaximize_pending_ = false;
+  geom::SnapZone snap_pending_ = geom::SnapZone::None;  // zone under the cursor during a move
+  wlr_scene_rect* snap_preview_ = nullptr;
+  void update_snap_preview(View* view);
+  void hide_snap_preview();
   OutputSettings output_settings_;
   void reconfigure_layer_surfaces(wlr_output* wlr_out);
   pid_t spawn_locker();
