@@ -16,6 +16,7 @@
 #include <functional>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <map>
 #include <sstream>
 #include <memory>
@@ -222,6 +223,18 @@ struct Settings {
   }
   void save_bar() { save_bar_config(bar); }
   void save_wallpaper() { save_wallpaper_config(wallpaper); }
+
+  // Follows changes made outside this window (another tool, a hand edit, the
+  // wallpaper's auto accent) so what is shown always matches the files, in any
+  // window layout. Our own saves land here too and simply re-read what was written.
+  void reload_from_disk() {
+    config = load_theme_config();
+    bar = load_bar_config();
+    wallpaper = load_wallpaper_config();
+    default_apps = load_default_apps_config();
+    apply_theme();
+    redraw();
+  }
 
   // Shortens a path in the middle so it fits `max_w` px.
   std::string ellipsize(cairo_t* cr, const std::string& s, double max_w) {
@@ -1154,6 +1167,9 @@ int main() {
     S.redraw();
   };
   S.surface->on_closed = [&S] { S.app.quit(); };
+
+  kit::watch_dirs(S.app, {std::filesystem::path(user_config_path()).parent_path().string()},
+                  [&S] { S.reload_from_disk(); });
 
   S.mixer.start(
       [&S](int percent, bool muted, bool available) {
