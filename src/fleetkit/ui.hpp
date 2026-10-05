@@ -99,6 +99,21 @@ class Ui {
   bool color_button(std::string* hex, bool enabled = true);
   bool tabs(const std::vector<std::string>& names, int* current);
   bool text_entry(std::string* text, double width, bool enabled = true);
+  // A button showing options[*index]; clicking opens a list. Returns true
+  // when the selection changed.
+  bool dropdown(const std::vector<std::string>& options, int* index, double width = 180, bool enabled = true);
+
+  // A free-drawing area of the given height spanning the content width. The
+  // caller draws into `*rect` (content coordinates) with cr() and reads the
+  // pointer from the returned event (x/y relative to rect, valid while down).
+  struct CanvasEvent {
+    bool pressed = false;   // left button went down inside the canvas this frame
+    bool down = false;      // a drag that started in the canvas is in progress
+    bool released = false;  // the drag ended this frame
+    double x = 0, y = 0;    // pointer position relative to the canvas
+  };
+  CanvasEvent canvas(double height, UiRect* rect);
+  cairo_t* cr() const { return cr_; }
 
   // ---- scroll regions ----
   // Everything between begin_scroll() and end_scroll() is clipped to `view`
@@ -110,7 +125,7 @@ class Ui {
   void open_file_dialog(const std::string& title, const std::string& start_path,
                         const std::vector<std::string>& extensions);
   bool take_file_result(std::string* path);  // true once after the user picked a file
-  bool modal_open() const { return picker_open_ || file_open_; }
+  bool modal_open() const { return picker_open_ || file_open_ || dd_open_; }
 
  private:
   struct Pt {
@@ -130,6 +145,7 @@ class Ui {
 
   // modals
   void draw_color_picker();
+  void draw_dropdown();
   void draw_file_dialog();
   void open_picker(const std::string& hex, int target);
   void picker_rebuild_sv();
@@ -208,6 +224,14 @@ class Ui {
   std::string file_result_;
   double last_click_t_ = 0;
   int last_click_row_ = -1;
+
+  // dropdown popup
+  bool dd_open_ = false, dd_done_ = false;
+  int dd_target_ = 0, dd_result_ = 0, dd_sel_ = 0, dd_hover_ = -1;
+  std::vector<std::string> dd_opts_;
+  UiRect dd_anchor_;  // screen coordinates of the button that opened it
+  double dd_scroll_ = 0;
+  bool canvas_active_ = false;
 
   bool modal_blocked_ = false;  // a modal was open at begin(): ordinary widgets ignore input
   bool in_modal_ = false;

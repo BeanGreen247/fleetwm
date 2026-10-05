@@ -430,6 +430,32 @@ behind each:
   `fleetwm-greet` spawns and talks to over a private socket; never runs
   outside of a `fleetwm-greet` session
 
+## Display management
+
+Resolution, refresh rate and the position of each monitor in the desktop
+layout are set from the **Display** tab of `fleetwm-settings` (drag the
+screens in the arrangement view and they snap to each other's edges and
+centres, or use the Place/Align controls). A changed mode asks for
+confirmation and reverts by itself after 15 seconds; the compositor also
+reverts on its own if the monitor cannot present the new mode. Settings are
+stored per output name in `~/.config/fleetwm/outputs.toml` and applied when
+the monitor appears:
+
+```toml
+[outputs."DP-1"]
+width = 2560
+height = 1440
+refresh_mhz = 144000
+x = 0
+y = 0
+```
+
+The same operations are available over the compositor's IPC socket
+(`OUTPUTS?` lists monitors and modes, `OUTPUT_SET <name> <w> <h> <refresh_mhz>
+<x> <y>` applies and saves; use `0 0 0` to keep the mode and `-999999
+-999999` to keep the position). The bar follows resolution changes live,
+including switching between the full-width and island layouts.
+
 ## GTK-free shell clients (fleetkit)
 
 The shell pieces -- `fleetwm-bar`,

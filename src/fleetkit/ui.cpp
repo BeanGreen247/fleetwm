@@ -110,7 +110,7 @@ void Ui::begin(cairo_t* cr, double w, double h) {
   again_ = false;
   last_focusables_ = focusables_;
   focusables_.clear();
-  modal_blocked_ = picker_open_ || file_open_;
+  modal_blocked_ = picker_open_ || file_open_ || dd_open_;
   in_modal_ = false;
   scroll_stack_.clear();
   ox_ = oy_ = 0;
@@ -160,6 +160,10 @@ void Ui::end() {
     const size_t first = focusables_.size();
     draw_file_dialog();
     modal_focusables_.assign(focusables_.begin() + static_cast<long>(first), focusables_.end());
+    in_modal_ = false;
+  } else if (dd_open_) {
+    in_modal_ = true;
+    draw_dropdown();
     in_modal_ = false;
   }
   cairo_restore(cr_);
@@ -727,6 +731,10 @@ bool Ui::tabs(const std::vector<std::string>& names, int* current) {
   }
   for (size_t i = 0; i < names.size(); ++i) {
     const TextExtents te = measure_text(cr_, names[i], kFont, static_cast<int>(i) == *current);
+    if (x + te.width + 24 > w_ - right_ && x > left_) {  // wrap onto a second row
+      x = left_;
+      cy_ += h + 2;
+    }
     const UiRect r{x, cy_, te.width + 24, h};
     const bool active = static_cast<int>(i) == *current;
     // clicking a tab
@@ -850,6 +858,175 @@ bool Ui::text_entry(std::string* text, double width, bool enabled) {
     cairo_restore(cr_);
   }
   return mark(changed);
+}
+
+bool Ui::dropdown(const std::vector<std::string>& options, int* index, double width, bool enabled) {
+  const int id = next_id();
+  register_focusable_if(id, enabled);
+  const UiRect r = place(width, 28);
+  bool changed = false;
+  if (dd_done_ && dd_target_ == id) {
+    *index = dd_result_;
+    dd_done_ = false;
+    changed = true;
+  }
+  if (enabled && (click_widget(id, r) || key_activate(id))) {
+    dd_open_ = true;
+    dd_target_ = id;
+    dd_opts_ = options;
+    dd_sel_ = *index;
+    dd_hover_ = *index;
+    dd_anchor_ = {r.x + ox_, r.y + oy_, r.w, r.h};
+    dd_scroll_ = 0;
+    press_pending_ = release_pending_ = false;
+    again_ = dirty_ = true;
+  }
+  if (visible(r)) {
+    const bool hot = enabled && hovered(r);
+    rounded_rect(cr_, r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1, pal_.rounded ? 6 : 0);
+    set_source(cr_, hot ? mix(pal_.bg_secondary, pal_.accent, 0.15) : pal_.bg_secondary);
+    cairo_fill_preserve(cr_);
+    set_source(cr_, focused(id) ? pal_.accent : with_alpha(pal_.fg_secondary, 0.3));
+    cairo_set_line_width(cr_, 1);
+    cairo_stroke(cr_);
+    std::string text = *index >= 0 && *index < static_cast<int>(options.size()) ? options[static_cast<size_t>(*index)] : "";
+    while (text.size() > 3 && measure_text(cr_, text, kFont).width > r.w - 34) text.resize(text.size() - 1);
+    const TextExtents te = measure_text(cr_, text, kFont);
+    draw_text(cr_, text, r.x + 10, r.y + (r.h - te.height) / 2 + te.ascent, kFont,
+              enabled ? pal_.fg_primary : with_alpha(pal_.fg_secondary, 0.6));
+    set_source(cr_, enabled ? pal_.fg_secondary : with_alpha(pal_.fg_secondary, 0.4));
+    cairo_set_line_width(cr_, 1.6);
+    cairo_move_to(cr_, r.x + r.w - 20, r.y + 11);
+    cairo_line_to(cr_, r.x + r.w - 15, r.y + 16);
+    cairo_line_to(cr_, r.x + r.w - 10, r.y + 11);
+    cairo_stroke(cr_);
+  }
+  return mark(changed);
+}
+
+void Ui::draw_dropdown() {
+  const double row_h = 26;
+  double widest = dd_anchor_.w;
+  for (const auto& o : dd_opts_) widest = std::max(widest, measure_text(cr_, o, kFont).width + 28);
+  const double pw = std::min(widest, w_ - 16);
+  const double max_h = std::min(h_ - 16, 280.0);
+  const double ph = std::min(dd_opts_.size() * row_h + 8, max_h);
+  double px = std::clamp(dd_anchor_.x, 8.0, std::max(8.0, w_ - pw - 8));
+  double py = dd_anchor_.y + dd_anchor_.h + 2;
+  if (py + ph > h_ - 6) py = std::max(6.0, dd_anchor_.y - ph - 2);
+  const UiRect box{px, py, pw, ph};
+
+  rounded_rect(cr_, box.x, box.y, box.w, box.h, pal_.rounded ? 8 : 0);
+  set_source(cr_, pal_.bg_secondary);
+  cairo_fill_preserve(cr_);
+  set_source(cr_, with_alpha(pal_.fg_secondary, 0.5));
+  cairo_set_line_width(cr_, 1);
+  cairo_stroke(cr_);
+
+  const double content = dd_opts_.size() * row_h;
+  const double max_off = std::max(0.0, content - (box.h - 8));
+  if (wheel_ != 0 && box.hit(mx_, my_)) {
+    dd_scroll_ += wheel_ * 3.0;
+    wheel_ = 0;
+  }
+  // keyboard
+  for (size_t i = 0; i < keys_.size();) {
+    const KeyEvent& k = keys_[i];
+    bool eaten = true;
+    if (k.sym == XKB_KEY_Down) dd_hover_ = std::min(static_cast<int>(dd_opts_.size()) - 1, dd_hover_ + 1);
+    else if (k.sym == XKB_KEY_Up) dd_hover_ = std::max(0, dd_hover_ - 1);
+    else if (k.sym == XKB_KEY_Escape) {
+      dd_open_ = false;
+      again_ = dirty_ = true;
+    } else if (k.sym == XKB_KEY_Return || k.sym == XKB_KEY_KP_Enter) {
+      dd_result_ = dd_hover_;
+      dd_done_ = true;
+      dd_open_ = false;
+      again_ = dirty_ = true;
+    } else {
+      eaten = false;
+    }
+    if (eaten) keys_.erase(keys_.begin() + static_cast<long>(i));
+    else ++i;
+  }
+  if (!dd_open_) return;
+  if (dd_hover_ >= 0) {  // keep the keyboard selection visible
+    const double top = dd_hover_ * row_h, bottom = top + row_h;
+    if (top < dd_scroll_) dd_scroll_ = top;
+    if (bottom > dd_scroll_ + box.h - 8) dd_scroll_ = bottom - (box.h - 8);
+  }
+  dd_scroll_ = std::clamp(dd_scroll_, 0.0, max_off);
+
+  cairo_save(cr_);
+  cairo_rectangle(cr_, box.x, box.y + 4, box.w, box.h - 8);
+  cairo_clip(cr_);
+  int picked = -1;
+  for (size_t i = 0; i < dd_opts_.size(); ++i) {
+    const UiRect row{box.x + 4, box.y + 4 + i * row_h - dd_scroll_, box.w - 8, row_h};
+    if (row.y + row.h < box.y || row.y > box.y + box.h) continue;
+    const bool hot = row.hit(mx_, my_) && box.hit(mx_, my_);
+    if (hot) dd_hover_ = static_cast<int>(i);
+    const bool sel = static_cast<int>(i) == dd_sel_;
+    if (sel || hot || static_cast<int>(i) == dd_hover_) {
+      rounded_rect(cr_, row.x, row.y + 1, row.w, row.h - 2, 5);
+      set_source(cr_, sel ? pal_.accent : with_alpha(pal_.accent, 0.25));
+      cairo_fill(cr_);
+    }
+    const TextExtents te = measure_text(cr_, dd_opts_[i], kFont);
+    draw_text(cr_, dd_opts_[i], row.x + 10, row.y + (row.h - te.height) / 2 + te.ascent, kFont,
+              sel ? pal_.bg_primary : pal_.fg_primary);
+    if (press_pending_ && box.hit(press_pos_.x, press_pos_.y) && row.hit(press_pos_.x, press_pos_.y)) picked = static_cast<int>(i);
+  }
+  cairo_restore(cr_);
+  if (picked >= 0) {
+    dd_result_ = picked;
+    dd_done_ = true;
+    dd_open_ = false;
+    press_pending_ = false;
+    again_ = dirty_ = true;
+  } else if (press_pending_ && !box.hit(press_pos_.x, press_pos_.y)) {
+    dd_open_ = false;  // click outside closes the list
+    press_pending_ = false;
+    again_ = dirty_ = true;
+  }
+}
+
+Ui::CanvasEvent Ui::canvas(double height, UiRect* rect) {
+  if (line_h_ > 0 || cx_ > left_) newline();
+  const UiRect r{left_, cy_, w_ - left_ - right_, height};
+  *rect = r;
+  cy_ += height + 8;
+  CanvasEvent ev;
+  if (press_pending_ && input_ok() && clip_.hit(press_pos_.x, press_pos_.y) &&
+      r.hit(press_pos_.x - ox_, press_pos_.y - oy_)) {
+    ev.pressed = true;
+    canvas_active_ = true;
+    press_pending_ = false;
+  }
+  ev.x = mx_ - ox_ - r.x;
+  ev.y = my_ - oy_ - r.y;
+  if (canvas_active_) {
+    ev.down = down_;
+    if (release_pending_) {
+      ev.released = true;
+      ev.x = release_pos_.x - ox_ - r.x;
+      ev.y = release_pos_.y - oy_ - r.y;
+      release_pending_ = false;
+      canvas_active_ = false;
+    } else if (!down_) {
+      canvas_active_ = false;
+    }
+  }
+  if (visible(r)) {
+    rounded_rect(cr_, r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1, pal_.rounded ? 8 : 0);
+    set_source(cr_, pal_.bg_secondary);
+    cairo_fill_preserve(cr_);
+    set_source(cr_, with_alpha(pal_.fg_secondary, 0.3));
+    cairo_set_line_width(cr_, 1);
+    cairo_stroke(cr_);
+  }
+  if (ev.pressed || ev.released || ev.down) again_ = true;
+  return ev;
 }
 
 // ------------------------------------------------------------------- scroll --

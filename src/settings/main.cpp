@@ -9,9 +9,12 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <cmath>
+#include <functional>
 #include <cstdio>
 #include <cstdlib>
 #include <map>
+#include <sstream>
 #include <memory>
 #include <string>
 #include <vector>
@@ -20,6 +23,7 @@
 #include "bar_config.hpp"
 #include "battery_reading.hpp"
 #include "default_apps.hpp"
+#include "ipc_client.hpp"
 #include "desktop_entry.hpp"
 #include "fleetkit.hpp"
 #include "malloc_tuning.hpp"
@@ -35,6 +39,68 @@ using namespace fleetwm::kit;
 
 constexpr int kWindowW = 620, kWindowH = 600;
 constexpr double kFont = 14.67;
+constexpr int kKeepPos = -999999;  // OUTPUT_SET: leave the position unchanged
+
+struct DispMode {
+  int w = 0, h = 0, r = 0;
+  bool cur = false, pref = false;
+};
+
+struct DispMon {
+  std::string name;
+  int x = 0, y = 0, w = 0, h = 0, r = 0;  // as reported by the compositor
+  std::vector<DispMode> modes;
+  // edit state
+  std::vector<std::pair<int, int>> res;  // unique resolutions, largest first
+  std::vector<std::string> res_labels;
+  int res_sel = 0;
+  std::vector<int> hz;  // refresh rates (mHz) for the selected resolution, highest first
+  std::vector<std::string> hz_labels;
+  int hz_sel = 0;
+  int ex = 0, ey = 0;  // edited position
+  int rel_sel = 0, side_sel = 0, align_sel = 0;
+};
+
+std::string hz_text(int mhz) {
+  char buf[32];
+  std::snprintf(buf, sizeof buf, "%.2f Hz", mhz / 1000.0);
+  std::string s = buf;
+  // "60.00 Hz" -> "60 Hz"
+  const size_t dot = s.find(".00 ");
+  if (dot != std::string::npos) s.erase(dot, 3);
+  return s;
+}
+
+void rebuild_mon(DispMon& m, bool keep_edit_selection) {
+  const int prev_w = keep_edit_selection && m.res_sel < static_cast<int>(m.res.size()) ? m.res[static_cast<size_t>(m.res_sel)].first : m.w;
+  const int prev_h = keep_edit_selection && m.res_sel < static_cast<int>(m.res.size()) ? m.res[static_cast<size_t>(m.res_sel)].second : m.h;
+  m.res.clear();
+  for (const auto& md : m.modes) {
+    const std::pair<int, int> r{md.w, md.h};
+    if (std::find(m.res.begin(), m.res.end(), r) == m.res.end()) m.res.push_back(r);
+  }
+  std::sort(m.res.begin(), m.res.end(), [](const auto& a, const auto& b) {
+    return a.first * a.second != b.first * b.second ? a.first * a.second > b.first * b.second : a.first > b.first;
+  });
+  m.res_labels.clear();
+  m.res_sel = 0;
+  for (size_t i = 0; i < m.res.size(); ++i) {
+    m.res_labels.push_back(std::to_string(m.res[i].first) + " x " + std::to_string(m.res[i].second));
+    if (m.res[i].first == prev_w && m.res[i].second == prev_h) m.res_sel = static_cast<int>(i);
+  }
+  m.hz.clear();
+  m.hz_labels.clear();
+  m.hz_sel = 0;
+  if (m.res.empty()) return;
+  const auto sel = m.res[static_cast<size_t>(m.res_sel)];
+  for (const auto& md : m.modes)
+    if (md.w == sel.first && md.h == sel.second) m.hz.push_back(md.r);
+  std::sort(m.hz.begin(), m.hz.end(), std::greater<int>());
+  for (size_t i = 0; i < m.hz.size(); ++i) {
+    m.hz_labels.push_back(hz_text(m.hz[i]));
+    if (std::abs(m.hz[i] - m.r) <= 500 && sel.first == m.w && sel.second == m.h) m.hz_sel = static_cast<int>(i);
+  }
+}
 
 struct MimeRow {
   const char* label;
@@ -55,8 +121,8 @@ struct Settings {
   DefaultAppsConfig default_apps;
 
   int tab = 0;
-  double scroll[8] = {};
-  std::vector<std::string> tab_names{"Theme", "Bar", "Wallpaper", "Default Apps", "Audio", "Performance", "About"};
+  double scroll[10] = {};
+  std::vector<std::string> tab_names{"Theme", "Bar", "Wallpaper", "Display", "Default Apps", "Audio", "Performance", "About"};
 
   // power
   bool has_battery = false;
@@ -68,6 +134,22 @@ struct Settings {
   std::vector<MimeRow> mime_rows;
   std::vector<int> terminal_apps;
   int terminal_selected = -1;
+
+  // display
+  std::vector<DispMon> mons;
+  std::string disp_status;
+  IpcClient ipc;
+  int ipc_watch = 0;
+  bool disp_requested = false;
+  std::vector<DispMon> collecting;
+  bool in_list = false;
+  bool confirm_active = false;
+  int confirm_left = 0, confirm_timer = 0;
+  DispMon confirm_prev;
+  int drag_mon = -1;
+  double drag_off_x = 0, drag_off_y = 0;
+  std::vector<std::string> side_names{"Right of", "Left of", "Below", "Above"};
+  std::vector<std::string> align_names{"Start", "Center", "End"};
 
   // audio
   common::AudioMixer mixer;
@@ -156,6 +238,287 @@ struct Settings {
   void update_battery() {
     battery = battery_internal::read_battery_reading(battery_dir);
     redraw();
+  }
+
+  // ------------------------------------------------------------ display --
+  void connect_ipc() {
+    if (ipc.is_connected()) return;
+    if (!ipc.connect()) return;
+    ipc_watch = app.watch_fd(ipc.fd(), [this] {
+      ipc.poll_lines([this](const std::string& l) { handle_ipc_line(l); });
+      if (!ipc.is_connected()) {
+        app.unwatch(ipc_watch);
+        ipc_watch = 0;
+      }
+      redraw();
+    });
+  }
+
+  void request_outputs() {
+    connect_ipc();
+    if (!ipc.is_connected()) {
+      disp_status = "Not connected to the fleetwm compositor.";
+      return;
+    }
+    ipc.send_command("OUTPUTS?");
+  }
+
+  void handle_ipc_line(const std::string& line) {
+    std::istringstream in(line);
+    std::string tag;
+    in >> tag;
+    if (tag == "OUTPUT") {
+      if (!in_list) {
+        collecting.clear();
+        in_list = true;
+      }
+      DispMon m;
+      in >> m.name >> m.x >> m.y >> m.w >> m.h >> m.r;
+      m.ex = m.x;
+      m.ey = m.y;
+      collecting.push_back(std::move(m));
+    } else if (tag == "MODE" && in_list && !collecting.empty()) {
+      DispMode md;
+      int cur = 0, pref = 0;
+      in >> md.w >> md.h >> md.r >> cur >> pref;
+      md.cur = cur;
+      md.pref = pref;
+      collecting.back().modes.push_back(md);
+    } else if (tag == "END") {
+      // keep per-monitor UI selections that still make sense
+      for (auto& m : collecting) {
+        for (const auto& old : mons)
+          if (old.name == m.name) {
+            m.rel_sel = old.rel_sel;
+            m.side_sel = old.side_sel;
+            m.align_sel = old.align_sel;
+          }
+        rebuild_mon(m, false);
+      }
+      mons = std::move(collecting);
+      collecting.clear();
+      in_list = false;
+    } else if (tag == "OUTPUTS_CHANGED") {
+      if (drag_mon < 0) request_outputs();
+    } else if (tag == "OK") {
+      disp_status.clear();
+    } else if (tag == "ERR") {
+      disp_status = line.size() > 4 ? line.substr(4) : "The compositor rejected that setting.";
+    }
+  }
+
+  void send_output_set(const std::string& name, int w, int h, int r, int x, int y) {
+    connect_ipc();
+    if (!ipc.is_connected()) return;
+    ipc.send_command("OUTPUT_SET " + name + " " + std::to_string(w) + " " + std::to_string(h) + " " +
+                     std::to_string(r) + " " + std::to_string(x) + " " + std::to_string(y));
+  }
+
+  void apply_monitor(DispMon& m) {
+    if (m.res.empty()) return;
+    const auto res = m.res[static_cast<size_t>(m.res_sel)];
+    const int hz = m.hz.empty() ? 0 : m.hz[static_cast<size_t>(std::min<int>(m.hz_sel, static_cast<int>(m.hz.size()) - 1))];
+    const bool mode_changed = res.first != m.w || res.second != m.h || std::abs(hz - m.r) > 500;
+    if (mode_changed && !confirm_active) {
+      confirm_prev = m;
+      confirm_active = true;
+      confirm_left = 15;
+      if (confirm_timer) app.unwatch(confirm_timer);
+      confirm_timer = app.add_timer(1000, [this] {
+        if (--confirm_left <= 0) revert_display();
+        redraw();
+      });
+    }
+    send_output_set(m.name, res.first, res.second, hz, m.ex, m.ey);
+  }
+
+  void keep_display() {
+    confirm_active = false;
+    if (confirm_timer) app.unwatch(confirm_timer);
+    confirm_timer = 0;
+  }
+
+  void revert_display() {
+    keep_display();
+    send_output_set(confirm_prev.name, confirm_prev.w, confirm_prev.h, confirm_prev.r, confirm_prev.x, confirm_prev.y);
+  }
+
+  // Snaps the dragged rectangle to the other monitors' edges and centres.
+  void snap(const DispMon& m, int& nx, int& ny, double scale) {
+    const double t = 16.0 / std::max(0.01, scale);
+    double best_dx = t, best_dy = t;
+    int sx = nx, sy = ny;
+    for (const auto& o : mons) {
+      if (o.name == m.name) continue;
+      const int ox = o.ex, oy = o.ey;
+      const int xc[] = {ox + o.w, ox - m.w, ox, ox + o.w - m.w, ox + (o.w - m.w) / 2};
+      const int yc[] = {oy + o.h, oy - m.h, oy, oy + o.h - m.h, oy + (o.h - m.h) / 2};
+      for (int c : xc)
+        if (std::abs(c - nx) < best_dx) {
+          best_dx = std::abs(c - nx);
+          sx = c;
+        }
+      for (int c : yc)
+        if (std::abs(c - ny) < best_dy) {
+          best_dy = std::abs(c - ny);
+          sy = c;
+        }
+    }
+    nx = sx;
+    ny = sy;
+  }
+
+  void place_relative(DispMon& m) {
+    std::vector<const DispMon*> others;
+    for (const auto& o : mons)
+      if (o.name != m.name) others.push_back(&o);
+    if (others.empty()) return;
+    const DispMon& o = *others[static_cast<size_t>(std::min<int>(m.rel_sel, static_cast<int>(others.size()) - 1))];
+    int x = m.ex, y = m.ey;
+    switch (m.side_sel) {
+      case 0: x = o.ex + o.w; break;           // right of
+      case 1: x = o.ex - m.w; break;           // left of
+      case 2: y = o.ey + o.h; break;           // below
+      default: y = o.ey - m.h; break;          // above
+    }
+    const bool horizontal = m.side_sel <= 1;
+    if (horizontal) y = m.align_sel == 0 ? o.ey : m.align_sel == 1 ? o.ey + (o.h - m.h) / 2 : o.ey + o.h - m.h;
+    else x = m.align_sel == 0 ? o.ex : m.align_sel == 1 ? o.ex + (o.w - m.w) / 2 : o.ex + o.w - m.w;
+    m.ex = x;
+    m.ey = y;
+    send_output_set(m.name, 0, 0, 0, x, y);
+  }
+
+  void tab_display(cairo_t* cr) {
+    if (!disp_requested) {
+      disp_requested = true;
+      request_outputs();
+    }
+    ui.heading("Display");
+    if (confirm_active) {
+      ui.label("Keep these display settings? Reverting in " + std::to_string(confirm_left) + " s");
+      ui.newline();
+      if (ui.button("Keep", true, true)) keep_display();
+      if (ui.button("Revert")) revert_display();
+      ui.newline();
+      ui.separator();
+    }
+    if (!disp_status.empty()) {
+      ui.label(disp_status, true);
+      ui.newline();
+    }
+    if (mons.empty()) {
+      ui.label(ipc.is_connected() ? "Waiting for the compositor..." : "No compositor connection.", true);
+      ui.newline();
+      return;
+    }
+
+    // Arrangement canvas: drag a monitor to move it; edges and centres snap.
+    ui.paragraph("Drag the screens to arrange them. Edges and centres snap to the neighbouring screen.");
+    UiRect rect;
+    const Ui::CanvasEvent ev = ui.canvas(170, &rect);
+    {
+      int minx = 1 << 30, miny = 1 << 30, maxx = -(1 << 30), maxy = -(1 << 30);
+      for (const auto& m : mons) {
+        minx = std::min(minx, m.ex);
+        miny = std::min(miny, m.ey);
+        maxx = std::max(maxx, m.ex + m.w);
+        maxy = std::max(maxy, m.ey + m.h);
+      }
+      const double bw = std::max(1, maxx - minx), bh = std::max(1, maxy - miny);
+      const double pad = 28;
+      const double scale = std::min((rect.w - 2 * pad) / bw, (rect.h - 2 * pad) / bh);
+      const double ox = rect.x + (rect.w - bw * scale) / 2, oy = rect.y + (rect.h - bh * scale) / 2;
+      auto to_x = [&](int x) { return ox + (x - minx) * scale; };
+      auto to_y = [&](int y) { return oy + (y - miny) * scale; };
+      if (ev.pressed) {
+        for (int i = static_cast<int>(mons.size()) - 1; i >= 0; --i) {
+          const DispMon& m = mons[static_cast<size_t>(i)];
+          const UiRect mr{to_x(m.ex), to_y(m.ey), m.w * scale, m.h * scale};
+          if (mr.hit(rect.x + ev.x, rect.y + ev.y)) {
+            drag_mon = i;
+            drag_off_x = (rect.x + ev.x - mr.x) / scale;
+            drag_off_y = (rect.y + ev.y - mr.y) / scale;
+            break;
+          }
+        }
+      }
+      if (drag_mon >= 0 && drag_mon < static_cast<int>(mons.size()) && (ev.down || ev.released)) {
+        DispMon& m = mons[static_cast<size_t>(drag_mon)];
+        int nx = static_cast<int>(std::lround(minx + (rect.x + ev.x - ox) / scale - drag_off_x));
+        int ny = static_cast<int>(std::lround(miny + (rect.y + ev.y - oy) / scale - drag_off_y));
+        snap(m, nx, ny, scale);
+        m.ex = nx;
+        m.ey = ny;
+        if (ev.released) {
+          send_output_set(m.name, 0, 0, 0, m.ex, m.ey);
+          drag_mon = -1;
+        }
+      } else if (ev.released) {
+        drag_mon = -1;
+      }
+      for (size_t i = 0; i < mons.size(); ++i) {
+        const DispMon& m = mons[i];
+        const UiRect mr{to_x(m.ex), to_y(m.ey), m.w * scale, m.h * scale};
+        const bool dragging = static_cast<int>(i) == drag_mon;
+        rounded_rect(cr, mr.x, mr.y, mr.w, mr.h, 4);
+        set_source(cr, dragging ? pal.accent : pal.bg_primary);
+        cairo_fill_preserve(cr);
+        set_source(cr, pal.accent);
+        cairo_set_line_width(cr, dragging ? 2 : 1.2);
+        cairo_stroke(cr);
+        const Color fg = dragging ? pal.bg_primary : pal.fg_primary;
+        const TextExtents t1 = measure_text(cr, m.name, 13, true);
+        draw_text(cr, m.name, mr.x + (mr.w - t1.width) / 2, mr.y + mr.h / 2 - 2, 13, fg, true);
+        const std::string dim = std::to_string(m.w) + "x" + std::to_string(m.h);
+        const TextExtents t2 = measure_text(cr, dim, 12);
+        draw_text(cr, dim, mr.x + (mr.w - t2.width) / 2, mr.y + mr.h / 2 + 14, 12, dragging ? pal.bg_primary : pal.fg_secondary);
+      }
+    }
+    ui.newline();
+
+    for (auto& m : mons) {
+      ui.separator();
+      ui.heading(m.name + "  (" + std::to_string(m.w) + " x " + std::to_string(m.h) + " @ " + hz_text(m.r) + ")");
+      ui.row("Resolution");
+      if (ui.dropdown(m.res_labels, &m.res_sel, 210)) {
+        // new resolution: default to its highest refresh rate
+        const auto sel = m.res[static_cast<size_t>(m.res_sel)];
+        m.hz.clear();
+        m.hz_labels.clear();
+        for (const auto& md : m.modes)
+          if (md.w == sel.first && md.h == sel.second) m.hz.push_back(md.r);
+        std::sort(m.hz.begin(), m.hz.end(), std::greater<int>());
+        for (int h : m.hz) m.hz_labels.push_back(hz_text(h));
+        m.hz_sel = 0;
+      }
+      ui.newline();
+      ui.row("Refresh rate");
+      ui.dropdown(m.hz_labels, &m.hz_sel, 150);
+      ui.newline();
+      ui.row("Position");
+      ui.label("X");
+      ui.spin(&m.ex, -32000, 32000, 10);
+      ui.label("Y");
+      ui.spin(&m.ey, -32000, 32000, 10);
+      ui.newline();
+      ui.row("");
+      if (ui.button("Apply", true, true)) apply_monitor(m);
+      ui.newline();
+      if (mons.size() > 1) {
+        std::vector<std::string> others;
+        for (const auto& o : mons)
+          if (o.name != m.name) others.push_back(o.name);
+        ui.row("Place");
+        ui.dropdown(side_names, &m.side_sel, 110);
+        ui.dropdown(others, &m.rel_sel, 130);
+        ui.newline();
+        ui.row("Align");
+        ui.dropdown(align_names, &m.align_sel, 110);
+        if (ui.button("Place")) place_relative(m);
+        ui.newline();
+      }
+    }
   }
 
   // --------------------------------------------------------------- tabs --
@@ -392,9 +755,10 @@ struct Settings {
       case 0: tab_theme(cr); break;
       case 1: tab_bar(cr); break;
       case 2: tab_wallpaper(cr); break;
-      case 3: tab_default_apps(cr); break;
-      case 4: tab_audio(cr); break;
-      case 5: tab_performance(cr); break;
+      case 3: tab_display(cr); break;
+      case 4: tab_default_apps(cr); break;
+      case 5: tab_audio(cr); break;
+      case 6: tab_performance(cr); break;
       default: tab_about(cr); break;
     }
     ui.end_scroll();

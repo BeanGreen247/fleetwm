@@ -54,6 +54,8 @@ class IpcServer {
 
   // Sends "WORKSPACE_CHANGED N\n" to every currently-connected client.
   void broadcast_workspace_changed(int index);
+  // Tells every client the monitor set/modes/positions changed (re-query with OUTPUTS?).
+  void broadcast_outputs_changed();
 
   // Sends "FOCUSED_TITLE <text>\n" to every currently-connected client.
   void broadcast_focused_title(const std::string& title);
