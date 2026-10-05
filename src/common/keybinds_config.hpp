@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 namespace fleetwm {
 
@@ -50,10 +51,39 @@ struct KeybindsConfig {
   // output.cpp) -- a developer/debugging tool, not a user-facing
   // feature, hence "I" for "info" rather than anything more prominent.
   std::string debug_overlay = "I";
-  // Alt+Shift+/ opens the keyboard-shortcuts window (fleetwm-shortcuts); one of the
-  // few binds that stays active in the Desktop window layout.
-  std::string shortcuts = "question";
+  // The modifier for the binds below, as '+'-joined names from super (the
+  // Windows/Meta key, default), alt, ctrl, shift -- e.g. "ctrl+alt". Super is the
+  // default so these never collide with what runs inside a terminal: tmux's Alt
+  // bindings (Alt+1..5, Alt+n/p/o, Alt+arrows), the shell's readline ones
+  // (Alt+b/f/d/t/u/l/c/?), and tmux's own prefix (Ctrl+b).
+  std::string modifier = "super";
+  // Key(s) that open the start menu when tapped on their own (Desktop layout), as
+  // xkb keysym names separated by commas. Remap it here if your keyboard has no
+  // Super key, e.g. "Menu" or "F12".
+  std::string start_menu_key = "Super_L,Super_R";
+  // <modifier>+<key> opens the keyboard-shortcuts window (fleetwm-shortcuts) in
+  // either layout.
+  std::string shortcuts = "slash";
+  // Desktop (floating) layout only: <modifier>+Shift+<key> opens the default web
+  // browser / file manager / text editor chosen in Settings (the Shift keeps them
+  // clear of plain <modifier>+<key> combinations). Not bound in the Tiling layout.
+  std::string browser = "b";
+  std::string file_manager = "e";
+  std::string text_editor = "t";  // Super+T
 };
+
+// Bit values of wlr_keyboard_modifiers (WLR_MODIFIER_*), so the result can be
+// compared directly with the compositor's modifier state.
+enum ModifierBit : unsigned { kModShift = 1, kModCtrl = 4, kModAlt = 8, kModLogo = 64 };
+
+// "super+shift" -> kModLogo | kModShift. Names are case-insensitive; "super",
+// "logo", "win" and "meta" all mean the Windows key, "control" is ctrl. Returns 0
+// when the string is empty or contains an unknown name (callers then fall back to
+// Super).
+unsigned modifier_mask(const std::string& names);
+
+// Splits "Super_L,Super_R" into trimmed, non-empty names.
+std::vector<std::string> split_key_names(const std::string& list);
 
 // Path helpers, mirroring default_apps.hpp's own pair but for
 // keybinds.toml instead.

@@ -101,6 +101,9 @@ class Surface {
   std::function<void(double x, double y)> on_motion;
   std::function<void(double x, double y, uint32_t button, bool pressed)> on_button;
   std::function<void()> on_leave;
+  // Keyboard focus moved to another surface or client (e.g. the user clicked or
+  // focused another window): popups use it to close themselves.
+  std::function<void()> on_keyboard_leave;
   std::function<void(double dx, double dy)> on_scroll;
   std::function<void(int w, int h)> on_configure;
   std::function<void()> on_closed;

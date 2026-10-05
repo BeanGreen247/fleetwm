@@ -79,6 +79,12 @@ enum class TaskbarPosition {
   Right,
 };
 
+// Thickness of the Desktop-layout taskbar in px: its height when horizontal and
+// its width when vertical. Shared by the bar (which draws it) and the start menu
+// (which places itself beside it).
+constexpr int kTaskbarThickness = 44;
+constexpr int kTaskbarWidth = 76;
+
 struct BarConfig {
   ClockFormat clock;
   WorkspaceColors workspace_colors;

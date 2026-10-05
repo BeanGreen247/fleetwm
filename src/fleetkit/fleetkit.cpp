@@ -550,7 +550,9 @@ void App::setup_seat() {
               // leave
               [](void* d2, wl_keyboard*, uint32_t, wl_surface*) {
                 auto* app = static_cast<App*>(d2);
+                Surface* left = app->kb_focus_;
                 app->kb_focus_ = nullptr;
+                if (left && left->on_keyboard_leave) left->on_keyboard_leave();
                 if (app->repeat_timer_) {
                   app->unwatch(app->repeat_timer_);
                   app->repeat_timer_ = 0;

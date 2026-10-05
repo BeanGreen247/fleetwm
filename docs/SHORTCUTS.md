@@ -1,6 +1,6 @@
 # Shortcuts
 
-Open the in-app list with **Alt+Shift+/** (press again, or Esc, to close it). It reads
+Open the in-app list with **Super+/** (press again, or Esc, to close it). It reads
 `~/.config/fleetwm/keybinds.toml`, so remapped keys show up. Every bind is Alt+key; an
 uppercase letter in `keybinds.toml` means Alt+Shift+that letter.
 
@@ -19,14 +19,25 @@ uppercase letter in `keybinds.toml` means Alt+Shift+that letter.
 | Alt+H / J / K / L | Focus left / down / up / right |
 | Alt+Esc | Quit fleetwm |
 | Alt+Shift+I | Toggle the frame-time debug overlay |
-| Alt+Shift+/ | Show the shortcuts window |
+| Super+/ | Show the shortcuts window |
 
 The mouse: hovering a window focuses it; click a workspace number in the bar to switch.
 
 ## Desktop layout (floating windows)
 
-Only **Alt+Enter** (terminal) and **Alt+Shift+/** (this list) are bound. Everything else is
-done with the mouse:
+Of the Alt shortcuts only **Alt+Enter** (terminal) is bound, plus these (the Super key never
+clashes with tmux or the shell's readline bindings, which use Alt+letters):
+
+| Keys | Action |
+| --- | --- |
+| Tap Super (Windows key) | Open or close the start menu |
+| Super+/ | This shortcuts list |
+| Super+Shift+B | Default web browser |
+| Super+Shift+E | Default file manager |
+| Super+Shift+T | Default text editor |
+
+The app shortcuts use the apps chosen in Settings -> Default Apps (or the first installed one).
+Everything else is done with the mouse:
 
 | Gesture | Action |
 | --- | --- |
@@ -41,5 +52,8 @@ done with the mouse:
 
 ## Changing keys
 
-`~/.config/fleetwm/keybinds.toml` (per user). Key names are xkb keysym names (`Return`, `d`,
+`~/.config/fleetwm/keybinds.toml` (per user). `modifier = "super"` changes the modifier for the
+Super+ binds (`ctrl+alt`, `alt`, ...); `start_menu_key = "Super_L,Super_R"` is the key whose tap opens
+the start menu (use e.g. `Menu` or `F12` on a keyboard without a Super key); `browser`, `file_manager`
+and `text_editor` pick the app keys. Key names are xkb keysym names (`Return`, `d`,
 `Q`, `question`, `F5`). Changes apply right away.

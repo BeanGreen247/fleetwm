@@ -25,6 +25,9 @@ class Keyboard {
   wl_listener modifiers{};
   wl_listener key{};
   wl_listener destroy{};
+  // A Super (Windows/Meta) key press with nothing pressed since: releasing it opens
+  // the start menu in the Desktop layout.
+  bool super_tap = false;
 
   // Returns true if the key event was consumed as a compositor keybind
   // (and should not be forwarded to the focused client).

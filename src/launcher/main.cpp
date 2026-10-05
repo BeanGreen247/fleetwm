@@ -13,17 +13,20 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <fstream>
 #include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
+#include "bar_config.hpp"
 #include "default_apps.hpp"
 #include "desktop_entry.hpp"
 #include "fleetkit.hpp"
 #include "icon_theme.hpp"
 #include "ipc_client.hpp"
 #include "malloc_tuning.hpp"
+#include "mimeapps.hpp"
 #include "theme.hpp"
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
 
@@ -85,6 +88,58 @@ size_t next_char_len(const std::string& s, size_t pos) {
   size_t n = 1;
   while (pos + n < s.size() && (static_cast<unsigned char>(s[pos + n]) & 0xC0) == 0x80) ++n;
   return n;
+}
+
+std::string pid_path() {
+  const char* rt = std::getenv("XDG_RUNTIME_DIR");
+  return std::string(rt && *rt ? rt : "/tmp") + "/fleetwm-startmenu.pid";
+}
+
+// The start menu is a toggle: if one is already open, ask it to close and report
+// true so this launch does nothing (comm is truncated to 15 chars).
+bool toggle_existing_start_menu() {
+  std::ifstream in(pid_path());
+  long pid = 0;
+  if (!(in >> pid) || pid <= 0 || pid == getpid()) return false;
+  std::ifstream comm("/proc/" + std::to_string(pid) + "/comm");
+  std::string name;
+  if (!(comm >> name) || name != "fleetwm-launche") return false;
+  kill(static_cast<pid_t>(pid), SIGTERM);
+  return true;
+}
+
+// `--default browser|files|editor`: runs the user's default application for that
+// job (from mimeapps.list, as set in Settings -> Default Apps) and exits.
+int run_default_app(const std::string& kind) {
+  static const struct {
+    const char* kind;
+    const char* mime;
+  } kJobs[] = {{"browser", "x-scheme-handler/https"}, {"files", "inode/directory"}, {"editor", "text/plain"}};
+  for (const auto& job : kJobs) {
+    if (kind != job.kind) continue;
+    std::string id = mime_default_for(job.mime);
+    if (id.empty()) {  // nothing chosen in Settings: use the first installed app that handles it
+      const std::vector<std::string> any = mime_apps_for(job.mime);
+      if (!any.empty()) id = any.front();
+    }
+    for (const DesktopEntry& de : load_desktop_entries()) {
+      if (de.id != id) continue;
+      std::vector<std::string> argv = exec_argv(de);
+      if (argv.empty()) return 1;
+      if (de.terminal) {
+        std::vector<std::string> t = {"foot", "-e"};
+        argv.insert(argv.begin(), t.begin(), t.end());
+      }
+      return spawn_detached(argv, de.path) ? 0 : 1;
+    }
+    std::fprintf(stderr, "fleetwm-launcher: no default %s application is set\n", job.kind);
+    // Nobody reads stderr when this runs from a shortcut, so say it on screen too.
+    spawn_detached({"notify-send", "Fleetwm", std::string("No default ") + job.kind +
+                                                  " application is set. Choose one in Settings > Default Apps."});
+    return 1;
+  }
+  std::fprintf(stderr, "fleetwm-launcher: unknown --default kind '%s'\n", kind.c_str());
+  return 2;
 }
 
 struct Launcher {
@@ -585,6 +640,16 @@ int main(int argc, char** argv) {
   fleetwm::tune_malloc_for_low_rss();
   signal(SIGCHLD, SIG_IGN);
 
+  for (int i = 1; i + 1 < argc; ++i)
+    if (std::string(argv[i]) == "--default") return run_default_app(argv[i + 1]);
+
+  bool want_start_menu = false, edge_given = false;
+  for (int i = 1; i < argc; ++i) {
+    if (std::string(argv[i]) == "--start-menu") want_start_menu = true;
+    else if (std::string(argv[i]) == "--edge") edge_given = true;
+  }
+  if (want_start_menu && toggle_existing_start_menu()) return 0;
+
   Launcher L;
   L.pal = load_palette(load_theme_config());
   if (!L.app.connect()) return 1;
@@ -594,7 +659,14 @@ int main(int argc, char** argv) {
     else if (arg == "--edge" && i + 1 < argc) L.edge = argv[++i];
     else if (arg == "--inset" && i + 1 < argc) L.inset = std::max(0, std::atoi(argv[++i]));
   }
+  if (L.start_menu && !edge_given) {
+    // Sit beside the taskbar wherever bar.toml puts it.
+    const TaskbarPosition pos = load_bar_config().taskbar_position;
+    L.edge = taskbar_position_to_string(pos);
+    L.inset = pos == TaskbarPosition::Left || pos == TaskbarPosition::Right ? kTaskbarWidth : kTaskbarThickness;
+  }
   if (L.start_menu) {
+    { std::ofstream(pid_path()) << getpid() << "\n"; }
     L.card_w = 400;
     L.max_rows = 9;
     L.row_h = 48;
@@ -626,6 +698,8 @@ int main(int argc, char** argv) {
   L.surface->on_motion = [&L](double x, double y) { L.on_motion(x, y); };
   L.surface->on_scroll = [&L](double dx, double dy) { L.on_scroll(dx, dy); };
   L.surface->on_closed = [&L] { L.app.quit(); };
+  // Focus moved to another window or monitor: a popup menu goes away.
+  if (L.start_menu) L.surface->on_keyboard_leave = [&L] { L.app.quit(); };
 
   sigset_t mask;
   sigemptyset(&mask);
@@ -636,5 +710,6 @@ int main(int argc, char** argv) {
   L.app.watch_fd(sfd, [&L] { L.app.quit(); });
 
   L.app.run();
+  if (L.start_menu) unlink(pid_path().c_str());
   return 0;
 }

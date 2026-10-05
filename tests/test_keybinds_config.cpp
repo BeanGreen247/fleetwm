@@ -27,7 +27,12 @@ TEST_F(KeybindsConfigTest, LoadWithNoConfigFileReturnsDefaults) {
   EXPECT_EQ(config.focus_right, "l");
   EXPECT_EQ(config.quit, "Escape");
   EXPECT_EQ(config.debug_overlay, "I");
-  EXPECT_EQ(config.shortcuts, "question");
+  EXPECT_EQ(config.shortcuts, "slash");
+  EXPECT_EQ(config.browser, "b");
+  EXPECT_EQ(config.file_manager, "e");
+  EXPECT_EQ(config.text_editor, "t");
+  EXPECT_EQ(config.modifier, "super");
+  EXPECT_EQ(config.start_menu_key, "Super_L,Super_R");
 }
 
 TEST_F(KeybindsConfigTest, SaveThenLoadRoundTripsEveryField) {
@@ -457,6 +462,74 @@ TEST_F(KeybindsConfigTest, UserConfigPathEndsWithKeybindsToml) {
 
 TEST_F(KeybindsConfigTest, SystemDefaultConfigPathDiffersFromUserPath) {
   EXPECT_NE(keybinds_user_config_path(), keybinds_system_default_config_path());
+}
+
+TEST_F(KeybindsConfigTest, AppShortcutsRoundTrip) {
+  KeybindsConfig config;
+  config.browser = "w";
+  config.file_manager = "f";
+  config.text_editor = "n";
+  save_keybinds_config(config);
+  const KeybindsConfig loaded = load_keybinds_config();
+  EXPECT_EQ(loaded.browser, "w");
+  EXPECT_EQ(loaded.file_manager, "f");
+  EXPECT_EQ(loaded.text_editor, "n");
+}
+
+TEST_F(KeybindsConfigTest, ModifierAndStartMenuKeyRoundTrip) {
+  KeybindsConfig config;
+  config.modifier = "ctrl+alt";
+  config.start_menu_key = "Menu";
+  save_keybinds_config(config);
+  const KeybindsConfig loaded = load_keybinds_config();
+  EXPECT_EQ(loaded.modifier, "ctrl+alt");
+  EXPECT_EQ(loaded.start_menu_key, "Menu");
+}
+
+TEST(ModifierMask, ParsesNamesCaseInsensitively) {
+  EXPECT_EQ(modifier_mask("super"), static_cast<unsigned>(kModLogo));
+  EXPECT_EQ(modifier_mask("Super"), static_cast<unsigned>(kModLogo));
+  EXPECT_EQ(modifier_mask("logo"), static_cast<unsigned>(kModLogo));
+  EXPECT_EQ(modifier_mask("win"), static_cast<unsigned>(kModLogo));
+  EXPECT_EQ(modifier_mask("meta"), static_cast<unsigned>(kModLogo));
+  EXPECT_EQ(modifier_mask("alt"), static_cast<unsigned>(kModAlt));
+  EXPECT_EQ(modifier_mask("CTRL"), static_cast<unsigned>(kModCtrl));
+  EXPECT_EQ(modifier_mask("control"), static_cast<unsigned>(kModCtrl));
+  EXPECT_EQ(modifier_mask("shift"), static_cast<unsigned>(kModShift));
+}
+
+TEST(ModifierMask, CombinesWithPlusAndIgnoresSpaces) {
+  EXPECT_EQ(modifier_mask("ctrl+alt"), static_cast<unsigned>(kModCtrl | kModAlt));
+  EXPECT_EQ(modifier_mask(" super + shift "), static_cast<unsigned>(kModLogo | kModShift));
+  EXPECT_EQ(modifier_mask("ctrl+alt+super"), static_cast<unsigned>(kModCtrl | kModAlt | kModLogo));
+  EXPECT_EQ(modifier_mask("alt+alt"), static_cast<unsigned>(kModAlt));
+}
+
+TEST(ModifierMask, UnknownOrEmptyIsZeroSoCallersFallBack) {
+  EXPECT_EQ(modifier_mask(""), 0u);
+  EXPECT_EQ(modifier_mask("hyper"), 0u);
+  EXPECT_EQ(modifier_mask("super+hyper"), 0u);
+  EXPECT_EQ(modifier_mask("+"), 0u);
+}
+
+TEST(ModifierMask, BitsMatchWlrModifierValues) {
+  // wlr_keyboard_modifiers: SHIFT=1, CTRL=4, ALT=8, LOGO=64 -- compared directly.
+  EXPECT_EQ(static_cast<unsigned>(kModShift), 1u);
+  EXPECT_EQ(static_cast<unsigned>(kModCtrl), 4u);
+  EXPECT_EQ(static_cast<unsigned>(kModAlt), 8u);
+  EXPECT_EQ(static_cast<unsigned>(kModLogo), 64u);
+}
+
+TEST(SplitKeyNames, SplitsOnCommasAndTrims) {
+  EXPECT_EQ(split_key_names("Super_L,Super_R"), (std::vector<std::string>{"Super_L", "Super_R"}));
+  EXPECT_EQ(split_key_names(" Menu , F12 "), (std::vector<std::string>{"Menu", "F12"}));
+  EXPECT_EQ(split_key_names("Menu"), (std::vector<std::string>{"Menu"}));
+}
+
+TEST(SplitKeyNames, DropsEmptyEntries) {
+  EXPECT_TRUE(split_key_names("").empty());
+  EXPECT_TRUE(split_key_names(" , ,").empty());
+  EXPECT_EQ(split_key_names("a,,b"), (std::vector<std::string>{"a", "b"}));
 }
 
 }  // namespace
