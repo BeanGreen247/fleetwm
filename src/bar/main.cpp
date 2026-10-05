@@ -114,14 +114,51 @@ struct Bar {
   // ---- Desktop layout: taskbar ----
   bool taskbar = false;  // Desktop window layout: taskbar instead of capsules/island/strip
   TaskbarPosition tb_pos = TaskbarPosition::Bottom;
-  std::vector<WindowEntry> windows;
+  std::vector<WindowEntry> windows;  // every window the compositor reported
+  std::vector<WindowEntry> shown;    // the ones the taskbar lists: this workspace's, plus pinned
   Rect start_rect;
   std::vector<Rect> win_rects;  // parallel to `windows` (zero-size = not shown)
   int hover_win = -1;           // index into `windows`
   bool hover_start = false;
+  int hover_workspace = -1;
   std::map<std::string, cairo_surface_t*> win_icons;
   std::map<std::string, std::string> app_icon_names;  // lower-case app id / exec / name -> icon
   bool app_icons_loaded = false;
+
+  // The taskbar lists the current workspace's windows (and pinned ones, which are on
+  // every workspace); the rest appear when you switch to their workspace.
+  void rebuild_shown() {
+    shown.clear();
+    for (const WindowEntry& w : windows)
+      if (w.pinned || w.workspace == active_workspace) shown.push_back(w);
+  }
+
+  // Workspace buttons (the ones the user asked for, 1-10). Laid out in a row, or in two
+  // columns when the taskbar is vertical. Returns the far edge (x for a row, y for columns).
+  double draw_pager(cairo_t* cr, double x0, double y0, double btn_w, double btn_h, bool columns) {
+    const int count = std::clamp(config.taskbar_workspaces, 1, 10);
+    for (Rect& r : ws_rect) r = Rect{};
+    const Color idle = with_alpha(pal.fg_secondary, 0.9);
+    double edge = columns ? y0 : x0;
+    for (int i = 0; i < count; ++i) {
+      const double x = columns ? x0 + (i % 2) * (btn_w + 3) : x0 + i * (btn_w + 3);
+      const double y = columns ? y0 + (i / 2) * (btn_h + 3) : y0;
+      ws_rect[i] = {x, y, btn_w, btn_h};
+      const bool active = i == active_workspace;
+      if (active || i == hover_workspace) {
+        rounded_rect(cr, x, y, btn_w, btn_h, pal.rounded ? 6 : 2);
+        set_source(cr, active ? with_alpha(pal.accent, 0.9) : with_alpha(pal.accent, 0.18));
+        cairo_fill(cr);
+      }
+      char label[4];
+      std::snprintf(label, sizeof label, "%d", (i + 1) % 10);
+      const TextExtents te = measure_text(cr, label, kFont, active);
+      draw_text(cr, label, x + (btn_w - te.width) / 2, y + (btn_h - te.height) / 2 + te.ascent, kFont,
+                active ? pal.bg_primary : idle, active);
+      edge = columns ? y + btn_h : x + btn_w;
+    }
+    return edge;
+  }
 
   bool vertical() const { return tb_pos == TaskbarPosition::Left || tb_pos == TaskbarPosition::Right; }
 
@@ -161,6 +198,12 @@ struct Bar {
     *col_b = std::max(small_w(m, ram_text), small_w(m, disk_text));
   }
 
+  // The battery widget is the icon plus, when there is a battery, its percentage as text.
+  std::string battery_percent_text() const { return std::to_string(battery.percent) + "%"; }
+  double battery_w(Metrics& m) {
+    return kBatteryW + (battery.available ? m.text_w(battery_percent_text()) + 6 : 0.0);
+  }
+
   double right_total(Metrics& m) {
     double t = 0;
     int children = 0;
@@ -179,7 +222,7 @@ struct Bar {
     }
     t += tray_total();
     ++children;  // tray box always participates in the spacing
-    t += kModeW + kBatteryW;  // power-mode glyph + battery/plug, shown on every machine
+    t += kModeW + battery_w(m);  // power-mode glyph + battery/plug, shown on every machine
     children += 2;
     t += kPowerW;
     ++children;
@@ -556,14 +599,17 @@ struct Bar {
 
     draw_mode_glyph(cr, rx + kModeW / 2, H / 2.0, pal.fg_secondary);
     rx += kModeW + kRightGap;
-    battery_rect = {rx, 0, kBatteryW, static_cast<double>(H)};
+    const double bw_total = battery_w(m);
+    battery_rect = {rx, 0, bw_total, static_cast<double>(H)};
     if (battery.available) {
       if (battery.charging) draw_bolt(cr, rx + kStatPad / 2 + kBoltW / 2.0, H / 2.0);
       draw_battery(cr, rx + kStatPad / 2 + kBoltW, (H - 14) / 2.0, pal.fg_secondary);
+      // The percentage as readable text beside the icon.
+      draw_text(cr, battery_percent_text(), rx + kBatteryW + 2, base, kFont, pal.fg_primary);
     } else {
       draw_plug(cr, rx + kBatteryW / 2, H / 2.0, pal.fg_secondary);
     }
-    rx += kBatteryW + kRightGap;
+    rx += bw_total + kRightGap;
 
     // Power button: a bare glyph that lights up on hover (no filled box).
     const double pbh = kWsH, pby = (H - pbh) / 2.0;
@@ -700,7 +746,7 @@ struct Bar {
 
   void draw_taskbar(cairo_t* cr, int W, int H) {
     Metrics m{cr};
-    for (Rect& r : ws_rect) r = Rect{};  // no workspace buttons in this mode
+    rebuild_shown();
     Color bg = pal.bg_primary;
     bg.a = 0.97;
     cairo_rectangle(cr, 0, 0, W, H);
@@ -747,14 +793,16 @@ struct Bar {
     start_rect = {6, 4, 46, static_cast<double>(H - 8)};
     draw_start_button(cr, start_rect);
 
-    const double x0 = start_rect.x + start_rect.w + 10, avail = clock_x - 16 - x0;
-    win_rects.assign(windows.size(), Rect{});
-    if (windows.empty() || avail < 44) return;
-    const geom::TaskbarSlots slots = geom::taskbar_slots(avail, windows.size());
+    // Workspace buttons right after the start button, then the window list.
+    const double pager_end = draw_pager(cr, start_rect.x + start_rect.w + 10, (H - 26) / 2.0, 26, 26, false);
+    const double x0 = pager_end + 12, avail = clock_x - 16 - x0;
+    win_rects.assign(shown.size(), Rect{});
+    if (shown.empty() || avail < 44) return;
+    const geom::TaskbarSlots slots = geom::taskbar_slots(avail, shown.size());
     const double bw = slots.bw;
     for (size_t i = 0; i < slots.fit; ++i) {
       win_rects[i] = {x0 + i * (bw + 4), 4, bw, static_cast<double>(H - 8)};
-      draw_window_button(cr, win_rects[i], windows[i], static_cast<int>(i) == hover_win, bw >= 96);
+      draw_window_button(cr, win_rects[i], shown[i], static_cast<int>(i) == hover_win, bw >= 96);
     }
   }
 
@@ -841,13 +889,15 @@ struct Bar {
     // Start button and window buttons.
     start_rect = {bx, 6, bw, kBtn};
     draw_start_button(cr, start_rect);
-    const double top = start_rect.y + start_rect.h + 10, limit = H - 6 - cluster_h - 8;
-    win_rects.assign(windows.size(), Rect{});
-    for (size_t i = 0; i < windows.size(); ++i) {
+    // Workspace buttons in two columns under the start button, then the window list.
+    const double pager_end = draw_pager(cr, bx + (bw - 2 * 30 - 3) / 2, start_rect.y + start_rect.h + 10, 30, 26, true);
+    const double top = pager_end + 12, limit = H - 6 - cluster_h - 8;
+    win_rects.assign(shown.size(), Rect{});
+    for (size_t i = 0; i < shown.size(); ++i) {
       const double wy = top + i * (kBtn + 4);
       if (wy + kBtn > limit) break;
       win_rects[i] = {bx + 4, wy, bw - 8, kBtn};
-      draw_window_button(cr, win_rects[i], windows[i], static_cast<int>(i) == hover_win, false);
+      draw_window_button(cr, win_rects[i], shown[i], static_cast<int>(i) == hover_win, false);
     }
   }
 
@@ -1175,7 +1225,7 @@ struct Bar {
       std::vector<WindowEntry> parsed;
       if (parse_window_list(line, &parsed) && parsed != windows) {
         windows = std::move(parsed);
-        if (hover_win >= static_cast<int>(windows.size())) hover_win = -1;
+        hover_win = -1;
         if (taskbar) redraw();
       }
       return;
@@ -1224,10 +1274,10 @@ struct Bar {
     if (!pressed) return;
     if (taskbar) {
       if (b == kBtnLeft && start_rect.hit(x, y)) return spawn_start_menu();
-      for (size_t i = 0; i < win_rects.size() && i < windows.size(); ++i) {
+      for (size_t i = 0; i < win_rects.size() && i < shown.size(); ++i) {
         if (!win_rects[i].hit(x, y)) continue;
-        if (b == kBtnLeft) ipc.send_command("WINDOW_TOGGLE " + std::to_string(windows[i].id));
-        else if (b == kBtnMiddle) ipc.send_command("WINDOW_CLOSE " + std::to_string(windows[i].id));
+        if (b == kBtnLeft) ipc.send_command("WINDOW_TOGGLE " + std::to_string(shown[i].id));
+        else if (b == kBtnMiddle) ipc.send_command("WINDOW_CLOSE " + std::to_string(shown[i].id));
         return;
       }
     }
@@ -1250,13 +1300,22 @@ struct Bar {
 
   std::string battery_tooltip_text() {
     if (!battery.available) return on_ac ? "On AC power" : "No battery";
-    std::string t = std::to_string(battery.percent) + "% " + (battery.charging ? "(charging)" : on_ac ? "(on AC, not charging)" : "(on battery)");
-    if (battery.hours_remaining >= 0.0) {
+    const bool full = !battery.charging && on_ac && battery.hours_remaining == 0.0;
+    std::string head = std::to_string(battery.percent) + "% - ";
+    head += battery.charging ? "charging" : full ? "fully charged" : on_ac ? "plugged in, not charging" : "on battery";
+    std::string detail;
+    if (full) {
+      detail = "Time left: not applicable (full)";
+    } else if (battery.hours_remaining > 0.0) {
       const int mins = static_cast<int>(battery.hours_remaining * 60.0 + 0.5);
-      t += " - " + std::to_string(mins / 60) + "h " + std::to_string(mins % 60) + "m " +
-           (battery.charging ? "until full" : "remaining");
+      detail = std::to_string(mins / 60) + "h " + std::to_string(mins % 60) + "m " +
+               (battery.charging ? "until full" : "remaining");
+    } else if (!battery.charging && on_ac) {
+      detail = "Time left: not discharging";
+    } else {
+      detail = std::string(battery.charging ? "Time until full" : "Time remaining") + ": calculating...";
     }
-    return t;
+    return head + "\n" + detail;
   }
 
   void hide_tooltip() {
@@ -1275,8 +1334,15 @@ struct Bar {
     }
     if (taskbar) {
       int hw = -1;
-      for (size_t i = 0; i < win_rects.size() && i < windows.size(); ++i)
+      for (size_t i = 0; i < win_rects.size() && i < shown.size(); ++i)
         if (win_rects[i].hit(x, y)) hw = static_cast<int>(i);
+      int hws = -1;
+      for (int i = 0; i < 10; ++i)
+        if (ws_rect[i].w > 0 && ws_rect[i].hit(x, y)) hws = i;
+      if (hws != hover_workspace) {
+        hover_workspace = hws;
+        redraw();
+      }
       const bool hs = start_rect.hit(x, y);
       if (hw != hover_win || hs != hover_start) {
         hover_win = hw;
@@ -1292,8 +1358,8 @@ struct Bar {
         want = i + 1;
         r = *rects[i];
       }
-    if (taskbar && hover_win >= 0 && hover_win < static_cast<int>(windows.size())) {
-      want = 1000 + static_cast<int>(windows[static_cast<size_t>(hover_win)].id);
+    if (taskbar && hover_win >= 0 && hover_win < static_cast<int>(shown.size())) {
+      want = 1000 + static_cast<int>(shown[static_cast<size_t>(hover_win)].id);
       r = win_rects[static_cast<size_t>(hover_win)];
     }
     if (want != tooltip_for) {
@@ -1387,7 +1453,8 @@ int main() {
   B.surface->on_motion = [&B](double x, double y) { B.on_motion(x, y); };
   B.surface->on_leave = [&B] {
     B.hide_tooltip();
-    if (B.hover_power || B.hover_win >= 0 || B.hover_start) {
+    if (B.hover_power || B.hover_win >= 0 || B.hover_start || B.hover_workspace >= 0) {
+      B.hover_workspace = -1;
       B.hover_power = 0;
       B.hover_win = -1;
       B.hover_start = false;

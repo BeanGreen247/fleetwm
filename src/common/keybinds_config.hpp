@@ -65,6 +65,36 @@ struct KeybindsConfig {
   std::string desktop_text_editor = "super+shift+t";   // default text editor
   // The frame-time / FPS / RAM overlay (Alt+Shift+I in the Tiling layout).
   std::string desktop_debug_overlay = "ctrl+alt+i";
+  // Windows-style snapping with the arrow keys (Desktop layout): left/right half,
+  // up maximizes, down restores or minimizes; at the screen edge the same key again
+  // moves the window to the neighbouring screen.
+  std::string desktop_snap_left = "super+Left";
+  std::string desktop_snap_right = "super+Right";
+  std::string desktop_snap_up = "super+Up";
+  std::string desktop_snap_down = "super+Down";
+  // More Windows-style window keys (Desktop layout).
+  std::string desktop_close_window = "alt+F4";
+  std::string desktop_toggle_maximize = "alt+F10";
+  std::string desktop_show_desktop = "super+d";      // minimize everything, press again to bring it back
+  std::string desktop_minimize_all = "super+m";
+  std::string desktop_restore_all = "super+shift+m";
+
+  // ---- Both layouts ----
+  // Step through the open windows, most recently used first, like Alt+Tab: hold the
+  // modifier and tap Tab again to go further; releasing it settles on that window.
+  // Minimized windows are brought back, and a window on another workspace takes you there.
+  std::string cycle_windows = "alt+Tab";
+  std::string cycle_windows_reverse = "alt+shift+Tab";
+  // Send the focused window to the previous / next screen (when there is more than one).
+  std::string send_to_prev_screen = "super+shift+Left";
+  std::string send_to_next_screen = "super+shift+Right";
+  // Workspaces are the digit keys 1..9 and 0: <switch>+digit changes workspace,
+  // <send>+digit moves the focused window there.
+  std::string workspace_switch = "super";
+  std::string workspace_send = "super+shift";
+  // Previous / next workspace (Cinnamon's keys).
+  std::string workspace_prev = "ctrl+alt+Left";
+  std::string workspace_next = "ctrl+alt+Right";
   // Opens the keyboard-shortcuts window (fleetwm-shortcuts) in either layout.
   std::string shortcuts_help = "super+slash";
   // Key(s) that open the start menu when tapped on their own (Desktop layout), as
@@ -99,6 +129,10 @@ KeyCombo parse_key_combo(const std::string& combo);
 // are exactly the combo's: only Shift, Ctrl, Alt and Super are compared, so Num
 // Lock does not matter but an extra Shift does.
 bool combo_mods_match(unsigned held, unsigned wanted);
+
+// Workspace index (0..9) for a digit key name or character: "1".."9" -> 0..8,
+// "0" -> 9, anything else -> -1. Matches the 1..9, 0 key order on the keyboard.
+int workspace_index_for_key(const std::string& key);
 
 // Splits "Super_L,Super_R" into trimmed, non-empty names.
 std::vector<std::string> split_key_names(const std::string& list);

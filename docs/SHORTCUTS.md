@@ -4,6 +4,17 @@ Open the in-app list with **Super+/** (press again, or Esc, to close it). It rea
 `~/.config/fleetwm/keybinds.toml`, so remapped keys show up. Every bind is Alt+key; an
 uppercase letter in `keybinds.toml` means Alt+Shift+that letter.
 
+## In both layouts
+
+| Keys | Action | Setting |
+| --- | --- | --- |
+| Alt+Tab / Alt+Shift+Tab | Switch between the windows on this workspace (hold Alt, tap Tab to go further) | `cycle_windows`, `cycle_windows_reverse` |
+| Super+1 ... 0 | Go to workspace 1 to 10 | `workspace_switch` (the modifier) |
+| Super+Shift+1 ... 0 | Send the window to that workspace | `workspace_send` |
+| Ctrl+Alt+Left / Right | Previous / next workspace | `workspace_prev`, `workspace_next` |
+| Super+Shift+Left / Right | Send the window to the previous / next screen | `send_to_prev_screen`, `send_to_next_screen` |
+| Super+/ | Show all shortcuts | `shortcuts_help` |
+
 ## Tiling layout (default)
 
 | Keys | Action |
@@ -19,7 +30,6 @@ uppercase letter in `keybinds.toml` means Alt+Shift+that letter.
 | Alt+H / J / K / L | Focus left / down / up / right |
 | Alt+Esc | Quit fleetwm |
 | Alt+Shift+I | Toggle the frame-time debug overlay |
-| Super+/ | Show the shortcuts window |
 
 The mouse: hovering a window focuses it; click a workspace number in the bar to switch.
 
@@ -36,8 +46,19 @@ and the shell's readline Alt+letter bindings):
 | Super+Shift+E | Default file manager | `desktop_file_manager` |
 | Super+Shift+T | Default text editor | `desktop_text_editor` |
 | Ctrl+Alt+I | Frame-time / FPS / RAM overlay | `desktop_debug_overlay` |
-| Super+/ | This shortcuts list (both layouts) | `shortcuts_help` |
 | Tap Super (Windows key) | Open or close the start menu | `start_menu_key` |
+
+Window keys, like Windows:
+
+| Keys | Action | Setting |
+| --- | --- | --- |
+| Super+Left / Right | Snap to the left / right half. Press again at the edge to move to the next screen; the opposite key undoes it | `desktop_snap_left`, `desktop_snap_right` |
+| Super+Up | Maximize (from a half: the top quarter) | `desktop_snap_up` |
+| Super+Down | Restore a maximized window, minimize a normal one (from a half: the bottom quarter) | `desktop_snap_down` |
+| Alt+F4 | Close the window | `desktop_close_window` |
+| Alt+F10 | Maximize or restore | `desktop_toggle_maximize` |
+| Super+D | Show the desktop (minimize everything); again brings it back | `desktop_show_desktop` |
+| Super+M / Super+Shift+M | Minimize / restore all windows | `desktop_minimize_all`, `desktop_restore_all` |
 
 The app shortcuts use the apps chosen in Settings -> Default Apps (or the first installed one).
 Everything else is done with the mouse:

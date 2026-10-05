@@ -91,6 +91,8 @@ class Server {
   // workspace) while still sitting under layer-shell popups like the
   // launcher. See View::set_pinned().
   wlr_scene_tree* layer_pinned() const { return layer_pinned_; }
+  // Above pinned windows, below the bar: Settings and dialogs, which no other window may cover.
+  wlr_scene_tree* layer_topmost() const { return layer_topmost_; }
   wlr_tearing_control_manager_v1* tearing_manager() const { return tearing_manager_; }
   // Above layer_top_ (the bar) but below layer_overlay_ -- fullscreen
   // views live here instead, so a fullscreened app visually covers the
@@ -170,6 +172,29 @@ class Server {
   void set_hover_view(View* view);
   void toggle_maximize(View* view);
   void minimize_view(View* view);
+
+  // ---- keyboard window management (cycling, snapping, workspaces, screens) ----
+  // Alt+Tab-style cycling in most-recently-used order. `hold_mask` is the modifier
+  // bits whose release ends the cycle (the Alt in Alt+Tab).
+  void cycle_windows(bool backward, unsigned hold_mask);
+  void end_window_cycle() { cycle_order_.clear(); cycle_hold_mask_ = 0; }
+  bool cycling() const { return !cycle_order_.empty(); }
+  unsigned cycle_hold_mask() const { return cycle_hold_mask_; }
+  // Windows-style whole-desktop actions on the workspace being looked at.
+  void show_desktop_toggle();   // minimize everything; again: bring those windows back
+  void minimize_all();
+  void restore_all();
+  // Super+arrow: the Windows-style snap step for the focused window.
+  void snap_step_focused(geom::Direction dir);
+  // Switch to workspace `index` (0-9) on the focused window's output, or the first output.
+  void switch_workspace(int index);
+  void switch_workspace_relative(int delta);
+  // Move `view` to workspace `index` of its output; it stays where you are looking.
+  void move_view_to_workspace(View* view, int index);
+  // Send `view` to the neighbouring screen (-1 previous, +1 next, ordered left to right).
+  // Returns false when there is no such screen.
+  bool move_view_to_screen(View* view, int delta);
+  View* focused_view_for_actions() const;
 
   // ---- window list for taskbar clients (IPC) ----
   // Gives focus to the topmost visible window other than `gone` (focus-on-close
@@ -264,6 +289,23 @@ class Server {
     Combo desktop_file_manager{kModLogo | kModShift, XKB_KEY_e};
     Combo desktop_text_editor{kModLogo | kModShift, XKB_KEY_t};
     Combo desktop_debug_overlay{kModCtrl | kModAlt, XKB_KEY_i};
+    Combo desktop_snap_left{kModLogo, XKB_KEY_Left};
+    Combo desktop_snap_right{kModLogo, XKB_KEY_Right};
+    Combo desktop_snap_up{kModLogo, XKB_KEY_Up};
+    Combo desktop_snap_down{kModLogo, XKB_KEY_Down};
+    Combo desktop_close_window{kModAlt, XKB_KEY_F4};
+    Combo desktop_toggle_maximize{kModAlt, XKB_KEY_F10};
+    Combo desktop_show_desktop{kModLogo, XKB_KEY_d};
+    Combo desktop_minimize_all{kModLogo, XKB_KEY_m};
+    Combo desktop_restore_all{kModLogo | kModShift, XKB_KEY_m};
+    Combo cycle_windows{kModAlt, XKB_KEY_Tab};
+    Combo cycle_windows_reverse{kModAlt | kModShift, XKB_KEY_Tab};
+    Combo send_to_prev_screen{kModLogo | kModShift, XKB_KEY_Left};
+    Combo send_to_next_screen{kModLogo | kModShift, XKB_KEY_Right};
+    Combo workspace_prev{kModCtrl | kModAlt, XKB_KEY_Left};
+    Combo workspace_next{kModCtrl | kModAlt, XKB_KEY_Right};
+    unsigned workspace_switch_mods = kModLogo;                // + digit
+    unsigned workspace_send_mods = kModLogo | kModShift;      // + digit
     std::vector<xkb_keysym_t> start_menu_syms{XKB_KEY_Super_L, XKB_KEY_Super_R};  // tap to open the start menu
   };
   const ResolvedKeybinds& keybinds() const { return resolved_keybinds_; }
@@ -331,6 +373,7 @@ class Server {
   wlr_scene_tree* layer_bottom_ = nullptr;
   wlr_scene_tree* layer_toplevels_ = nullptr;
   wlr_scene_tree* layer_pinned_ = nullptr;
+  wlr_scene_tree* layer_topmost_ = nullptr;
   wlr_scene_tree* layer_top_ = nullptr;
   // Not one of the four wlr-layer-shell-v1 protocol layers -- fleetwm's
   // own addition, holding whichever View is currently fullscreen (see
@@ -428,6 +471,10 @@ class Server {
   int fallback_hotspot_x_ = 0, fallback_hotspot_y_ = 0;
   const char* cursor_name_ = nullptr;  // last xcursor name set by set_cursor_name()
   uint32_t next_view_id_ = 1;
+  std::vector<View*> hidden_by_show_desktop_;
+  std::vector<View*> cycle_order_;  // snapshot taken when an Alt+Tab cycle starts
+  size_t cycle_index_ = 0;
+  unsigned cycle_hold_mask_ = 0;
   wl_event_source* windows_idle_ = nullptr;
 
   enum class GrabMode { None, Move, Resize };

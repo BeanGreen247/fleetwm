@@ -45,9 +45,13 @@ The first window fills the screen. More windows share the right half. The main k
 | Alt+Shift+L | Lock the screen |
 | Alt+Shift+S | Screenshot a region |
 | Alt+Escape | Quit |
+| Alt+Tab | Switch between windows on this workspace |
+| Super+1 ... 0 | Go to workspace 1 ... 10 |
+| Super+Shift+1 ... 0 | Send the window to that workspace |
+| Super+Shift+Left / Right | Send the window to another screen |
 | Super+/ | Show all shortcuts |
 
-Workspaces are switched by clicking the numbers in the bar. Gaps between windows, at the screen
+You can also click the workspace numbers in the bar. Gaps between windows, at the screen
 edges and next to the bar can be changed in Settings.
 
 ## Desktop layout
@@ -61,7 +65,9 @@ edges and next to the bar can be changed in Settings.
 - The bar turns into a taskbar with a start button, one button per window, and the clock and system
   info on the right. It can sit on the bottom, top, left or right.
 - Tap the Super (Windows) key, or click the start button, to open the start menu.
+- There are several workspaces here too: numbered buttons on the taskbar (Settings sets how many are shown), plus the keys below. The taskbar lists the windows of the current workspace.
 - Switching from Tiling to Desktop keeps your windows where they were.
+- The battery shows its percentage in the bar. Hover it to see how much time is left.
 
 Shortcuts in this layout (none of the Alt shortcuts above work here):
 
@@ -72,6 +78,13 @@ Shortcuts in this layout (none of the Alt shortcuts above work here):
 | Super+Shift+E | File manager |
 | Super+Shift+T | Text editor |
 | Super (tap) | Start menu |
+| Super+Left / Right / Up / Down | Snap, maximize, restore (like Windows) |
+| Alt+Tab | Switch between windows on this workspace |
+| Alt+F4 | Close the window |
+| Super+D | Show the desktop |
+| Super+1 ... 0, Ctrl+Alt+Left / Right | Switch workspace |
+| Super+Shift+1 ... 0 | Send the window to a workspace |
+| Super+Shift+Left / Right | Send the window to another screen |
 | Super+/ | Show all shortcuts |
 
 The browser, file manager and editor are the ones you pick in Settings under Default Apps.

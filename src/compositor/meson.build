@@ -28,6 +28,7 @@ executable(
     'ipc_server.cpp',
     'titlebar.cpp',
     'pixel_buffer.cpp',
+    'window_actions.cpp',
     'cursor.cpp',
   ),
   include_directories: include_directories('.'),

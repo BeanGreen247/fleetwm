@@ -91,6 +91,30 @@ std::vector<ShortcutEntry> build_shortcut_list(const KeybindsConfig& b, WindowLa
   add("Windows", format_alt_combo(b.toggle_float), "Float or tile the focused window");
   add("Windows", format_alt_shift_combo(b.terminal), "Make the focused window the master (tiling)");
 
+  // Window and workspace management that works in both layouts.
+  add("Switching", format_key_combo(b.cycle_windows),
+      "Switch between the windows on this workspace (hold the modifier, tap Tab again to go further)", true);
+  add("Switching", format_key_combo(b.cycle_windows_reverse), "Switch between the windows on this workspace, the other way", true);
+  add("Switching", format_key_combo(b.workspace_switch + "+1") + " to " + format_key_combo(b.workspace_switch + "+0").substr(format_key_combo(b.workspace_switch + "+0").rfind('+') + 1),
+      "Go to workspace 1 to 10", true);
+  add("Switching", format_key_combo(b.workspace_send + "+1") + " to " + format_key_combo(b.workspace_send + "+0").substr(format_key_combo(b.workspace_send + "+0").rfind('+') + 1),
+      "Send the window to workspace 1 to 10", true);
+  add("Switching", format_key_combo(b.workspace_prev), "Previous workspace", true);
+  add("Switching", format_key_combo(b.workspace_next), "Next workspace", true);
+  add("Switching", format_key_combo(b.send_to_prev_screen), "Send the window to the previous screen", true);
+  add("Switching", format_key_combo(b.send_to_next_screen), "Send the window to the next screen", true);
+  if (desktop) {
+    add("Windows", format_key_combo(b.desktop_close_window), "Close the focused window", true);
+    add("Windows", format_key_combo(b.desktop_toggle_maximize), "Maximize or restore the focused window", true);
+    add("Windows", format_key_combo(b.desktop_show_desktop), "Show the desktop (minimize all); again brings them back", true);
+    add("Windows", format_key_combo(b.desktop_minimize_all), "Minimize all windows", true);
+    add("Windows", format_key_combo(b.desktop_restore_all), "Restore all windows", true);
+    add("Snapping", format_key_combo(b.desktop_snap_left), "Snap left; again moves to the screen on the left", true);
+    add("Snapping", format_key_combo(b.desktop_snap_right), "Snap right; again moves to the screen on the right", true);
+    add("Snapping", format_key_combo(b.desktop_snap_up), "Maximize (from a half: the top quarter)", true);
+    add("Snapping", format_key_combo(b.desktop_snap_down), "Restore, or minimize (from a half: the bottom quarter)", true);
+  }
+
   add("Focus", format_alt_combo(b.focus_left), "Focus the window to the left");
   add("Focus", format_alt_combo(b.focus_down), "Focus the window below");
   add("Focus", format_alt_combo(b.focus_up), "Focus the window above");

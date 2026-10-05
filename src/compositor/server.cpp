@@ -152,6 +152,7 @@ void raise_always_on_top_views(Workspace* workspace) {
 static void xdg_toplevel_map(wl_listener* listener, void*) {
   View* view = wl_container_of(listener, view, map);
 
+  view->update_size_policy();
   // Border rects are sized off the surface's real geometry, only known
   // once the client has actually mapped (it picks its own size -- see
   // xdg_toplevel_surface_commit's size-0,0 "client decides" configure).
@@ -170,6 +171,7 @@ static void xdg_toplevel_map(wl_listener* listener, void*) {
   if (is_settings) {
     view->set_floating(true);
     view->always_on_top = true;
+    view->update_stacking_layer();
   }
 
   // GTK dialogs (GtkColorChooserDialog, GtkFileChooserDialog, etc.) map as
@@ -199,6 +201,7 @@ static void xdg_toplevel_map(wl_listener* listener, void*) {
   if (is_dialog) {
     view->set_floating(true);
     view->always_on_top = true;
+    view->update_stacking_layer();
   }
 
   if (!view->server->outputs.empty()) {
@@ -1335,6 +1338,7 @@ bool Server::init() {
   layer_bottom_ = wlr_scene_tree_create(&scene_->tree);
   layer_toplevels_ = wlr_scene_tree_create(&scene_->tree);
   layer_pinned_ = wlr_scene_tree_create(&scene_->tree);
+  layer_topmost_ = wlr_scene_tree_create(&scene_->tree);
   layer_top_ = wlr_scene_tree_create(&scene_->tree);
   layer_fullscreen_ = wlr_scene_tree_create(&scene_->tree);
   layer_overlay_ = wlr_scene_tree_create(&scene_->tree);
@@ -1866,6 +1870,8 @@ std::vector<WindowEntry> Server::window_snapshot() const {
     entry.id = view->id;
     entry.focused = focused && view->surface() == focused;
     entry.minimized = view->minimized;
+    entry.pinned = view->pinned;
+    entry.workspace = view->workspace ? view->workspace->index() : 0;
     if (view->xdg_toplevel->app_id) entry.app_id = view->xdg_toplevel->app_id;
     if (view->xdg_toplevel->title) entry.title = view->xdg_toplevel->title;
     out.push_back(std::move(entry));
@@ -1972,6 +1978,36 @@ void Server::reload_keybinds_config() {
       resolve_combo(keybinds_config_.desktop_text_editor, defaults.desktop_text_editor, "desktop_text_editor");
   resolved_keybinds_.desktop_debug_overlay =
       resolve_combo(keybinds_config_.desktop_debug_overlay, defaults.desktop_debug_overlay, "desktop_debug_overlay");
+  resolved_keybinds_.desktop_snap_left = resolve_combo(keybinds_config_.desktop_snap_left, defaults.desktop_snap_left, "desktop_snap_left");
+  resolved_keybinds_.desktop_snap_right = resolve_combo(keybinds_config_.desktop_snap_right, defaults.desktop_snap_right, "desktop_snap_right");
+  resolved_keybinds_.desktop_snap_up = resolve_combo(keybinds_config_.desktop_snap_up, defaults.desktop_snap_up, "desktop_snap_up");
+  resolved_keybinds_.desktop_snap_down = resolve_combo(keybinds_config_.desktop_snap_down, defaults.desktop_snap_down, "desktop_snap_down");
+  resolved_keybinds_.desktop_close_window = resolve_combo(keybinds_config_.desktop_close_window, defaults.desktop_close_window, "desktop_close_window");
+  resolved_keybinds_.desktop_toggle_maximize =
+      resolve_combo(keybinds_config_.desktop_toggle_maximize, defaults.desktop_toggle_maximize, "desktop_toggle_maximize");
+  resolved_keybinds_.desktop_show_desktop = resolve_combo(keybinds_config_.desktop_show_desktop, defaults.desktop_show_desktop, "desktop_show_desktop");
+  resolved_keybinds_.desktop_minimize_all = resolve_combo(keybinds_config_.desktop_minimize_all, defaults.desktop_minimize_all, "desktop_minimize_all");
+  resolved_keybinds_.desktop_restore_all = resolve_combo(keybinds_config_.desktop_restore_all, defaults.desktop_restore_all, "desktop_restore_all");
+  resolved_keybinds_.cycle_windows = resolve_combo(keybinds_config_.cycle_windows, defaults.cycle_windows, "cycle_windows");
+  resolved_keybinds_.cycle_windows_reverse =
+      resolve_combo(keybinds_config_.cycle_windows_reverse, defaults.cycle_windows_reverse, "cycle_windows_reverse");
+  resolved_keybinds_.send_to_prev_screen =
+      resolve_combo(keybinds_config_.send_to_prev_screen, defaults.send_to_prev_screen, "send_to_prev_screen");
+  resolved_keybinds_.send_to_next_screen =
+      resolve_combo(keybinds_config_.send_to_next_screen, defaults.send_to_next_screen, "send_to_next_screen");
+  resolved_keybinds_.workspace_prev = resolve_combo(keybinds_config_.workspace_prev, defaults.workspace_prev, "workspace_prev");
+  resolved_keybinds_.workspace_next = resolve_combo(keybinds_config_.workspace_next, defaults.workspace_next, "workspace_next");
+  {
+    const unsigned sw = modifier_mask(keybinds_config_.workspace_switch);
+    const unsigned sd = modifier_mask(keybinds_config_.workspace_send);
+    if (sw == 0 || sd == 0 || sw == sd) {
+      wlr_log(WLR_ERROR, "fleetwm: keybinds.toml: workspace_switch/workspace_send must be two different "
+                         "modifier sets; keeping super / super+shift");
+    } else {
+      resolved_keybinds_.workspace_switch_mods = sw;
+      resolved_keybinds_.workspace_send_mods = sd;
+    }
+  }
 
   resolved_keybinds_.start_menu_syms.clear();
   for (const std::string& name : split_key_names(keybinds_config_.start_menu_key)) {

@@ -20,7 +20,9 @@ std::string format_window_list(const std::vector<WindowEntry>& windows) {
     std::string flags;
     if (w.focused) flags += 'F';
     if (w.minimized) flags += 'M';
+    if (w.pinned) flags += 'P';
     line += '\t' + (flags.empty() ? std::string("-") : flags);
+    line += '\t' + std::to_string(w.workspace);
     line += '\t' + clean(w.app_id);
     line += '\t' + clean(w.title);
   }
@@ -37,9 +39,9 @@ bool parse_window_list(const std::string& line, std::vector<WindowEntry>* out) {
     if (tab == std::string::npos) break;
     start = tab + 1;
   }
-  if (fields.empty() || fields[0] != "WINDOWS" || (fields.size() - 1) % 4 != 0) return false;
+  if (fields.empty() || fields[0] != "WINDOWS" || (fields.size() - 1) % 5 != 0) return false;
 
-  for (size_t i = 1; i < fields.size(); i += 4) {
+  for (size_t i = 1; i < fields.size(); i += 5) {
     WindowEntry w;
     const std::string& id = fields[i];
     if (id.empty() || id.find_first_not_of("0123456789") != std::string::npos || id.size() > 9) {
@@ -48,14 +50,21 @@ bool parse_window_list(const std::string& line, std::vector<WindowEntry>* out) {
     }
     w.id = static_cast<uint32_t>(std::stoul(id));
     const std::string& flags = fields[i + 1];
-    if (flags.find_first_not_of("-FM") != std::string::npos) {
+    if (flags.find_first_not_of("-FMP") != std::string::npos) {
       out->clear();
       return false;
     }
     w.focused = flags.find('F') != std::string::npos;
     w.minimized = flags.find('M') != std::string::npos;
-    w.app_id = fields[i + 2];
-    w.title = fields[i + 3];
+    w.pinned = flags.find('P') != std::string::npos;
+    const std::string& ws = fields[i + 2];
+    if (ws.size() != 1 || ws[0] < '0' || ws[0] > '9') {
+      out->clear();
+      return false;
+    }
+    w.workspace = ws[0] - '0';
+    w.app_id = fields[i + 3];
+    w.title = fields[i + 4];
     out->push_back(std::move(w));
   }
   return true;

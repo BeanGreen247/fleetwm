@@ -68,9 +68,25 @@ void View::set_pinned(bool pinned_) {
   pinned = pinned_;
   resize_border();
 
-  wlr_scene_node_reparent(&container_tree->node,
-                           pinned ? server->layer_pinned() : server->layer_toplevels());
-  if (pinned) {
+  update_stacking_layer();
+}
+
+void View::update_size_policy() {
+  if (kind != Kind::XdgToplevel || !xdg_toplevel || !xdg_toplevel->base->initialized) {
+    return;
+  }
+  const bool client_sized = floating || always_on_top || xdg_toplevel->parent != nullptr || fullscreen;
+  wlr_xdg_toplevel_set_tiled(xdg_toplevel, client_sized ? WLR_EDGE_NONE : WLR_EDGE_LEFT | WLR_EDGE_RIGHT |
+                                                                             WLR_EDGE_TOP | WLR_EDGE_BOTTOM);
+}
+
+void View::update_stacking_layer() {
+  wlr_scene_tree* parent = fullscreen        ? server->layer_fullscreen()
+                           : always_on_top   ? server->layer_topmost()
+                           : pinned          ? server->layer_pinned()
+                                             : server->layer_toplevels();
+  wlr_scene_node_reparent(&container_tree->node, parent);
+  if (fullscreen || always_on_top || pinned) {
     wlr_scene_node_raise_to_top(&container_tree->node);
   }
 }
@@ -80,6 +96,7 @@ void View::set_floating(bool floating_) {
     return;
   }
   floating = floating_;
+  update_size_policy();
 }
 
 void View::set_fullscreen(bool fullscreen_) {
@@ -87,6 +104,7 @@ void View::set_fullscreen(bool fullscreen_) {
     return;
   }
   fullscreen = fullscreen_;
+  update_size_policy();
 
   if (output == nullptr) {
     // Client requested fullscreen before ever mapping -- confirmed via
@@ -111,7 +129,7 @@ void View::set_fullscreen(bool fullscreen_) {
     // real border dimensions once the client's shrink-back-down commit
     // lands (xdg_toplevel_surface_commit, server.cpp), same as any other
     // resize.
-    wlr_scene_node_reparent(&container_tree->node, server->layer_toplevels());
+    update_stacking_layer();
     if (desktop_mode() && kind == Kind::XdgToplevel && xdg_toplevel) {
       // Free-floating windows go back to where (and how big) they were.
       wlr_scene_node_set_position(&container_tree->node, pre_fullscreen_box.x, pre_fullscreen_box.y);
