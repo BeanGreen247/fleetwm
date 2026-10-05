@@ -777,8 +777,7 @@ static void process_cursor_motion(Server* server, uint32_t time_msec) {
     if (server->desktop_layout() && view) {
       const DecorationZone zone = decoration_zone(server, view);
       wlr_seat_pointer_clear_focus(server->seat());
-      wlr_cursor_set_xcursor(server->cursor(), server->cursor_manager(),
-                             zone.edges ? resize_cursor_name(zone.edges) : "left_ptr");
+      server->set_cursor_name(zone.edges ? resize_cursor_name(zone.edges) : "left_ptr");
       server->set_hover_view(view);
       view->set_hover_button(zone.button);
       return;
@@ -905,6 +904,7 @@ void server_request_cursor(wl_listener* listener, void* data) {
   auto* event = static_cast<wlr_seat_pointer_request_set_cursor_event*>(data);
   wlr_seat_client* focused = server->seat()->pointer_state.focused_client;
   if (focused == event->seat_client) {
+    server->cursor_name_ = nullptr;  // a client cursor replaces whatever xcursor was set
     wlr_cursor_set_surface(server->cursor_, event->surface, event->hotspot_x, event->hotspot_y);
   }
 }
@@ -1590,9 +1590,13 @@ wlr_scene_tree* Server::layer_tree_for(zwlr_layer_shell_v1_layer layer) {
   return layer_overlay_;
 }
 
-void Server::set_default_cursor_image() {
-  wlr_cursor_set_xcursor(cursor_, cursor_mgr_, "left_ptr");
+void Server::set_cursor_name(const char* name) {
+  if (cursor_name_ && std::strcmp(cursor_name_, name) == 0) return;
+  cursor_name_ = name;  // callers pass string literals
+  wlr_cursor_set_xcursor(cursor_, cursor_mgr_, name);
 }
+
+void Server::set_default_cursor_image() { set_cursor_name("left_ptr"); }
 
 // ---- Desktop layout: interactive move / resize --------------------------
 
