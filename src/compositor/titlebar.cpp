@@ -13,6 +13,7 @@ extern "C" {
 }
 
 #include "fleetkit.hpp"
+#include "pixel_buffer.hpp"
 #include "window_geometry.hpp"
 
 namespace fleetwm {
@@ -22,35 +23,6 @@ namespace {
 namespace kit = fleetwm::kit;
 
 kit::Palette g_palette;
-
-// A wlr_buffer over a plain malloc'd ARGB8888 pixel array.
-struct PixelBuffer {
-  wlr_buffer base;
-  void* data;
-  size_t stride;
-};
-
-void pixel_buffer_destroy(wlr_buffer* buffer) {
-  PixelBuffer* pb = wl_container_of(buffer, pb, base);
-  std::free(pb->data);
-  delete pb;
-}
-
-bool pixel_buffer_begin_access(wlr_buffer* buffer, uint32_t flags, void** data, uint32_t* format,
-                               size_t* stride) {
-  if (flags & WLR_BUFFER_DATA_PTR_ACCESS_WRITE) return false;
-  PixelBuffer* pb = wl_container_of(buffer, pb, base);
-  *data = pb->data;
-  *format = DRM_FORMAT_ARGB8888;
-  *stride = pb->stride;
-  return true;
-}
-
-void pixel_buffer_end_access(wlr_buffer*) {}
-
-const wlr_buffer_impl kPixelBufferImpl = {
-    pixel_buffer_destroy, nullptr, nullptr, pixel_buffer_begin_access, pixel_buffer_end_access,
-};
 
 kit::Color mix(const kit::Color& a, const kit::Color& b, double t) {
   return {a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t, 1.0};
@@ -87,18 +59,13 @@ wlr_buffer* render_titlebar(int width, const TitlebarState& st, const TitlebarCo
   const geom::TitlebarMetrics metrics = titlebar_metrics(cfg);
   const geom::TitlebarLayout layout = geom::layout_titlebar(width, metrics);
   const int height = std::max(16, metrics.height);
-  auto* pb = new PixelBuffer;
-  pb->stride = static_cast<size_t>(width) * 4;
-  pb->data = std::calloc(static_cast<size_t>(height), pb->stride);
-  if (!pb->data) {
-    delete pb;
-    return nullptr;
-  }
-  wlr_buffer_init(&pb->base, &kPixelBufferImpl, width, height);
+  void* pixels = nullptr;
+  size_t stride = 0;
+  wlr_buffer* buffer = create_pixel_buffer(width, height, &pixels, &stride);
+  if (!buffer) return nullptr;
 
   cairo_surface_t* surf = cairo_image_surface_create_for_data(
-      static_cast<unsigned char*>(pb->data), CAIRO_FORMAT_ARGB32, width, height,
-      static_cast<int>(pb->stride));
+      static_cast<unsigned char*>(pixels), CAIRO_FORMAT_ARGB32, width, height, static_cast<int>(stride));
   cairo_t* cr = cairo_create(surf);
 
   const kit::Palette& pal = g_palette;
@@ -192,7 +159,7 @@ wlr_buffer* render_titlebar(int width, const TitlebarState& st, const TitlebarCo
 
   cairo_destroy(cr);
   cairo_surface_destroy(surf);
-  return &pb->base;
+  return buffer;
 }
 
 }  // namespace fleetwm

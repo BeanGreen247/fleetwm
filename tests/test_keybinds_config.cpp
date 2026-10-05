@@ -32,6 +32,7 @@ TEST_F(KeybindsConfigTest, LoadWithNoConfigFileReturnsDefaults) {
   EXPECT_EQ(config.desktop_browser, "super+shift+b");
   EXPECT_EQ(config.desktop_file_manager, "super+shift+e");
   EXPECT_EQ(config.desktop_text_editor, "super+shift+t");
+  EXPECT_EQ(config.desktop_debug_overlay, "ctrl+alt+i");
   EXPECT_EQ(config.start_menu_key, "Super_L,Super_R");
 }
 

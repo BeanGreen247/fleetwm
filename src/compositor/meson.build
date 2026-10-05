@@ -27,6 +27,8 @@ executable(
     'workspace.cpp',
     'ipc_server.cpp',
     'titlebar.cpp',
+    'pixel_buffer.cpp',
+    'cursor.cpp',
   ),
   include_directories: include_directories('.'),
   cpp_args: wlroots_cpp_args,

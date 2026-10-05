@@ -135,6 +135,7 @@ KeybindsConfig load_keybinds_config() {
   if (auto v = table["desktop_browser"].value<std::string>()) config.desktop_browser = *v;
   if (auto v = table["desktop_file_manager"].value<std::string>()) config.desktop_file_manager = *v;
   if (auto v = table["desktop_text_editor"].value<std::string>()) config.desktop_text_editor = *v;
+  if (auto v = table["desktop_debug_overlay"].value<std::string>()) config.desktop_debug_overlay = *v;
   if (auto v = table["shortcuts_help"].value<std::string>()) config.shortcuts_help = *v;
   if (auto v = table["debug_overlay"].value<std::string>()) {
     config.debug_overlay = *v;
@@ -167,6 +168,7 @@ void save_keybinds_config(const KeybindsConfig& config) {
   table.insert_or_assign("desktop_browser", config.desktop_browser);
   table.insert_or_assign("desktop_file_manager", config.desktop_file_manager);
   table.insert_or_assign("desktop_text_editor", config.desktop_text_editor);
+  table.insert_or_assign("desktop_debug_overlay", config.desktop_debug_overlay);
 
   std::ofstream out(path);
   if (!out) {

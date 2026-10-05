@@ -35,6 +35,7 @@ and the shell's readline Alt+letter bindings):
 | Super+Shift+B | Default web browser | `desktop_browser` |
 | Super+Shift+E | Default file manager | `desktop_file_manager` |
 | Super+Shift+T | Default text editor | `desktop_text_editor` |
+| Ctrl+Alt+I | Frame-time / FPS / RAM overlay | `desktop_debug_overlay` |
 | Super+/ | This shortcuts list (both layouts) | `shortcuts_help` |
 | Tap Super (Windows key) | Open or close the start menu | `start_menu_key` |
 

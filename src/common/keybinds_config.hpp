@@ -63,6 +63,8 @@ struct KeybindsConfig {
   std::string desktop_browser = "super+shift+b";       // default web browser (Settings -> Default Apps)
   std::string desktop_file_manager = "super+shift+e";  // default file manager
   std::string desktop_text_editor = "super+shift+t";   // default text editor
+  // The frame-time / FPS / RAM overlay (Alt+Shift+I in the Tiling layout).
+  std::string desktop_debug_overlay = "ctrl+alt+i";
   // Opens the keyboard-shortcuts window (fleetwm-shortcuts) in either layout.
   std::string shortcuts_help = "super+slash";
   // Key(s) that open the start menu when tapped on their own (Desktop layout), as

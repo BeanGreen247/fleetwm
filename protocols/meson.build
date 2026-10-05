@@ -27,6 +27,7 @@ protocols = [
   ['pointer-constraints-unstable-v1', wl_protocol_dir / 'unstable/pointer-constraints/pointer-constraints-unstable-v1.xml'],
   ['ext-session-lock-v1', wl_protocol_dir / 'staging/ext-session-lock/ext-session-lock-v1.xml'],
   ['tearing-control-v1', wl_protocol_dir / 'staging/tearing-control/tearing-control-v1.xml'],
+  ['cursor-shape-v1', wl_protocol_dir / 'staging/cursor-shape/cursor-shape-v1.xml'],
 ]
 
 protocol_headers = []

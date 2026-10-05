@@ -31,6 +31,7 @@ extern "C" {
 #include "output.hpp"
 #include "paths_config.h"
 #include "scene_node_owner.hpp"
+#include "cursor.hpp"
 #include "titlebar.hpp"
 #include "window_geometry.hpp"
 #include "view.hpp"
@@ -1362,7 +1363,27 @@ bool Server::init() {
 
   cursor_ = wlr_cursor_create();
   wlr_cursor_attach_output_layout(cursor_, output_layout_);
-  cursor_mgr_ = wlr_xcursor_manager_create(nullptr, 24);
+  // Pick a cursor theme, and export it so every app we launch finds the same one.
+  // With none installed at all, draw our own arrow instead of an invisible pointer.
+  const std::string cursor_theme = pick_cursor_theme();
+  if (!cursor_theme.empty()) setenv("XCURSOR_THEME", cursor_theme.c_str(), 0);
+  setenv("XCURSOR_SIZE", "24", 0);
+  cursor_mgr_ = wlr_xcursor_manager_create(cursor_theme.empty() ? nullptr : cursor_theme.c_str(), 24);
+  if (cursor_theme.empty() || !cursor_theme_has_left_ptr(cursor_theme)) {
+    wlr_log(WLR_INFO, "fleetwm: no cursor theme installed, using the built-in pointer "
+                      "(install dmz-cursor-theme or adwaita-icon-theme for a proper one)");
+    fallback_cursor_ = create_fallback_cursor(&fallback_hotspot_x_, &fallback_hotspot_y_);
+  }
+
+  // wp_cursor_shape_v1: clients (foot, GTK4, Qt) ask for "text" or "pointer" and we draw it.
+  cursor_shape_manager_ = wlr_cursor_shape_manager_v1_create(display_, 1);
+  request_set_shape_.notify = [](wl_listener* listener, void* data) {
+    Server* server = wl_container_of(listener, server, request_set_shape_);
+    auto* event = static_cast<wlr_cursor_shape_manager_v1_request_set_shape_event*>(data);
+    if (event->device_type != WLR_CURSOR_SHAPE_MANAGER_V1_DEVICE_TYPE_POINTER) return;
+    server->apply_cursor_shape(event->seat_client, wlr_cursor_shape_v1_name(event->shape));
+  };
+  wl_signal_add(&cursor_shape_manager_->events.request_set_shape, &request_set_shape_);
 
   virtual_pointer_manager_ = wlr_virtual_pointer_manager_v1_create(display_);
   new_virtual_pointer_.notify = server_new_virtual_pointer;
@@ -1597,7 +1618,19 @@ wlr_scene_tree* Server::layer_tree_for(zwlr_layer_shell_v1_layer layer) {
 void Server::set_cursor_name(const char* name) {
   if (cursor_name_ && std::strcmp(cursor_name_, name) == 0) return;
   cursor_name_ = name;  // callers pass string literals
+  if (fallback_cursor_) {
+    wlr_cursor_set_buffer(cursor_, fallback_cursor_, fallback_hotspot_x_, fallback_hotspot_y_, 1.0f);
+    return;
+  }
   wlr_cursor_set_xcursor(cursor_, cursor_mgr_, name);
+}
+
+void Server::apply_cursor_shape(wlr_seat_client* client, const char* name) {
+  if (seat_->pointer_state.focused_client != client) return;  // only the client under the pointer
+  cursor_name_ = nullptr;  // force a reload even if the name matches an earlier one
+  static std::string current;  // set_cursor_name keeps the pointer, so it must outlive this call
+  current = name;
+  set_cursor_name(current.c_str());
 }
 
 void Server::set_default_cursor_image() { set_cursor_name("left_ptr"); }
@@ -1937,6 +1970,8 @@ void Server::reload_keybinds_config() {
       resolve_combo(keybinds_config_.desktop_file_manager, defaults.desktop_file_manager, "desktop_file_manager");
   resolved_keybinds_.desktop_text_editor =
       resolve_combo(keybinds_config_.desktop_text_editor, defaults.desktop_text_editor, "desktop_text_editor");
+  resolved_keybinds_.desktop_debug_overlay =
+      resolve_combo(keybinds_config_.desktop_debug_overlay, defaults.desktop_debug_overlay, "desktop_debug_overlay");
 
   resolved_keybinds_.start_menu_syms.clear();
   for (const std::string& name : split_key_names(keybinds_config_.start_menu_key)) {

@@ -8,6 +8,7 @@ extern "C" {
 #include <wlr/render/wlr_renderer.h>
 #include <wlr/types/wlr_compositor.h>
 #include <wlr/types/wlr_cursor.h>
+#include <wlr/types/wlr_cursor_shape_v1.h>
 #include <wlr/types/wlr_data_device.h>
 #include <wlr/types/wlr_layer_shell_v1.h>
 #include <wlr/types/wlr_output_layout.h>
@@ -129,6 +130,8 @@ class Server {
   // motion calls this on every event, and re-loading the image each time was
   // measurable work. A client-provided cursor (request_set_cursor) resets it.
   void set_cursor_name(const char* name);
+  // A client asked (wp_cursor_shape_v1) for a named cursor shape: show it from our theme.
+  void apply_cursor_shape(wlr_seat_client* client, const char* name);
 
   // Called by Keyboard's constructor/destructor (input.cpp) to keep the
   // seat's advertised capabilities in sync with whether any keyboard is
@@ -260,6 +263,7 @@ class Server {
     Combo desktop_browser{kModLogo | kModShift, XKB_KEY_b};
     Combo desktop_file_manager{kModLogo | kModShift, XKB_KEY_e};
     Combo desktop_text_editor{kModLogo | kModShift, XKB_KEY_t};
+    Combo desktop_debug_overlay{kModCtrl | kModAlt, XKB_KEY_i};
     std::vector<xkb_keysym_t> start_menu_syms{XKB_KEY_Super_L, XKB_KEY_Super_R};  // tap to open the start menu
   };
   const ResolvedKeybinds& keybinds() const { return resolved_keybinds_; }
@@ -418,6 +422,10 @@ class Server {
   KeybindsConfig keybinds_config_;
   ResolvedKeybinds resolved_keybinds_;
   bool locked_ = false;
+  wlr_cursor_shape_manager_v1* cursor_shape_manager_ = nullptr;
+  wl_listener request_set_shape_{};
+  wlr_buffer* fallback_cursor_ = nullptr;  // built-in arrow, used when no cursor theme is installed
+  int fallback_hotspot_x_ = 0, fallback_hotspot_y_ = 0;
   const char* cursor_name_ = nullptr;  // last xcursor name set by set_cursor_name()
   uint32_t next_view_id_ = 1;
   wl_event_source* windows_idle_ = nullptr;
