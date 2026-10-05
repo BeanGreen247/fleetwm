@@ -124,9 +124,9 @@ shader copy) -- worth capping lower on a many-core machine that's
 falling back to software rendering; not worth touching on a low-core
 one, where the default is already small.
 
-Release builds also add `-Wl,-z,now` (full RELRO -- eagerly-resolved,
-read-only GOT) and `-DG_DISABLE_ASSERT` -- see `install.sh`'s own comments for the
-reasoning and tradeoffs behind each.
+Release builds turn off hardening for speed and silence compiler warnings; see
+[OPTIMIZATIONS.md](OPTIMIZATIONS.md) for the flags and the reasoning, including the
+non-pessimization rule we follow for performance work.
 
 Build dependencies (apt package names):
 

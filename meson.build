@@ -6,7 +6,7 @@ project(
   default_options: [
     'cpp_std=c++20',
     'c_std=c11',
-    'warning_level=2',
+    'warning_level=0',
     'buildtype=debugoptimized',
   ],
 )

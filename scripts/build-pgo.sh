@@ -62,14 +62,42 @@ if [[ "$MODE" == "use" ]]; then
   EXTRA_OPTS+=(-Dstrip=true)
 fi
 
-meson setup "${BUILD_DIR}" "${SCRIPT_DIR}" --prefix=/usr/local --buildtype=release \
-  -Db_ndebug=true -Db_lto=true -Db_pgo="${MODE}" -Dtests=true -Dunity=on \
-  -Dc_args='-march=native -ffunction-sections -fdata-sections -fno-semantic-interposition -DG_DISABLE_ASSERT' \
-  -Dcpp_args='-march=native -ffunction-sections -fdata-sections -fno-semantic-interposition -DG_DISABLE_ASSERT' \
-  -Dc_link_args='-Wl,--gc-sections -Wl,-z,now' -Dcpp_link_args='-Wl,--gc-sections -Wl,-z,now' \
-  "${EXTRA_OPTS[@]}" --reconfigure
+# Speed over safety, on purpose: every hardening option is off (stack protector, stack-clash
+# protection, control-flow protection, _FORTIFY_SOURCE, full RELRO, PIE) and the compiler
+# may assume maths never traps. -w silences compiler warnings and notes.
+COMMON_FLAGS='-w -march=native -ffunction-sections -fdata-sections -fno-semantic-interposition -fno-plt
+  -fno-math-errno -fno-trapping-math -fomit-frame-pointer -fno-stack-protector -fno-stack-clash-protection
+  -fcf-protection=none -fno-pie -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0 -DG_DISABLE_ASSERT'
+COMMON_FLAGS="$(echo "${COMMON_FLAGS}" | tr '\n' ' ')"
+# Our training pass only covers part of the code; without this GCC would optimize everything
+# it never saw for size, which can slow real use of the paths it missed.
+if [[ "$MODE" == "use" ]]; then
+  COMMON_FLAGS+=" -fprofile-partial-training"
+fi
+LINK_FLAGS='-no-pie -Wl,--gc-sections -Wl,-O1 -Wl,--as-needed -Wl,--sort-common -Wl,-z,lazy -Wl,-z,norelro -Wl,-z,noseparate-code'
 
-ninja -C "${BUILD_DIR}"
+# Configure and build quietly: the full output goes to a log, only a progress counter and
+# any real error reach the terminal.
+LOG="${BUILD_DIR}.log"
+: > "${LOG}"
+fail() {
+  echo
+  echo "error: build failed. Last lines of ${LOG}:" >&2
+  grep -E "error|Error|FAILED|undefined reference" "${LOG}" | head -20 >&2 || tail -20 "${LOG}" >&2
+  exit 1
+}
+meson setup "${BUILD_DIR}" "${SCRIPT_DIR}" --prefix=/usr/local --buildtype=release \
+  -Db_ndebug=true -Db_lto=true -Db_pgo="${MODE}" -Dtests=true -Dunity=on -Dwarning_level=0 -Ddefault_library=static \
+  -Dc_args="${COMMON_FLAGS}" -Dcpp_args="${COMMON_FLAGS}" \
+  -Dc_link_args="${LINK_FLAGS}" -Dcpp_link_args="${LINK_FLAGS}" \
+  "${EXTRA_OPTS[@]}" --reconfigure >> "${LOG}" 2>&1 || fail
+
+echo "==> Compiling (${MODE})"
+set +o pipefail
+ninja -C "${BUILD_DIR}" 2>&1 | tee -a "${LOG}" | awk '/^\[[0-9]+\/[0-9]+\]/ { printf "\r  %s   ", $1; fflush() } END { print "" }'
+status=${PIPESTATUS[0]}
+set -o pipefail
+[[ "${status}" -eq 0 ]] || fail
 
 echo "==> Running unit tests"
 # Run the gtest binary directly rather than `meson test` -- meson treats
@@ -79,7 +107,7 @@ echo "==> Running unit tests"
 # suites ran ... PASSED N tests"), and still exits non-zero on any
 # failure, so `set -euo pipefail` above still aborts the install exactly
 # as before.
-"${BUILD_DIR}/tests/fleetwm-unit-tests"
+"${BUILD_DIR}/tests/fleetwm-unit-tests" --gtest_brief=1
 
 echo
 if [[ "$MODE" == "generate" ]]; then
