@@ -20,6 +20,7 @@
 #include "default_apps.hpp"
 #include "desktop_entry.hpp"
 #include "fleetkit.hpp"
+#include "icon_theme.hpp"
 #include "malloc_tuning.hpp"
 #include "theme.hpp"
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
@@ -29,12 +30,17 @@ namespace {
 using namespace fleetwm;
 using namespace fleetwm::kit;
 
-constexpr int kWindowWidth = 560;
-constexpr int kMaxVisibleRows = 8;
-constexpr int kRowHeight = 48;
-constexpr int kEntryAndChromeHeight = 60;
-constexpr int kWindowHeight = kMaxVisibleRows * kRowHeight + kEntryAndChromeHeight;
-constexpr double kFont = 14.67;
+constexpr int kPad = 14;          // transparent margin around the card (room for the shadow)
+constexpr int kCardW = 620;
+constexpr int kInner = 10;
+constexpr int kEntryH = 48;
+constexpr int kRowHeight = 52;
+constexpr int kMaxVisibleRows = 7;
+constexpr int kFooterH = 30;
+constexpr int kCardH = kInner + kEntryH + 8 + kMaxVisibleRows * kRowHeight + kFooterH;
+constexpr int kWindowWidth = kCardW + 2 * kPad;
+constexpr int kWindowHeight = kCardH + 2 * kPad;
+constexpr double kFont = 14.0;
 constexpr uint32_t kBtnLeft = 0x110;
 
 std::string to_lower(std::string s) {
@@ -60,6 +66,8 @@ std::string category_hint(const std::string& categories) {
 
 struct Entry {
   DesktopEntry de;
+  cairo_surface_t* icon = nullptr;
+  bool icon_tried = false;
   std::string hint;
   std::string name_lower, comment_lower;
 };
@@ -87,6 +95,7 @@ struct Launcher {
   std::vector<const Entry*> results;  // nullptr = run-as-command sentinel
   int selected = 0;
   int scroll = 0;              // first visible row
+  int hover_row = -1;
   double wheel_accum = 0;
 
   void load() {
@@ -135,59 +144,122 @@ struct Launcher {
   }
 
   // ---------------------------------------------------------------- draw --
-  void draw(cairo_t* cr, int W, int H) {
-    const double radius = pal.rounded ? 8 : 0;
-    rounded_rect(cr, 0, 0, W, H, radius);
-    set_source(cr, pal.bg_primary);
-    cairo_fill(cr);
+  cairo_surface_t* icon_for(Entry& e) {
+    if (!e.icon_tried) {
+      e.icon_tried = true;
+      if (!e.de.icon.empty()) e.icon = load_icon(e.de.icon, 64);
+    }
+    return e.icon;
+  }
 
-    const double margin = 8, entry_h = kWindowHeight - 2 * margin - 4 - kMaxVisibleRows * kRowHeight;
-    // Search entry.
-    const double ex = margin, ey = margin, ew = W - 2 * margin;
-    rounded_rect(cr, ex + 0.5, ey + 0.5, ew - 1, entry_h - 1, radius);
-    set_source(cr, pal.bg_secondary);
+  static Color alpha(Color c, double a) {
+    c.a = a;
+    return c;
+  }
+
+  void draw_shadow(cairo_t* cr, double x, double y, double w, double h, double r) {
+    for (int i = 10; i >= 1; --i) {  // layered translucent rounded rects: a cheap soft shadow
+      rounded_rect(cr, x - i, y - i + 5, w + 2 * i, h + 2 * i, r + i);
+      set_source(cr, {0, 0, 0, 0.022});
+      cairo_fill(cr);
+    }
+  }
+
+  void keycap(cairo_t* cr, const std::string& label, double x, double y, double* w_out) {
+    const TextExtents te = measure_text(cr, label, 11.5, true);
+    const double w = te.width + 12, h = 18;
+    rounded_rect(cr, x, y, w, h, 5);
+    set_source(cr, alpha(pal.fg_secondary, 0.18));
+    cairo_fill(cr);
+    draw_text(cr, label, x + 6, y + (h - te.height) / 2 + te.ascent, 11.5, alpha(pal.fg_primary, 0.9), true);
+    *w_out = w;
+  }
+
+  void draw(cairo_t* cr, int W, int H) {
+    (void)W;
+    (void)H;
+    const double r = pal.rounded ? 16 : 4;
+    const double cx0 = kPad, cy0 = kPad;
+    draw_shadow(cr, cx0, cy0, kCardW, kCardH, r);
+    rounded_rect(cr, cx0, cy0, kCardW, kCardH, r);
+    set_source(cr, pal.bg_primary);
     cairo_fill_preserve(cr);
-    set_source(cr, pal.accent);  // always focused
+    set_source(cr, alpha(pal.fg_secondary, 0.22));
     cairo_set_line_width(cr, 1);
     cairo_stroke(cr);
-    // Magnifier.
-    set_source(cr, pal.fg_secondary);
-    cairo_set_line_width(cr, 1.6);
-    cairo_arc(cr, ex + 19, ey + entry_h / 2 - 1.5, 5, 0, 2 * M_PI);
+
+    // Search field.
+    const double ex = cx0 + kInner, ey = cy0 + kInner, ew = kCardW - 2 * kInner;
+    rounded_rect(cr, ex, ey, ew, kEntryH, pal.rounded ? 12 : 3);
+    set_source(cr, pal.bg_secondary);
+    cairo_fill(cr);
+    set_source(cr, alpha(pal.fg_secondary, 0.9));
+    cairo_set_line_width(cr, 1.7);
+    cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
+    cairo_arc(cr, ex + 24, ey + kEntryH / 2 - 1.5, 6, 0, 2 * M_PI);
     cairo_stroke(cr);
-    cairo_move_to(cr, ex + 22.6, ey + entry_h / 2 + 2.1);
-    cairo_line_to(cr, ex + 27, ey + entry_h / 2 + 6.5);
+    cairo_move_to(cr, ex + 28.4, ey + kEntryH / 2 + 3);
+    cairo_line_to(cr, ex + 33.5, ey + kEntryH / 2 + 8);
     cairo_stroke(cr);
-    // Query text + caret.
-    const TextExtents te = measure_text(cr, "Ag", kFont);
-    const double base = ey + (entry_h - te.height) / 2 + te.ascent;
-    const double tx = ex + 38;
-    draw_text(cr, query, tx, base, kFont, pal.fg_primary);
-    const double caret_x = tx + measure_text(cr, query.substr(0, cursor), kFont).width;
-    set_source(cr, pal.fg_primary);
-    cairo_rectangle(cr, caret_x + 0.5, ey + 9, 1.2, entry_h - 18);
+    const TextExtents te = measure_text(cr, "Ag", kFont + 1.5);
+    const double base = ey + (kEntryH - te.height) / 2 + te.ascent;
+    const double tx = ex + 46;
+    if (query.empty()) {
+      draw_text(cr, "Search applications or type a command", tx, base, kFont + 1.5, alpha(pal.fg_secondary, 0.7));
+    } else {
+      draw_text(cr, query, tx, base, kFont + 1.5, pal.fg_primary);
+    }
+    const double caret_x = tx + measure_text(cr, query.substr(0, cursor), kFont + 1.5).width;
+    set_source(cr, pal.accent);
+    cairo_rectangle(cr, caret_x + 0.5, ey + 12, 1.6, kEntryH - 24);
     cairo_fill(cr);
 
     // Result rows (clipped to the list area).
-    const double ly = ey + entry_h + 4;
+    const double ly = ey + kEntryH + 8, lx = cx0 + kInner, lw = kCardW - 2 * kInner;
     cairo_save(cr);
-    cairo_rectangle(cr, margin, ly, W - 2 * margin, kMaxVisibleRows * kRowHeight);
+    cairo_rectangle(cr, lx, ly, lw, kMaxVisibleRows * kRowHeight);
     cairo_clip(cr);
     for (int i = scroll; i < static_cast<int>(results.size()) && i < scroll + kMaxVisibleRows; ++i) {
       const double ry = ly + (i - scroll) * kRowHeight;
-      const bool sel = i == selected;
-      if (sel) {
-        rounded_rect(cr, margin, ry, W - 2 * margin, kRowHeight, pal.rounded ? 8 : 0);
-        set_source(cr, pal.accent);
+      const bool sel = i == selected, hot = i == hover_row;
+      if (sel || hot) {
+        rounded_rect(cr, lx, ry + 1, lw - 8, kRowHeight - 2, pal.rounded ? 11 : 3);
+        set_source(cr, alpha(pal.accent, sel ? 0.24 : 0.10));
         cairo_fill(cr);
       }
-      const Entry* e = results[static_cast<size_t>(i)];
+      Entry* e = const_cast<Entry*>(results[static_cast<size_t>(i)]);
       const std::string primary = e ? e->de.name : query;
-      const std::string secondary = e ? e->hint : "Run Command";
+      const std::string secondary = e ? (e->de.comment.empty() ? e->hint : e->de.comment) : "Run as a shell command";
+      // icon
+      const double isz = 34, ix = lx + 12, iy = ry + (kRowHeight - isz) / 2;
+      cairo_surface_t* icon = e ? icon_for(*e) : nullptr;
+      if (icon) {
+        cairo_save(cr);
+        cairo_translate(cr, ix, iy);
+        cairo_scale(cr, isz / cairo_image_surface_get_width(icon), isz / cairo_image_surface_get_height(icon));
+        cairo_set_source_surface(cr, icon, 0, 0);
+        cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_BEST);
+        cairo_paint(cr);
+        cairo_restore(cr);
+      } else {  // no icon: the first letter on a soft disc, or a prompt glyph for commands
+        cairo_arc(cr, ix + isz / 2, iy + isz / 2, isz / 2, 0, 2 * M_PI);
+        set_source(cr, alpha(pal.accent, 0.20));
+        cairo_fill(cr);
+        const std::string letter = e ? (primary.empty() ? "?" : primary.substr(0, next_char_len(primary, 0))) : ">";
+        const TextExtents le = measure_text(cr, letter, 15, true);
+        draw_text(cr, letter, ix + (isz - le.width) / 2, iy + (isz - le.height) / 2 + le.ascent, 15, pal.accent, true);
+      }
+      const double nx = ix + isz + 14;
       const TextExtents pe = measure_text(cr, primary, kFont, true);
-      draw_text(cr, primary, margin + 10, ry + 6 + pe.ascent, kFont, sel ? pal.bg_primary : pal.fg_primary, true);
-      draw_text(cr, secondary, margin + 10, ry + 6 + pe.height + 2 + pe.ascent, kFont,
-                sel ? pal.bg_primary : pal.fg_secondary);
+      draw_text(cr, primary, nx, ry + 9 + pe.ascent, kFont, pal.fg_primary, true);
+      std::string sec = secondary;
+      while (sec.size() > 4 && measure_text(cr, sec, 12).width > lw - (nx - lx) - 70) sec.resize(sec.size() - 1);
+      if (sec != secondary) sec += "...";
+      draw_text(cr, sec, nx, ry + 9 + pe.height + 3 + pe.ascent * 0.9, 12, alpha(pal.fg_secondary, 0.85));
+      if (sel) {
+        double kw = 0;
+        keycap(cr, "Enter", lx + lw - 8 - 56, ry + (kRowHeight - 18) / 2, &kw);
+      }
     }
     cairo_restore(cr);
 
@@ -197,11 +269,21 @@ struct Launcher {
       const double track = kMaxVisibleRows * kRowHeight;
       const double th = std::max(24.0, track * kMaxVisibleRows / total);
       const double ty = ly + (track - th) * scroll / (total - kMaxVisibleRows);
-      rounded_rect(cr, W - margin - 5, ty, 3, th, 1.5);
-      Color c = pal.fg_secondary;
-      c.a = 0.6;
-      set_source(cr, c);
+      rounded_rect(cr, lx + lw - 5, ty, 3, th, 1.5);
+      set_source(cr, alpha(pal.fg_secondary, 0.5));
       cairo_fill(cr);
+    }
+
+    // Footer hints.
+    const double fy = ly + kMaxVisibleRows * kRowHeight + (kFooterH - 18) / 2;
+    double fx = lx + 6;
+    const struct { const char* key; const char* what; } hints[] = {{"Up/Down", "navigate"}, {"Enter", "open"}, {"Esc", "close"}};
+    for (const auto& h : hints) {
+      double kw = 0;
+      keycap(cr, h.key, fx, fy, &kw);
+      const TextExtents he = measure_text(cr, h.what, 12);
+      draw_text(cr, h.what, fx + kw + 7, fy + (18 - he.height) / 2 + he.ascent, 12, alpha(pal.fg_secondary, 0.85));
+      fx += kw + 7 + he.width + 20;
     }
   }
 
@@ -366,11 +448,18 @@ struct Launcher {
   }
 
   int row_at(double x, double y) const {
-    const double margin = 8, entry_h = kWindowHeight - 2 * margin - 4 - kMaxVisibleRows * kRowHeight;
-    const double ly = margin + entry_h + 4;
-    if (x < margin || y < ly || y >= ly + kMaxVisibleRows * kRowHeight) return -1;
+    const double ly = kPad + kInner + kEntryH + 8, lx = kPad + kInner;
+    if (x < lx || x >= lx + kCardW - 2 * kInner || y < ly || y >= ly + kMaxVisibleRows * kRowHeight) return -1;
     const int i = scroll + static_cast<int>((y - ly) / kRowHeight);
     return i < static_cast<int>(results.size()) ? i : -1;
+  }
+
+  void on_motion(double x, double y) {
+    const int r = row_at(x, y);
+    if (r != hover_row) {
+      hover_row = r;
+      surface->queue_draw();
+    }
   }
 
   void on_button(double x, double y, uint32_t b, bool pressed) {
@@ -418,6 +507,7 @@ int main() {
   L.surface->on_draw = [&L](cairo_t* cr, int w, int h) { L.draw(cr, w, h); };
   L.surface->on_key = [&L](const KeyEvent& e) { L.on_key(e); };
   L.surface->on_button = [&L](double x, double y, uint32_t b, bool p) { L.on_button(x, y, b, p); };
+  L.surface->on_motion = [&L](double x, double y) { L.on_motion(x, y); };
   L.surface->on_scroll = [&L](double dx, double dy) { L.on_scroll(dx, dy); };
   L.surface->on_closed = [&L] { L.app.quit(); };
 

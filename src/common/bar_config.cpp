@@ -33,6 +33,7 @@ PowerMode power_mode_from_string(const std::string& s) {
 std::string bar_layout_to_string(BarLayout layout) {
   switch (layout) {
     case BarLayout::Island: return "island";
+    case BarLayout::Capsules: return "capsules";
     case BarLayout::Full: return "full";
   }
   return "full";
@@ -40,7 +41,8 @@ std::string bar_layout_to_string(BarLayout layout) {
 
 BarLayout bar_layout_from_string(const std::string& s) {
   if (s == "island") return BarLayout::Island;
-  return BarLayout::Full;
+  if (s == "full") return BarLayout::Full;
+  return BarLayout::Capsules;
 }
 
 std::string power_mode_to_profiles_daemon_name(PowerMode mode) {
@@ -90,6 +92,16 @@ BarConfig load_bar_config() {
     if (auto v = (*ws)["active_bg"].value<std::string>()) config.workspace_colors.active_bg = *v;
     if (auto v = (*ws)["active_fg"].value<std::string>()) config.workspace_colors.active_fg = *v;
     if (auto v = (*ws)["buttons_rounded"].value<bool>()) config.workspace_colors.buttons_rounded = *v;
+    // The old built-in defaults (grey boxes, orange active) were written into
+    // every saved file; treat exactly those as "follow the theme" now.
+    WorkspaceColors& w = config.workspace_colors;
+    if (w.inactive_bg == "#3c3c3c" && w.inactive_fg == "#ffffff" && w.active_bg == "#ff7800" &&
+        w.active_fg == "#000000") {
+      w.inactive_bg.clear();
+      w.inactive_fg.clear();
+      w.active_bg.clear();
+      w.active_fg.clear();
+    }
   }
 
   if (auto v = table["power_mode"].value<std::string>()) {

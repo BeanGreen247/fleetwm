@@ -96,7 +96,7 @@ TEST_F(ThemeTest, LoadWithNoConfigFileReturnsDefaults) {
   EXPECT_EQ(config.corner_style, CornerStyle::Rounded);
   EXPECT_EQ(config.theme, ThemeName::Dark);
   EXPECT_TRUE(config.accent.auto_extract);
-  EXPECT_EQ(config.gap_px, 2);
+  EXPECT_EQ(config.gap_px, 8);
 }
 
 TEST_F(ThemeTest, SaveThenLoadRoundTrips) {
@@ -183,7 +183,7 @@ TEST_F(ThemeTest, PartialConfigKeepsDefaultsForMissingKeys) {
   EXPECT_EQ(config.theme, ThemeName::Dracula);
   // Everything else should still be the ThemeConfig{} default.
   EXPECT_EQ(config.corner_style, CornerStyle::Rounded);
-  EXPECT_EQ(config.gap_px, 2);
+  EXPECT_EQ(config.gap_px, 8);
   EXPECT_TRUE(config.accent.auto_extract);
 }
 
