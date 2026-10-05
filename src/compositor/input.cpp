@@ -42,6 +42,7 @@ namespace {
 // still works the same way below, just off server->keybinds().terminal
 // instead of a fixed constant.
 constexpr const char* kLauncherCommand = "fleetwm-launcher";
+constexpr const char* kStartMenuCommand = "fleetwm-launcher --start-menu";  // toggles
 constexpr const char* kShortcutsCommand = "fleetwm-shortcuts";  // toggles: a second launch closes the first
 
 // Alt+Shift+<screenshot>: region-select screenshot, copied to the
@@ -252,6 +253,53 @@ void keyboard_key(wl_listener* listener, void* data) {
   bool alt_held = (wlr_keyboard_get_modifiers(keyboard->wlr_keyboard_ptr) & WLR_MODIFIER_ALT) != 0;
   bool handled = false;
 
+  // Desktop layout: tapping Super (Windows/Meta) alone opens the start menu; a
+  // second tap closes it (the launcher toggles itself). Any other key pressed in
+  // between makes it a modifier use, not a tap.
+  {
+    bool is_super = false;  // the configurable start-menu key (Super by default)
+    for (int i = 0; i < nsyms; ++i)
+      for (xkb_keysym_t start_key : keyboard->server->keybinds().start_menu_syms)
+        if (syms[i] == start_key) is_super = true;
+    if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
+      keyboard->super_tap = is_super;
+    } else if (is_super && keyboard->super_tap) {
+      keyboard->super_tap = false;
+      if (keyboard->server->desktop_layout() && !keyboard->server->is_locked()) {
+        spawn_shell(kStartMenuCommand);
+      }
+    }
+  }
+
+  // <modifier>+<key> (Super by default, remappable in keybinds.toml): the shortcuts
+  // window in either layout, and in the Desktop layout <modifier>+Shift+<key> for
+  // the web browser, file manager and text editor. The default avoids what tmux
+  // and readline bind on Alt inside a terminal.
+  {
+    const unsigned mods = wlr_keyboard_get_modifiers(keyboard->wlr_keyboard_ptr);
+    const Server::ResolvedKeybinds& binds = keyboard->server->keybinds();
+    if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED && !keyboard->server->is_locked() &&
+        (mods & binds.modifier_mask) == binds.modifier_mask) {
+      auto is = [](xkb_keysym_t a, xkb_keysym_t b) { return xkb_keysym_to_lower(a) == xkb_keysym_to_lower(b); };
+      for (int i = 0; i < nsyms && !handled; ++i) {
+        const xkb_keysym_t sym = syms[i];
+        if (is(sym, binds.shortcuts)) {
+          spawn(kShortcutsCommand);
+          handled = true;
+        } else if (keyboard->server->desktop_layout() && (mods & kModShift)) {
+          const char* cmd = is(sym, binds.browser)        ? "fleetwm-launcher --default browser"
+                            : is(sym, binds.file_manager) ? "fleetwm-launcher --default files"
+                            : is(sym, binds.text_editor)  ? "fleetwm-launcher --default editor"
+                                                          : nullptr;
+          if (cmd) {
+            spawn_shell(cmd);
+            handled = true;
+          }
+        }
+      }
+    }
+  }
+
   // While locked, no global Alt+<key> keybind (spawn terminal, launcher,
   // close window, etc.) may fire -- otherwise Alt+Return would spawn a
   // terminal straight through the lock screen. Every other key still
@@ -319,7 +367,9 @@ bool Keyboard::handle_keybind(xkb_keysym_t sym) {
   const Server::ResolvedKeybinds& binds = server->keybinds();
 
   // Desktop layout: only the terminal shortcut stays bound for now.
-  if (server->desktop_layout() && sym != binds.terminal && sym != binds.shortcuts) {
+  // Desktop layout: of the Alt shortcuts only the terminal stays bound; every
+  // tiling shortcut is off. (The Super shortcuts are handled in keyboard_key.)
+  if (server->desktop_layout() && sym != binds.terminal) {
     return false;
   }
 
@@ -343,10 +393,6 @@ bool Keyboard::handle_keybind(xkb_keysym_t sym) {
     // server_theme_watch_readable), so a change here takes effect on
     // the next Enter press with no restart needed.
     spawn_terminal(server->default_apps_config().terminal_command.c_str());
-    return true;
-  }
-  if (sym == binds.shortcuts) {
-    spawn(kShortcutsCommand);
     return true;
   }
   if (sym == binds.launcher) {

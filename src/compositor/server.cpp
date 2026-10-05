@@ -1920,6 +1920,31 @@ void Server::reload_keybinds_config() {
       resolve_keybind(keybinds_config_.debug_overlay, defaults.debug_overlay, "debug_overlay");
   resolved_keybinds_.shortcuts =
       resolve_keybind(keybinds_config_.shortcuts, defaults.shortcuts, "shortcuts");
+  resolved_keybinds_.browser = resolve_keybind(keybinds_config_.browser, defaults.browser, "browser");
+  resolved_keybinds_.file_manager =
+      resolve_keybind(keybinds_config_.file_manager, defaults.file_manager, "file_manager");
+  resolved_keybinds_.text_editor =
+      resolve_keybind(keybinds_config_.text_editor, defaults.text_editor, "text_editor");
+
+  unsigned mask = modifier_mask(keybinds_config_.modifier);
+  if (mask == 0) {
+    wlr_log(WLR_ERROR, "fleetwm: keybinds.toml: unrecognized modifier '%s', using super",
+            keybinds_config_.modifier.c_str());
+    mask = kModLogo;
+  }
+  resolved_keybinds_.modifier_mask = mask;
+  resolved_keybinds_.start_menu_syms.clear();
+  for (const std::string& name : split_key_names(keybinds_config_.start_menu_key)) {
+    const xkb_keysym_t sym = xkb_keysym_from_name(name.c_str(), XKB_KEYSYM_NO_FLAGS);
+    if (sym == XKB_KEY_NoSymbol) {
+      wlr_log(WLR_ERROR, "fleetwm: keybinds.toml: unrecognized key name '%s' for 'start_menu_key'", name.c_str());
+    } else {
+      resolved_keybinds_.start_menu_syms.push_back(sym);
+    }
+  }
+  if (resolved_keybinds_.start_menu_syms.empty()) {
+    resolved_keybinds_.start_menu_syms = {XKB_KEY_Super_L, XKB_KEY_Super_R};
+  }
 }
 
 void Server::reload_theme_config() {

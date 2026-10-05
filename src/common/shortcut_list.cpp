@@ -8,7 +8,7 @@ const char* const kDocsUrl = "https://github.com/BeanGreen247/fleetwm#readme";
 const char* const kShortcutsDocUrl =
     "https://github.com/BeanGreen247/fleetwm/blob/master/docs/SHORTCUTS.md";
 
-static std::string format_combo(const std::string& name, bool force_shift) {
+static std::string format_combo(const std::string& name, bool force_shift, const char* mod = "Alt") {
   if (name.empty()) return "(unbound)";
   bool shift = force_shift;
   std::string key = name;
@@ -36,12 +36,37 @@ static std::string format_combo(const std::string& name, bool force_shift) {
   } else if (name == "equal") {
     key = "=";
   }
-  return std::string("Alt+") + (shift ? "Shift+" : "") + key;
+  return std::string(mod) + "+" + (shift ? "Shift+" : "") + key;
 }
 
 std::string format_alt_combo(const std::string& name) { return format_combo(name, false); }
 
 std::string format_alt_shift_combo(const std::string& name) { return format_combo(name, true); }
+
+std::string format_super_combo(const std::string& name) { return format_combo(name, false, "Super"); }
+
+std::string format_mod_combo(const std::string& modifier, const std::string& name, bool force_shift) {
+  // "ctrl+alt" -> "Ctrl+Alt"; "super"/"logo"/"win"/"meta" -> "Super".
+  std::string label;
+  size_t pos = 0;
+  while (pos <= modifier.size()) {
+    size_t end = modifier.find('+', pos);
+    if (end == std::string::npos) end = modifier.size();
+    std::string n = modifier.substr(pos, end - pos);
+    for (char& c : n) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if (!n.empty()) {
+      std::string pretty = n == "super" || n == "logo" || n == "win" || n == "meta" ? "Super"
+                           : n == "alt"                                           ? "Alt"
+                           : n == "ctrl" || n == "control"                        ? "Ctrl"
+                           : n == "shift"                                         ? "Shift"
+                                                                                  : n;
+      label += (label.empty() ? "" : "+") + pretty;
+    }
+    pos = end + 1;
+  }
+  if (label.empty()) label = "Super";
+  return format_combo(name, force_shift, label.c_str());
+}
 
 std::vector<ShortcutEntry> build_shortcut_list(const KeybindsConfig& b, WindowLayout layout) {
   const bool desktop = layout == WindowLayout::Desktop;
@@ -51,10 +76,22 @@ std::vector<ShortcutEntry> build_shortcut_list(const KeybindsConfig& b, WindowLa
   };
 
   add("Applications", format_alt_combo(b.terminal), "Open a terminal", true);
+  if (desktop) {  // Desktop-layout app shortcuts (not bound in Tiling)
+    add("Applications", format_mod_combo(b.modifier, b.browser, true), "Open the web browser", true);
+    add("Applications", format_mod_combo(b.modifier, b.file_manager, true), "Open the file manager", true);
+    add("Applications", format_mod_combo(b.modifier, b.text_editor, true), "Open the text editor", true);
+    {
+      const std::vector<std::string> keys = split_key_names(b.start_menu_key);
+      std::string label = keys.empty() ? "Super" : keys.front();
+      for (const char* suffix : {"_L", "_R"})
+        if (label.size() > 2 && label.compare(label.size() - 2, 2, suffix) == 0) label.resize(label.size() - 2);
+      add("Applications", label + " (tap)", "Open or close the start menu", true);
+    }
+  }
   add("Applications", format_alt_combo(b.launcher), "Application launcher");
   add("Applications", format_alt_combo(b.screenshot), "Screenshot a region to the clipboard");
   add("Applications", format_alt_combo(b.lock), "Lock the screen");
-  add("Help", format_alt_combo(b.shortcuts), "Show this list of shortcuts", true);
+  add("Help", format_mod_combo(b.modifier, b.shortcuts), "Show this list of shortcuts", true);
 
   add("Windows", format_alt_combo(b.close_window), "Close the focused window");
   add("Windows", format_alt_combo(b.toggle_pin), "Pin the focused window (always on top, on every workspace)");

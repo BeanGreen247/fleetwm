@@ -42,7 +42,7 @@ bool toggle_existing() {
   if (!(in >> pid) || pid <= 0 || pid == getpid()) return false;
   std::ifstream comm("/proc/" + std::to_string(pid) + "/comm");
   std::string name;
-  if (!(comm >> name) || name != "fleetwm-shortcut") return false;  // comm is truncated to 15 chars
+  if (!(comm >> name) || name != "fleetwm-shortcu") return false;  // comm is truncated to 15 chars
   kill(static_cast<pid_t>(pid), SIGTERM);
   return true;
 }

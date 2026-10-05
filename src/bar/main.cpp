@@ -55,8 +55,6 @@ constexpr int kIslandMinMonitorWidth = 1366;
 constexpr int kIslandTopMargin = 5;
 constexpr int kIslandSideInset = 8;
 constexpr double kFont = 13.5;
-constexpr int kTaskbarThickness = 44;  // horizontal taskbar height
-constexpr int kTaskbarWidth = 76;      // vertical taskbar width
 constexpr uint32_t kBtnMiddle = 0x112;
 constexpr uint32_t kBtnLeft = 0x110, kBtnRight = 0x111;
 
@@ -853,10 +851,10 @@ struct Bar {
     }
   }
 
+  // The launcher toggles itself (a second launch closes the first) and reads the
+  // taskbar position from bar.toml, so there is nothing to pass.
   void spawn_start_menu() {
-    const std::string inset = std::to_string(vertical() ? kTaskbarWidth : kTaskbarThickness);
-    const std::string edge = taskbar_position_to_string(tb_pos);
-    const char* argv[] = {"fleetwm-launcher", "--start-menu", "--edge", edge.c_str(), "--inset", inset.c_str(), nullptr};
+    const char* argv[] = {"fleetwm-launcher", "--start-menu", nullptr};
     pid_t pid;
     if (posix_spawnp(&pid, "fleetwm-launcher", nullptr, nullptr, const_cast<char* const*>(argv), environ) != 0)
       std::fprintf(stderr, "fleetwm-bar: failed to launch the start menu\n");
