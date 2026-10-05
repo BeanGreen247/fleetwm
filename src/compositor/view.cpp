@@ -28,12 +28,6 @@ constexpr float kNoBorderColor[4] = {0.0f, 0.0f, 0.0f, 0.0f};  // fully transpar
 // untouched on failure and this is what that untouched buffer starts as.
 constexpr float kBorderColorFallback[4] = {0.9f, 0.9f, 0.95f, 1.0f};  // near-white
 
-#if FLEETWM_SCENEFX
-void set_buffer_radius(wlr_scene_buffer* buffer, int, int, void* data) {
-  wlr_scene_buffer_set_corner_radius(buffer, *static_cast<int*>(data), CORNER_LOCATION_ALL);
-}
-#endif
-
 }  // namespace
 
 int View::border_thickness() const {
@@ -175,32 +169,6 @@ void View::resize_border() {
   int left_w = thickness + grow_left;
   int right_w = thickness + grow_right;
 
-#if FLEETWM_SCENEFX
-  if (server->fx_enabled()) {
-    // Rounded windows: the content buffers are clipped to a rounded rect, and
-    // the border becomes ONE rounded rect behind them (ring = outer radius
-    // content radius + thickness), so the four edge rects are switched off.
-    // Fullscreen windows stay square (exact-output scanout).
-    int radius = fullscreen ? 0 : server->theme_config().window_corner_radius;
-    wlr_scene_node_for_each_buffer(&scene_tree->node, set_buffer_radius, &radius);
-    const bool rounded = radius > 0;
-    for (wlr_scene_rect* r : {border_bottom, border_left, border_right})
-      wlr_scene_node_set_enabled(&r->node, !rounded);
-    if (rounded) {
-      const int outer_w = width + left_w + right_w, outer_h = height + top_h + bottom_h;
-      const int outer_r = radius + thickness;
-      wlr_scene_rect_set_size(border_top, outer_w, outer_h);
-      wlr_scene_node_set_position(&border_top->node, -grow_left, -grow_top);
-      wlr_scene_rect_set_corner_radius(border_top, outer_r, CORNER_LOCATION_ALL);
-      wlr_scene_node_lower_to_bottom(&border_top->node);  // behind the content
-      update_shadow(outer_w, outer_h, outer_r);
-      return;
-    }
-    wlr_scene_rect_set_corner_radius(border_top, 0, CORNER_LOCATION_ALL);
-    update_shadow(0, 0, 0);
-  }
-#endif
-
   wlr_scene_rect_set_size(border_top, width + left_w + right_w, top_h);
   wlr_scene_node_set_position(&border_top->node, -grow_left, -grow_top);
 
@@ -213,36 +181,6 @@ void View::resize_border() {
   wlr_scene_rect_set_size(border_right, right_w, height + top_h + bottom_h);
   wlr_scene_node_set_position(&border_right->node, thickness + width, -grow_top);
 }
-
-#if FLEETWM_SCENEFX
-void View::update_shadow(int outer_w, int outer_h, int outer_radius) {
-  const bool want = outer_w > 0 && server->theme_config().window_shadows && !fullscreen;
-  if (!want) {
-    if (shadow) wlr_scene_node_set_enabled(&shadow->node, false);
-    return;
-  }
-  constexpr int kBlur = 12, kMargin = 28, kDy = 6;
-  constexpr float kColor[4] = {0.0f, 0.0f, 0.0f, 0.42f};
-  const int sw = outer_w + 2 * kMargin, sh = outer_h + 2 * kMargin;
-  if (!shadow) {
-    shadow = wlr_scene_shadow_create(container_tree, sw, sh, outer_radius, kBlur, kColor);
-    wlr_scene_node_lower_to_bottom(&shadow->node);
-  } else {
-    wlr_scene_node_set_enabled(&shadow->node, true);
-    wlr_scene_shadow_set_size(shadow, sw, sh);
-    wlr_scene_shadow_set_corner_radius(shadow, outer_radius);
-  }
-  wlr_scene_node_lower_to_bottom(&shadow->node);  // below the border ring
-  wlr_scene_node_set_position(&shadow->node, -grow_left - kMargin, -grow_top - kMargin + kDy);
-  // Do not draw the shadow under the window itself (matters for translucent
-  // clients such as terminals).
-  clipped_region hole = clipped_region_get_default();
-  hole.area = {kMargin, kMargin - kDy, outer_w, outer_h};
-  hole.corner_radius = outer_radius;
-  hole.corners = CORNER_LOCATION_ALL;
-  wlr_scene_shadow_set_clipped_region(shadow, hole);
-}
-#endif
 
 wlr_surface* View::surface() const {
   if (kind == Kind::XdgToplevel) {

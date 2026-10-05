@@ -18,10 +18,3 @@ option(
   value: false,
   description: 'Build the pure-unit-test suite in tests/ (requires gtest, fetched via wrapdb if not found on the system)',
 )
-
-option(
-  'rounded_corners',
-  type: 'feature',
-  value: 'auto',
-  description: 'Rounded window corners and soft shadows via SceneFX (wlroots scene API with an effects renderer). Needs the scenefx-0.2 library (see scripts/build-scenefx.sh); without it windows stay square.',
-)

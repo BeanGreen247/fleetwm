@@ -82,33 +82,14 @@ if wlroots_includedir == ''
     '`pkg-config --cflags-only-I ' + wlroots_pkgconfig_name + '`'
   )
 endif
-# SceneFX (optional): the wlroots scene API plus an effects renderer, which is
-# what gives windows rounded corners and shadows. Its wlr_scene.h has the same
-# C99-only array parameter, so its include root is patched the same way.
-scenefx_dep = dependency('scenefx-0.2', required: get_option('rounded_corners'))
-scenefx_includedir = ''
-if scenefx_dep.found()
-  foreach flag : run_command('pkg-config', '--cflags-only-I', 'scenefx-0.2', check: true).stdout().strip().split(' ')
-    if flag.startswith('-I') and flag.contains('scenefx')
-      scenefx_includedir = flag.substring(2)
-    endif
-  endforeach
-  if scenefx_includedir == ''
-    error('scenefx-0.2 was found but its include directory could not be determined')
-  endif
-endif
-
 patched_wlroots_dir = meson.current_build_dir() / 'patched-wlroots-include'
-patch_args = [
+run_command(
   find_program('python3'),
   meson.project_source_root() / 'scripts' / 'patch-wlroots-cpp-headers.py',
   wlroots_includedir,
   patched_wlroots_dir,
-]
-if scenefx_dep.found()
-  patch_args += scenefx_includedir
-endif
-run_command(patch_args, check: true)
+  check: true,
+)
 
 # Common cpp_args/c_args for anything linking wlroots_dep directly
 # (src/compositor, src/greeter's greeter compositor): -I patched_wlroots_dir

@@ -13,7 +13,6 @@ endif
 
 compositor_conf = configuration_data()
 compositor_conf.set10('FLEETWM_XWAYLAND', xwayland_enabled)
-compositor_conf.set10('FLEETWM_SCENEFX', scenefx_dep.found())
 configure_file(output: 'config.h', configuration: compositor_conf)
 
 executable(
@@ -32,9 +31,6 @@ executable(
   cpp_args: wlroots_cpp_args,
   c_args: wlroots_cpp_args,
   dependencies: [
-    # scenefx first: it re-exports the wlr_scene_* symbols with larger structs,
-    # and the dynamic linker must resolve them to its copy, not libwlroots'.
-    scenefx_dep,
     wayland_server,
     wlroots_dep,
     libinput_dep,
