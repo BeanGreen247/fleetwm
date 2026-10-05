@@ -7,8 +7,8 @@ see [Credits](#credits) below.
 
 A minimal, fast Wayland window manager and desktop shell for Debian and
 Ubuntu/Kubuntu. Built on [wlroots](https://gitlab.freedesktop.org/wlroots/wlroots)
-in C++, with a GTK-free top bar, app launcher, wallpaper, power
-menu, lock screen and audio mixer, plus a GTK4 settings app. No file manager, no bundled productivity apps -- just
+in C++, with its own GTK-free top bar, settings app, app launcher, wallpaper,
+power menu, lock screen, audio mixer and login greeter. No file manager, no bundled productivity apps -- just
 tiling window management, a bar, and the handful of desktop-shell pieces
 every session actually needs, aimed squarely at low idle resource usage
 and uncompromised gaming performance.
@@ -308,24 +308,15 @@ $ scripts/smoke-test.sh build
 ==> 10 passed, 0 failed
 ```
 
-fleetwm's GTK4 clients (bar, wallpaper, settings, launcher, locker,
-greeter login card) run with `GSK_RENDERER=cairo` rather than GTK4's
-default GL renderer, since none of them render anything that needs GPU
-compositing. GTK4's GL renderer pulls in Mesa's full GL/EGL/gallium
-stack -- and, on any machine without real GPU-accelerated EGL (e.g. a
-VM falling back to llvmpipe), `libLLVM` on top of that, ~15-20MB of Pss
-per process by itself. Measured on a real box: `fleetwm-bar` dropped
-from 131MB to 24MB Pss, `fleetwm-wallpaper` from 99MB to 22MB, with
-pixel-identical output. This is set via `GSK_RENDERER` in each
-process's environment (`src/greeter/session.cpp` for the user session,
-`packaging/fleetwm-greeter@.service` for the login screen), not
-hardcoded, so it can be overridden if a future client ever needs real
-GPU-accelerated rendering.
+fleetwm's own clients no longer use GTK at all (see
+[GTK-free shell clients](#gtk-free-shell-clients-fleetkit)), which is where
+most of the memory went: a GTK4 client pulls in GLib, Pango, GdkPixbuf and
+(with the GL renderer) Mesa's full GL/EGL/gallium stack, 100-160 MB resident
+per process. Measured on the test VM, the bar went from 147 MB to 12 MB.
 
 ### Memory footprint and allocator tuning
 
-Beyond the `GSK_RENDERER=cairo` win above, every fleetwm binary (the
-compositor and every GTK4 client) also:
+Every fleetwm binary (the compositor and every client) also:
 
 - Reaps its own spawned children via a `SIGCHLD` handler
   (`server.cpp`) -- every terminal/app launch used to leave a
@@ -343,9 +334,9 @@ compositor and every GTK4 client) also:
   5000,muzzy_decay_ms:5000`) so freed memory gets returned to the OS on
   a timer even while the process sits idle, not only as a side effect
   of a later allocation.
-- Skips AT-SPI accessibility bus activation (`NO_AT_BRIDGE=1`) that
-  every GTK4 app otherwise triggers on startup for no reason fleetwm
-  uses it.
+- Sets `NO_AT_BRIDGE=1` in the session so GTK applications you run do not
+  activate the AT-SPI accessibility bus on startup (remove it from
+  `src/greeter/session.cpp` if you need a screen reader).
 
 The graphical greeter (`fleetwm-greet`) additionally forces
 `WLR_RENDERER=pixman` -- it only ever draws a static login card, no
@@ -369,10 +360,8 @@ falling back to software rendering; not worth touching on a low-core
 one, where the default is already small.
 
 Release builds also add `-Wl,-z,now` (full RELRO -- eagerly-resolved,
-read-only GOT) and `-DG_DISABLE_ASSERT` (strips GLib's own
-`g_assert()`/`g_return_if_fail()` checks from the GTK4 clients) --
-see `install.sh`'s own comments for the reasoning and tradeoffs behind
-each.
+read-only GOT) and `-DG_DISABLE_ASSERT` -- see `install.sh`'s own comments for the
+reasoning and tradeoffs behind each.
 
 Build dependencies (apt package names):
 
@@ -381,7 +370,6 @@ build-essential meson ninja-build pkg-config
 libwlroots-0.18-dev wayland-protocols libwayland-dev
 libinput-dev libdrm-dev libxkbcommon-dev libpixman-1-dev
 libegl1-mesa-dev libgles2-mesa-dev
-libgtk-4-dev libgtk4-layer-shell-dev
 libcairo2-dev libpng-dev libjpeg-dev libwebp-dev fonts-dejavu-core
 libpipewire-0.3-dev pipewire pipewire-bin wireplumber
 libpam0g-dev
@@ -438,7 +426,7 @@ behind each:
   [Greeter](#greeter)); not part of the IPC socket/signal mechanism since
   it runs before any session exists -- it's a small wlroots compositor of
   its own that hands off to `fleetwm` on a successful login
-- **`fleetwm-greeter-login`** -- the GTK4 login-screen UI
+- **`fleetwm-greeter-login`** -- the login-screen UI (GTK-free)
   `fleetwm-greet` spawns and talks to over a private socket; never runs
   outside of a `fleetwm-greet` session
 
@@ -446,7 +434,8 @@ behind each:
 
 The shell pieces -- `fleetwm-bar`,
 `fleetwm-wallpaper`, `fleetwm-launcher`, `fleetwm-locker`,
-`fleetwm-powermenu`, `fleetwm-audiomixer` and `fleetwm-settings` -- are plain Wayland clients
+`fleetwm-powermenu`, `fleetwm-audiomixer`, `fleetwm-settings` and
+`fleetwm-greeter-login` -- are plain Wayland clients
 (layer-shell surfaces on `wl_shm`, drawn with cairo) built on the small
 `src/fleetkit` toolkit: one `wl_display` connection and `poll()` loop, xkbcommon
 keyboard input with key repeat, pointer input, timers, a freedesktop icon
@@ -460,8 +449,7 @@ instead of well over 100 MB.
 
 This only concerns fleetwm's own clients. The compositor still serves
 GTK 2/3/4, Qt, XWayland and any other Wayland or X11 application exactly as
-before. Only `fleetwm-greeter-login` (the login card shown by the greeter)
-remains GTK4 for now. Measurements, the method, and the bugs found while
+before. fleetwm itself has no GTK dependency left. Measurements, the method, and the bugs found while
 doing this are written up in [docs/OPTIMIZATIONS.md](docs/OPTIMIZATIONS.md).
 
 ## Credits

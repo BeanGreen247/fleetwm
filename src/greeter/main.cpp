@@ -35,7 +35,7 @@ void execute_power_action(const std::string& action) {
   }
 }
 
-// Spawns the login-card GTK4 client (src/greeter-login), pointed at the
+// Spawns the login-card client (src/greeter-login), pointed at the
 // greeter compositor's internal Wayland socket and handed its end of the
 // credentials IPC socketpair. Returns the child pid, or -1 on fork
 // failure. Still root at this point, same privilege tier as the rest of
