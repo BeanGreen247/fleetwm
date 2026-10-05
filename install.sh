@@ -40,8 +40,8 @@ sudo apt-get install -y \
 # the GTK-free "fleetkit" clients (src/fleetkit: wallpaper, locker, power menu, bar,
 # launcher, audio mixer) draw with cairo and decode images with libpng /
 # libjpeg / libwebp (SVG is handled by the vendored nanosvg); fontconfig
-# resolves cairo's "Sans" family, so keep a default font installed
-sudo apt-get install -y libcairo2-dev libpng-dev libjpeg-dev libwebp-dev fonts-dejavu-core
+# resolves cairo's "Inter" family (it falls back to the system sans when missing), so install Inter plus a default font
+sudo apt-get install -y libcairo2-dev libpng-dev libjpeg-dev libwebp-dev fonts-inter fonts-dejavu-core
 
 # runtime audio stack the bar's volume readout and fleetwm-audiomixer talk
 # to (PipeWire + the WirePlumber session manager; pipewire-bin ships

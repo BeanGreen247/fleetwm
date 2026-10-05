@@ -83,7 +83,7 @@ Palette load_palette(const ThemeConfig& theme) {
 
 namespace {
 void apply_font(cairo_t* cr, double px, bool bold) {
-  cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL,
+  cairo_select_font_face(cr, "Inter", CAIRO_FONT_SLANT_NORMAL,
                          bold ? CAIRO_FONT_WEIGHT_BOLD : CAIRO_FONT_WEIGHT_NORMAL);
   cairo_set_font_size(cr, px);
 }

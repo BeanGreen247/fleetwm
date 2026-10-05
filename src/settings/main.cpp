@@ -40,7 +40,8 @@ namespace {
 using namespace fleetwm;
 using namespace fleetwm::kit;
 
-constexpr int kWindowW = 620, kWindowH = 600;
+constexpr int kWindowW = 800, kWindowH = 620;
+constexpr double kSidebarW = 210;
 constexpr double kFont = 14.67;
 // Runs argv (no shell), returns the exit status and its stdout+stderr. Used for
 // timedatectl, which answers (or refuses) immediately thanks to --no-ask-password.
@@ -410,10 +411,10 @@ struct Settings {
   void tab_datetime(cairo_t*) {
     if (!tinfo.loaded) load_time_info();
 
-    ui.heading("Clock");
+    ui.section("Clock");
     ui.row("Time format");
     int f24 = bar.clock.use_24h ? 0 : 1;
-    if (ui.radio_group({"24-hour", "12-hour (AM/PM)"}, &f24)) {
+    if (ui.segmented({"24-hour", "12-hour"}, &f24)) {
       bar.clock.use_24h = f24 == 0;
       save_bar();
     }
@@ -431,7 +432,7 @@ struct Settings {
     }
 
     ui.space(8);
-    ui.heading("Time zone");
+    ui.section("Time zone");
     ui.label("Current: " + (effective_timezone().empty() ? std::string("unknown") : effective_timezone()), true);
     ui.newline();
     if (!tinfo.regions.empty()) {
@@ -448,7 +449,7 @@ struct Settings {
     }
 
     ui.space(8);
-    ui.heading("Network time");
+    ui.section("Network time");
     bool ntp = tinfo.ntp;
     if (ui.checkbox("Set the time automatically from the nearest time server", &ntp)) set_ntp(ntp);
     ui.newline();
@@ -616,7 +617,6 @@ struct Settings {
       disp_requested = true;
       request_outputs();
     }
-    ui.heading("Display");
     if (confirm_active) {
       ui.label("Keep these display settings? Reverting in " + std::to_string(confirm_left) + " s");
       ui.newline();
@@ -747,7 +747,7 @@ struct Settings {
   void tab_theme(cairo_t*) {
     ui.row("Theme");
     int t = static_cast<int>(config.theme);
-    if (ui.radio_group({"Dark", "Catppuccin", "Dracula", "OLED Black", "Light"}, &t)) {
+    if (ui.segmented({"Dark", "Catppuccin", "Dracula", "OLED Black", "Light"}, &t)) {
       config.theme = static_cast<ThemeName>(t);
       save_theme();
     }
@@ -783,7 +783,7 @@ struct Settings {
 
     if (has_battery) {
       ui.space(6);
-      ui.heading("Power");
+      ui.section("Power");
       std::string text = "Battery: N/A";
       if (battery.available) {
         text = "Battery: " + std::to_string(battery.percent) + "%";
@@ -798,7 +798,7 @@ struct Settings {
       ui.newline();
       ui.row("Power mode");
       int mode = static_cast<int>(bar.power_mode);
-      if (ui.radio_group({"Normal", "Performance", "Battery Saver"}, &mode)) {
+      if (ui.segmented({"Normal", "Performance", "Battery Saver"}, &mode)) {
         bar.power_mode = static_cast<PowerMode>(mode);
         save_bar();  // the bar picks this up live
         spawn_detached({"powerprofilesctl", "set", power_mode_to_profiles_daemon_name(bar.power_mode)});
@@ -808,7 +808,7 @@ struct Settings {
   }
 
   void tab_bar(cairo_t*) {
-    ui.heading("Workspace colors");
+    ui.section("Workspace colors");
     ui.paragraph("By default the active workspace uses the theme accent and the others stay transparent.");
     auto hex_of = [](const Color& c) { return color_to_hex(c.r, c.g, c.b); };
     struct {
@@ -842,14 +842,14 @@ struct Settings {
     if (ui.checkbox("Rounded workspace buttons", &bar.workspace_colors.buttons_rounded)) save_bar();
     ui.newline();
     ui.space(8);
-    ui.heading("Layout");
+    ui.section("Layout");
     ui.row("Bar layout");
     // Display order differs from the enum order: Capsules first (the default).
     static const BarLayout kOrder[] = {BarLayout::Capsules, BarLayout::Island, BarLayout::Full};
     int layout = 0;
     for (int i = 0; i < 3; ++i)
       if (kOrder[i] == bar.layout) layout = i;
-    if (ui.radio_group({"Floating capsules", "Island (one pill, 1366px+ displays)", "Full-width strip"}, &layout)) {
+    if (ui.segmented({"Capsules", "Island", "Strip"}, &layout)) {
       bar.layout = kOrder[layout];
       save_bar();
     }
@@ -857,7 +857,6 @@ struct Settings {
   }
 
   void tab_wallpaper(cairo_t* cr) {
-    ui.heading("Wallpaper");
     const std::string shown =
         wallpaper.path.empty() ? "No wallpaper set" : ellipsize(cr, wallpaper.path, ui.width() - 32);
     ui.label(shown, true);
@@ -881,7 +880,6 @@ struct Settings {
   }
 
   void tab_default_apps(cairo_t*) {
-    ui.heading("Default Applications");
     for (auto& row : mime_rows) {
       ui.row(row.label);
       if (row.apps.empty()) {
@@ -913,7 +911,7 @@ struct Settings {
   }
 
   void tab_audio(cairo_t*) {
-    ui.heading("Master volume");
+    ui.section("Master volume");
     if (!master_available) {
       ui.label("Audio unavailable (no PipeWire)", true);
       ui.newline();
@@ -929,7 +927,7 @@ struct Settings {
       ui.newline();
     }
     ui.space(6);
-    ui.heading("Applications");
+    ui.section("Applications");
     if (streams.empty()) {
       ui.label("Nothing is playing", true);
       ui.newline();
@@ -949,7 +947,7 @@ struct Settings {
   void tab_performance(cairo_t*) {
     ui.row("Render mode");
     int mode = static_cast<int>(config.render_mode);
-    if (ui.radio_group({"Synced (Unlocked)", "Custom (FPS Cap)"}, &mode)) {
+    if (ui.segmented({"Synced", "Custom FPS cap"}, &mode)) {
       config.render_mode = static_cast<RenderMode>(mode);
       save_theme();
     }
@@ -962,7 +960,7 @@ struct Settings {
   }
 
   void tab_about(cairo_t*) {
-    ui.heading("fleetwm");
+    ui.section("fleetwm");
     ui.paragraph("A custom wlroots-based Wayland compositor and desktop shell (bar, settings, launcher, wallpaper, greeter).");
     if (ui.link("github.com/BeanGreen247/fleetwm"))
       spawn_detached({"xdg-open", "https://github.com/BeanGreen247/fleetwm"});
@@ -977,11 +975,27 @@ struct Settings {
   // ---------------------------------------------------------------- draw --
   void draw(cairo_t* cr, int w, int h) {
     ui.begin(cr, w, h);
-    ui.set_margins(16, 6, 16);
-    ui.set_label_width(236);
-    ui.tabs(tab_names, &tab);
-    const double top = ui.content_bottom();
-    ui.begin_scroll({0, top, static_cast<double>(w), h - top}, &scroll[tab]);
+    // Sidebar.
+    {
+      const Palette& p = ui.palette();
+      cairo_rectangle(cr, 0, 0, kSidebarW, h);
+      set_source(cr, p.bg_secondary);
+      cairo_fill(cr);
+      cairo_rectangle(cr, kSidebarW - 1, 0, 1, h);
+      Color line = p.fg_secondary;
+      line.a = 0.18;
+      set_source(cr, line);
+      cairo_fill(cr);
+      draw_text(cr, "Settings", 24, 38, 17, p.fg_primary, true);
+    }
+    ui.nav(tab_names, &tab, {0, 52, kSidebarW, static_cast<double>(h) - 52});
+
+    // Content: title + the tab's sections in a scrolling pane.
+    ui.set_margins(28, 8, 28);
+    ui.set_label_width(220);
+    ui.begin_scroll({kSidebarW, 0, static_cast<double>(w) - kSidebarW, static_cast<double>(h)}, &scroll[tab]);
+    ui.space(10);
+    ui.title(tab_names[static_cast<size_t>(tab)]);
     switch (tab) {
       case 0: tab_theme(cr); break;
       case 1: tab_bar(cr); break;
@@ -993,6 +1007,7 @@ struct Settings {
       case 7: tab_performance(cr); break;
       default: tab_about(cr); break;
     }
+    ui.space(24);
     ui.end_scroll();
     ui.end();
     if (ui.wants_another_frame()) redraw();
@@ -1027,8 +1042,8 @@ int main() {
   cfg.title = "Fleetwm Settings";
   cfg.width = kWindowW;
   cfg.height = kWindowH;
-  cfg.min_width = 420;
-  cfg.min_height = 320;
+  cfg.min_width = 640;
+  cfg.min_height = 420;
   S.surface = std::make_unique<Surface>(S.app, cfg);
   S.surface->on_draw = [&S](cairo_t* cr, int w, int h) { S.draw(cr, w, h); };
   S.surface->on_motion = [&S](double x, double y) {
