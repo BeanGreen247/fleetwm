@@ -571,9 +571,9 @@ TEST(SnapStep, OppositeKeyUndoesAHalfSnap) {
 TEST(SnapStep, SameKeyAgainMovesToTheNeighbouringScreen) {
   EXPECT_EQ(snap_step(SnapZone::Left, Direction::Left).kind, K::MovePrevScreen);
   EXPECT_EQ(snap_step(SnapZone::Right, Direction::Right).kind, K::MoveNextScreen);
-  // ...and the window keeps its half on the new screen
-  EXPECT_EQ(snap_step(SnapZone::Left, Direction::Left).zone, SnapZone::Left);
-  EXPECT_EQ(snap_step(SnapZone::Right, Direction::Right).zone, SnapZone::Right);
+  // ...and, like Windows, lands on the half next to the screen it came from
+  EXPECT_EQ(snap_step(SnapZone::Left, Direction::Left).zone, SnapZone::Right);
+  EXPECT_EQ(snap_step(SnapZone::Right, Direction::Right).zone, SnapZone::Left);
 }
 
 TEST(SnapStep, UpMaximizesOrMakesATopQuarter) {

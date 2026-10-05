@@ -523,12 +523,14 @@ bool Keyboard::handle_keybind(xkb_keysym_t sym) {
     }
     return true;
   }
-  if (sym == binds.focus_left || sym == binds.focus_right || sym == binds.focus_up ||
+  // The vim-style keys, and the arrow keys as well.
+  const bool arrow = sym == XKB_KEY_Left || sym == XKB_KEY_Right || sym == XKB_KEY_Up || sym == XKB_KEY_Down;
+  if (arrow || sym == binds.focus_left || sym == binds.focus_right || sym == binds.focus_up ||
       sym == binds.focus_down) {
-    Direction dir = sym == binds.focus_left    ? Direction::Left
-                     : sym == binds.focus_right ? Direction::Right
-                     : sym == binds.focus_up    ? Direction::Up
-                                                 : Direction::Down;
+    Direction dir = (sym == binds.focus_left || sym == XKB_KEY_Left)     ? Direction::Left
+                     : (sym == binds.focus_right || sym == XKB_KEY_Right) ? Direction::Right
+                     : (sym == binds.focus_up || sym == XKB_KEY_Up)       ? Direction::Up
+                                                                          : Direction::Down;
     if (View* target = find_view_in_direction(server, focused_view(server), dir)) {
       server->focus_view(target);
     }

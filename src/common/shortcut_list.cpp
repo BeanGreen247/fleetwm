@@ -115,7 +115,7 @@ std::vector<ShortcutEntry> build_shortcut_list(const KeybindsConfig& b, WindowLa
     add("Snapping", format_key_combo(b.desktop_snap_down), "Restore, or minimize (from a half: the bottom quarter)", true);
   }
 
-  add("Focus", format_alt_combo(b.focus_left), "Focus the window to the left");
+  add("Focus", format_alt_combo(b.focus_left), "Focus the window to the left (Alt+Arrow keys work too)");
   add("Focus", format_alt_combo(b.focus_down), "Focus the window below");
   add("Focus", format_alt_combo(b.focus_up), "Focus the window above");
   add("Focus", format_alt_combo(b.focus_right), "Focus the window to the right");

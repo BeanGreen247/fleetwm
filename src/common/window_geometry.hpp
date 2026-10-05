@@ -160,7 +160,7 @@ struct SnapStep {
 };
 
 // Mirrors the Windows keys: Left/Right snap to a half (a second press at the edge
-// moves to the neighbouring screen, and the opposite key undoes the snap); Up
+// moves to the neighbouring screen, onto the half beside the screen it left, and the opposite key undoes the snap); Up
 // maximizes, or turns a half into the top quarter; Down restores a maximized
 // window, turns a half into the bottom quarter, and minimizes a normal window.
 SnapStep snap_step(SnapZone current, Direction dir);
