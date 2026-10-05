@@ -520,6 +520,10 @@ void server_new_xdg_toplevel(wl_listener* listener, void* data) {
                                   view->border_right}) {
     border->node.data = &view->tag;
   }
+  view->fill_rect = wlr_scene_rect_create(view->container_tree, 0, 0, kTransparent);
+  view->fill_rect->node.data = &view->tag;
+  wlr_scene_node_lower_to_bottom(&view->fill_rect->node);
+  wlr_scene_node_set_enabled(&view->fill_rect->node, false);
   view->grab_rect = wlr_scene_rect_create(view->container_tree, 0, 0, kTransparent);
   view->grab_rect->node.data = &view->tag;
   wlr_scene_node_lower_to_bottom(&view->grab_rect->node);
@@ -1614,6 +1618,7 @@ void Server::begin_move(View* view) {
   grab_cursor_y_ = cursor_->y;
   grab_box_ = {view->container_tree->node.x, view->container_tree->node.y, 0, 0};
   grab_unmaximize_pending_ = view->maximized || view->snap_zone != geom::SnapZone::None;
+  view->has_placed = false;  // a window the user moves is no longer in its tiled slot
   wlr_seat_pointer_clear_focus(seat_);
 }
 
@@ -1625,6 +1630,7 @@ void Server::begin_resize(View* view, uint32_t edges) {
   wlr_box geo{};
   wlr_xdg_surface_get_geometry(view->xdg_toplevel->base, &geo);
   view->snap_zone = geom::SnapZone::None;  // a resized window is no longer a half/quarter
+  view->has_placed = false;
   grab_mode_ = GrabMode::Resize;
   grab_view_ = view;
   grab_edges_ = edges;
@@ -1924,6 +1930,7 @@ void Server::reload_theme_config() {
     end_grab();
     for (const std::unique_ptr<View>& view : views) {
       view->snap_zone = geom::SnapZone::None;  // tiling places windows itself
+      view->has_placed = false;
       if (view->maximized) view->set_maximized(false);
       // Nothing in the tiling layout can bring a minimized window back.
       if (view->minimized) view->set_minimized(false);

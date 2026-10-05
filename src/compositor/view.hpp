@@ -194,6 +194,13 @@ class View {
   wlr_box restore_box{};  // container position + content size before maximize
   DecorationTag tag;
   wlr_scene_buffer* titlebar = nullptr;
+  // Opaque backdrop behind a window that has been given a fixed slot (snapped,
+  // maximized, or placed by the tiling->desktop switch). Clients such as terminals
+  // can only size in whole cells, so without it the leftover pixels would show
+  // the wallpaper as gaps between neighbouring windows.
+  wlr_scene_rect* fill_rect = nullptr;
+  geom::Box placed_outer{};
+  bool has_placed = false;
   wlr_scene_rect* grab_rect = nullptr;  // invisible ring around the window: resize handles
   int content_w = 0;                    // last known content width
   int hover_button = geom::kBtnNone;   // geom::TitleButton under the pointer, or -1

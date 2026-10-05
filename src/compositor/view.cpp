@@ -206,6 +206,34 @@ void View::resize_border() {
   wlr_scene_rect_set_size(border_right, right_w, height + th + top_h + bottom_h);
   wlr_scene_node_set_position(&border_right->node, thickness + width, -grow_top);
 
+  // Backdrop for windows that own a fixed slot (see fill_rect).
+  if (fill_rect) {
+    bool on = false;
+    geom::Box slot{};
+    if (desktop_mode() && !fullscreen && output) {
+      const wlr_box a = output->usable_area;
+      if (maximized) {
+        slot = {0, 0, a.width, a.height};
+        on = true;
+      } else if (snap_zone != geom::SnapZone::None) {
+        const geom::Box b = geom::snap_box(snap_zone, {a.x, a.y, a.width, a.height});
+        slot = {0, 0, b.w, b.h};
+        on = true;
+      } else if (has_placed) {
+        slot = {0, 0, placed_outer.w, placed_outer.h};
+        on = true;
+      }
+    }
+    wlr_scene_node_set_enabled(&fill_rect->node, on);
+    if (on) {
+      float color[4];
+      titlebar_backdrop_color(color);
+      wlr_scene_rect_set_color(fill_rect, color);
+      wlr_scene_rect_set_size(fill_rect, slot.w, slot.h);
+      wlr_scene_node_set_position(&fill_rect->node, 0, 0);
+    }
+  }
+
   // Invisible resize ring around the whole window (Desktop layout only).
   if (grab_rect) {
     constexpr int kRing = 6;
@@ -307,6 +335,8 @@ void View::place_outer(const geom::Box& outer) {
     return;
   }
   snap_zone = geom::SnapZone::None;  // an explicit placement replaces any earlier snap
+  placed_outer = outer;
+  has_placed = true;
   const int bt = border_thickness();
   wlr_scene_node_set_position(&container_tree->node, outer.x, outer.y);
   const int w = std::max(1, outer.w - 2 * bt), h = std::max(1, outer.h - titlebar_height() - 2 * bt);
