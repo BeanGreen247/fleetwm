@@ -125,6 +125,10 @@ class Server {
   // Sets the cursor to the default ("left_ptr") xcursor image. Called when
   // the pointer moves over no view (e.g. bare background).
   void set_default_cursor_image();
+  // Sets a named xcursor image unless it is already the one showing; pointer
+  // motion calls this on every event, and re-loading the image each time was
+  // measurable work. A client-provided cursor (request_set_cursor) resets it.
+  void set_cursor_name(const char* name);
 
   // Called by Keyboard's constructor/destructor (input.cpp) to keep the
   // seat's advertised capabilities in sync with whether any keyboard is
@@ -404,6 +408,7 @@ class Server {
   KeybindsConfig keybinds_config_;
   ResolvedKeybinds resolved_keybinds_;
   bool locked_ = false;
+  const char* cursor_name_ = nullptr;  // last xcursor name set by set_cursor_name()
   uint32_t next_view_id_ = 1;
   wl_event_source* windows_idle_ = nullptr;
 

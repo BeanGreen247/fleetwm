@@ -521,3 +521,16 @@ Settings -> Theme -> Window layout (or `window_layout` in `theme.toml`), applied
   all applications, and Settings / Lock / Power buttons; clicking anywhere else or pressing Esc
   closes it. Window titlebars also get a minimize button.
 
+## Shortcuts and tests
+
+- **Alt+Shift+/** opens the keyboard-shortcuts window (`fleetwm-shortcuts`): every bind as remapped in
+  `~/.config/fleetwm/keybinds.toml`, the mouse gestures for the active layout, and links to the docs
+  ([docs/SHORTCUTS.md](docs/SHORTCUTS.md)). It stays bound in the Desktop layout along with the terminal key.
+- Desktop layout details: no focus/pin highlight border (the titlebar's pin is filled in when pinned), no
+  gaps between windows, and the taskbar shows CPU/RAM/GPU/disk as a compact 2x2 grid with the clock as time
+  over date. Titlebar buttons, their size and side, and the title position are set under Settings -> Theme.
+- Tiling gaps: Settings -> Theme has separate gaps between windows, at the screen edges and next to the bar.
+- **Run the unit tests** with `scripts/test.sh` (no Wayland session needed): `scripts/test.sh geometry`,
+  `-f 'Snap*'`, `-v`, `-l`, `--areas`, `-r 20 --shuffle`. `meson test geometry --suite areas` runs a slice too.
+- Everything is stored per user under `$XDG_CONFIG_HOME/fleetwm/` (usually `~/.config/fleetwm/`).
+

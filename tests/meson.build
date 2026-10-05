@@ -30,3 +30,21 @@ fleetwm_unit_tests = executable(
 )
 
 test('fleetwm-unit-tests', fleetwm_unit_tests, protocol: 'gtest')
+
+# One meson test per area, so `meson test geometry` runs just that slice (the same
+# slices scripts/test.sh offers). The full binary above still runs everything.
+test_areas = {
+  'theme': 'ParseHexColor.*:ThemeName.*:ThemeTest.*:TitlebarNames.*:WindowLayoutNames.*:ThemeHome.*',
+  'bar': 'PowerMode.*:BarLayout.*:TaskbarPosition.*:BarConfigTest.*:BatterySourceReadingTest.*',
+  'keybinds': 'KeybindsConfigTest.*',
+  'geometry': 'ResizeEdges.*:ResizedBox.*:Cascade.*:TitlebarLayout.*:TitlebarHit.*:TitleX.*:TaskbarSlots.*:SnapZoneAt.*:SnapBox.*',
+  'windows': 'WindowList.*',
+  'shortcuts': 'FormatAltCombo.*:FormatAltShiftCombo.*:ShortcutList.*',
+  'ipc': 'ExtractJsonStringField.*:IpcSocketPathTest.*:IpcClient.*:IpcClientWithServerTest.*',
+  'config': 'WallpaperConfigTest.*:DefaultAppsTest.*:OutputConfigTest.*',
+  'fleetkit': 'DesktopEntryExec.*:FleetkitColor.*',
+}
+foreach area, filter : test_areas
+  test(area, fleetwm_unit_tests, args: ['--gtest_filter=' + filter], suite: 'areas', protocol: 'gtest')
+endforeach
+

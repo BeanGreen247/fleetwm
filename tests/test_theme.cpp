@@ -99,6 +99,30 @@ TEST_F(ThemeTest, LoadWithNoConfigFileReturnsDefaults) {
   EXPECT_EQ(config.gap_px, 8);
 }
 
+TEST_F(ThemeTest, SettingsArePerUser) {
+  ThemeConfig mine;
+  mine.gap_px = 3;
+  mine.window_layout = WindowLayout::Desktop;
+  mine.titlebar.height = 44;
+  save_theme_config(mine);
+
+  // Another user (different XDG_CONFIG_HOME) starts from defaults and does not see it.
+  const auto other = dir_ / "other-user";
+  std::filesystem::create_directories(other);
+  ::setenv("XDG_CONFIG_HOME", other.c_str(), 1);
+  const ThemeConfig theirs = load_theme_config();
+  EXPECT_EQ(theirs.gap_px, 8);
+  EXPECT_EQ(theirs.window_layout, WindowLayout::Tiling);
+  EXPECT_EQ(theirs.titlebar.height, 32);
+
+  // Switching back finds the first user's file untouched.
+  ::setenv("XDG_CONFIG_HOME", dir_.c_str(), 1);
+  const ThemeConfig back = load_theme_config();
+  EXPECT_EQ(back.gap_px, 3);
+  EXPECT_EQ(back.window_layout, WindowLayout::Desktop);
+  EXPECT_EQ(back.titlebar.height, 44);
+}
+
 TEST_F(ThemeTest, TitlebarDefaults) {
   const TitlebarConfig tb = load_theme_config().titlebar;
   EXPECT_EQ(tb.height, 32);
