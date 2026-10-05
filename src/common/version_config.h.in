@@ -1,0 +1,5 @@
+#pragma once
+
+// Generated at build time: the git revision the binaries were built from
+// ("89ac1fc", or "89ac1fc-dirty" with uncommitted changes, or "unknown" outside git).
+#define FLEETWM_GIT_REVISION "@VCS_TAG@"

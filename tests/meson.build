@@ -21,6 +21,7 @@ fleetwm_test_sources = files(
   'test_window_geometry.cpp',
   'test_window_list.cpp',
   'test_shortcut_list.cpp',
+  'test_version.cpp',
 )
 
 fleetwm_unit_tests = executable(

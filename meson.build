@@ -11,6 +11,9 @@ project(
   ],
 )
 
+# The project version, available to every target as FLEETWM_VERSION.
+add_project_arguments('-DFLEETWM_VERSION="' + meson.project_version() + '"', language: ['c', 'cpp'])
+
 cpp = meson.get_compiler('cpp')
 
 # ---------------------------------------------------------------------------

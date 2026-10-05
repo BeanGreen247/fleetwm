@@ -58,6 +58,14 @@ configure_file(output: 'paths_config.h', configuration: common_conf)
 # libcommon_core: everything that needs only toml++ -- config parsing, paths,
 # IPC client, malloc tuning. GTK-free so fleetkit (non-GTK) clients such as
 # fleetwm-wallpaper link it without pulling GTK/GLib/Pango into the process.
+# The git revision, regenerated on every build so About always shows what is installed.
+version_h = vcs_tag(
+  command: ['git', '-C', meson.project_source_root(), 'describe', '--always', '--dirty', '--tags'],
+  fallback: 'unknown',
+  input: 'version_config.h.in',
+  output: 'version_config.h',
+)
+
 libcommon_core = static_library(
   'fleetwm-common-core',
   files(
@@ -78,12 +86,14 @@ libcommon_core = static_library(
   ),
   dependencies: [tomlplusplus_dep],
   include_directories: include_directories('.'),
+  sources: [version_h],
 )
 
 libcommon_core_dep = declare_dependency(
   link_with: libcommon_core,
   include_directories: include_directories('.'),
   dependencies: [tomlplusplus_dep],
+  sources: [version_h],
 )
 
 # AudioMixer (audio_mixer.hpp/.cpp) is its own static library, not part of
