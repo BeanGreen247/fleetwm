@@ -42,6 +42,7 @@ namespace {
 // still works the same way below, just off server->keybinds().terminal
 // instead of a fixed constant.
 constexpr const char* kLauncherCommand = "fleetwm-launcher";
+constexpr const char* kShortcutsCommand = "fleetwm-shortcuts";  // toggles: a second launch closes the first
 
 // Alt+Shift+<screenshot>: region-select screenshot, copied to the
 // clipboard with a desktop notification -- same grim+slurp+wl-copy+
@@ -318,7 +319,7 @@ bool Keyboard::handle_keybind(xkb_keysym_t sym) {
   const Server::ResolvedKeybinds& binds = server->keybinds();
 
   // Desktop layout: only the terminal shortcut stays bound for now.
-  if (server->desktop_layout() && sym != binds.terminal) {
+  if (server->desktop_layout() && sym != binds.terminal && sym != binds.shortcuts) {
     return false;
   }
 
@@ -342,6 +343,10 @@ bool Keyboard::handle_keybind(xkb_keysym_t sym) {
     // server_theme_watch_readable), so a change here takes effect on
     // the next Enter press with no restart needed.
     spawn_terminal(server->default_apps_config().terminal_command.c_str());
+    return true;
+  }
+  if (sym == binds.shortcuts) {
+    spawn(kShortcutsCommand);
     return true;
   }
   if (sym == binds.launcher) {

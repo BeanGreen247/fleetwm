@@ -102,7 +102,7 @@ struct Launcher {
     const char* label;
     double x = 0, y = 0, w = 0, h = 0;
   };
-  FooterButton footer_buttons[3] = {{"Settings"}, {"Lock"}, {"Power"}};
+  FooterButton footer_buttons[4] = {{"Settings"}, {"Shortcuts"}, {"Lock"}, {"Power"}};
   Palette pal;
   std::unique_ptr<Surface> surface;
   std::vector<Entry> entries;  // sorted by name
@@ -182,21 +182,21 @@ struct Launcher {
 
   void draw_footer_buttons(cairo_t* cr, double lx, double fy, double lw) {
     constexpr double kBtnH = 32, kGap = 8;
-    const double bw = (lw - 2 * kGap) / 3, by = fy + (footer_h - kBtnH) / 2;
-    for (int i = 0; i < 3; ++i) {
+    const double bw = (lw - 3 * kGap) / 4, by = fy + (footer_h - kBtnH) / 2;
+    for (int i = 0; i < 4; ++i) {
       FooterButton& b = footer_buttons[i];
       b = {b.label, lx + i * (bw + kGap), by, bw, kBtnH};
       rounded_rect(cr, b.x, b.y, b.w, b.h, pal.rounded ? 9 : 3);
       set_source(cr, i == hover_footer ? alpha(pal.accent, 0.28) : pal.bg_secondary);
       cairo_fill(cr);
-      const TextExtents te = measure_text(cr, b.label, 13, true);
-      draw_text(cr, b.label, b.x + (b.w - te.width) / 2, b.y + (b.h - te.height) / 2 + te.ascent, 13,
+      const TextExtents te = measure_text(cr, b.label, 12.5, true);
+      draw_text(cr, b.label, b.x + (b.w - te.width) / 2, b.y + (b.h - te.height) / 2 + te.ascent, 12.5,
                 i == hover_footer ? pal.fg_primary : pal.fg_secondary, true);
     }
   }
 
   int footer_at(double x, double y) const {
-    for (int i = 0; i < 3; ++i) {
+    for (int i = 0; i < 4; ++i) {
       const FooterButton& b = footer_buttons[i];
       if (x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h) return i;
     }
@@ -207,6 +207,8 @@ struct Launcher {
     if (i == 0) {
       spawn_detached({"fleetwm-settings"});
     } else if (i == 1) {
+      spawn_detached({"fleetwm-shortcuts"});
+    } else if (i == 2) {
       if (ipc.connect()) ipc.send_command("LOCK");
     } else {
       spawn_detached({"fleetwm-powermenu"});
