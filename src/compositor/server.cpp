@@ -20,6 +20,8 @@ extern "C" {
 #include <cstring>
 #include <filesystem>
 #include <memory>
+#include <string>
+#include <vector>
 
 #include "input.hpp"
 #include "ipc_server.hpp"
@@ -1544,15 +1546,39 @@ int server_signal_terminate(int, void* data) {
 // signal-handler context), so a plain waitpid() loop here is safe.
 int server_signal_child(int, void* data) {
   auto* server = static_cast<Server*>(data);
-  int status = 0;
-  pid_t pid;
-  while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
-    server->on_child_exited(pid, status);
+  // Reap only children we own. A blanket waitpid(-1) also steals Xwayland's
+  // exit status, which wlroots waits for itself ("waitpid for Xwayland fork
+  // failed: No child processes") and then treats as a failed server start.
+  const pid_t skip = server->xwayland_server_pid();
+  std::vector<pid_t> children;
+  if (std::FILE* f = std::fopen(("/proc/self/task/" + std::to_string(getpid()) + "/children").c_str(), "r")) {
+    long p;
+    while (std::fscanf(f, "%ld", &p) == 1) children.push_back(static_cast<pid_t>(p));
+    std::fclose(f);
+  }
+  if (children.empty()) {
+    // /proc unavailable: fall back to reaping everything.
+    int status = 0;
+    pid_t pid;
+    while ((pid = waitpid(-1, &status, WNOHANG)) > 0) server->on_child_exited(pid, status);
+    return 0;
+  }
+  for (pid_t child : children) {
+    if (child == skip) continue;
+    int status = 0;
+    if (waitpid(child, &status, WNOHANG) == child) server->on_child_exited(child, status);
   }
   return 0;
 }
 
 }  // namespace
+
+pid_t Server::xwayland_server_pid() const {
+#if FLEETWM_XWAYLAND
+  if (xwayland_ && xwayland_->server) return xwayland_->server->pid;
+#endif
+  return 0;
+}
 
 void Server::start_signal_handlers() {
   wl_event_loop* loop = wl_display_get_event_loop(display_);
