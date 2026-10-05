@@ -27,8 +27,8 @@ if [[ "${OLD_REV}" == "${NEW_REV}" ]]; then
   exit 0
 fi
 
-meson setup build "${SOURCE_DIR}" --prefix=/usr/local --buildtype=release --reconfigure
-ninja -C build
-sudo ninja -C build install
+# Rebuild and reinstall with the same script a fresh install uses (optimized build,
+# tests first), so an update never ends up different from an install.
+"${SOURCE_DIR}/install.sh"
 
 echo "Updated fleetwm: ${OLD_REV} -> ${NEW_REV}"

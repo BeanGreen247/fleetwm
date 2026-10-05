@@ -9,8 +9,6 @@ namespace fleetwm {
 
 namespace {
 
-constexpr const char* kPowerSupplyDir = "/sys/class/power_supply";
-
 bool read_sysfs_value(const std::string& path, long long* out) {
   std::ifstream f(path);
   if (!(f >> *out)) {
@@ -29,15 +27,15 @@ bool read_sysfs_string(const std::string& path, std::string* out) {
 // First BATn directory found under /sys/class/power_supply, or "" if
 // none exists -- covers both "no battery" (desktop) and "battery present
 // but not yet enumerated" the same way, since either just yields "".
-std::string find_battery_dir() {
-  DIR* dir = opendir(kPowerSupplyDir);
+std::string find_battery_dir(const std::string& supply_dir) {
+  DIR* dir = opendir(supply_dir.c_str());
   if (!dir) {
     return "";
   }
   std::string found;
   while (dirent* entry = readdir(dir)) {
     if (std::strncmp(entry->d_name, "BAT", 3) == 0) {
-      found = std::string(kPowerSupplyDir) + "/" + entry->d_name;
+      found = supply_dir + "/" + entry->d_name;
       break;
     }
   }
@@ -45,8 +43,8 @@ std::string find_battery_dir() {
   return found;
 }
 
-bool ac_online() {
-  DIR* dir = opendir(kPowerSupplyDir);
+bool ac_online(const std::string& supply_dir) {
+  DIR* dir = opendir(supply_dir.c_str());
   if (!dir) {
     return true;
   }
@@ -55,7 +53,7 @@ bool ac_online() {
     if (entry->d_name[0] == '.') {
       continue;
     }
-    const std::string base = std::string(kPowerSupplyDir) + "/" + entry->d_name;
+    const std::string base = supply_dir + "/" + entry->d_name;
     std::string type;
     if (!read_sysfs_string(base + "/type", &type) || type != "Mains") {
       continue;

@@ -157,12 +157,77 @@ TEST_F(BatterySourceReadingTest, CorruptCapacityFileMeansUnavailable) {
   EXPECT_FALSE(reading.available);
 }
 
-TEST_F(BatterySourceReadingTest, NoBatteryDirWithNoRealSysfsDir) {
-  // find_battery_dir() probes the real /sys/class/power_supply, which the
-  // test environment (VM/CI) has no BATn entries under -- documents the
-  // expected "no battery" desktop/VM behavior rather than asserting a
-  // specific value that would vary on real laptop hardware.
-  EXPECT_TRUE(find_battery_dir().empty());
+// find_battery_dir() / ac_online() against fake power-supply trees, so the result
+// never depends on whether the machine running the tests is a laptop.
+class PowerSupplyTreeTest : public BatterySourceReadingTest {
+ protected:
+  void add_supply(const std::string& name, const std::string& type, const std::string& online = "") {
+    std::filesystem::create_directories(dir_ / name);
+    std::ofstream(dir_ / name / "type") << type << "\n";
+    if (!online.empty()) std::ofstream(dir_ / name / "online") << online << "\n";
+  }
+};
+
+TEST_F(PowerSupplyTreeTest, MissingDirectoryMeansNoBattery) {
+  EXPECT_EQ(find_battery_dir((dir_ / "does-not-exist").string()), "");
+}
+
+TEST_F(PowerSupplyTreeTest, EmptyDirectoryMeansNoBattery) {
+  EXPECT_EQ(find_battery_dir(path()), "");
+}
+
+TEST_F(PowerSupplyTreeTest, OnlyAMainsAdapterMeansNoBattery) {
+  add_supply("ADP1", "Mains", "1");
+  EXPECT_EQ(find_battery_dir(path()), "");
+}
+
+TEST_F(PowerSupplyTreeTest, FindsABatteryEntry) {
+  add_supply("ADP1", "Mains", "1");
+  add_supply("BAT0", "Battery");
+  EXPECT_EQ(find_battery_dir(path()), path() + "/BAT0");
+}
+
+TEST_F(PowerSupplyTreeTest, OtherBatteryNumbersAreFound) {
+  add_supply("BAT1", "Battery");
+  EXPECT_EQ(find_battery_dir(path()), path() + "/BAT1");
+}
+
+TEST_F(PowerSupplyTreeTest, NamesThatMerelyContainBatAreIgnored) {
+  add_supply("hid-battery-0", "Battery");  // peripherals (mice, keyboards) are not the laptop battery
+  EXPECT_EQ(find_battery_dir(path()), "");
+}
+
+TEST_F(PowerSupplyTreeTest, NoMainsSupplyMeansPluggedIn) {
+  EXPECT_TRUE(ac_online(path()));                              // empty tree: desktop / VM
+  EXPECT_TRUE(ac_online((dir_ / "does-not-exist").string()));  // no sysfs at all
+}
+
+TEST_F(PowerSupplyTreeTest, MainsOnlineIsPluggedIn) {
+  add_supply("ADP1", "Mains", "1");
+  add_supply("BAT0", "Battery");
+  EXPECT_TRUE(ac_online(path()));
+}
+
+TEST_F(PowerSupplyTreeTest, MainsOfflineMeansOnBattery) {
+  add_supply("ADP1", "Mains", "0");
+  add_supply("BAT0", "Battery");
+  EXPECT_FALSE(ac_online(path()));
+}
+
+TEST_F(PowerSupplyTreeTest, AnyOnlineMainsAdapterWins) {
+  add_supply("AC0", "Mains", "0");
+  add_supply("AC1", "Mains", "1");
+  EXPECT_TRUE(ac_online(path()));
+}
+
+TEST_F(PowerSupplyTreeTest, NonMainsSuppliesDoNotCountAsAdapters) {
+  add_supply("ucsi-source-psy-1", "USB", "0");  // a USB-C port, not the wall adapter
+  EXPECT_TRUE(ac_online(path()));
+}
+
+TEST_F(PowerSupplyTreeTest, MainsWithUnreadableOnlineCountsAsOffline) {
+  add_supply("ADP1", "Mains");  // no "online" file
+  EXPECT_FALSE(ac_online(path()));
 }
 
 }  // namespace
