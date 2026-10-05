@@ -7,8 +7,8 @@ see [Credits](#credits) below.
 
 A minimal, fast Wayland window manager and desktop shell for Debian and
 Ubuntu/Kubuntu. Built on [wlroots](https://gitlab.freedesktop.org/wlroots/wlroots)
-in C++, with a thin GTK4 top bar, settings app, app launcher, and power
-menu/lock screen. No file manager, no bundled productivity apps -- just
+in C++, with a lean (GTK-free) top bar, app launcher, wallpaper, power
+menu, lock screen and audio mixer, plus a GTK4 settings app. No file manager, no bundled productivity apps -- just
 tiling window management, a bar, and the handful of desktop-shell pieces
 every session actually needs, aimed squarely at low idle resource usage
 and uncompromised gaming performance.
@@ -382,7 +382,8 @@ libwlroots-0.18-dev wayland-protocols libwayland-dev
 libinput-dev libdrm-dev libxkbcommon-dev libpixman-1-dev
 libegl1-mesa-dev libgles2-mesa-dev
 libgtk-4-dev libgtk4-layer-shell-dev
-libpipewire-0.3-dev
+libcairo2-dev libpng-dev libjpeg-dev libwebp-dev fonts-dejavu-core
+libpipewire-0.3-dev pipewire pipewire-bin wireplumber
 libpam0g-dev
 libjemalloc2
 libsystemd-dev
@@ -413,7 +414,8 @@ signal/pidfile mechanism -- see [docs/adr](docs/adr) for the reasoning
 behind each:
 
 - **`fleetwm`** -- the wlroots-based compositor and window manager
-- **`fleetwm-bar`** -- the always-resident GTK4 top bar
+- **`fleetwm-bar`** -- the always-resident top bar (GTK-free, see
+  [Lean clients](#lean-clients-no-gtk))
 - **`fleetwm-settings`** -- the settings app, spawned on demand
 - **`fleetwm-launcher`** -- the app launcher popup, spawned on demand
   (`Alt+D`), exits after one launch/dismiss
@@ -421,15 +423,15 @@ behind each:
   compositor
 - **`fleetwm-powermenu`** -- the power menu (Lock/Log out/Sleep/Reboot/
   Shut down), spawned on demand from the bar's power icon; a standalone
-  fullscreen layer-shell overlay rather than a GTK popover, for reliable
-  click handling -- exits after one action or a dismiss
+  fullscreen layer-shell overlay, for reliable click handling -- exits
+  after one action or a dismiss
 - **`fleetwm-locker`** -- the lock screen, spawned on demand (`Alt+Shift+L`
   or the power menu's Lock); PAM-verifies the password in-process and
   signals the compositor to unlock over the IPC socket
 - **`fleetwm-audiomixer`** -- the audio mixer popup (master + per-app
   volume sliders), spawned on demand from the bar's volume stat; same
-  standalone layer-shell-overlay approach as `fleetwm-powermenu`, not a
-  GTK popover -- exits on dismiss
+  standalone layer-shell-overlay approach as `fleetwm-powermenu` -- exits
+  on dismiss
 - **`fleetwm-update`** -- the update script
 - **`fleetwm-greet`** -- the optional graphical login greeter, an
   alternative to running a full display manager (see
@@ -439,6 +441,27 @@ behind each:
 - **`fleetwm-greeter-login`** -- the GTK4 login-screen UI
   `fleetwm-greet` spawns and talks to over a private socket; never runs
   outside of a `fleetwm-greet` session
+
+## Lean clients (no GTK)
+
+The always-resident and frequently-launched shell pieces -- `fleetwm-bar`,
+`fleetwm-wallpaper`, `fleetwm-launcher`, `fleetwm-locker`,
+`fleetwm-powermenu` and `fleetwm-audiomixer` -- are plain Wayland clients
+(layer-shell surfaces on `wl_shm`, drawn with cairo) built on the small
+`src/lean` toolkit: one `wl_display` connection and `poll()` loop, xkbcommon
+keyboard input with key repeat, pointer input, timers, a freedesktop icon
+theme lookup (PNG via libpng, SVG via the vendored nanosvg), a `.desktop`
+file scanner, and the theme palette read from `themes/*.css`. They never
+link GTK, GLib or Pango; the system tray speaks the StatusNotifierItem
+protocol over sd-bus. Nothing redraws unless something visible changed, so
+idle CPU is effectively zero and each process stays in the low tens of MB
+instead of well over 100 MB.
+
+This only concerns fleetwm's own clients. The compositor still serves
+GTK 2/3/4, Qt, XWayland and any other Wayland or X11 application exactly as
+before. `fleetwm-settings` and `fleetwm-greeter-login` (both short-lived)
+remain GTK4 for now. Measurements, the method, and the bugs found while
+doing this are written up in [docs/OPTIMIZATIONS.md](docs/OPTIMIZATIONS.md).
 
 ## Credits
 
