@@ -461,10 +461,10 @@ void tile_view(View* view, int x, int y, int w, int h) {
   // last_requested_content_w/h comment in view.hpp for why this matters:
   // relayout() (and therefore tile_view()) runs far more often than the
   // tiled layout actually changes.
-  if (view->kind == View::Kind::XdgToplevel && view->xdg_toplevel &&
+  if (view->is_window() &&
       (content_w != view->last_requested_content_w ||
        content_h != view->last_requested_content_h)) {
-    wlr_xdg_toplevel_set_size(view->xdg_toplevel, content_w, content_h);
+    view->request_size(content_w, content_h);
     view->last_requested_content_w = content_w;
     view->last_requested_content_h = content_h;
   }

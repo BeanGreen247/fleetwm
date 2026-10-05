@@ -65,6 +65,12 @@ class IpcServer;
 // C++ member functions instead of free functions + void* data, since that
 // keeps the listener callbacks trivially able to reach back into typed
 // state without the casts tinywl.c needs in C.
+// Shared by xdg-shell and X11 windows (see server.cpp): a window that just appeared on screen
+// is placed, tiled and focused; one that went away is removed and focus moves on.
+void view_mapped(View* view);
+void view_unmapped(View* view);
+void server_new_xwayland_surface(wl_listener* listener, void* data);
+
 class Server {
  public:
   Server();
@@ -566,6 +572,7 @@ class Server {
 
   friend void server_new_output(wl_listener* listener, void* data);
   friend void server_new_xdg_toplevel(wl_listener* listener, void* data);
+  friend void server_new_xwayland_surface(wl_listener* listener, void* data);
   friend void server_new_layer_surface(wl_listener* listener, void* data);
   friend void server_new_toplevel_decoration(wl_listener* listener, void* data);
   friend void server_new_input(wl_listener* listener, void* data);

@@ -97,8 +97,8 @@ wlr_box view_box(View* view) {
   box.x = view->container_tree->node.x;
   box.y = view->container_tree->node.y;
   wlr_box geo{};
-  if (view->kind == View::Kind::XdgToplevel && view->xdg_toplevel) {
-    wlr_xdg_surface_get_geometry(view->xdg_toplevel->base, &geo);
+  if (view->is_window()) {
+    geo = view->content_geometry();
   }
   int thickness = view->border_thickness();
   box.width = std::max(1, geo.width) + 2 * thickness;

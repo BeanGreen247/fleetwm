@@ -150,8 +150,7 @@ void raise_always_on_top_views(Workspace* workspace) {
   }
 }
 
-static void xdg_toplevel_map(wl_listener* listener, void*) {
-  View* view = wl_container_of(listener, view, map);
+void view_mapped(View* view) {
 
   view->update_size_policy();
   // Border rects are sized off the surface's real geometry, only known
@@ -189,10 +188,15 @@ static void xdg_toplevel_map(wl_listener* listener, void*) {
   // treatment fleetwm-settings itself gets below, just centered over its
   // parent's geometry rather than the whole output.
   View* dialog_parent = nullptr;
-  if (!is_settings && view->kind == View::Kind::XdgToplevel && view->xdg_toplevel &&
-      view->xdg_toplevel->parent) {
+  if (!is_settings && view->is_child_window()) {
     for (const std::unique_ptr<View>& candidate : view->server->views) {
-      if (candidate->xdg_toplevel == view->xdg_toplevel->parent) {
+      if (view->kind == View::Kind::XdgToplevel ? candidate->xdg_toplevel == view->xdg_toplevel->parent
+#if FLEETWM_XWAYLAND
+                                                 : candidate->xwayland_surface == view->xwayland_surface->parent
+#else
+                                                 : false
+#endif
+      ) {
         dialog_parent = candidate.get();
         break;
       }
@@ -218,8 +222,7 @@ static void xdg_toplevel_map(wl_listener* listener, void*) {
     if (is_settings) {
       // Center using the toplevel's own committed geometry (known now --
       // see the resize_border() comment above for why).
-      wlr_box geo{};
-      wlr_xdg_surface_get_geometry(view->xdg_toplevel->base, &geo);
+      const wlr_box geo = view->content_geometry();
       wlr_scene_node_set_position(&view->container_tree->node, box.x + (box.width - geo.width) / 2,
                                    box.y + (box.height - geo.height) / 2);
       wlr_scene_node_raise_to_top(&view->container_tree->node);
@@ -228,22 +231,19 @@ static void xdg_toplevel_map(wl_listener* listener, void*) {
       // output -- a color picker centered on the output rather than on
       // the settings window it belongs to would visually "jump" away from
       // what the user just clicked.
-      wlr_box geo{};
-      wlr_xdg_surface_get_geometry(view->xdg_toplevel->base, &geo);
+      const wlr_box geo = view->content_geometry();
       int parent_x = 0, parent_y = 0;
       wlr_scene_node_coords(&dialog_parent->container_tree->node, &parent_x, &parent_y);
-      wlr_box parent_geo{};
-      wlr_xdg_surface_get_geometry(dialog_parent->xdg_toplevel->base, &parent_geo);
+      const wlr_box parent_geo = dialog_parent->content_geometry();
       wlr_scene_node_set_position(&view->container_tree->node,
                                    parent_x + (parent_geo.width - geo.width) / 2,
                                    parent_y + (parent_geo.height - geo.height) / 2);
       wlr_scene_node_raise_to_top(&view->container_tree->node);
-    } else if (view->desktop_mode() && view->kind == View::Kind::XdgToplevel && !view->pinned) {
+    } else if (view->desktop_mode() && view->is_window() && !view->pinned) {
       // Desktop layout: windows are free-floating. Open at the client's own
       // size, centered on the work area and stepped down-right per open
       // window so a stack of new windows stays readable.
-      wlr_box geo{};
-      wlr_xdg_surface_get_geometry(view->xdg_toplevel->base, &geo);
+      const wlr_box geo = view->content_geometry();
       const int outer_w = (geo.width > 0 ? geo.width : 800);
       const int outer_h = (geo.height > 0 ? geo.height : 500) + view->titlebar_height();
       const wlr_box area = output->usable_area;
@@ -277,8 +277,12 @@ static void xdg_toplevel_map(wl_listener* listener, void*) {
   view->server->schedule_windows_broadcast();
 }
 
-static void xdg_toplevel_unmap(wl_listener* listener, void*) {
-  View* view = wl_container_of(listener, view, unmap);
+static void xdg_toplevel_map(wl_listener* listener, void*) {
+  View* view = wl_container_of(listener, view, map);
+  view_mapped(view);
+}
+
+void view_unmapped(View* view) {
   Server* server = view->server;
   bool was_focused = server->seat()->keyboard_state.focused_surface == view->surface();
   Output* output = view->output;
@@ -303,6 +307,11 @@ static void xdg_toplevel_unmap(wl_listener* listener, void*) {
   // view (server->views is front-to-back, see focus_view()'s splice-to-front),
   // or clear focus when none is left.
   server->focus_next_after(view);
+}
+
+static void xdg_toplevel_unmap(wl_listener* listener, void*) {
+  View* view = wl_container_of(listener, view, unmap);
+  view_unmapped(view);
 }
 
 static void xdg_toplevel_destroy(wl_listener* listener, void*) {
@@ -338,20 +347,10 @@ static void xdg_toplevel_destroy(wl_listener* listener, void*) {
   wl_list_remove(&view->request_fullscreen.link);
   wl_list_remove(&view->surface_commit.link);
   wl_list_remove(&view->new_popup.link);
-  // NOT removing view->request_configure here even though it's compiled
-  // in under FLEETWM_XWAYLAND: nothing in this file (or anywhere else)
-  // currently calls wl_signal_add() on it -- XWayland toplevel creation
-  // itself isn't implemented yet (see the new_xwayland_surface comment
-  // elsewhere in this file). A wl_listener{}'s default-constructed link
-  // is unlinked (prev/next both null), and wl_list_remove() unconditionally
-  // dereferences elm->prev/elm->next with no null guard -- removing a
-  // never-added listener segfaults on those nulls. This was the actual
-  // cause of a real crash (Alt+Shift+Q closing a foot window with
-  // another still open): confirmed via a temporary per-line DEBUGTRACE
-  // fprintf (added, used, removed) showing every *other* listener
-  // removed cleanly and the crash landing exactly here. Add the
-  // wl_list_remove() back only once something actually wires this
-  // listener up via wl_signal_add() for real XWayland toplevels.
+  // request_configure (and the other X11-only listeners) belong to X11 windows, which are torn
+  // down in x11_destroy() (xwayland.cpp). They are never added for an xdg toplevel, and
+  // wl_list_remove() on a never-added listener dereferences null pointers, so they must
+  // not be removed here.
 
   // container_tree is a plain wlr_scene_tree_create(), unlike scene_tree
   // (owned/auto-destroyed by wlr_scene_xdg_surface_create alongside the
@@ -511,28 +510,7 @@ void server_new_xdg_toplevel(wl_listener* listener, void* data) {
   view->scene_tree->node.data = view.get();
   toplevel->base->data = view->scene_tree;
 
-  constexpr float kTransparent[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-  view->border_top = wlr_scene_rect_create(view->container_tree, 0, 0, kTransparent);
-  view->border_bottom = wlr_scene_rect_create(view->container_tree, 0, 0, kTransparent);
-  view->border_left = wlr_scene_rect_create(view->container_tree, 0, 0, kTransparent);
-  view->border_right = wlr_scene_rect_create(view->container_tree, 0, 0, kTransparent);
-
-  // Invisible, tagged ring around the window that acts as the resize handles
-  // in the Desktop layout; enabled/sized by View::resize_border().
-  // The border rects are part of the resize handle too (they sit between the
-  // content and the ring), so they carry the same tag.
-  for (wlr_scene_rect* border : {view->border_top, view->border_bottom, view->border_left,
-                                  view->border_right}) {
-    border->node.data = &view->tag;
-  }
-  view->fill_rect = wlr_scene_rect_create(view->container_tree, 0, 0, kTransparent);
-  view->fill_rect->node.data = &view->tag;
-  wlr_scene_node_lower_to_bottom(&view->fill_rect->node);
-  wlr_scene_node_set_enabled(&view->fill_rect->node, false);
-  view->grab_rect = wlr_scene_rect_create(view->container_tree, 0, 0, kTransparent);
-  view->grab_rect->node.data = &view->tag;
-  wlr_scene_node_lower_to_bottom(&view->grab_rect->node);
-  wlr_scene_node_set_enabled(&view->grab_rect->node, false);
+  create_view_rects(view.get());
 
   view->map.notify = xdg_toplevel_map;
   wl_signal_add(&toplevel->base->surface->events.map, &view->map);
@@ -710,6 +688,8 @@ static bool scene_node_at(Server* server, double lx, double ly, double* sx, doub
     out->surface = scene_surface->surface;
   } else if (out->owner == SceneNodeOwner::View) {
     out->surface = static_cast<View*>(tree->node.data)->surface();
+  } else if (out->owner == SceneNodeOwner::Unmanaged) {
+    return false;  // an X11 menu or tooltip always resolves to its own surface above
   } else {
     out->surface = static_cast<LayerSurface*>(tree->node.data)->surface();
   }
@@ -735,10 +715,7 @@ DecorationZone decoration_zone(Server* server, View* view) {
   const double lx = server->cursor()->x - cx, ly = server->cursor()->y - cy;
   const int bt = view->border_thickness();
   const int th = view->titlebar_height();
-  wlr_box geo{};
-  if (view->xdg_toplevel) {
-    wlr_xdg_surface_get_geometry(view->xdg_toplevel->base, &geo);
-  }
+  const wlr_box geo = view->content_geometry();
   const int W = view->content_w + 2 * bt;
   const int H = std::max(1, geo.height) + th + 2 * bt;
 
@@ -1425,13 +1402,15 @@ bool Server::init() {
   wl_signal_add(&seat_->events.request_set_selection, &request_set_selection_);
 
 #if FLEETWM_XWAYLAND
-  // XWayland server startup only for Phase 0: DISPLAY gets set below so X11
-  // clients can connect, but there is no new_xwayland_surface listener yet,
-  // so mapped X11 surfaces won't produce a View or appear on screen. Wiring
-  // that (parallel to the xdg_toplevel path above) is Phase 1 scope,
-  // grouped with the master-stack tiling work since both touch View
-  // creation/placement.
+  // XWayland starts on demand, when the first X11 program connects (DISPLAY is set below).
+  // The windows themselves are handled in xwayland.cpp.
   xwayland_ = wlr_xwayland_create(display_, compositor_, true);
+  if (xwayland_) {
+    // X11 programs become windows like any other (see xwayland.cpp), and share the clipboard.
+    new_xwayland_surface_.notify = server_new_xwayland_surface;
+    wl_signal_add(&xwayland_->events.new_surface, &new_xwayland_surface_);
+    wlr_xwayland_set_seat(xwayland_, seat_);
+  }
 #endif
 
   const char* socket = wl_display_add_socket_auto(display_);
@@ -1538,6 +1517,11 @@ void Server::focus_view(View* view) {
     if (prev_toplevel) {
       wlr_xdg_toplevel_set_activated(prev_toplevel, false);
     }
+#if FLEETWM_XWAYLAND
+    if (wlr_xwayland_surface* prev_x = wlr_xwayland_surface_try_from_wlr_surface(prev_surface)) {
+      wlr_xwayland_surface_activate(prev_x, false);
+    }
+#endif
     // Clear the focus border on whichever View previously held focus, if
     // any -- prev_surface alone doesn't identify the owning View, so scan
     // for it the same way focused_view() (input.cpp) does.
@@ -1574,9 +1558,7 @@ void Server::focus_view(View* view) {
   raise_always_on_top_views(view->workspace);
   wlr_scene_node_raise_to_top(&view->container_tree->node);
 
-  if (view->kind == View::Kind::XdgToplevel && view->xdg_toplevel) {
-    wlr_xdg_toplevel_set_activated(view->xdg_toplevel, true);
-  }
+  view->set_activated(true);
   view->focused = true;
   view->resize_border();
 
@@ -1603,11 +1585,11 @@ void Server::focus_view(View* view) {
 
   if (ipc_server) {
     std::string title;
-    if (view->kind == View::Kind::XdgToplevel && view->xdg_toplevel) {
-      if (view->xdg_toplevel->title) {
-        title = view->xdg_toplevel->title;
-      } else if (view->xdg_toplevel->app_id) {
-        title = view->xdg_toplevel->app_id;
+    if (view->is_window()) {
+      if (view->window_title()) {
+        title = view->window_title();
+      } else if (view->window_app_id()) {
+        title = view->window_app_id();
       }
     }
     ipc_server->broadcast_focused_title(title);
@@ -1678,12 +1660,11 @@ void Server::begin_move(View* view) {
 }
 
 void Server::begin_resize(View* view, uint32_t edges) {
-  if (!view || !view->output || !view->xdg_toplevel || edges == 0 || grab_active() ||
+  if (!view || !view->output || !view->is_window() || edges == 0 || grab_active() ||
       view->maximized) {
     return;
   }
-  wlr_box geo{};
-  wlr_xdg_surface_get_geometry(view->xdg_toplevel->base, &geo);
+  const wlr_box geo = view->content_geometry();
   view->snap_zone = geom::SnapZone::None;  // a resized window is no longer a half/quarter
   view->has_placed = false;
   grab_mode_ = GrabMode::Resize;
@@ -1721,6 +1702,7 @@ void Server::update_grab() {
       y = std::max(y, view->output->usable_area.y);  // keep the titlebar below the bar
     }
     wlr_scene_node_set_position(&view->container_tree->node, x, y);
+    view->sync_x11_position();
     update_snap_preview(view);
     return;
   }
@@ -1731,7 +1713,7 @@ void Server::update_grab() {
     const int x = nb.x, y = nb.y, w = nb.w, h = nb.h;
     wlr_scene_node_set_position(&view->container_tree->node, x, y);
     if (w != view->last_requested_content_w || h != view->last_requested_content_h) {
-      wlr_xdg_toplevel_set_size(view->xdg_toplevel, w, h);
+      view->request_size(w, h);
       view->last_requested_content_w = w;
       view->last_requested_content_h = h;
     }
@@ -1880,8 +1862,7 @@ std::vector<WindowEntry> Server::window_snapshot() const {
   wlr_surface* focused = seat_->keyboard_state.focused_surface;
   for (const std::unique_ptr<View>& view : views) {
     // Only mapped, top-level windows; dialogs belong to their parent's button.
-    if (!view->workspace || view->kind != View::Kind::XdgToplevel || !view->xdg_toplevel ||
-        view->xdg_toplevel->parent) {
+    if (!view->workspace || !view->is_window() || view->is_child_window()) {
       continue;
     }
     WindowEntry entry;
@@ -1890,8 +1871,8 @@ std::vector<WindowEntry> Server::window_snapshot() const {
     entry.minimized = view->minimized;
     entry.pinned = view->pinned;
     entry.workspace = view->workspace ? view->workspace->index() : 0;
-    if (view->xdg_toplevel->app_id) entry.app_id = view->xdg_toplevel->app_id;
-    if (view->xdg_toplevel->title) entry.title = view->xdg_toplevel->title;
+    if (view->window_app_id()) entry.app_id = view->window_app_id();
+    if (view->window_title()) entry.title = view->window_title();
     out.push_back(std::move(entry));
   }
   std::sort(out.begin(), out.end(),

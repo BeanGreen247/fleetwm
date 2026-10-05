@@ -8,6 +8,6 @@ namespace fleetwm {
 // member of View and LayerSurface so a scene node's node.data, cast to
 // SceneNodeOwner*, reads the correct tag regardless of which type it
 // actually points to.
-enum class SceneNodeOwner { View, LayerSurface, Decoration };
+enum class SceneNodeOwner { View, LayerSurface, Decoration, Unmanaged };
 
 }  // namespace fleetwm
