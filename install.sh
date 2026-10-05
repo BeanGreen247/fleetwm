@@ -32,6 +32,26 @@ for d in build-pgo build-test build; do
   fi
 done
 
+# The best graphics and video drivers are in Debian's non-free parts (the Intel video driver
+# with the extra codecs, GPU firmware). Make sure those repositories are enabled; nothing
+# is changed when they already are, and the original file is kept as <file>.fleetwm-bak.
+. /etc/os-release
+if [[ "${ID:-}" == "debian" ]]; then
+  for src in /etc/apt/sources.list.d/*.sources; do
+    [[ -f "${src}" ]] && grep -q "debian.org" "${src}" && grep -qE "^Components:.* main" "${src}" || continue
+    if grep -E "^Components:" "${src}" | grep -vq "non-free-firmware" || grep -E "^Components:" "${src}" | grep -qvE "(^|[[:space:]])non-free([[:space:]]|$)"; then
+      echo "==> Enabling contrib, non-free and non-free-firmware in ${src}"
+      sudo cp -n "${src}" "${src}.fleetwm-bak"
+      sudo sed -i -E '/^Components:/ { s/[[:space:]]+(contrib|non-free-firmware|non-free)\b//g; s/$/ contrib non-free non-free-firmware/ }' "${src}"
+    fi
+  done
+  if [[ -f /etc/apt/sources.list ]] && grep -E "^deb .*debian.*[[:space:]]main" /etc/apt/sources.list | grep -vq "non-free-firmware"; then
+    echo "==> Enabling contrib, non-free and non-free-firmware in /etc/apt/sources.list"
+    sudo cp -n /etc/apt/sources.list /etc/apt/sources.list.fleetwm-bak
+    sudo sed -i -E '/^deb .*debian.*[[:space:]]main/ { s/[[:space:]]+(contrib|non-free-firmware|non-free)\b//g; s/[[:space:]]main\b/ main contrib non-free non-free-firmware/ }' /etc/apt/sources.list
+  fi
+fi
+
 echo "==> Installing build dependencies (requires sudo)"
 sudo apt-get update -qq
 
@@ -79,16 +99,12 @@ for vendor_file in /sys/class/drm/card*/device/vendor; do
   [[ -r "${vendor_file}" ]] || continue
   case "$(cat "${vendor_file}")" in
     0x8086)
-      # intel-media-va-driver covers Broadwell and newer (including Gemini Lake and
-      # Whiskey Lake); i965-va-driver covers the older ones.
-      # The two intel-media packages conflict (the non-free one adds more codecs), so leave
-      # an installed one alone instead of swapping it for the other.
-      if dpkg -s intel-media-va-driver-non-free >/dev/null 2>&1 || dpkg -s intel-media-va-driver >/dev/null 2>&1; then
-        sudo apt-get install -y i965-va-driver || echo "warning: i965-va-driver not installed"
-      else
+      # The non-free media driver supports more codecs and is the faster one; it replaces the
+      # free package if that is installed. i965-va-driver covers GPUs older than Broadwell, and
+      # firmware-misc-nonfree has the i915 GuC/HuC firmware (video and scheduling offload).
+      sudo apt-get install -y intel-media-va-driver-non-free i965-va-driver firmware-misc-nonfree ||
         sudo apt-get install -y intel-media-va-driver i965-va-driver ||
-          echo "warning: no Intel video acceleration driver installed"
-      fi ;;
+        echo "warning: no Intel video acceleration driver installed" ;;
     0x1002)
       sudo apt-get install -y firmware-amd-graphics ||
         echo "warning: firmware-amd-graphics not available (needs the non-free-firmware repository)" ;;
