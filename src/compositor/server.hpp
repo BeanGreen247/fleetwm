@@ -146,6 +146,10 @@ class Server {
   // True when the SceneFX effects renderer is active (rounded corners, shadows).
   bool fx_enabled() const { return fx_enabled_; }
 
+  // pid of the Xwayland process wlroots manages (0 if none), so the SIGCHLD
+  // reaper leaves its exit status for wlroots.
+  pid_t xwayland_server_pid() const;
+
   // ---- display management (resolution + position of each monitor) ----
   struct ModeInfo {
     int width = 0, height = 0, refresh_mhz = 0;
