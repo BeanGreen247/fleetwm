@@ -65,6 +65,38 @@ sudo apt-get install -y libcairo2-dev libpng-dev libjpeg-dev libwebp-dev fonts-i
 # package name differs between distributions.
 sudo apt-get install -y dmz-cursor-theme || echo "warning: no cursor theme package installed; the built-in pointer will be used" 
 
+# Graphics drivers (Mesa) and Vulkan. The compositor renders with GLES2 and falls back to
+# software when no GPU driver loads, so the Mesa drivers decide how fast everything feels.
+# These are the userspace drivers for Intel, AMD and Nouveau GPUs (mesa-vulkan-drivers holds
+# the Vulkan ones: anv for Intel, radv for AMD, nvk for NVIDIA through Nouveau), the
+# VA-API video drivers, and vulkaninfo for checking that Vulkan works.
+# Best effort: a package missing on some distribution must not stop the install.
+sudo apt-get install -y libgl1-mesa-dri libegl-mesa0 libgbm1 libvulkan1 mesa-vulkan-drivers \
+  mesa-va-drivers vulkan-tools vainfo ||
+  echo "warning: some Mesa/Vulkan packages could not be installed; the compositor falls back to software rendering if no GPU driver loads"
+# The video driver that matches the GPU found in sysfs (0x8086 Intel, 0x1002 AMD, 0x10de NVIDIA).
+for vendor_file in /sys/class/drm/card*/device/vendor; do
+  [[ -r "${vendor_file}" ]] || continue
+  case "$(cat "${vendor_file}")" in
+    0x8086)
+      # intel-media-va-driver covers Broadwell and newer (including Gemini Lake and
+      # Whiskey Lake); i965-va-driver covers the older ones.
+      # The two intel-media packages conflict (the non-free one adds more codecs), so leave
+      # an installed one alone instead of swapping it for the other.
+      if dpkg -s intel-media-va-driver-non-free >/dev/null 2>&1 || dpkg -s intel-media-va-driver >/dev/null 2>&1; then
+        sudo apt-get install -y i965-va-driver || echo "warning: i965-va-driver not installed"
+      else
+        sudo apt-get install -y intel-media-va-driver i965-va-driver ||
+          echo "warning: no Intel video acceleration driver installed"
+      fi ;;
+    0x1002)
+      sudo apt-get install -y firmware-amd-graphics ||
+        echo "warning: firmware-amd-graphics not available (needs the non-free-firmware repository)" ;;
+    0x10de)
+      echo "==> NVIDIA GPU: using the open Nouveau driver (Mesa); install NVIDIA's own driver separately if you need it" ;;
+  esac
+done
+
 # runtime audio stack the bar's volume readout and fleetwm-audiomixer talk
 # to (PipeWire + the WirePlumber session manager; pipewire-bin ships
 # pw-cli/pw-cat, handy for testing without sound hardware)
