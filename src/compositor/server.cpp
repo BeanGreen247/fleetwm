@@ -39,24 +39,75 @@ namespace fleetwm {
 
 // -- output ------------------------------------------------------------
 
+namespace {
+
+// Chooses the mode to use for `out` given a saved setting: an exact size
+// (and refresh, if one was saved) match, else the highest refresh rate of
+// that size, else the monitor's preferred mode.
+wlr_output_mode* pick_mode(wlr_output* out, const OutputSetting* setting) {
+  wlr_output_mode* preferred = wlr_output_preferred_mode(out);
+  if (!setting || setting->width <= 0 || setting->height <= 0) {
+    return preferred;
+  }
+  wlr_output_mode* best = nullptr;
+  for (wl_list* l = out->modes.next; l != &out->modes; l = l->next) {
+    wlr_output_mode* m = wl_container_of(l, m, link);
+    if (m->width != setting->width || m->height != setting->height) {
+      continue;
+    }
+    if (setting->refresh_mhz > 0) {
+      if (std::abs(m->refresh - setting->refresh_mhz) <= 500) {
+        return m;
+      }
+      continue;
+    }
+    if (!best || m->refresh > best->refresh) {
+      best = m;
+    }
+  }
+  return best ? best : preferred;
+}
+
+}  // namespace
+
 void server_new_output(wl_listener* listener, void* data) {
   Server* server = wl_container_of(listener, server, new_output_);
   auto* wlr_out = static_cast<wlr_output*>(data);
 
   wlr_output_init_render(wlr_out, server->allocator_, server->renderer_);
 
+  const OutputSetting* setting = nullptr;
+  auto saved = server->output_settings_.find(wlr_out->name);
+  if (saved != server->output_settings_.end()) {
+    setting = &saved->second;
+  }
+
   wlr_output_state state;
   wlr_output_state_init(&state);
   wlr_output_state_set_enabled(&state, true);
-  wlr_output_mode* mode = wlr_output_preferred_mode(wlr_out);
+  wlr_output_mode* mode = pick_mode(wlr_out, setting);
   if (mode) {
     wlr_output_state_set_mode(&state, mode);
   }
-  wlr_output_commit_state(wlr_out, &state);
+  if (!wlr_output_commit_state(wlr_out, &state) && mode != wlr_output_preferred_mode(wlr_out)) {
+    // The saved mode was rejected: fall back to the monitor's preferred one
+    // rather than leaving the output dark.
+    wlr_output_state_finish(&state);
+    wlr_output_state_init(&state);
+    wlr_output_state_set_enabled(&state, true);
+    if (wlr_output_mode* preferred = wlr_output_preferred_mode(wlr_out)) {
+      wlr_output_state_set_mode(&state, preferred);
+    }
+    wlr_output_commit_state(wlr_out, &state);
+  }
   wlr_output_state_finish(&state);
 
   auto output = std::make_unique<Output>(server, wlr_out);
-  wlr_output_layout_add_auto(server->output_layout_, wlr_out);
+  if (setting && setting->has_pos) {
+    wlr_output_layout_add(server->output_layout_, wlr_out, setting->x, setting->y);
+  } else {
+    wlr_output_layout_add_auto(server->output_layout_, wlr_out);
+  }
   wlr_scene_output* scene_output = wlr_scene_output_create(server->scene_, wlr_out);
   wlr_scene_output_layout_add_output(server->scene_layout_,
                                       wlr_output_layout_get(server->output_layout_, wlr_out),
@@ -69,6 +120,9 @@ void server_new_output(wl_listener* listener, void* data) {
   output->update_usable_area();
 
   server->outputs.push_back(std::move(output));
+  if (server->ipc_server) {
+    server->ipc_server->broadcast_outputs_changed();
+  }
 }
 
 // -- xdg toplevels -------------------------------------------------------
@@ -816,7 +870,175 @@ bool Server::confirm_unlock(pid_t requesting_pid) {
   return true;
 }
 
+std::vector<Server::OutputInfo> Server::describe_outputs() const {
+  std::vector<OutputInfo> result;
+  for (const std::unique_ptr<Output>& output : outputs) {
+    wlr_output* wo = output->wlr_output_ptr;
+    OutputInfo info;
+    info.name = wo->name ? wo->name : "";
+    wlr_box box{};
+    wlr_output_layout_get_box(output_layout_, wo, &box);
+    info.x = box.x;
+    info.y = box.y;
+    info.width = wo->width;
+    info.height = wo->height;
+    info.refresh_mhz = wo->refresh;
+    for (wl_list* l = wo->modes.next; l != &wo->modes; l = l->next) {
+      wlr_output_mode* m = wl_container_of(l, m, link);
+      ModeInfo mi;
+      mi.width = m->width;
+      mi.height = m->height;
+      mi.refresh_mhz = m->refresh;
+      mi.preferred = m->preferred;
+      mi.current = wo->current_mode == m ||
+                   (!wo->current_mode && m->width == wo->width && m->height == wo->height &&
+                    m->refresh == wo->refresh);
+      info.modes.push_back(mi);
+    }
+    result.push_back(std::move(info));
+  }
+  return result;
+}
+
+void Server::reconfigure_layer_surfaces(wlr_output* wlr_out) {
+  wlr_box full_area{};
+  wlr_output_layout_get_box(output_layout_, wlr_out, &full_area);
+  for (const std::unique_ptr<LayerSurface>& ls : layer_surfaces) {
+    if (ls->layer_surface->output != wlr_out || !ls->layer_surface->initialized) {
+      continue;
+    }
+    wlr_box usable_area = full_area;
+    wlr_scene_layer_surface_v1_configure(ls->scene_layer_surface, &full_area, &usable_area);
+  }
+}
+
+void Server::revert_output_mode(Output* output) {
+  if (!output->has_fallback) {
+    return;
+  }
+  wlr_output* wo = output->wlr_output_ptr;
+  OutputSetting previous;
+  previous.width = output->fallback_width;
+  previous.height = output->fallback_height;
+  previous.refresh_mhz = output->fallback_refresh_mhz;
+  output->has_fallback = false;
+  output->commit_failures = 0;
+  wlr_log(WLR_ERROR, "fleetwm: %s could not present the new mode; reverting to %dx%d",
+          wo->name ? wo->name : "output", previous.width, previous.height);
+  if (wlr_output_mode* mode = pick_mode(wo, &previous)) {
+    wlr_output_state state;
+    wlr_output_state_init(&state);
+    wlr_output_state_set_enabled(&state, true);
+    wlr_output_state_set_mode(&state, mode);
+    wlr_output_commit_state(wo, &state);
+    wlr_output_state_finish(&state);
+  }
+  if (wo->name) {
+    OutputSetting& saved = output_settings_[wo->name];
+    saved.width = previous.width;
+    saved.height = previous.height;
+    saved.refresh_mhz = previous.refresh_mhz;
+    try {
+      save_output_settings(output_settings_);
+    } catch (const std::exception&) {
+    }
+  }
+  for (const std::unique_ptr<Output>& o : outputs) {
+    reconfigure_layer_surfaces(o->wlr_output_ptr);
+    o->update_usable_area();
+  }
+  if (ipc_server) {
+    ipc_server->broadcast_outputs_changed();
+  }
+}
+
+bool Server::apply_output_setting(const std::string& name, const OutputSetting& setting,
+                                  std::string* error) {
+  Output* target = nullptr;
+  for (const std::unique_ptr<Output>& output : outputs) {
+    if (output->wlr_output_ptr->name && name == output->wlr_output_ptr->name) {
+      target = output.get();
+      break;
+    }
+  }
+  if (!target) {
+    if (error) {
+      *error = "unknown output " + name;
+    }
+    return false;
+  }
+  wlr_output* wo = target->wlr_output_ptr;
+
+  if (setting.width > 0 && setting.height > 0) {
+    wlr_output_mode* mode = pick_mode(wo, &setting);
+    const bool exact = mode && mode->width == setting.width && mode->height == setting.height;
+    if (!exact) {
+      if (error) {
+        *error = "mode " + std::to_string(setting.width) + "x" + std::to_string(setting.height) +
+                 " is not supported by " + name;
+      }
+      return false;
+    }
+    if (wo->current_mode != mode) {
+      if (!target->has_fallback) {
+        target->has_fallback = true;
+        target->fallback_width = wo->width;
+        target->fallback_height = wo->height;
+        target->fallback_refresh_mhz = wo->refresh;
+      }
+      target->commit_failures = 0;
+      target->confirm_frames = 0;
+      wlr_output_state state;
+      wlr_output_state_init(&state);
+      wlr_output_state_set_enabled(&state, true);
+      wlr_output_state_set_mode(&state, mode);
+      const bool ok = wlr_output_test_state(wo, &state) && wlr_output_commit_state(wo, &state);
+      wlr_output_state_finish(&state);
+      if (!ok) {
+        if (error) {
+          *error = "the monitor rejected that mode";
+        }
+        return false;
+      }
+    }
+  }
+  if (setting.has_pos) {
+    wlr_output_layout_add(output_layout_, wo, setting.x, setting.y);
+  }
+
+  // Everything that depends on the output's size or place: layer surfaces
+  // (the bar and wallpaper are anchored to the output edges and need a new
+  // configure), exclusive zones, tiled windows.
+  for (const std::unique_ptr<Output>& output : outputs) {
+    reconfigure_layer_surfaces(output->wlr_output_ptr);
+    output->update_usable_area();
+  }
+
+  OutputSetting merged = output_settings_[name];
+  if (setting.width > 0 && setting.height > 0) {
+    merged.width = setting.width;
+    merged.height = setting.height;
+    merged.refresh_mhz = wo->refresh;
+  }
+  if (setting.has_pos) {
+    merged.has_pos = true;
+    merged.x = setting.x;
+    merged.y = setting.y;
+  }
+  output_settings_[name] = merged;
+  try {
+    save_output_settings(output_settings_);
+  } catch (const std::exception& e) {
+    wlr_log(WLR_ERROR, "fleetwm: could not save outputs.toml: %s", e.what());
+  }
+  if (ipc_server) {
+    ipc_server->broadcast_outputs_changed();
+  }
+  return true;
+}
+
 bool Server::init() {
+  output_settings_ = load_output_settings();
   // WLR_DEBUG logs every single cursor motion and scene/render commit --
   // real per-frame CPU cost (string formatting + a session-log write on
   // every one, confirmed via fleetwm-session.log filling with repeated

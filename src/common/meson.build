@@ -66,6 +66,7 @@ libcommon_core = static_library(
     'ipc_client.cpp',
     'bar_config.cpp',
     'wallpaper_config.cpp',
+    'output_config.cpp',
     'default_apps.cpp',
     'keybinds_config.cpp',
     'battery_reading.cpp',

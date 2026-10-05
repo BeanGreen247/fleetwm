@@ -319,7 +319,19 @@ void output_frame(wl_listener* listener, void*) {
       wlr_output_state_finish(&state);
     }
   } else {
-    wlr_scene_output_commit(scene_output, nullptr);
+    const bool committed = wlr_scene_output_commit(scene_output, nullptr);
+    if (!committed) {
+      ++output->commit_failures;
+      if (output->has_fallback && output->commit_failures >= 3) {
+        server->revert_output_mode(output);
+        return;
+      }
+    } else {
+      output->commit_failures = 0;
+      if (output->has_fallback && ++output->confirm_frames >= 10) {
+        output->has_fallback = false;  // the new mode is proven to work
+      }
+    }
   }
 
   timespec now{};

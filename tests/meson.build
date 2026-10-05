@@ -17,6 +17,7 @@ fleetwm_test_sources = files(
   'test_ipc_client.cpp',
   'test_battery_source.cpp',
   'test_fleetkit.cpp',
+  'test_output_config.cpp',
 )
 
 fleetwm_unit_tests = executable(

@@ -5,6 +5,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <sstream>
 #include <cerrno>
 #include <cstring>
 
@@ -138,6 +139,50 @@ void IpcServer::handle_line(Client& client, const std::string& line) {
     return;
   }
 
+  if (line == "OUTPUTS?") {
+    // One block per monitor, then END:
+    //   OUTPUT <name> <x> <y> <width> <height> <refresh_mhz>
+    //   MODE <width> <height> <refresh_mhz> <current 0|1> <preferred 0|1>   (repeated)
+    std::string reply;
+    for (const Server::OutputInfo& o : server_->describe_outputs()) {
+      reply += "OUTPUT " + o.name + " " + std::to_string(o.x) + " " + std::to_string(o.y) + " " +
+               std::to_string(o.width) + " " + std::to_string(o.height) + " " +
+               std::to_string(o.refresh_mhz) + "\n";
+      for (const Server::ModeInfo& m : o.modes) {
+        reply += "MODE " + std::to_string(m.width) + " " + std::to_string(m.height) + " " +
+                 std::to_string(m.refresh_mhz) + " " + (m.current ? "1" : "0") + " " +
+                 (m.preferred ? "1" : "0") + "\n";
+      }
+    }
+    reply += "END\n";
+    send(client.fd, reply.data(), reply.size(), MSG_NOSIGNAL);
+    return;
+  }
+
+  if (line.rfind("OUTPUT_SET ", 0) == 0) {
+    // OUTPUT_SET <name> <width> <height> <refresh_mhz> <x> <y>
+    // width/height 0 = keep the current mode; x/y of -999999 = keep the position.
+    std::istringstream in(line.substr(11));
+    std::string name;
+    OutputSetting setting;
+    int x = 0, y = 0;
+    std::string reply;
+    if (in >> name >> setting.width >> setting.height >> setting.refresh_mhz >> x >> y) {
+      constexpr int kKeep = -999999;
+      if (x != kKeep && y != kKeep) {
+        setting.has_pos = true;
+        setting.x = x;
+        setting.y = y;
+      }
+      std::string error;
+      reply = server_->apply_output_setting(name, setting, &error) ? "OK\n" : "ERR " + error + "\n";
+    } else {
+      reply = "ERR malformed OUTPUT_SET\n";
+    }
+    send(client.fd, reply.data(), reply.size(), MSG_NOSIGNAL);
+    return;
+  }
+
   if (line == "LOCK") {
     server_->request_lock();
     return;
@@ -179,6 +224,13 @@ void IpcServer::handle_line(Client& client, const std::string& line) {
 
 void IpcServer::broadcast_workspace_changed(int index) {
   std::string msg = "WORKSPACE_CHANGED " + std::to_string(index) + "\n";
+  for (Client& client : clients_) {
+    send(client.fd, msg.data(), msg.size(), MSG_NOSIGNAL);
+  }
+}
+
+void IpcServer::broadcast_outputs_changed() {
+  const std::string msg = "OUTPUTS_CHANGED\n";
   for (Client& client : clients_) {
     send(client.fd, msg.data(), msg.size(), MSG_NOSIGNAL);
   }

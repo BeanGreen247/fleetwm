@@ -30,6 +30,8 @@ extern "C" {
 
 #include <chrono>
 #include <list>
+
+#include "output_config.hpp"
 #include <memory>
 #include <vector>
 
@@ -140,6 +142,25 @@ class Server {
   // zone handling (layer_surface.cpp) to route from wlr_layer_surface_v1::
   // output back to the owning Output for update_usable_area().
   Output* output_for(wlr_output* wlr_output_ptr) const;
+
+  // ---- display management (resolution + position of each monitor) ----
+  struct ModeInfo {
+    int width = 0, height = 0, refresh_mhz = 0;
+    bool current = false, preferred = false;
+  };
+  struct OutputInfo {
+    std::string name;
+    int x = 0, y = 0, width = 0, height = 0, refresh_mhz = 0;
+    std::vector<ModeInfo> modes;
+  };
+  std::vector<OutputInfo> describe_outputs() const;
+  // Applies (and persists to outputs.toml) a mode and/or position for the
+  // named output. Returns false with a message in *error if the output is
+  // unknown or the mode is rejected; nothing is changed or saved then.
+  // Reverts an output to the mode it had before the last apply_output_setting().
+  void revert_output_mode(Output* output);
+  bool apply_output_setting(const std::string& name, const OutputSetting& setting,
+                            std::string* error);
 
   // Current theme.toml contents, loaded at init() and kept fresh by an
   // inotify watch on the config file (see theme_watch_fd_ below) -- any
@@ -338,6 +359,8 @@ class Server {
   KeybindsConfig keybinds_config_;
   ResolvedKeybinds resolved_keybinds_;
   bool locked_ = false;
+  OutputSettings output_settings_;
+  void reconfigure_layer_surfaces(wlr_output* wlr_out);
   pid_t spawn_locker();
   std::vector<std::chrono::steady_clock::time_point> locker_respawns_;
   // pid of the currently-spawned fleetwm-locker, or -1 when not locked.

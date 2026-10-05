@@ -81,6 +81,14 @@ class Output {
   // windows immediately respect the new reservation. Matches this
   // codebase's existing pattern of eagerly re-deriving full state (see
   // relayout() itself) rather than incremental accounting.
+  // After a mode change requested through apply_output_setting() the previous
+  // mode is kept until the new one has presented a few frames. If the monitor
+  // or driver cannot actually drive the new mode (commits fail repeatedly),
+  // the compositor reverts on its own instead of leaving the screen dark.
+  bool has_fallback = false;
+  int fallback_width = 0, fallback_height = 0, fallback_refresh_mhz = 0;
+  int commit_failures = 0, confirm_frames = 0;
+
   void update_usable_area();
 
   // Switches to workspace `index` (0-9), toggles scene-tree visibility per
