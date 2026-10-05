@@ -167,3 +167,42 @@ TEST(TitlebarButtons, NarrowWindowStillResolves) {
   EXPECT_EQ(titlebar_button_at(70, 40, 38), 1);
   EXPECT_EQ(titlebar_button_at(70, -10, 38), 2);
 }
+
+// ---- taskbar_slots -------------------------------------------------------
+
+TEST(TaskbarSlots, NoWindowsOrNoRoomShowsNothing) {
+  EXPECT_EQ(taskbar_slots(500, 0).fit, 0u);
+  EXPECT_EQ(taskbar_slots(30, 3).fit, 0u);   // narrower than one minimum button
+  EXPECT_EQ(taskbar_slots(0, 3).bw, 0.0);
+}
+
+TEST(TaskbarSlots, FewWindowsGetTheMaximumWidth) {
+  const TaskbarSlots s = taskbar_slots(1000, 2);
+  EXPECT_DOUBLE_EQ(s.bw, 200.0);
+  EXPECT_EQ(s.fit, 2u);
+}
+
+TEST(TaskbarSlots, ButtonsShrinkToShareTheSpace) {
+  const TaskbarSlots s = taskbar_slots(600, 6);
+  EXPECT_DOUBLE_EQ(s.bw, 600.0 / 6 - 4);
+  EXPECT_EQ(s.fit, 6u);
+  EXPECT_LE(s.fit * (s.bw + 4) - 4, 600.0 + 1e-9);
+}
+
+TEST(TaskbarSlots, TooManyWindowsStopAtTheMinimumWidth) {
+  const TaskbarSlots s = taskbar_slots(300, 40);
+  EXPECT_DOUBLE_EQ(s.bw, 44.0);
+  EXPECT_EQ(s.fit, static_cast<size_t>((300 + 4) / (44 + 4)));
+  EXPECT_LT(s.fit, 40u);
+}
+
+TEST(TaskbarSlots, ShownButtonsNeverOverflow) {
+  for (size_t n = 1; n <= 30; ++n) {
+    for (double avail : {120.0, 333.0, 800.0, 1500.0}) {
+      const TaskbarSlots s = taskbar_slots(avail, n);
+      if (s.fit == 0) continue;
+      EXPECT_LE(s.fit * s.bw + (s.fit - 1) * 4, avail + 1e-9) << "n=" << n << " avail=" << avail;
+      EXPECT_LE(s.fit, n);
+    }
+  }
+}

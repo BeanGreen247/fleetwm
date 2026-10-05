@@ -44,6 +44,29 @@ TEST(BarLayout, UnknownStringFallsBackToFull) {
   EXPECT_EQ(bar_layout_from_string(""), BarLayout::Capsules);
 }
 
+// -- TaskbarPosition ---------------------------------------------------------
+
+TEST(TaskbarPosition, RoundTripsAllValues) {
+  for (TaskbarPosition p : {TaskbarPosition::Bottom, TaskbarPosition::Top, TaskbarPosition::Left,
+                            TaskbarPosition::Right}) {
+    EXPECT_EQ(taskbar_position_from_string(taskbar_position_to_string(p)), p);
+  }
+}
+
+TEST(TaskbarPosition, UnknownStringFallsBackToBottom) {
+  EXPECT_EQ(taskbar_position_from_string("bogus"), TaskbarPosition::Bottom);
+  EXPECT_EQ(taskbar_position_from_string(""), TaskbarPosition::Bottom);
+  EXPECT_EQ(taskbar_position_from_string("LEFT"), TaskbarPosition::Bottom);  // case-sensitive
+}
+
+TEST_F(BarConfigTest, TaskbarPositionDefaultsToBottomAndRoundTrips) {
+  EXPECT_EQ(load_bar_config().taskbar_position, TaskbarPosition::Bottom);
+  BarConfig config;
+  config.taskbar_position = TaskbarPosition::Right;
+  save_bar_config(config);
+  EXPECT_EQ(load_bar_config().taskbar_position, TaskbarPosition::Right);
+}
+
 // -- load_bar_config() / save_bar_config() --------------------------------
 
 TEST_F(BarConfigTest, LoadWithNoConfigFileReturnsDefaults) {

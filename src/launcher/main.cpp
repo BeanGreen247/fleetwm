@@ -12,6 +12,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -21,6 +22,7 @@
 #include "desktop_entry.hpp"
 #include "fleetkit.hpp"
 #include "icon_theme.hpp"
+#include "ipc_client.hpp"
 #include "malloc_tuning.hpp"
 #include "theme.hpp"
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
@@ -87,6 +89,20 @@ size_t next_char_len(const std::string& s, size_t pos) {
 
 struct Launcher {
   App app;
+  // Card geometry. The default is the centered launcher; the start menu is a
+  // narrower, taller card placed next to the taskbar (see main()).
+  int card_w = kCardW, max_rows = kMaxVisibleRows, row_h = kRowHeight, footer_h = kFooterH;
+  int card_h = kCardH;
+  double card_x = kPad, card_y = kPad;
+  bool start_menu = false;
+  std::string edge = "bottom";  // taskbar edge, start menu only
+  int inset = 44;               // taskbar thickness, start menu only
+  IpcClient ipc;
+  struct FooterButton {
+    const char* label;
+    double x = 0, y = 0, w = 0, h = 0;
+  };
+  FooterButton footer_buttons[3] = {{"Settings"}, {"Lock"}, {"Power"}};
   Palette pal;
   std::unique_ptr<Surface> surface;
   std::vector<Entry> entries;  // sorted by name
@@ -139,8 +155,63 @@ struct Launcher {
 
   void ensure_visible() {
     if (selected < scroll) scroll = selected;
-    if (selected >= scroll + kMaxVisibleRows) scroll = selected - kMaxVisibleRows + 1;
-    scroll = std::max(0, std::min(scroll, std::max(0, static_cast<int>(results.size()) - kMaxVisibleRows)));
+    if (selected >= scroll + max_rows) scroll = selected - max_rows + 1;
+    scroll = std::max(0, std::min(scroll, std::max(0, static_cast<int>(results.size()) - max_rows)));
+  }
+
+  // Start menu: puts the card beside the taskbar, on the side the taskbar is on.
+  void place_card(int W, int H) {
+    if (!start_menu) return;
+    constexpr double kGap = 10;
+    if (edge == "top") {
+      card_x = kGap;
+      card_y = inset + kGap;
+    } else if (edge == "left") {
+      card_x = inset + kGap;
+      card_y = kGap;
+    } else if (edge == "right") {
+      card_x = W - inset - kGap - card_w;
+      card_y = kGap;
+    } else {  // bottom
+      card_x = kGap;
+      card_y = H - inset - kGap - card_h;
+    }
+  }
+
+  int hover_footer = -1;
+
+  void draw_footer_buttons(cairo_t* cr, double lx, double fy, double lw) {
+    constexpr double kBtnH = 32, kGap = 8;
+    const double bw = (lw - 2 * kGap) / 3, by = fy + (footer_h - kBtnH) / 2;
+    for (int i = 0; i < 3; ++i) {
+      FooterButton& b = footer_buttons[i];
+      b = {b.label, lx + i * (bw + kGap), by, bw, kBtnH};
+      rounded_rect(cr, b.x, b.y, b.w, b.h, pal.rounded ? 9 : 3);
+      set_source(cr, i == hover_footer ? alpha(pal.accent, 0.28) : pal.bg_secondary);
+      cairo_fill(cr);
+      const TextExtents te = measure_text(cr, b.label, 13, true);
+      draw_text(cr, b.label, b.x + (b.w - te.width) / 2, b.y + (b.h - te.height) / 2 + te.ascent, 13,
+                i == hover_footer ? pal.fg_primary : pal.fg_secondary, true);
+    }
+  }
+
+  int footer_at(double x, double y) const {
+    for (int i = 0; i < 3; ++i) {
+      const FooterButton& b = footer_buttons[i];
+      if (x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h) return i;
+    }
+    return -1;
+  }
+
+  void run_footer(int i) {
+    if (i == 0) {
+      spawn_detached({"fleetwm-settings"});
+    } else if (i == 1) {
+      if (ipc.connect()) ipc.send_command("LOCK");
+    } else {
+      spawn_detached({"fleetwm-powermenu"});
+    }
+    app.quit();
   }
 
   // ---------------------------------------------------------------- draw --
@@ -176,12 +247,11 @@ struct Launcher {
   }
 
   void draw(cairo_t* cr, int W, int H) {
-    (void)W;
-    (void)H;
     const double r = pal.rounded ? 16 : 4;
-    const double cx0 = kPad, cy0 = kPad;
-    draw_shadow(cr, cx0, cy0, kCardW, kCardH, r);
-    rounded_rect(cr, cx0, cy0, kCardW, kCardH, r);
+    place_card(W, H);
+    const double cx0 = card_x, cy0 = card_y;
+    draw_shadow(cr, cx0, cy0, card_w, card_h, r);
+    rounded_rect(cr, cx0, cy0, card_w, card_h, r);
     set_source(cr, pal.bg_primary);
     cairo_fill_preserve(cr);
     set_source(cr, alpha(pal.fg_secondary, 0.22));
@@ -189,7 +259,7 @@ struct Launcher {
     cairo_stroke(cr);
 
     // Search field.
-    const double ex = cx0 + kInner, ey = cy0 + kInner, ew = kCardW - 2 * kInner;
+    const double ex = cx0 + kInner, ey = cy0 + kInner, ew = card_w - 2 * kInner;
     rounded_rect(cr, ex, ey, ew, kEntryH, pal.rounded ? 12 : 3);
     set_source(cr, pal.bg_secondary);
     cairo_fill(cr);
@@ -215,15 +285,15 @@ struct Launcher {
     cairo_fill(cr);
 
     // Result rows (clipped to the list area).
-    const double ly = ey + kEntryH + 8, lx = cx0 + kInner, lw = kCardW - 2 * kInner;
+    const double ly = ey + kEntryH + 8, lx = cx0 + kInner, lw = card_w - 2 * kInner;
     cairo_save(cr);
-    cairo_rectangle(cr, lx, ly, lw, kMaxVisibleRows * kRowHeight);
+    cairo_rectangle(cr, lx, ly, lw, max_rows * row_h);
     cairo_clip(cr);
-    for (int i = scroll; i < static_cast<int>(results.size()) && i < scroll + kMaxVisibleRows; ++i) {
-      const double ry = ly + (i - scroll) * kRowHeight;
+    for (int i = scroll; i < static_cast<int>(results.size()) && i < scroll + max_rows; ++i) {
+      const double ry = ly + (i - scroll) * row_h;
       const bool sel = i == selected, hot = i == hover_row;
       if (sel || hot) {
-        rounded_rect(cr, lx, ry + 1, lw - 8, kRowHeight - 2, pal.rounded ? 11 : 3);
+        rounded_rect(cr, lx, ry + 1, lw - 8, row_h - 2, pal.rounded ? 11 : 3);
         set_source(cr, alpha(pal.accent, sel ? 0.24 : 0.10));
         cairo_fill(cr);
       }
@@ -231,7 +301,7 @@ struct Launcher {
       const std::string primary = e ? e->de.name : query;
       const std::string secondary = e ? (e->de.comment.empty() ? e->hint : e->de.comment) : "Run as a shell command";
       // icon
-      const double isz = 34, ix = lx + 12, iy = ry + (kRowHeight - isz) / 2;
+      const double isz = 34, ix = lx + 12, iy = ry + (row_h - isz) / 2;
       cairo_surface_t* icon = e ? icon_for(*e) : nullptr;
       if (icon) {
         cairo_save(cr);
@@ -258,24 +328,28 @@ struct Launcher {
       draw_text(cr, sec, nx, ry + 9 + pe.height + 3 + pe.ascent * 0.9, 12, alpha(pal.fg_secondary, 0.85));
       if (sel) {
         double kw = 0;
-        keycap(cr, "Enter", lx + lw - 8 - 56, ry + (kRowHeight - 18) / 2, &kw);
+        keycap(cr, "Enter", lx + lw - 8 - 56, ry + (row_h - 18) / 2, &kw);
       }
     }
     cairo_restore(cr);
 
     // Scrollbar indicator when the list overflows.
     const int total = static_cast<int>(results.size());
-    if (total > kMaxVisibleRows) {
-      const double track = kMaxVisibleRows * kRowHeight;
-      const double th = std::max(24.0, track * kMaxVisibleRows / total);
-      const double ty = ly + (track - th) * scroll / (total - kMaxVisibleRows);
+    if (total > max_rows) {
+      const double track = max_rows * row_h;
+      const double th = std::max(24.0, track * max_rows / total);
+      const double ty = ly + (track - th) * scroll / (total - max_rows);
       rounded_rect(cr, lx + lw - 5, ty, 3, th, 1.5);
       set_source(cr, alpha(pal.fg_secondary, 0.5));
       cairo_fill(cr);
     }
 
+    if (start_menu) {
+      draw_footer_buttons(cr, lx, ly + max_rows * row_h, lw);
+      return;
+    }
     // Footer hints.
-    const double fy = ly + kMaxVisibleRows * kRowHeight + (kFooterH - 18) / 2;
+    const double fy = ly + max_rows * row_h + (footer_h - 18) / 2;
     double fx = lx + 6;
     const struct { const char* key; const char* what; } hints[] = {{"Up/Down", "navigate"}, {"Enter", "open"}, {"Esc", "close"}};
     for (const auto& h : hints) {
@@ -368,8 +442,8 @@ struct Launcher {
       case XKB_KEY_KP_Enter: launch_selected(); return;
       case XKB_KEY_Down: move(1); return;
       case XKB_KEY_Up: move(-1); return;
-      case XKB_KEY_Page_Down: move(kMaxVisibleRows); return;
-      case XKB_KEY_Page_Up: move(-kMaxVisibleRows); return;
+      case XKB_KEY_Page_Down: move(max_rows); return;
+      case XKB_KEY_Page_Up: move(-max_rows); return;
       case XKB_KEY_Left:
         cursor -= prev_char_len(query, cursor);
         surface->queue_draw();
@@ -448,13 +522,20 @@ struct Launcher {
   }
 
   int row_at(double x, double y) const {
-    const double ly = kPad + kInner + kEntryH + 8, lx = kPad + kInner;
-    if (x < lx || x >= lx + kCardW - 2 * kInner || y < ly || y >= ly + kMaxVisibleRows * kRowHeight) return -1;
-    const int i = scroll + static_cast<int>((y - ly) / kRowHeight);
+    const double ly = card_y + kInner + kEntryH + 8, lx = card_x + kInner;
+    if (x < lx || x >= lx + card_w - 2 * kInner || y < ly || y >= ly + max_rows * row_h) return -1;
+    const int i = scroll + static_cast<int>((y - ly) / row_h);
     return i < static_cast<int>(results.size()) ? i : -1;
   }
 
   void on_motion(double x, double y) {
+    if (start_menu) {
+      const int f = footer_at(x, y);
+      if (f != hover_footer) {
+        hover_footer = f;
+        surface->queue_draw();
+      }
+    }
     const int r = row_at(x, y);
     if (r != hover_row) {
       hover_row = r;
@@ -464,6 +545,19 @@ struct Launcher {
 
   void on_button(double x, double y, uint32_t b, bool pressed) {
     if (!pressed || b != kBtnLeft) return;
+    if (start_menu) {
+      // The surface covers the whole output so that a click anywhere else
+      // (including on the taskbar's start button) closes the menu.
+      if (x < card_x || x >= card_x + card_w || y < card_y || y >= card_y + card_h) {
+        app.quit();
+        return;
+      }
+      const int f = footer_at(x, y);
+      if (f >= 0) {
+        run_footer(f);
+        return;
+      }
+    }
     const int r = row_at(x, y);
     if (r >= 0) {
       selected = r;
@@ -476,7 +570,7 @@ struct Launcher {
     const int steps = static_cast<int>(wheel_accum / 10.0);
     if (steps != 0) {
       wheel_accum -= steps * 10.0;
-      const int max_scroll = std::max(0, static_cast<int>(results.size()) - kMaxVisibleRows);
+      const int max_scroll = std::max(0, static_cast<int>(results.size()) - max_rows);
       scroll = std::max(0, std::min(max_scroll, scroll + steps));
       surface->queue_draw();
     }
@@ -485,13 +579,26 @@ struct Launcher {
 
 }  // namespace
 
-int main() {
+int main(int argc, char** argv) {
   fleetwm::tune_malloc_for_low_rss();
   signal(SIGCHLD, SIG_IGN);
 
   Launcher L;
   L.pal = load_palette(load_theme_config());
   if (!L.app.connect()) return 1;
+  for (int i = 1; i < argc; ++i) {
+    const std::string arg = argv[i];
+    if (arg == "--start-menu") L.start_menu = true;
+    else if (arg == "--edge" && i + 1 < argc) L.edge = argv[++i];
+    else if (arg == "--inset" && i + 1 < argc) L.inset = std::max(0, std::atoi(argv[++i]));
+  }
+  if (L.start_menu) {
+    L.card_w = 400;
+    L.max_rows = 9;
+    L.row_h = 48;
+    L.footer_h = 52;
+    L.card_h = kInner + kEntryH + 8 + L.max_rows * L.row_h + L.footer_h;
+  }
   L.load();
   L.refresh();
 
@@ -500,6 +607,13 @@ int main() {
   cfg.anchor = 0;  // unanchored: the compositor centers it
   cfg.width = kWindowWidth;
   cfg.height = kWindowHeight;
+  if (L.start_menu) {
+    // Full-output transparent surface; the card is drawn beside the taskbar.
+    cfg.anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP | ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM |
+                 ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT;
+    cfg.width = 0;
+    cfg.height = 0;
+  }
   cfg.exclusive_zone = -1;
   cfg.keyboard_mode = ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE;
   cfg.name = "fleetwm-launcher";

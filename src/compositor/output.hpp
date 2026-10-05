@@ -90,6 +90,9 @@ class Output {
   int commit_failures = 0, confirm_frames = 0;
 
   void update_usable_area();
+  // Desktop layout: after the work area changes (taskbar moved/resized), pull
+  // floating windows back inside it and refit maximized ones.
+  void fit_floating_views();
 
   // Switches to workspace `index` (0-9), toggles scene-tree visibility per
   // view, and re-tiles the newly-active workspace via relayout().

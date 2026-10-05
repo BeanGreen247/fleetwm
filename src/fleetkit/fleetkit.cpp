@@ -845,7 +845,8 @@ int watch_dirs(App& app, const std::vector<std::string>& dirs, std::function<voi
   });
 }
 
-Tooltip::Tooltip(App& app, const Palette& pal, const std::string& text, int x, int y) {
+Tooltip::Tooltip(App& app, const Palette& pal, const std::string& text, int x, int y,
+                 Placement placement) {
   // Multi-line: '\n' separates lines. Measure with a scratch context.
   std::vector<std::string> lines;
   {
@@ -877,8 +878,24 @@ Tooltip::Tooltip(App& app, const Palette& pal, const std::string& text, int x, i
   cfg.width = w;
   cfg.height = h;
   cfg.exclusive_zone = -1;
-  cfg.margin_top = y;
-  cfg.margin_left = std::max(0, x - w / 2);
+  switch (placement) {
+    case Placement::Below:
+      cfg.margin_top = y;
+      cfg.margin_left = std::max(0, x - w / 2);
+      break;
+    case Placement::Above:
+      cfg.margin_top = std::max(0, y - h);
+      cfg.margin_left = std::max(0, x - w / 2);
+      break;
+    case Placement::Right:
+      cfg.margin_top = std::max(0, y - h / 2);
+      cfg.margin_left = std::max(0, x);
+      break;
+    case Placement::Left:
+      cfg.margin_top = std::max(0, y - h / 2);
+      cfg.margin_left = std::max(0, x - w);
+      break;
+  }
   cfg.keyboard_mode = ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE;
   cfg.name = "fleetwm-tooltip";
   surface_ = std::make_unique<Surface>(app, cfg);

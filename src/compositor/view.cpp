@@ -277,6 +277,17 @@ void View::set_hover_button(int button) {
   update_titlebar();
 }
 
+void View::refit_maximized() {
+  if (!maximized || !output || !xdg_toplevel) {
+    return;
+  }
+  const int bt = std::max(border_thickness(), server->theme_config().focus_border_thickness_px);
+  const wlr_box area = output->usable_area;
+  wlr_scene_node_set_position(&container_tree->node, area.x, area.y);
+  wlr_xdg_toplevel_set_size(xdg_toplevel, std::max(1, area.width - 2 * bt),
+                            std::max(1, area.height - titlebar_height() - 2 * bt));
+}
+
 void View::set_minimized(bool want) {
   if (minimized == want || !workspace) {
     return;

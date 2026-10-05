@@ -866,6 +866,15 @@ struct Settings {
       save_bar();
     }
     ui.newline();
+    ui.row("Taskbar position");
+    int tpos = static_cast<int>(bar.taskbar_position);
+    if (ui.segmented({"Bottom", "Top", "Left", "Right"}, &tpos)) {
+      bar.taskbar_position = static_cast<TaskbarPosition>(tpos);
+      save_bar();
+    }
+    ui.newline();
+    ui.label("The taskbar (start menu, window list and widgets) is used in the Desktop window layout.", true);
+    ui.newline();
   }
 
   void tab_wallpaper(cairo_t* cr) {

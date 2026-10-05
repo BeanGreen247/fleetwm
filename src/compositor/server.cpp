@@ -1725,8 +1725,20 @@ View* Server::view_by_id(uint32_t id) const {
   return nullptr;
 }
 
+// A taskbar can list a window that lives on another workspace; show that
+// workspace first so activating the window actually reveals it.
+static void reveal_workspace(Server* server, View* view) {
+  if (view->output && view->workspace && !view->pinned &&
+      view->workspace != &view->output->active_workspace()) {
+    const int index = view->workspace->index();
+    view->output->switch_workspace(index);
+    if (server->ipc_server) server->ipc_server->broadcast_workspace_changed(index);
+  }
+}
+
 void Server::activate_view(View* view) {
   if (!view) return;
+  reveal_workspace(this, view);
   if (view->minimized) {
     view->set_minimized(false);
   } else {
@@ -1736,6 +1748,7 @@ void Server::activate_view(View* view) {
 
 void Server::toggle_view_from_taskbar(View* view) {
   if (!view) return;
+  reveal_workspace(this, view);
   const bool has_focus = seat_->keyboard_state.focused_surface == view->surface();
   if (view->minimized) {
     view->set_minimized(false);
@@ -1854,6 +1867,8 @@ void Server::reload_theme_config() {
     end_grab();
     for (const std::unique_ptr<View>& view : views) {
       if (view->maximized) view->set_maximized(false);
+      // Nothing in the tiling layout can bring a minimized window back.
+      if (view->minimized) view->set_minimized(false);
     }
   }
   for (const std::unique_ptr<View>& view : views) {

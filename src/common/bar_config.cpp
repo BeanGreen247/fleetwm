@@ -30,6 +30,23 @@ PowerMode power_mode_from_string(const std::string& s) {
   return PowerMode::Normal;
 }
 
+std::string taskbar_position_to_string(TaskbarPosition position) {
+  switch (position) {
+    case TaskbarPosition::Top: return "top";
+    case TaskbarPosition::Left: return "left";
+    case TaskbarPosition::Right: return "right";
+    case TaskbarPosition::Bottom: return "bottom";
+  }
+  return "bottom";
+}
+
+TaskbarPosition taskbar_position_from_string(const std::string& s) {
+  if (s == "top") return TaskbarPosition::Top;
+  if (s == "left") return TaskbarPosition::Left;
+  if (s == "right") return TaskbarPosition::Right;
+  return TaskbarPosition::Bottom;
+}
+
 std::string bar_layout_to_string(BarLayout layout) {
   switch (layout) {
     case BarLayout::Island: return "island";
@@ -108,6 +125,9 @@ BarConfig load_bar_config() {
     config.power_mode = power_mode_from_string(*v);
   }
 
+  if (auto v = table["taskbar_position"].value<std::string>()) {
+    config.taskbar_position = taskbar_position_from_string(*v);
+  }
   if (auto v = table["layout"].value<std::string>()) {
     config.layout = bar_layout_from_string(*v);
   }
@@ -140,6 +160,7 @@ void save_bar_config(const BarConfig& config) {
   table.insert_or_assign("workspace_colors", workspace_colors);
   table.insert_or_assign("power_mode", power_mode_to_string(config.power_mode));
   table.insert_or_assign("layout", bar_layout_to_string(config.layout));
+  table.insert_or_assign("taskbar_position", taskbar_position_to_string(config.taskbar_position));
 
   std::ofstream out(path);
   if (!out) {

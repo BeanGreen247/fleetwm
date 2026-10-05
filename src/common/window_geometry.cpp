@@ -57,4 +57,13 @@ int titlebar_button_at(int width, double x, int button_w) {
   return -1;
 }
 
+TaskbarSlots taskbar_slots(double avail, size_t count, double min_w, double max_w, double gap) {
+  if (count == 0 || avail < min_w) return {};
+  const double ideal = avail / static_cast<double>(count) - gap;
+  TaskbarSlots out;
+  out.bw = std::min(max_w, std::max(min_w, ideal));
+  out.fit = std::min(count, static_cast<size_t>((avail + gap) / (out.bw + gap)));
+  return out;
+}
+
 }  // namespace fleetwm::geom

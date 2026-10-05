@@ -209,6 +209,8 @@ class View {
   // Forces the next update_titlebar() to re-render (palette/theme changed).
   void invalidate_titlebar() { titlebar_w_ = -1; }
   void set_maximized(bool maximized);
+  // Re-applies the maximized geometry after the output's work area changed.
+  void refit_maximized();
 
   wl_listener request_move{};
   wl_listener request_maximize{};
