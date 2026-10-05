@@ -172,3 +172,15 @@ client rewrite alone and 280 MB originally.
   (both export `wlr_scene_*`) and a GL renderer, which costs the pixman memory saving.
 - The SIGCHLD reaper must not `waitpid(-1)`: it stole Xwayland's exit status from wlroots.
 - Known gap: XWayland is started but X11 windows are not managed (no `new_xwayland_surface` listener).
+
+## Desktop (floating) layout cost
+
+- Titlebars are rendered with cairo into a CPU buffer only when the title, focus, width, maximized
+  state or hovered button changes (`View::update_titlebar`, which compares without allocating since
+  `resize_border` runs on every client commit). Idle cost is zero.
+- cairo/fontconfig are only initialised once a titlebar is first drawn, so the Tiling layout does not
+  pay for them. Measured on the dev VM: compositor Pss 12.7 MB with no windows, +1.7 MB for the cairo
+  init in Desktop mode, about 1.5 MB per window including its titlebar buffer.
+- Interactive move/resize maths lives in `src/common/window_geometry.*` (unit tested) so the grab code
+  in `server.cpp` stays thin.
+

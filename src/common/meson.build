@@ -72,6 +72,7 @@ libcommon_core = static_library(
     'battery_reading.cpp',
     'malloc_tuning.cpp',
     'pipewire_json.cpp',
+    'window_geometry.cpp',
   ),
   dependencies: [tomlplusplus_dep],
   include_directories: include_directories('.'),

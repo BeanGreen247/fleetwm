@@ -2,8 +2,11 @@
 
 #include <algorithm>
 
+#include <cstring>
+
 #include "output.hpp"
 #include "server.hpp"
+#include "titlebar.hpp"
 #include "workspace.hpp"
 
 namespace fleetwm {
@@ -45,7 +48,7 @@ int View::border_thickness() const {
   return 0;
 }
 
-View::View(Server* server_, Kind kind_) : server(server_), kind(kind_) {}
+View::View(Server* server_, Kind kind_) : server(server_), kind(kind_) { tag.view = this; }
 
 // Listener cleanup lives in xdg_toplevel_destroy() (server.cpp), called
 // explicitly BEFORE this View is erased -- not here in the destructor.
@@ -105,8 +108,25 @@ void View::set_fullscreen(bool fullscreen_) {
     // lands (xdg_toplevel_surface_commit, server.cpp), same as any other
     // resize.
     wlr_scene_node_reparent(&container_tree->node, server->layer_toplevels());
+    if (desktop_mode() && kind == Kind::XdgToplevel && xdg_toplevel) {
+      // Free-floating windows go back to where (and how big) they were.
+      wlr_scene_node_set_position(&container_tree->node, pre_fullscreen_box.x, pre_fullscreen_box.y);
+      if (pre_fullscreen_box.width > 0 && pre_fullscreen_box.height > 0) {
+        wlr_xdg_toplevel_set_size(xdg_toplevel, pre_fullscreen_box.width, pre_fullscreen_box.height);
+        last_requested_content_w = pre_fullscreen_box.width;
+        last_requested_content_h = pre_fullscreen_box.height;
+      }
+      resize_border();
+      return;
+    }
     output->relayout();
     return;
+  }
+
+  if (desktop_mode() && kind == Kind::XdgToplevel && xdg_toplevel) {
+    wlr_box geo{};
+    wlr_xdg_surface_get_geometry(xdg_toplevel->base, &geo);
+    pre_fullscreen_box = {container_tree->node.x, container_tree->node.y, geo.width, geo.height};
   }
 
   wlr_box output_box{};
@@ -162,7 +182,9 @@ void View::resize_border() {
   // thickness offset, regardless of whether this view is currently
   // "stepped forward" (Output::relayout()). Only the border rects below
   // bleed outward into that extra space.
-  wlr_scene_node_set_position(&scene_tree->node, thickness, thickness);
+  content_w = width;
+  const int th = titlebar_height();
+  wlr_scene_node_set_position(&scene_tree->node, thickness, thickness + th);
 
   int top_h = thickness + grow_top;
   int bottom_h = thickness + grow_bottom;
@@ -173,13 +195,111 @@ void View::resize_border() {
   wlr_scene_node_set_position(&border_top->node, -grow_left, -grow_top);
 
   wlr_scene_rect_set_size(border_bottom, width + left_w + right_w, bottom_h);
-  wlr_scene_node_set_position(&border_bottom->node, -grow_left, thickness + height);
+  wlr_scene_node_set_position(&border_bottom->node, -grow_left, thickness + th + height);
 
-  wlr_scene_rect_set_size(border_left, left_w, height + top_h + bottom_h);
+  wlr_scene_rect_set_size(border_left, left_w, height + th + top_h + bottom_h);
   wlr_scene_node_set_position(&border_left->node, -grow_left, -grow_top);
 
-  wlr_scene_rect_set_size(border_right, right_w, height + top_h + bottom_h);
+  wlr_scene_rect_set_size(border_right, right_w, height + th + top_h + bottom_h);
   wlr_scene_node_set_position(&border_right->node, thickness + width, -grow_top);
+
+  // Invisible resize ring around the whole window (Desktop layout only).
+  if (grab_rect) {
+    constexpr int kRing = 6;
+    const bool on = desktop_mode() && !fullscreen;
+    wlr_scene_node_set_enabled(&grab_rect->node, on);
+    if (on) {
+      wlr_scene_rect_set_size(grab_rect, width + 2 * thickness + 2 * kRing,
+                              height + th + 2 * thickness + 2 * kRing);
+      wlr_scene_node_set_position(&grab_rect->node, -kRing, -kRing);
+    }
+  }
+  update_titlebar();
+}
+
+bool View::desktop_mode() const {
+  return server->theme_config().window_layout == WindowLayout::Desktop;
+}
+
+bool View::wants_titlebar() const {
+  if (!desktop_mode() || fullscreen || kind != Kind::XdgToplevel || !xdg_toplevel) {
+    return false;
+  }
+  if (has_decoration) {
+    return true;
+  }
+  // fleetwm's own clients (fleetkit) draw no decorations and do not use
+  // xdg-decoration, so they are recognised by app id instead.
+  return xdg_toplevel->app_id && std::strncmp(xdg_toplevel->app_id, "dev.fleetwm.", 12) == 0;
+}
+
+int View::titlebar_height() const { return wants_titlebar() ? kTitlebarHeight : 0; }
+
+void View::update_titlebar() {
+  if (!wants_titlebar() || content_w <= 0) {
+    if (titlebar) {
+      wlr_scene_node_set_enabled(&titlebar->node, false);
+    }
+    return;
+  }
+  const int thickness = border_thickness();
+  if (!titlebar) {
+    titlebar = wlr_scene_buffer_create(container_tree, nullptr);
+    titlebar->node.data = &tag;
+  }
+  wlr_scene_node_set_enabled(&titlebar->node, true);
+  wlr_scene_node_set_position(&titlebar->node, thickness, thickness);
+
+  // resize_border() runs on every client commit, so compare without
+  // allocating: only build a std::string when something actually changed.
+  const char* title = xdg_toplevel->title ? xdg_toplevel->title : xdg_toplevel->app_id;
+  if (!title) title = "";
+  if (content_w == titlebar_w_ && focused == titlebar_focused_ && maximized == titlebar_max_ &&
+      hover_button == titlebar_hover_ && titlebar_title_ == title) {
+    return;
+  }
+  titlebar_w_ = content_w;
+  titlebar_focused_ = focused;
+  titlebar_max_ = maximized;
+  titlebar_hover_ = hover_button;
+  titlebar_title_ = title;
+  if (wlr_buffer* buffer = render_titlebar(content_w, titlebar_title_, focused, maximized, hover_button)) {
+    wlr_scene_buffer_set_buffer(titlebar, buffer);
+    wlr_buffer_drop(buffer);
+  }
+}
+
+void View::set_hover_button(int button) {
+  if (hover_button == button) {
+    return;
+  }
+  hover_button = button;
+  update_titlebar();
+}
+
+void View::set_maximized(bool want) {
+  if (maximized == want || !output || kind != Kind::XdgToplevel || !xdg_toplevel) {
+    return;
+  }
+  const int th = kTitlebarHeight;
+  const int bt = std::max(border_thickness(), server->theme_config().focus_border_thickness_px);
+  if (want) {
+    wlr_box geo{};
+    wlr_xdg_surface_get_geometry(xdg_toplevel->base, &geo);
+    restore_box = {container_tree->node.x, container_tree->node.y, geo.width, geo.height};
+    maximized = true;
+    const wlr_box area = output->usable_area;
+    wlr_scene_node_set_position(&container_tree->node, area.x, area.y);
+    wlr_xdg_toplevel_set_size(xdg_toplevel, std::max(1, area.width - 2 * bt),
+                              std::max(1, area.height - th - 2 * bt));
+  } else {
+    maximized = false;
+    wlr_scene_node_set_position(&container_tree->node, restore_box.x, restore_box.y);
+    wlr_xdg_toplevel_set_size(xdg_toplevel, std::max(1, restore_box.width),
+                              std::max(1, restore_box.height));
+  }
+  wlr_xdg_toplevel_set_maximized(xdg_toplevel, maximized);
+  resize_border();
 }
 
 wlr_surface* View::surface() const {

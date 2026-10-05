@@ -2,6 +2,8 @@
 
 #include <wayland-server-core.h>
 
+#include <string>
+
 extern "C" {
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_xdg_shell.h>
@@ -27,6 +29,16 @@ class Output;
 // View just exposes the pinned/floating flags relayout() reads to decide
 // whether to skip a view, plus the border-rect nodes it (and focus
 // tracking) render into.
+class View;
+
+// Tags a scene node that belongs to a View's decorations (titlebar, resize
+// ring) so the hit test can tell it apart from client content. Must start with
+// the SceneNodeOwner for the same reason View does.
+struct DecorationTag {
+  SceneNodeOwner owner = SceneNodeOwner::Decoration;
+  View* view = nullptr;
+};
+
 class View {
  public:
   enum class Kind { XdgToplevel, XWayland };
@@ -166,7 +178,35 @@ class View {
   wl_listener map{};
   wl_listener unmap{};
   wl_listener destroy{};
+  // ---- Desktop (floating) layout: compositor-drawn titlebar ----
+  // True when the client asked for server-side decorations through
+  // xdg-decoration (set from the decoration handler in server.cpp).
+  bool has_decoration = false;
+  bool maximized = false;
+  wlr_box pre_fullscreen_box{};  // same, for leaving fullscreen
+  wlr_box restore_box{};  // container position + content size before maximize
+  DecorationTag tag;
+  wlr_scene_buffer* titlebar = nullptr;
+  wlr_scene_rect* grab_rect = nullptr;  // invisible ring around the window: resize handles
+  int content_w = 0;                    // last known content width
+  int hover_button = -1;                // TitlebarButton under the pointer, or -1
+
+  // Desktop layout is active in theme.toml.
+  bool desktop_mode() const;
+  // Whether this view currently shows a titlebar (Desktop layout, not
+  // fullscreen, and the client expects the compositor to decorate it).
+  bool wants_titlebar() const;
+  int titlebar_height() const;
+  // Re-renders the titlebar if its inputs changed; hides it when not wanted.
+  void update_titlebar();
+  void set_hover_button(int button);
+  // Forces the next update_titlebar() to re-render (palette/theme changed).
+  void invalidate_titlebar() { titlebar_w_ = -1; }
+  void set_maximized(bool maximized);
+
   wl_listener request_move{};
+  wl_listener request_maximize{};
+  wl_listener set_title{};
   wl_listener request_resize{};
   wl_listener request_fullscreen{};
   wl_listener surface_commit{};
@@ -178,6 +218,15 @@ class View {
 #endif
 
   wlr_surface* surface() const;
+
+ private:
+  // What the current titlebar buffer was rendered from.
+  int titlebar_w_ = -1;
+  bool titlebar_focused_ = false;
+  bool titlebar_max_ = false;
+  int titlebar_hover_ = -1;
+  std::string titlebar_title_;
+ public:
   void focus();
   void close();
 };

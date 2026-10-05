@@ -565,6 +565,10 @@ void Output::update_usable_area() {
 }
 
 void Output::relayout() {
+  // Desktop layout: windows are free-floating, nothing to tile.
+  if (server->desktop_layout()) {
+    return;
+  }
   std::vector<View*> tiled;
   for (View* view : active_workspace().views()) {
     if (view->pinned || view->floating || view->fullscreen ||

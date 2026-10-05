@@ -80,6 +80,7 @@ class Server {
   wlr_output_layout* output_layout() const { return output_layout_; }
   wlr_seat* seat() const { return seat_; }
   wlr_cursor* cursor() const { return cursor_; }
+  wlr_xcursor_manager* cursor_manager() const { return cursor_mgr_; }
   wlr_scene_tree* layer_toplevels() const { return layer_toplevels_; }
   // Always-enabled, above layer_toplevels_ but below layer_top_/
   // layer_overlay_ -- pinned views live here instead, so they're never
@@ -142,6 +143,26 @@ class Server {
   // zone handling (layer_surface.cpp) to route from wlr_layer_surface_v1::
   // output back to the owning Output for update_usable_area().
   Output* output_for(wlr_output* wlr_output_ptr) const;
+
+  // ---- Desktop (floating) layout: interactive move/resize ----
+  bool desktop_layout() const { return theme_config_.window_layout == WindowLayout::Desktop; }
+  bool grab_active() const { return grab_mode_ != GrabMode::None; }
+  View* grab_view() const { return grab_view_; }
+  // Starts dragging `view` with the pointer (titlebar drag or a client's
+  // xdg_toplevel.move request) / resizing it from `edges` (WLR_EDGE_* mask).
+  void begin_move(View* view);
+  void begin_resize(View* view, uint32_t edges);
+  // Follows the cursor while a grab is active.
+  void update_grab();
+  void end_grab();
+  // Forgets `view` everywhere it is remembered by pointer (grab, hover).
+  void forget_view(View* view);
+  // Titlebar button hover bookkeeping: clears the old view's highlight.
+  void set_hover_view(View* view);
+  void toggle_maximize(View* view);
+  // Titlebar double-click detection (button press time, ms).
+  bool is_double_click(View* view, uint32_t time_msec);
+  bool swallow_release = false;  // a decoration press was consumed; eat its release
 
   // pid of the Xwayland process wlroots manages (0 if none), so the SIGCHLD
   // reaper leaves its exit status for wlroots.
@@ -363,6 +384,17 @@ class Server {
   KeybindsConfig keybinds_config_;
   ResolvedKeybinds resolved_keybinds_;
   bool locked_ = false;
+
+  enum class GrabMode { None, Move, Resize };
+  GrabMode grab_mode_ = GrabMode::None;
+  View* grab_view_ = nullptr;
+  View* hover_view_ = nullptr;
+  View* last_click_view_ = nullptr;
+  uint32_t last_click_time_ = 0;
+  double grab_cursor_x_ = 0, grab_cursor_y_ = 0;
+  wlr_box grab_box_{};  // container x,y + content w,h when the grab began
+  uint32_t grab_edges_ = 0;
+  bool grab_unmaximize_pending_ = false;
   OutputSettings output_settings_;
   void reconfigure_layer_surfaces(wlr_output* wlr_out);
   pid_t spawn_locker();

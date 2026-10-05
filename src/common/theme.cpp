@@ -49,6 +49,14 @@ ThemeName theme_name_from_string(const std::string& s) {
   return ThemeName::Dark;
 }
 
+std::string window_layout_to_string(WindowLayout layout) {
+  return layout == WindowLayout::Desktop ? "desktop" : "tiling";
+}
+
+WindowLayout window_layout_from_string(const std::string& s) {
+  return s == "desktop" ? WindowLayout::Desktop : WindowLayout::Tiling;
+}
+
 std::string theme_css_filename(ThemeName theme) {
   return theme_name_to_string(theme) + ".css";
 }
@@ -88,6 +96,9 @@ ThemeConfig load_theme_config() {
   if (auto v = table["focus_border_color"].value<std::string>()) {
     config.focus_border_color = *v;
   }
+  if (auto v = table["window_layout"].value<std::string>()) {
+    config.window_layout = window_layout_from_string(*v);
+  }
   if (auto v = table["gap_px"].value<int64_t>()) {
     config.gap_px = static_cast<int>(*v);
   }
@@ -126,6 +137,7 @@ void save_theme_config(const ThemeConfig& config) {
                           static_cast<int64_t>(config.focus_border_thickness_px));
   table.insert_or_assign("focus_border_color", config.focus_border_color);
   table.insert_or_assign("gap_px", static_cast<int64_t>(config.gap_px));
+  table.insert_or_assign("window_layout", window_layout_to_string(config.window_layout));
   table.insert_or_assign("pinned_border_color", config.pinned_border_color);
   table.insert_or_assign("pinned_focused_border_color", config.pinned_focused_border_color);
   table.insert_or_assign("pinned_border_thickness_px",
