@@ -4,7 +4,7 @@
 #include <map>
 #include <string>
 
-#include "lean.hpp"
+#include "fleetkit.hpp"
 
 #if FLEETWM_HAVE_PIPEWIRE
 extern "C" {
@@ -35,7 +35,7 @@ class VolumeSource {
   // again on every subsequent change/poll). `on_update` is stored and
   // called for the lifetime of this object -- must outlive it.
   // `app` must outlive this object (timers / cross-thread posting).
-  explicit VolumeSource(lean::App& app) : app_(app) {}
+  explicit VolumeSource(kit::App& app) : app_(app) {}
   void start(Callback on_update);
 
   ~VolumeSource();
@@ -48,7 +48,7 @@ class VolumeSource {
   void start_wpctl_fallback();
   void poll_wpctl_once();
 
-  lean::App& app_;
+  kit::App& app_;
   Callback on_update_;
 
 #if FLEETWM_HAVE_PIPEWIRE

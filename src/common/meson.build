@@ -58,7 +58,7 @@ configure_file(output: 'paths_config.h', configuration: common_conf)
 gtk4_dep_common = dependency('gtk4')
 
 # libcommon_core: everything that needs only toml++ -- config parsing, paths,
-# IPC client, malloc tuning. GTK-free so lean (non-GTK) clients such as
+# IPC client, malloc tuning. GTK-free so fleetkit (non-GTK) clients such as
 # fleetwm-wallpaper link it without pulling GTK/GLib/Pango into the process.
 libcommon_core = static_library(
   'fleetwm-common-core',

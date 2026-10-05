@@ -11,7 +11,7 @@
 
 #include "image.hpp"
 
-namespace fleetwm::lean {
+namespace fleetwm::kit {
 
 Image load_svg(const std::string& path, int size) {
   Image img;
@@ -38,4 +38,4 @@ Image load_svg(const std::string& path, int size) {
   return img;
 }
 
-}  // namespace fleetwm::lean
+}  // namespace fleetwm::kit

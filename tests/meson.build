@@ -16,13 +16,13 @@ fleetwm_test_sources = files(
   'test_pipewire_json.cpp',
   'test_ipc_client.cpp',
   'test_battery_source.cpp',
-  'test_lean.cpp',
+  'test_fleetkit.cpp',
 )
 
 fleetwm_unit_tests = executable(
   'fleetwm-unit-tests',
   fleetwm_test_sources,
-  dependencies: [gtest_dep, libcommon_dep, liblean_dep],
+  dependencies: [gtest_dep, libcommon_dep, libfleetkit_dep],
 )
 
 test('fleetwm-unit-tests', fleetwm_unit_tests, protocol: 'gtest')

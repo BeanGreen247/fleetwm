@@ -7,7 +7,7 @@ see [Credits](#credits) below.
 
 A minimal, fast Wayland window manager and desktop shell for Debian and
 Ubuntu/Kubuntu. Built on [wlroots](https://gitlab.freedesktop.org/wlroots/wlroots)
-in C++, with a lean (GTK-free) top bar, app launcher, wallpaper, power
+in C++, with a GTK-free top bar, app launcher, wallpaper, power
 menu, lock screen and audio mixer, plus a GTK4 settings app. No file manager, no bundled productivity apps -- just
 tiling window management, a bar, and the handful of desktop-shell pieces
 every session actually needs, aimed squarely at low idle resource usage
@@ -415,8 +415,8 @@ behind each:
 
 - **`fleetwm`** -- the wlroots-based compositor and window manager
 - **`fleetwm-bar`** -- the always-resident top bar (GTK-free, see
-  [Lean clients](#lean-clients-no-gtk))
-- **`fleetwm-settings`** -- the settings app, spawned on demand
+  [GTK-free shell clients](#gtk-free-shell-clients-fleetkit))
+- **`fleetwm-settings`** -- the settings app, spawned on demand (GTK-free)
 - **`fleetwm-launcher`** -- the app launcher popup, spawned on demand
   (`Alt+D`), exits after one launch/dismiss
 - **`fleetwm-wallpaper`** -- the background renderer, autostarted with the
@@ -442,16 +442,17 @@ behind each:
   `fleetwm-greet` spawns and talks to over a private socket; never runs
   outside of a `fleetwm-greet` session
 
-## Lean clients (no GTK)
+## GTK-free shell clients (fleetkit)
 
-The always-resident and frequently-launched shell pieces -- `fleetwm-bar`,
+The shell pieces -- `fleetwm-bar`,
 `fleetwm-wallpaper`, `fleetwm-launcher`, `fleetwm-locker`,
-`fleetwm-powermenu` and `fleetwm-audiomixer` -- are plain Wayland clients
+`fleetwm-powermenu`, `fleetwm-audiomixer` and `fleetwm-settings` -- are plain Wayland clients
 (layer-shell surfaces on `wl_shm`, drawn with cairo) built on the small
-`src/lean` toolkit: one `wl_display` connection and `poll()` loop, xkbcommon
+`src/fleetkit` toolkit: one `wl_display` connection and `poll()` loop, xkbcommon
 keyboard input with key repeat, pointer input, timers, a freedesktop icon
 theme lookup (PNG via libpng, SVG via the vendored nanosvg), a `.desktop`
-file scanner, and the theme palette read from `themes/*.css`. They never
+file scanner, an immediate-mode widget layer (tabs, spin buttons, sliders, colour
+picker, file chooser) for the settings window, and the theme palette read from `themes/*.css`. They never
 link GTK, GLib or Pango; the system tray speaks the StatusNotifierItem
 protocol over sd-bus. Nothing redraws unless something visible changed, so
 idle CPU is effectively zero and each process stays in the low tens of MB
@@ -459,8 +460,8 @@ instead of well over 100 MB.
 
 This only concerns fleetwm's own clients. The compositor still serves
 GTK 2/3/4, Qt, XWayland and any other Wayland or X11 application exactly as
-before. `fleetwm-settings` and `fleetwm-greeter-login` (both short-lived)
-remain GTK4 for now. Measurements, the method, and the bugs found while
+before. Only `fleetwm-greeter-login` (the login card shown by the greeter)
+remains GTK4 for now. Measurements, the method, and the bugs found while
 doing this are written up in [docs/OPTIMIZATIONS.md](docs/OPTIMIZATIONS.md).
 
 ## Credits

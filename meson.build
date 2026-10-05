@@ -111,7 +111,7 @@ gles2_dep = dependency('glesv2')
 # ---------------------------------------------------------------------------
 
 subdir('src/common')
-subdir('src/lean')
+subdir('src/fleetkit')
 subdir('src/compositor')
 subdir('src/bar')
 subdir('src/settings')

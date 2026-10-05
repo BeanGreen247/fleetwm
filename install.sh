@@ -38,7 +38,7 @@ sudo apt-get install -y \
   libsystemd-dev \
   libjemalloc2
 
-# the GTK-free "lean" clients (src/lean: wallpaper, locker, power menu, bar,
+# the GTK-free "fleetkit" clients (src/fleetkit: wallpaper, locker, power menu, bar,
 # launcher, audio mixer) draw with cairo and decode images with libpng /
 # libjpeg / libwebp (SVG is handled by the vendored nanosvg); fontconfig
 # resolves cairo's "Sans" family, so keep a default font installed

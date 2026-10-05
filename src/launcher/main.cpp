@@ -1,4 +1,4 @@
-// fleetwm-launcher: lean, GTK-free application launcher. A centered OVERLAY
+// fleetwm-launcher: GTK-free application launcher. A centered OVERLAY
 // layer surface with exclusive keyboard focus: a search entry and a list of
 // matching applications (name + category hint). Enter launches the selected
 // entry; if nothing matches the typed text can be run as a shell command.
@@ -19,7 +19,7 @@
 
 #include "default_apps.hpp"
 #include "desktop_entry.hpp"
-#include "lean.hpp"
+#include "fleetkit.hpp"
 #include "malloc_tuning.hpp"
 #include "theme.hpp"
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
@@ -27,7 +27,7 @@
 namespace {
 
 using namespace fleetwm;
-using namespace fleetwm::lean;
+using namespace fleetwm::kit;
 
 constexpr int kWindowWidth = 560;
 constexpr int kMaxVisibleRows = 8;

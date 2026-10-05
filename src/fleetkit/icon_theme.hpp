@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-namespace fleetwm::lean {
+namespace fleetwm::kit {
 
 // Returns a new premultiplied ARGB32 cairo image surface (caller owns, free
 // with cairo_surface_destroy) whose larger side is about `size` px, or
@@ -21,4 +21,4 @@ cairo_surface_t* load_icon(const std::string& name, int size,
 // Converts non-premultiplied RGBA to a premultiplied ARGB32 surface.
 cairo_surface_t* surface_from_rgba(const unsigned char* rgba, int w, int h);
 
-}  // namespace fleetwm::lean
+}  // namespace fleetwm::kit

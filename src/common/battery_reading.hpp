@@ -1,7 +1,7 @@
 #pragma once
 
 // GTK/GLib-free battery sysfs reading, shared by BatterySource (GLib timer,
-// used by fleetwm-settings) and the lean bar (its own timer).
+// used by fleetwm-settings) and the fleetkit bar (its own timer).
 
 #include <string>
 

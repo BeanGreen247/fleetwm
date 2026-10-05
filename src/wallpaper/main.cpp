@@ -1,4 +1,4 @@
-// fleetwm-wallpaper: lean, GTK-free layer-shell client. Paints the
+// fleetwm-wallpaper: GTK-free layer-shell client. Paints the
 // configured wallpaper image (or a solid color) on the BACKGROUND layer
 // into a wl_shm buffer, once per configure/config change, then sleeps in
 // poll() -- zero CPU while idle and none of GTK/GLib/Pango/Cairo mapped.
@@ -108,9 +108,9 @@ void paint() {
 
   bool drawn = false;
   if (!g.config.use_solid_color && !g.config.path.empty()) {
-    lean::Image img = lean::load_image(g.config.path);
+    kit::Image img = kit::load_image(g.config.path);
     if (img.ok()) {
-      lean::render_cover(img, bw, bh, px);
+      kit::render_cover(img, bw, bh, px);
       drawn = true;
     } else {
       std::fprintf(stderr, "fleetwm-wallpaper: cannot load '%s'\n", g.config.path.c_str());

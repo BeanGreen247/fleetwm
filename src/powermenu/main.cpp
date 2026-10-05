@@ -1,4 +1,4 @@
-// fleetwm-powermenu: lean, GTK-free power menu. A fullscreen OVERLAY layer
+// fleetwm-powermenu: GTK-free power menu. A fullscreen OVERLAY layer
 // surface (opaque bg_primary backdrop) with a centered card of five action
 // buttons: Lock, Log out, Sleep, Reboot, Shut down. Escape or a click
 // outside the card dismisses it. Arrow keys / Tab / Enter also work.
@@ -18,7 +18,7 @@
 #include <vector>
 
 #include "ipc_client.hpp"
-#include "lean.hpp"
+#include "fleetkit.hpp"
 #include "malloc_tuning.hpp"
 #include "theme.hpp"
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
@@ -28,7 +28,7 @@ extern char** environ;
 namespace {
 
 using namespace fleetwm;
-using namespace fleetwm::lean;
+using namespace fleetwm::kit;
 
 constexpr uint32_t kBtnLeft = 0x110;
 

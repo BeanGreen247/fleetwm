@@ -85,7 +85,7 @@ protocols_dep = declare_dependency(
   sources: protocol_headers,
 )
 
-# Client-side bindings (xdg-shell + wlr-layer-shell) for the lean, GTK-free
+# Client-side bindings (xdg-shell + wlr-layer-shell) for the GTK-free
 # Wayland clients (fleetwm-wallpaper). Same `namespace` -> `namespace_`
 # patch as the server header above, applied to the client header.
 client_protocol_headers = []

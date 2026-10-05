@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-namespace fleetwm::lean {
+namespace fleetwm::kit {
 
 // Decoded image: tightly packed 8-bit RGBA, row-major, no padding.
 struct Image {
@@ -28,4 +28,4 @@ Image load_svg(const std::string& path, int size);
 // which must hold dst_w * dst_h * 4 bytes.
 void render_cover(const Image& src, int dst_w, int dst_h, uint8_t* dst);
 
-}  // namespace fleetwm::lean
+}  // namespace fleetwm::kit

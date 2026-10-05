@@ -1,4 +1,4 @@
-#include "lean.hpp"
+#include "fleetkit.hpp"
 
 #include <poll.h>
 #include <sys/mman.h>
@@ -21,7 +21,7 @@
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
 #include "xdg-shell-client-protocol.h"
 
-namespace fleetwm::lean {
+namespace fleetwm::kit {
 
 // ---------------------------------------------------------------- colors ---
 
@@ -141,6 +141,45 @@ Surface::Surface(App& app, const Config& cfg) : app_(app), cfg_(cfg) {
   wl_surface_add_listener(surface_, &sl, this);
   app.register_surface(surface_, this);
 
+  if (cfg.toplevel) {
+    xs_ = xdg_wm_base_get_xdg_surface(app.wm_base(), surface_);
+    static const xdg_surface_listener xsl = {
+        [](void* d, xdg_surface* xs, uint32_t serial) {
+          auto* s = static_cast<Surface*>(d);
+          xdg_surface_ack_configure(xs, serial);
+          const int nw = s->pending_w_ > 0 ? s->pending_w_ : s->width_;
+          const int nh = s->pending_h_ > 0 ? s->pending_h_ : s->height_;
+          const bool changed = !s->configured_ || nw != s->width_ || nh != s->height_;
+          s->width_ = nw;
+          s->height_ = nh;
+          s->configured_ = true;
+          if (changed) {
+            s->dirty_ = true;
+            if (s->on_configure) s->on_configure(s->width_, s->height_);
+          }
+        }};
+    xdg_surface_add_listener(xs_, &xsl, this);
+    xt_ = xdg_surface_get_toplevel(xs_);
+    static const xdg_toplevel_listener xtl = {
+        [](void* d, xdg_toplevel*, int32_t w, int32_t h, wl_array*) {
+          auto* s = static_cast<Surface*>(d);
+          s->pending_w_ = w;
+          s->pending_h_ = h;
+        },
+        [](void* d, xdg_toplevel*) {
+          auto* s = static_cast<Surface*>(d);
+          if (s->on_closed) s->on_closed();
+        },
+        [](void*, xdg_toplevel*, int32_t, int32_t) {},
+        [](void*, xdg_toplevel*, wl_array*) {}};
+    xdg_toplevel_add_listener(xt_, &xtl, this);
+    if (!cfg.app_id.empty()) xdg_toplevel_set_app_id(xt_, cfg.app_id.c_str());
+    if (!cfg.title.empty()) xdg_toplevel_set_title(xt_, cfg.title.c_str());
+    if (cfg.min_width > 0 || cfg.min_height > 0) xdg_toplevel_set_min_size(xt_, cfg.min_width, cfg.min_height);
+    wl_surface_commit(surface_);
+    return;
+  }
+
   ls_ = zwlr_layer_shell_v1_get_layer_surface(app.layer_shell(), surface_, cfg.output, cfg.layer,
                                               cfg.name.c_str());
   static const zwlr_layer_surface_v1_listener lsl = {
@@ -180,6 +219,8 @@ Surface::~Surface() {
   app_.unregister_surface(surface_);
   if (frame_cb_) wl_callback_destroy(frame_cb_);
   for (auto& b : bufs_) free_buf(b);
+  if (xt_) xdg_toplevel_destroy(xt_);
+  if (xs_) xdg_surface_destroy(xs_);
   if (ls_) zwlr_layer_surface_v1_destroy(ls_);
   if (surface_) wl_surface_destroy(surface_);
 }
@@ -193,26 +234,35 @@ void Surface::set_input_passthrough() {
   wl_surface_commit(surface_);
 }
 
+void Surface::set_title(const std::string& title) {
+  if (xt_) xdg_toplevel_set_title(xt_, title.c_str());
+}
+
 void Surface::set_size(int w, int h) {
   cfg_.width = w;
   cfg_.height = h;
+  if (!ls_) return;  // toplevels are resized by the compositor
   zwlr_layer_surface_v1_set_size(ls_, static_cast<uint32_t>(w), static_cast<uint32_t>(h));
   wl_surface_commit(surface_);
 }
 void Surface::set_anchor(uint32_t anchor) {
   cfg_.anchor = anchor;
+  if (!ls_) return;
   zwlr_layer_surface_v1_set_anchor(ls_, anchor);
   wl_surface_commit(surface_);
 }
 void Surface::set_exclusive_zone(int z) {
+  if (!ls_) return;
   zwlr_layer_surface_v1_set_exclusive_zone(ls_, z);
   wl_surface_commit(surface_);
 }
 void Surface::set_margins(int t, int r, int b, int l) {
+  if (!ls_) return;
   zwlr_layer_surface_v1_set_margin(ls_, t, r, b, l);
   wl_surface_commit(surface_);
 }
 void Surface::set_keyboard_mode(uint32_t mode) {
+  if (!ls_) return;
   zwlr_layer_surface_v1_set_keyboard_interactivity(ls_, mode);
   wl_surface_commit(surface_);
 }
@@ -220,7 +270,7 @@ void Surface::set_keyboard_mode(uint32_t mode) {
 bool Surface::alloc(Buffer& b, int w, int h) {
   free_buf(b);
   const size_t stride = static_cast<size_t>(w) * 4, size = stride * h;
-  const int fd = memfd_create("fleetwm-lean", MFD_CLOEXEC);
+  const int fd = memfd_create("fleetwm-kit", MFD_CLOEXEC);
   if (fd < 0) return false;
   if (ftruncate(fd, static_cast<off_t>(size)) < 0) {
     close(fd);
@@ -353,6 +403,12 @@ bool App::connect() {
         } else if (!std::strcmp(iface, zwlr_layer_shell_v1_interface.name)) {
           a->layer_shell_ = static_cast<zwlr_layer_shell_v1*>(
               wl_registry_bind(r, name, &zwlr_layer_shell_v1_interface, std::min(ver, 4u)));
+        } else if (!std::strcmp(iface, xdg_wm_base_interface.name)) {
+          a->wm_base_ = static_cast<xdg_wm_base*>(
+              wl_registry_bind(r, name, &xdg_wm_base_interface, std::min(ver, 2u)));
+          static const xdg_wm_base_listener wl = {
+              [](void*, xdg_wm_base* b, uint32_t serial) { xdg_wm_base_pong(b, serial); }};
+          xdg_wm_base_add_listener(a->wm_base_, &wl, a);
         } else if (!std::strcmp(iface, wl_seat_interface.name)) {
           a->seat_ = static_cast<wl_seat*>(
               wl_registry_bind(r, name, &wl_seat_interface, std::min(ver, 5u)));
@@ -407,7 +463,7 @@ bool App::connect() {
   wl_registry_add_listener(registry_, &rl, this);
   wl_display_roundtrip(display_);
   wl_display_roundtrip(display_);  // output events
-  if (!compositor_ || !shm_ || !layer_shell_) {
+  if (!compositor_ || !shm_ || (!layer_shell_ && !wm_base_)) {
     std::fprintf(stderr, "fleetwm: compositor lacks wl_compositor/wl_shm/wlr-layer-shell\n");
     return false;
   }
@@ -490,9 +546,6 @@ void App::setup_seat() {
               [](void* d2, wl_keyboard*, uint32_t, wl_surface* s, wl_array*) {
                 auto* app = static_cast<App*>(d2);
                 app->kb_focus_ = app->find(s);
-                if ((access("/tmp/lean-debug", F_OK) == 0))
-                  std::fprintf(stderr, "lean: keyboard enter surface=%p known=%d\n", (void*)s,
-                               app->kb_focus_ != nullptr);
               },
               // leave
               [](void* d2, wl_keyboard*, uint32_t, wl_surface*) {
@@ -507,9 +560,6 @@ void App::setup_seat() {
               // key
               [](void* d2, wl_keyboard*, uint32_t, uint32_t, uint32_t key, uint32_t state) {
                 auto* app = static_cast<App*>(d2);
-                if ((access("/tmp/lean-debug", F_OK) == 0))
-                  std::fprintf(stderr, "lean: key %u state %u xkb=%d focus=%d\n", key, state,
-                               app->xkb_state_ != nullptr, app->kb_focus_ != nullptr);
                 if (!app->xkb_state_ || !app->kb_focus_) return;
                 const xkb_keycode_t kc = key + 8;
                 const bool pressed = state == WL_KEYBOARD_KEY_STATE_PRESSED;
@@ -828,4 +878,4 @@ Tooltip::Tooltip(App& app, const Palette& pal, const std::string& text, int x, i
   };
 }
 
-}  // namespace fleetwm::lean
+}  // namespace fleetwm::kit

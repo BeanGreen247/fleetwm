@@ -14,7 +14,7 @@
 #include "image.hpp"
 #include "util.hpp"
 
-namespace fleetwm::lean {
+namespace fleetwm::kit {
 
 namespace {
 
@@ -241,4 +241,4 @@ cairo_surface_t* load_icon(const std::string& name_in, int size, const std::vect
   return surface_from_rgba(img.rgba.data(), img.width, img.height);
 }
 
-}  // namespace fleetwm::lean
+}  // namespace fleetwm::kit

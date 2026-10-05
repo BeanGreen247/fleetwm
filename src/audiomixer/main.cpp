@@ -1,4 +1,4 @@
-// fleetwm-audiomixer: lean, GTK-free volume popup. A small OVERLAY layer
+// fleetwm-audiomixer: GTK-free volume popup. A small OVERLAY layer
 // surface under the bar's top-right corner: master volume (mute button +
 // slider) and one slider per playing application stream, driven live by
 // PipeWire. Escape closes it.
@@ -16,7 +16,7 @@
 #include <vector>
 
 #include "audio_mixer.hpp"
-#include "lean.hpp"
+#include "fleetkit.hpp"
 #include "malloc_tuning.hpp"
 #include "theme.hpp"
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
@@ -24,7 +24,7 @@
 namespace {
 
 using namespace fleetwm;
-using namespace fleetwm::lean;
+using namespace fleetwm::kit;
 
 constexpr int kBarHeight = 24;  // must match src/bar/main.cpp
 constexpr int kCardWidth = 280;
