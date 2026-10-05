@@ -135,6 +135,8 @@ build-essential meson ninja-build pkg-config
 libwlroots-0.18-dev wayland-protocols libwayland-dev
 libinput-dev libdrm-dev libxkbcommon-dev libpixman-1-dev
 libegl1-mesa-dev libgles2-mesa-dev
+libgl1-mesa-dri libegl-mesa0 libgbm1 libvulkan1 mesa-vulkan-drivers mesa-va-drivers vulkan-tools vainfo
+intel-media-va-driver i965-va-driver   (Intel GPUs only; picked from /sys/class/drm)
 libcairo2-dev libpng-dev libjpeg-dev libwebp-dev fonts-dejavu-core
 libpipewire-0.3-dev pipewire pipewire-bin wireplumber
 libpam0g-dev
