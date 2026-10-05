@@ -11,6 +11,13 @@ case $- in *i*) ;; *) return ;; esac
 # The distribution's own defaults (completion, window title, ...), as a login-less shell gets.
 [ -f /etc/bash.bashrc ] && . /etc/bash.bashrc
 
+# --- power commands: reboot, poweroff, halt, suspend work from this terminal like the power menu
+# They live in the sbin directories, which a session may not have on its PATH.
+case ":$PATH:" in *:/usr/sbin:*) ;; *) PATH="$PATH:/usr/local/sbin:/usr/sbin:/sbin" ;; esac
+# Same commands the power menu runs; logind allows them for the person at the screen, no sudo.
+suspend()  { systemctl suspend "$@"; }
+hibernate() { systemctl hibernate "$@"; }
+
 # --- history: bigger, shared between terminals, no duplicates -------------------------
 shopt -s histappend checkwinsize cmdhist
 HISTSIZE=10000
