@@ -218,6 +218,9 @@ class View {
   geom::SnapZone snap_zone = geom::SnapZone::None;
   void snap_to(geom::SnapZone zone);
   void refit_snapped();
+  // Puts the window at `outer` (titlebar and border included) without recording a
+  // snap zone -- used for arrangements that have no zone, like a tiled stack of four.
+  void place_outer(const geom::Box& outer);
   // Undoes maximize or a snap, putting the window back where it was.
   void restore_from_snap();
 

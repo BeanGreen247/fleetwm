@@ -104,6 +104,32 @@ BarEdge exclusive_edge(bool left, bool right, bool top, bool bottom) {
   return BarEdge::None;
 }
 
+std::vector<Box> tile_boxes(const Box& a, size_t count) {
+  std::vector<Box> out;
+  if (count == 0) return out;
+  if (count == 1) return {a};
+  const int half = a.w / 2;
+  out.push_back({a.x, a.y, half, a.h});
+  const int stack = static_cast<int>(count) - 1;
+  const int each = a.h / stack;
+  for (int i = 0; i < stack; ++i) {
+    const int y = a.y + i * each;
+    const int h = i == stack - 1 ? a.y + a.h - y : each;
+    out.push_back({a.x + half, y, a.w - half, h});
+  }
+  return out;
+}
+
+std::vector<SnapZone> tile_zones(size_t count) {
+  switch (count) {
+    case 0: return {};
+    case 1: return {SnapZone::Maximize};
+    case 2: return {SnapZone::Left, SnapZone::Right};
+    case 3: return {SnapZone::Left, SnapZone::TopRight, SnapZone::BottomRight};
+    default: return std::vector<SnapZone>(count, SnapZone::None);
+  }
+}
+
 TitlebarLayout layout_titlebar(int width, const TitlebarMetrics& in) {
   TitlebarMetrics m = in;
   m.height = std::max(16, m.height);

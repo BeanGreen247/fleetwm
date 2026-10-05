@@ -1923,6 +1923,7 @@ void Server::reload_theme_config() {
   if (was_desktop && !desktop_layout()) {
     end_grab();
     for (const std::unique_ptr<View>& view : views) {
+      view->snap_zone = geom::SnapZone::None;  // tiling places windows itself
       if (view->maximized) view->set_maximized(false);
       // Nothing in the tiling layout can bring a minimized window back.
       if (view->minimized) view->set_minimized(false);
@@ -1936,6 +1937,12 @@ void Server::reload_theme_config() {
   // area may have changed.
   for (const std::unique_ptr<Output>& output : outputs) {
     output->update_usable_area();  // also covers a changed bar gap
+  }
+  // Tiling -> Desktop: keep the windows where tiling had them.
+  if (!was_desktop && desktop_layout()) {
+    for (const std::unique_ptr<Output>& output : outputs) {
+      output->snap_tiled_windows();
+    }
   }
   // gap_px lives on ThemeConfig too, so a live theme reload must re-tile
   // every output, not just refresh border rects.
