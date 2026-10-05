@@ -762,6 +762,18 @@ struct Settings {
     if (ui.color_button(&config.accent.hex, !config.accent.auto_extract)) save_theme();
     ui.newline();
 
+    ui.row("Window layout");
+    int layout = static_cast<int>(config.window_layout);
+    if (ui.dropdown({"Tiling (dwm-style)", "Desktop (floating windows)"}, &layout, 240)) {
+      config.window_layout = layout == 1 ? WindowLayout::Desktop : WindowLayout::Tiling;
+      save_theme();
+    }
+    ui.newline();
+    if (config.window_layout == WindowLayout::Desktop) {
+      ui.label("Desktop mode: drag titlebars to move, drag edges to resize, double-click to maximize. Only Alt+Enter (terminal) stays bound.", true);
+      ui.newline();
+    }
+
     ui.row("Focus border (px)");
     if (ui.spin(&config.focus_border_thickness_px, 0, 10)) save_theme();
     ui.newline();

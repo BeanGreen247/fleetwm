@@ -99,6 +99,22 @@ TEST_F(ThemeTest, LoadWithNoConfigFileReturnsDefaults) {
   EXPECT_EQ(config.gap_px, 8);
 }
 
+TEST_F(ThemeTest, WindowLayoutDefaultsToTilingAndRoundTrips) {
+  EXPECT_EQ(load_theme_config().window_layout, WindowLayout::Tiling);
+  ThemeConfig c;
+  c.window_layout = WindowLayout::Desktop;
+  save_theme_config(c);
+  EXPECT_EQ(load_theme_config().window_layout, WindowLayout::Desktop);
+}
+
+TEST(WindowLayoutNames, ParseAndFormat) {
+  EXPECT_EQ(window_layout_from_string("desktop"), WindowLayout::Desktop);
+  EXPECT_EQ(window_layout_from_string("tiling"), WindowLayout::Tiling);
+  EXPECT_EQ(window_layout_from_string("garbage"), WindowLayout::Tiling);
+  EXPECT_EQ(window_layout_to_string(WindowLayout::Desktop), "desktop");
+  EXPECT_EQ(window_layout_to_string(WindowLayout::Tiling), "tiling");
+}
+
 TEST_F(ThemeTest, SaveThenLoadRoundTrips) {
   ThemeConfig config;
   config.corner_style = CornerStyle::Sharp;

@@ -35,6 +35,15 @@ enum class RenderMode {
   Custom,
 };
 
+// How the compositor arranges windows. Tiling is the dwm-style master/stack
+// layout with keyboard shortcuts; Desktop is a floating, Cinnamon-like layout
+// with titlebars, mouse move/resize and maximize, where only the terminal
+// shortcut stays active.
+enum class WindowLayout {
+  Tiling,
+  Desktop,
+};
+
 struct AccentColor {
   // When auto_extract is true, `hex` holds the last-computed value (see
   // accent_extract.hpp) and is regenerated whenever the wallpaper changes.
@@ -77,6 +86,7 @@ struct ThemeConfig {
   // separately by the layer-shell exclusive zone (kExclusiveZoneGapPx in
   // output.cpp).
   int gap_px = 8;
+  WindowLayout window_layout = WindowLayout::Tiling;
   // Adaptive render throttling (see RenderMode above). custom_fps_lock is
   // only meaningful when render_mode == Custom; clamped to [24, 5000] by
   // both the Settings spinbutton and load_theme_config().
@@ -116,6 +126,9 @@ void save_theme_config(const ThemeConfig& config);
 // -> "dracula.css". Callers combine this with the install-time themes
 // directory to build a full path.
 std::string theme_css_filename(ThemeName theme);
+
+std::string window_layout_to_string(WindowLayout layout);
+WindowLayout window_layout_from_string(const std::string& s);
 
 std::string theme_name_to_string(ThemeName theme);
 ThemeName theme_name_from_string(const std::string& s);

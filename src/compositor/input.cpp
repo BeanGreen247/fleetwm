@@ -317,8 +317,13 @@ bool Keyboard::handle_keybind(xkb_keysym_t sym) {
   bool shift_held = (wlr_keyboard_get_modifiers(wlr_keyboard_ptr) & WLR_MODIFIER_SHIFT) != 0;
   const Server::ResolvedKeybinds& binds = server->keybinds();
 
+  // Desktop layout: only the terminal shortcut stays bound for now.
+  if (server->desktop_layout() && sym != binds.terminal) {
+    return false;
+  }
+
   if (sym == binds.terminal) {
-    if (shift_held) {
+    if (shift_held && !server->desktop_layout()) {
       if (View* view = focused_view(server)) {
         // Promote to master: splice to front of server->views the same
         // way focus_view() already does for topmost-on-focus, then

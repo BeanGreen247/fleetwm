@@ -500,3 +500,17 @@ If this project is useful to you, consider supporting its development via PayPal
 [![Donate with PayPal](.github/paypal-qr.png)](https://paypal.me/beangreen2471)
 
 **PayPal:** https://paypal.me/beangreen2471
+
+## Window layouts
+
+Settings -> Theme -> Window layout (or `window_layout` in `theme.toml`), applied live:
+
+- **Tiling** (default): dwm-style master/stack with the keyboard shortcuts.
+- **Desktop**: free-floating windows, Cinnamon-style. Each window gets a titlebar with maximize
+  and close buttons; drag the titlebar to move, drag any edge or corner to resize (a 6 px
+  invisible ring around the window helps), double-click the titlebar to maximize or restore,
+  and focus follows clicks instead of hover. New windows cascade from the centre. Only the
+  terminal shortcut (Alt+Enter) stays bound in this mode; the other shortcuts are off for now.
+  Clients that use xdg-decoration (foot, GTK4, Qt) and fleetwm's own apps get the titlebar;
+  clients that draw their own (GTK3 headerbars) keep theirs.
+

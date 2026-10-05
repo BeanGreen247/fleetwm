@@ -26,6 +26,7 @@ executable(
     'input.cpp',
     'workspace.cpp',
     'ipc_server.cpp',
+    'titlebar.cpp',
   ),
   include_directories: include_directories('.'),
   cpp_args: wlroots_cpp_args,
@@ -42,6 +43,7 @@ executable(
     xcb_dep,
     protocols_dep,
     libcommon_core_dep,
+    libfleetkit_dep,
   ],
   install: true,
 )

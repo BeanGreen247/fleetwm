@@ -15,6 +15,7 @@ extern "C" {
 
 #include <algorithm>
 #include <cerrno>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -30,6 +31,8 @@ extern "C" {
 #include "output.hpp"
 #include "paths_config.h"
 #include "scene_node_owner.hpp"
+#include "titlebar.hpp"
+#include "window_geometry.hpp"
 #include "view.hpp"
 
 namespace fleetwm {
@@ -229,6 +232,19 @@ static void xdg_toplevel_map(wl_listener* listener, void*) {
                                    parent_x + (parent_geo.width - geo.width) / 2,
                                    parent_y + (parent_geo.height - geo.height) / 2);
       wlr_scene_node_raise_to_top(&view->container_tree->node);
+    } else if (view->desktop_mode() && view->kind == View::Kind::XdgToplevel && !view->pinned) {
+      // Desktop layout: windows are free-floating. Open at the client's own
+      // size, centered on the work area and stepped down-right per open
+      // window so a stack of new windows stays readable.
+      wlr_box geo{};
+      wlr_xdg_surface_get_geometry(view->xdg_toplevel->base, &geo);
+      const int outer_w = (geo.width > 0 ? geo.width : 800);
+      const int outer_h = (geo.height > 0 ? geo.height : 500) + view->titlebar_height();
+      const wlr_box area = output->usable_area;
+      const geom::Box at = geom::cascade_position({area.x, area.y, area.width, area.height}, outer_w,
+                                                  outer_h, static_cast<int>(workspace.views().size()) - 1);
+      const int x = at.x, y = at.y;
+      wlr_scene_node_set_position(&view->container_tree->node, x, y);
     } else {
       // relayout() below handles tiled placement; this is just a sane
       // fallback position (full output box) for the pinned/floating
@@ -259,6 +275,7 @@ static void xdg_toplevel_unmap(wl_listener* listener, void*) {
   Server* server = view->server;
   bool was_focused = server->seat()->keyboard_state.focused_surface == view->surface();
   Output* output = view->output;
+  server->forget_view(view);
 
   if (view->workspace) {
     view->workspace->remove_view(view);
@@ -317,6 +334,9 @@ static void xdg_toplevel_destroy(wl_listener* listener, void*) {
   wl_list_remove(&view->destroy.link);
   wl_list_remove(&view->request_move.link);
   wl_list_remove(&view->request_resize.link);
+  wl_list_remove(&view->request_maximize.link);
+  wl_list_remove(&view->set_title.link);
+  server->forget_view(view);
   wl_list_remove(&view->request_fullscreen.link);
   wl_list_remove(&view->surface_commit.link);
   wl_list_remove(&view->new_popup.link);
@@ -379,11 +399,33 @@ static void xdg_toplevel_surface_commit(wl_listener* listener, void*) {
 }
 
 static void xdg_toplevel_request_move(wl_listener* listener, void*) {
-  (void)listener;  // Phase 1 scope: floating drag-move.
+  View* view = wl_container_of(listener, view, request_move);
+  if (view->server->desktop_layout() && !view->fullscreen && !view->pinned) {
+    view->server->begin_move(view);
+  }
 }
 
-static void xdg_toplevel_request_resize(wl_listener* listener, void*) {
-  (void)listener;  // Phase 1 scope: floating interactive resize.
+static void xdg_toplevel_request_resize(wl_listener* listener, void* data) {
+  View* view = wl_container_of(listener, view, request_resize);
+  auto* event = static_cast<wlr_xdg_toplevel_resize_event*>(data);
+  if (view->server->desktop_layout() && !view->fullscreen && !view->pinned) {
+    view->server->begin_resize(view, event->edges);
+  }
+}
+
+static void xdg_toplevel_set_title(wl_listener* listener, void*) {
+  View* view = wl_container_of(listener, view, set_title);
+  view->update_titlebar();  // a title change does not necessarily come with a commit
+}
+
+static void xdg_toplevel_request_maximize(wl_listener* listener, void*) {
+  View* view = wl_container_of(listener, view, request_maximize);
+  if (view->server->desktop_layout() && view->output) {
+    view->set_maximized(view->xdg_toplevel->requested.maximized);
+  } else if (view->xdg_toplevel->base->initialized) {
+    // Not honoured in the tiling layout, but the protocol wants an answer.
+    wlr_xdg_surface_schedule_configure(view->xdg_toplevel->base);
+  }
 }
 
 static void xdg_toplevel_request_fullscreen(wl_listener* listener, void*) {
@@ -475,6 +517,19 @@ void server_new_xdg_toplevel(wl_listener* listener, void* data) {
   view->border_left = wlr_scene_rect_create(view->container_tree, 0, 0, kTransparent);
   view->border_right = wlr_scene_rect_create(view->container_tree, 0, 0, kTransparent);
 
+  // Invisible, tagged ring around the window that acts as the resize handles
+  // in the Desktop layout; enabled/sized by View::resize_border().
+  // The border rects are part of the resize handle too (they sit between the
+  // content and the ring), so they carry the same tag.
+  for (wlr_scene_rect* border : {view->border_top, view->border_bottom, view->border_left,
+                                  view->border_right}) {
+    border->node.data = &view->tag;
+  }
+  view->grab_rect = wlr_scene_rect_create(view->container_tree, 0, 0, kTransparent);
+  view->grab_rect->node.data = &view->tag;
+  wlr_scene_node_lower_to_bottom(&view->grab_rect->node);
+  wlr_scene_node_set_enabled(&view->grab_rect->node, false);
+
   view->map.notify = xdg_toplevel_map;
   wl_signal_add(&toplevel->base->surface->events.map, &view->map);
   view->unmap.notify = xdg_toplevel_unmap;
@@ -485,6 +540,10 @@ void server_new_xdg_toplevel(wl_listener* listener, void* data) {
   wl_signal_add(&toplevel->events.request_move, &view->request_move);
   view->request_resize.notify = xdg_toplevel_request_resize;
   wl_signal_add(&toplevel->events.request_resize, &view->request_resize);
+  view->set_title.notify = xdg_toplevel_set_title;
+  wl_signal_add(&toplevel->events.set_title, &view->set_title);
+  view->request_maximize.notify = xdg_toplevel_request_maximize;
+  wl_signal_add(&toplevel->events.request_maximize, &view->request_maximize);
   view->request_fullscreen.notify = xdg_toplevel_request_fullscreen;
   wl_signal_add(&toplevel->events.request_fullscreen, &view->request_fullscreen);
   view->surface_commit.notify = xdg_toplevel_surface_commit;
@@ -497,7 +556,8 @@ void server_new_xdg_toplevel(wl_listener* listener, void* data) {
 
 // -- xdg-decoration -----------------------------------------------------
 
-void server_new_toplevel_decoration(wl_listener*, void* data) {
+void server_new_toplevel_decoration(wl_listener* listener, void* data) {
+  Server* server = wl_container_of(listener, server, new_toplevel_decoration_);
   auto* decoration = static_cast<wlr_xdg_toplevel_decoration_v1*>(data);
   // fleetwm draws no decorations of its own -- forcing SERVER_SIDE here
   // just tells the client not to draw its own CSDs (titlebar, buttons),
@@ -507,6 +567,14 @@ void server_new_toplevel_decoration(wl_listener*, void* data) {
   // nothing to react to.
   wlr_xdg_toplevel_decoration_v1_set_mode(decoration,
                                            WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+  // Remember that this client expects the compositor to decorate it: the
+  // Desktop layout draws a titlebar for such windows.
+  for (const std::unique_ptr<View>& view : server->views) {
+    if (view->xdg_toplevel == decoration->toplevel) {
+      view->has_decoration = true;
+      break;
+    }
+  }
 }
 
 // -- layer-shell surfaces ---------------------------------------------------
@@ -599,6 +667,16 @@ struct SceneHit {
 static bool scene_node_at(Server* server, double lx, double ly, double* sx, double* sy,
                            SceneHit* out) {
   wlr_scene_node* node = wlr_scene_node_at(&server->scene()->tree.node, lx, ly, sx, sy);
+  const bool surface_buffer =
+      node && node->type == WLR_SCENE_NODE_BUFFER &&
+      wlr_scene_surface_try_from_buffer(wlr_scene_buffer_from_node(node)) != nullptr;
+  if (node && !surface_buffer && node->data &&
+      *static_cast<SceneNodeOwner*>(node->data) == SceneNodeOwner::Decoration) {
+    out->owner = SceneNodeOwner::Decoration;
+    out->data = node->data;
+    out->surface = nullptr;
+    return true;
+  }
   if (!node || node->type != WLR_SCENE_NODE_BUFFER) {
     return false;
   }
@@ -634,10 +712,83 @@ static bool scene_node_at(Server* server, double lx, double ly, double* sx, doub
   return true;
 }
 
+namespace {
+
+// What part of a decorated window the pointer is over.
+struct DecorationZone {
+  uint32_t edges = 0;  // WLR_EDGE_* mask: a resize handle
+  int button = -1;     // TitlebarButton
+  bool drag = false;   // titlebar background
+};
+
+constexpr int kEdgeInner = 4;   // px inside the window that still count as border
+constexpr int kCornerSpan = 12;  // px along an edge that count as the corner
+
+DecorationZone decoration_zone(Server* server, View* view) {
+  DecorationZone zone;
+  int cx = 0, cy = 0;
+  wlr_scene_node_coords(&view->container_tree->node, &cx, &cy);
+  const double lx = server->cursor()->x - cx, ly = server->cursor()->y - cy;
+  const int bt = view->border_thickness();
+  const int th = view->titlebar_height();
+  wlr_box geo{};
+  if (view->xdg_toplevel) {
+    wlr_xdg_surface_get_geometry(view->xdg_toplevel->base, &geo);
+  }
+  const int W = view->content_w + 2 * bt;
+  const int H = std::max(1, geo.height) + th + 2 * bt;
+
+  uint32_t edges = geom::resize_edges_at(lx, ly, W, H, kEdgeInner, kCornerSpan);
+  if (view->maximized) edges = 0;  // a maximized window is not resized by its edges
+  zone.edges = edges;
+  if (edges) return zone;
+
+  if (th > 0 && ly >= bt && ly < bt + th && lx >= bt && lx < bt + view->content_w) {
+    zone.button = titlebar_button_at(view->content_w, lx - bt);
+    zone.drag = zone.button < 0;
+  }
+  return zone;
+}
+
+const char* resize_cursor_name(uint32_t edges) {
+  const bool l = edges & WLR_EDGE_LEFT, r = edges & WLR_EDGE_RIGHT;
+  const bool t = edges & WLR_EDGE_TOP, b = edges & WLR_EDGE_BOTTOM;
+  if (t && l) return "nw-resize";
+  if (t && r) return "ne-resize";
+  if (b && l) return "sw-resize";
+  if (b && r) return "se-resize";
+  if (t) return "n-resize";
+  if (b) return "s-resize";
+  if (l) return "w-resize";
+  if (r) return "e-resize";
+  return "left_ptr";
+}
+
+}  // namespace
+
 static void process_cursor_motion(Server* server, uint32_t time_msec) {
+  if (server->grab_active()) {
+    server->update_grab();
+    return;
+  }
   double sx, sy;
   SceneHit hit{};
   bool hit_something = scene_node_at(server, server->cursor()->x, server->cursor()->y, &sx, &sy, &hit);
+
+  if (hit_something && hit.owner == SceneNodeOwner::Decoration) {
+    View* view = static_cast<DecorationTag*>(hit.data)->view;
+    if (server->desktop_layout() && view) {
+      const DecorationZone zone = decoration_zone(server, view);
+      wlr_seat_pointer_clear_focus(server->seat());
+      wlr_cursor_set_xcursor(server->cursor(), server->cursor_manager(),
+                             zone.edges ? resize_cursor_name(zone.edges) : "left_ptr");
+      server->set_hover_view(view);
+      view->set_hover_button(zone.button);
+      return;
+    }
+    hit_something = false;  // invisible ring left over after a layout switch
+  }
+  server->set_hover_view(nullptr);
 
   if (!hit_something || hit.owner != SceneNodeOwner::View) {
     server->set_default_cursor_image();
@@ -650,11 +801,10 @@ static void process_cursor_motion(Server* server, uint32_t time_msec) {
     wlr_seat_pointer_clear_focus(server->seat());
   }
 
-  // Focus-follows-mouse: hovering a view focuses it, no click required.
-  // Mirrors server_cursor_button's hit-testing; bare background/layer-shell
-  // hits intentionally leave the last-focused view focused (dwm-style, no
-  // debounce needed).
-  if (hit_something && hit.owner == SceneNodeOwner::View) {
+  // Focus-follows-mouse (tiling layout only; the desktop layout focuses on
+  // click): hovering a view focuses it, no click required. Bare background and
+  // layer-shell hits intentionally leave the last-focused view focused.
+  if (hit_something && hit.owner == SceneNodeOwner::View && !server->desktop_layout()) {
     server->focus_view(static_cast<View*>(hit.data));
   }
 }
@@ -676,15 +826,56 @@ void server_cursor_motion_absolute(wl_listener* listener, void* data) {
 void server_cursor_button(wl_listener* listener, void* data) {
   Server* server = wl_container_of(listener, server, cursor_button_);
   auto* event = static_cast<wlr_pointer_button_event*>(data);
-  wlr_seat_pointer_notify_button(server->seat(), event->time_msec, event->button, event->state);
 
   if (event->state != WL_POINTER_BUTTON_STATE_PRESSED) {
+    if (server->grab_active()) {
+      server->end_grab();
+      server->swallow_release = false;
+      return;
+    }
+    if (server->swallow_release) {
+      server->swallow_release = false;
+      return;
+    }
+    wlr_seat_pointer_notify_button(server->seat(), event->time_msec, event->button, event->state);
     return;
   }
+
   double sx, sy;
   SceneHit hit{};
-  if (scene_node_at(server, server->cursor()->x, server->cursor()->y, &sx, &sy, &hit) &&
-      hit.owner == SceneNodeOwner::View) {
+  const bool hit_something =
+      scene_node_at(server, server->cursor()->x, server->cursor()->y, &sx, &sy, &hit);
+
+  // Titlebar / resize ring of a Desktop-layout window: handled here and not
+  // forwarded to the client.
+  if (hit_something && hit.owner == SceneNodeOwner::Decoration && server->desktop_layout()) {
+    View* view = static_cast<DecorationTag*>(hit.data)->view;
+    if (view) {
+      server->focus_view(view);
+      server->swallow_release = true;
+      if (event->button == 0x110 /* BTN_LEFT */) {
+        const DecorationZone zone = decoration_zone(server, view);
+        if (zone.edges) {
+          server->begin_resize(view, zone.edges);
+        } else if (zone.button == kButtonClose) {
+          view->close();
+        } else if (zone.button == kButtonMaximize) {
+          server->toggle_maximize(view);
+        } else if (zone.drag) {
+          if (server->is_double_click(view, event->time_msec)) {
+            server->toggle_maximize(view);
+          } else if (!view->pinned && !view->fullscreen) {
+            server->begin_move(view);
+          }
+        }
+      }
+    }
+    return;
+  }
+
+  wlr_seat_pointer_notify_button(server->seat(), event->time_msec, event->button, event->state);
+
+  if (hit_something && hit.owner == SceneNodeOwner::View) {
     server->focus_view(static_cast<View*>(hit.data));
   }
   // LayerSurface: no click-to-raise/activate needed -- it's already top
@@ -1221,6 +1412,7 @@ bool Server::init() {
   start_signal_handlers();
 
   theme_config_ = load_theme_config();
+  titlebar_reload_palette(theme_config_);
   default_apps_config_ = load_default_apps_config();
   reload_keybinds_config();
 
@@ -1396,6 +1588,117 @@ void Server::set_default_cursor_image() {
   wlr_cursor_set_xcursor(cursor_, cursor_mgr_, "left_ptr");
 }
 
+// ---- Desktop layout: interactive move / resize --------------------------
+
+namespace {
+constexpr int kMinContentW = 160;
+constexpr int kMinContentH = 80;
+constexpr uint32_t kDoubleClickMs = 400;
+}  // namespace
+
+void Server::begin_move(View* view) {
+  if (!view || !view->output || grab_active()) return;
+  grab_mode_ = GrabMode::Move;
+  grab_view_ = view;
+  grab_cursor_x_ = cursor_->x;
+  grab_cursor_y_ = cursor_->y;
+  grab_box_ = {view->container_tree->node.x, view->container_tree->node.y, 0, 0};
+  grab_unmaximize_pending_ = view->maximized;
+  wlr_seat_pointer_clear_focus(seat_);
+}
+
+void Server::begin_resize(View* view, uint32_t edges) {
+  if (!view || !view->output || !view->xdg_toplevel || edges == 0 || grab_active() ||
+      view->maximized) {
+    return;
+  }
+  wlr_box geo{};
+  wlr_xdg_surface_get_geometry(view->xdg_toplevel->base, &geo);
+  grab_mode_ = GrabMode::Resize;
+  grab_view_ = view;
+  grab_edges_ = edges;
+  grab_cursor_x_ = cursor_->x;
+  grab_cursor_y_ = cursor_->y;
+  grab_box_ = {view->container_tree->node.x, view->container_tree->node.y, geo.width, geo.height};
+  wlr_seat_pointer_clear_focus(seat_);
+}
+
+void Server::update_grab() {
+  View* view = grab_view_;
+  if (!view) {
+    end_grab();
+    return;
+  }
+  const double dx = cursor_->x - grab_cursor_x_, dy = cursor_->y - grab_cursor_y_;
+
+  if (grab_mode_ == GrabMode::Move) {
+    if (grab_unmaximize_pending_) {
+      if (std::abs(dx) + std::abs(dy) < 4) return;
+      // Dragging a maximized window restores it, keeping the pointer at the
+      // same relative spot on the titlebar.
+      const wlr_box area = view->output ? view->output->usable_area : wlr_box{};
+      const double ratio = area.width > 0 ? (grab_cursor_x_ - area.x) / area.width : 0.5;
+      view->set_maximized(false);
+      const int outer_w = view->restore_box.width + 2 * view->border_thickness();
+      grab_box_.x = static_cast<int>(grab_cursor_x_ - ratio * outer_w);
+      grab_box_.y = static_cast<int>(grab_cursor_y_ - kTitlebarHeight / 2);
+      grab_unmaximize_pending_ = false;
+    }
+    int x = static_cast<int>(grab_box_.x + dx), y = static_cast<int>(grab_box_.y + dy);
+    if (view->output) {
+      y = std::max(y, view->output->usable_area.y);  // keep the titlebar below the bar
+    }
+    wlr_scene_node_set_position(&view->container_tree->node, x, y);
+    return;
+  }
+
+  if (grab_mode_ == GrabMode::Resize) {
+    const geom::Box nb = geom::resized_box({grab_box_.x, grab_box_.y, grab_box_.width, grab_box_.height},
+                                           grab_edges_, dx, dy, kMinContentW, kMinContentH);
+    const int x = nb.x, y = nb.y, w = nb.w, h = nb.h;
+    wlr_scene_node_set_position(&view->container_tree->node, x, y);
+    if (w != view->last_requested_content_w || h != view->last_requested_content_h) {
+      wlr_xdg_toplevel_set_size(view->xdg_toplevel, w, h);
+      view->last_requested_content_w = w;
+      view->last_requested_content_h = h;
+    }
+  }
+}
+
+void Server::end_grab() {
+  grab_mode_ = GrabMode::None;
+  grab_view_ = nullptr;
+  grab_edges_ = 0;
+  grab_unmaximize_pending_ = false;
+  set_default_cursor_image();
+}
+
+void Server::forget_view(View* view) {
+  if (grab_view_ == view) end_grab();
+  if (hover_view_ == view) hover_view_ = nullptr;
+  if (last_click_view_ == view) last_click_view_ = nullptr;
+}
+
+void Server::set_hover_view(View* view) {
+  if (hover_view_ && hover_view_ != view) {
+    hover_view_->set_hover_button(-1);
+  }
+  hover_view_ = view;
+}
+
+void Server::toggle_maximize(View* view) {
+  if (view && !view->fullscreen && !view->pinned) {
+    view->set_maximized(!view->maximized);
+  }
+}
+
+bool Server::is_double_click(View* view, uint32_t time_msec) {
+  const bool dbl = last_click_view_ == view && time_msec - last_click_time_ <= kDoubleClickMs;
+  last_click_view_ = dbl ? nullptr : view;
+  last_click_time_ = time_msec;
+  return dbl;
+}
+
 void Server::toggle_debug_overlay() {
   debug_overlay_enabled_ = !debug_overlay_enabled_;
   wlr_scene_node_set_enabled(&layer_debug_->node, debug_overlay_enabled_);
@@ -1456,8 +1759,17 @@ void Server::reload_keybinds_config() {
 }
 
 void Server::reload_theme_config() {
+  const bool was_desktop = desktop_layout();
   theme_config_ = load_theme_config();
+  titlebar_reload_palette(theme_config_);
+  if (was_desktop && !desktop_layout()) {
+    end_grab();
+    for (const std::unique_ptr<View>& view : views) {
+      if (view->maximized) view->set_maximized(false);
+    }
+  }
   for (const std::unique_ptr<View>& view : views) {
+    view->invalidate_titlebar();
     view->resize_border();
   }
   // gap_px lives on ThemeConfig too, so a live theme reload must re-tile
