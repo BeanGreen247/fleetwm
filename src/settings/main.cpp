@@ -809,27 +809,48 @@ struct Settings {
 
   void tab_bar(cairo_t*) {
     ui.heading("Workspace colors");
+    ui.paragraph("By default the active workspace uses the theme accent and the others stay transparent.");
+    auto hex_of = [](const Color& c) { return color_to_hex(c.r, c.g, c.b); };
     struct {
       const char* label;
       std::string* field;
-    } colors[] = {{"Inactive background", &bar.workspace_colors.inactive_bg},
-                  {"Inactive text", &bar.workspace_colors.inactive_fg},
-                  {"Active background", &bar.workspace_colors.active_bg},
-                  {"Active text", &bar.workspace_colors.active_fg}};
+      std::string theme_default;
+    } colors[] = {{"Inactive background", &bar.workspace_colors.inactive_bg, hex_of(pal.bg_secondary)},
+                  {"Inactive text", &bar.workspace_colors.inactive_fg, hex_of(pal.fg_secondary)},
+                  {"Active background", &bar.workspace_colors.active_bg, hex_of(pal.accent)},
+                  {"Active text", &bar.workspace_colors.active_fg, hex_of(pal.bg_primary)}};
+    bool any_override = false;
     for (auto& c : colors) {
       ui.row(c.label);
-      if (ui.color_button(c.field)) save_bar();
+      std::string shown = c.field->empty() ? c.theme_default : *c.field;
+      if (ui.color_button(&shown)) {
+        *c.field = shown;
+        save_bar();
+      }
+      if (!c.field->empty()) {
+        any_override = true;
+        ui.label("custom", true);
+      }
       ui.newline();
     }
+    if (any_override && ui.button("Reset to theme colors")) {
+      for (auto& c : colors) c.field->clear();
+      save_bar();
+    }
+    ui.newline();
     ui.space(4);
     if (ui.checkbox("Rounded workspace buttons", &bar.workspace_colors.buttons_rounded)) save_bar();
     ui.newline();
     ui.space(8);
     ui.heading("Layout");
     ui.row("Bar layout");
-    int layout = static_cast<int>(bar.layout);
-    if (ui.radio_group({"Full width", "Island (floating pill, 1366px+ displays)"}, &layout)) {
-      bar.layout = static_cast<BarLayout>(layout);
+    // Display order differs from the enum order: Capsules first (the default).
+    static const BarLayout kOrder[] = {BarLayout::Capsules, BarLayout::Island, BarLayout::Full};
+    int layout = 0;
+    for (int i = 0; i < 3; ++i)
+      if (kOrder[i] == bar.layout) layout = i;
+    if (ui.radio_group({"Floating capsules", "Island (one pill, 1366px+ displays)", "Full-width strip"}, &layout)) {
+      bar.layout = kOrder[layout];
       save_bar();
     }
     ui.newline();

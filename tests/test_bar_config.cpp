@@ -34,14 +34,14 @@ TEST(PowerMode, ProfilesDaemonNamesMatchPowerProfilesDaemon) {
 // -- BarLayout <-> string conversions --------------------------------------
 
 TEST(BarLayout, RoundTripsAllValues) {
-  for (BarLayout layout : {BarLayout::Full, BarLayout::Island}) {
+  for (BarLayout layout : {BarLayout::Full, BarLayout::Island, BarLayout::Capsules}) {
     EXPECT_EQ(bar_layout_from_string(bar_layout_to_string(layout)), layout);
   }
 }
 
 TEST(BarLayout, UnknownStringFallsBackToFull) {
-  EXPECT_EQ(bar_layout_from_string("bogus"), BarLayout::Full);
-  EXPECT_EQ(bar_layout_from_string(""), BarLayout::Full);
+  EXPECT_EQ(bar_layout_from_string("bogus"), BarLayout::Capsules);
+  EXPECT_EQ(bar_layout_from_string(""), BarLayout::Capsules);
 }
 
 // -- load_bar_config() / save_bar_config() --------------------------------
@@ -50,9 +50,9 @@ TEST_F(BarConfigTest, LoadWithNoConfigFileReturnsDefaults) {
   BarConfig config = load_bar_config();
   EXPECT_TRUE(config.clock.show_seconds);
   EXPECT_FALSE(config.clock.show_date);
-  EXPECT_EQ(config.workspace_colors.inactive_bg, "#3c3c3c");
+  EXPECT_TRUE(config.workspace_colors.inactive_bg.empty());
   EXPECT_EQ(config.power_mode, PowerMode::Normal);
-  EXPECT_EQ(config.layout, BarLayout::Full);
+  EXPECT_EQ(config.layout, BarLayout::Capsules);
 }
 
 TEST_F(BarConfigTest, SaveThenLoadRoundTripsNestedTables) {
@@ -95,7 +95,7 @@ TEST_F(BarConfigTest, WrongTypeLayoutIgnored) {
   std::ofstream out(dir_ / "fleetwm" / "bar.toml");
   out << "layout = 42\n";
   out.close();
-  EXPECT_EQ(load_bar_config().layout, BarLayout::Full);
+  EXPECT_EQ(load_bar_config().layout, BarLayout::Capsules);
 }
 
 TEST_F(BarConfigTest, UnknownLayoutStringFallsBackToFull) {
@@ -103,7 +103,7 @@ TEST_F(BarConfigTest, UnknownLayoutStringFallsBackToFull) {
   std::ofstream out(dir_ / "fleetwm" / "bar.toml");
   out << "layout = \"sidebar\"\n";
   out.close();
-  EXPECT_EQ(load_bar_config().layout, BarLayout::Full);
+  EXPECT_EQ(load_bar_config().layout, BarLayout::Capsules);
 }
 
 TEST_F(BarConfigTest, MissingNestedTableKeepsDefaults) {
@@ -115,7 +115,7 @@ TEST_F(BarConfigTest, MissingNestedTableKeepsDefaults) {
   BarConfig config = load_bar_config();
   EXPECT_EQ(config.power_mode, PowerMode::BatterySaver);
   EXPECT_TRUE(config.clock.show_seconds);
-  EXPECT_EQ(config.workspace_colors.inactive_bg, "#3c3c3c");
+  EXPECT_TRUE(config.workspace_colors.inactive_bg.empty());
 }
 
 TEST_F(BarConfigTest, PartiallyFilledNestedTableKeepsRemainingDefaults) {
@@ -159,7 +159,7 @@ TEST_F(BarConfigTest, WrongTypeInactiveBgIgnored) {
   std::ofstream out(dir_ / "fleetwm" / "bar.toml");
   out << "[workspace_colors]\ninactive_bg = 123\n";
   out.close();
-  EXPECT_EQ(load_bar_config().workspace_colors.inactive_bg, "#3c3c3c");
+  EXPECT_TRUE(load_bar_config().workspace_colors.inactive_bg.empty());
 }
 
 TEST_F(BarConfigTest, WrongTypeButtonsRoundedIgnored) {
@@ -201,8 +201,8 @@ TEST_F(BarConfigTest, OnlyActiveBgSetKeepsOtherWorkspaceColorDefaults) {
 
   BarConfig config = load_bar_config();
   EXPECT_EQ(config.workspace_colors.active_bg, "#00ff00");
-  EXPECT_EQ(config.workspace_colors.inactive_fg, "#ffffff");
-  EXPECT_EQ(config.workspace_colors.active_fg, "#000000");
+  EXPECT_TRUE(config.workspace_colors.inactive_fg.empty());
+  EXPECT_TRUE(config.workspace_colors.active_fg.empty());
   EXPECT_TRUE(config.workspace_colors.buttons_rounded);
 }
 
@@ -288,7 +288,7 @@ TEST_F(BarConfigTest, WrongTypeInactiveFgIgnored) {
   std::ofstream out(dir_ / "fleetwm" / "bar.toml");
   out << "[workspace_colors]\ninactive_fg = 7\n";
   out.close();
-  EXPECT_EQ(load_bar_config().workspace_colors.inactive_fg, "#ffffff");
+  EXPECT_TRUE(load_bar_config().workspace_colors.inactive_fg.empty());
 }
 
 TEST_F(BarConfigTest, WrongTypeActiveFgIgnored) {
@@ -296,7 +296,7 @@ TEST_F(BarConfigTest, WrongTypeActiveFgIgnored) {
   std::ofstream out(dir_ / "fleetwm" / "bar.toml");
   out << "[workspace_colors]\nactive_fg = true\n";
   out.close();
-  EXPECT_EQ(load_bar_config().workspace_colors.active_fg, "#000000");
+  EXPECT_TRUE(load_bar_config().workspace_colors.active_fg.empty());
 }
 
 TEST_F(BarConfigTest, WrongTypeShowYearIgnored) {
@@ -326,8 +326,8 @@ TEST_F(BarConfigTest, WorkspaceColorsAllFieldsRoundTrip) {
 
 TEST_F(BarConfigTest, DefaultWorkspaceColorsMatchOrangeAccentScheme) {
   BarConfig config;
-  EXPECT_EQ(config.workspace_colors.active_bg, "#ff7800");
-  EXPECT_EQ(config.workspace_colors.active_fg, "#000000");
+  EXPECT_TRUE(config.workspace_colors.active_bg.empty());
+  EXPECT_TRUE(config.workspace_colors.active_fg.empty());
 }
 
 TEST_F(BarConfigTest, ButtonsRoundedDefaultsTrue) {
@@ -382,6 +382,23 @@ TEST_F(BarConfigTest, ClockHourFormatAndTimezoneRoundTrip) {
   BarConfig loaded = load_bar_config();
   EXPECT_FALSE(loaded.clock.use_24h);
   EXPECT_EQ(loaded.clock.timezone, "America/New_York");
+}
+
+}  // namespace
+}  // namespace fleetwm
+
+namespace fleetwm {
+namespace {
+
+TEST_F(BarConfigTest, LegacyWorkspaceDefaultsBecomeThemeFollowing) {
+  std::filesystem::create_directories(dir_ / "fleetwm");
+  std::ofstream out(dir_ / "fleetwm" / "bar.toml");
+  out << "[workspace_colors]\ninactive_bg = '#3c3c3c'\ninactive_fg = '#ffffff'\n"
+         "active_bg = '#ff7800'\nactive_fg = '#000000'\n";
+  out.close();
+  const BarConfig c = load_bar_config();
+  EXPECT_TRUE(c.workspace_colors.active_bg.empty());
+  EXPECT_TRUE(c.workspace_colors.inactive_bg.empty());
 }
 
 }  // namespace

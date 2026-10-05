@@ -42,12 +42,14 @@ using namespace fleetwm::kit;
 using fleetwm::bar::Tray;
 using fleetwm::bar::VolumeSource;
 
-constexpr int kBarHeight = 24;
+constexpr int kBarHeight = 30;
+constexpr int kCapsuleTopMargin = 6, kCapsuleSideMargin = 8;
+constexpr double kWsH = 22;  // workspace button height
 constexpr int kReconnectMs = 2000;
 constexpr int kIslandMinMonitorWidth = 1366;
 constexpr int kIslandTopMargin = 5;
 constexpr int kIslandSideInset = 8;
-constexpr double kFont = 14.67;  // GTK default 11pt at 96 dpi
+constexpr double kFont = 13.5;
 constexpr uint32_t kBtnLeft = 0x110, kBtnRight = 0x111;
 
 struct Rect {
@@ -100,6 +102,7 @@ struct Bar {
   int tooltip_timer = 0;
 
   bool island = false;
+  BarLayout layout_style = BarLayout::Capsules;
 
   // -------------------------------------------------------------- layout --
   struct Metrics {
@@ -112,12 +115,12 @@ struct Bar {
   static constexpr double kBoxGap = 8;       // bar_box child spacing
   static constexpr double kMargin = 8;
   static constexpr double kTrayIcon = 16, kTraySpacing = 6;
-  static constexpr double kBoltW = 8, kBatteryW = 26 + kStatPad + kBoltW, kModeW = 12 + kStatPad, kPowerW = 32;
+  static constexpr double kBoltW = 8, kBatteryW = 26 + kStatPad + kBoltW, kModeW = 12 + kStatPad, kPowerW = 30;
 
   double ws_button_w(Metrics& m, int i) {
     char label[4];
     std::snprintf(label, sizeof label, "%d", (i + 1) % 10);
-    return std::max(32.0, m.text_w(label) + 12);
+    return std::max(26.0, m.text_w(label) + 12);
   }
   double ws_total(Metrics& m) {
     double t = 9;  // 1px spacing x 9
@@ -160,9 +163,15 @@ struct Bar {
     const int mw = monitor_width();
     if (layout == BarLayout::Island && mw > 0 && mw < kIslandMinMonitorWidth) layout = BarLayout::Full;
     island = layout == BarLayout::Island;
+    layout_style = layout;
     constexpr uint32_t T = ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP, L = ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT,
                        R = ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT;
-    if (!island) {
+    if (layout == BarLayout::Capsules) {
+      surface->set_anchor(T | L | R);
+      surface->set_margins(kCapsuleTopMargin, kCapsuleSideMargin, 0, kCapsuleSideMargin);
+      surface->set_exclusive_zone(kBarHeight + kCapsuleTopMargin);
+      surface->set_size(0, kBarHeight);
+    } else if (!island) {
       surface->set_anchor(T | L | R);
       surface->set_margins(0, 0, 0, 0);
       surface->set_exclusive_zone(kBarHeight);
@@ -315,55 +324,98 @@ struct Bar {
     cairo_restore(cr);
   }
 
+  // Draws "LABEL value" with a dim label and a bright value (hierarchy inside
+  // the status group instead of one flat grey run), returns the full width.
+  void draw_stat(cairo_t* cr, Metrics& m, const std::string& s, double x, double base) {
+    const size_t sp = s.find(' ');
+    if (sp == std::string::npos) {
+      draw_text(cr, s, x, base, kFont, pal.fg_primary);
+      return;
+    }
+    const std::string label = s.substr(0, sp + 1), value = s.substr(sp + 1);
+    const double lw = m.text_w(label);
+    Color dim = pal.fg_secondary;
+    dim.a = 0.75;
+    draw_text(cr, label, x, base, kFont, dim);
+    const bool na = value == "N/A" || value == "--%";
+    draw_text(cr, value, x + lw, base, kFont, na ? dim : pal.fg_primary);
+  }
+
   void draw(cairo_t* cr, int W, int H) {
     Metrics m{cr};
-    // Bar background (rounded unless the sharp corner style is selected;
-    // the island is always a pill).
-    const double radius = (island || pal.rounded) ? kBarHeight / 2.0 : 0;
-    rounded_rect(cr, 0, 0, W, H, radius);
-    set_source(cr, pal.bg_primary);
-    cairo_fill(cr);
+    const bool capsules = layout_style == BarLayout::Capsules;
+    const double radius = (island || pal.rounded) ? H / 2.0 : (capsules ? 6.0 : 0.0);
+    Color bg = pal.bg_primary;
+    bg.a = 0.94;  // the wallpaper shows through very slightly
 
     const TextExtents fe = measure_text(cr, "Ag", kFont);
     const double base = (H - fe.height) / 2.0 + fe.ascent;
 
     const WorkspaceColors& wc = config.workspace_colors;
-    const Color in_bg = parse_color(wc.inactive_bg, {0.235, 0.235, 0.235}),
-                in_fg = parse_color(wc.inactive_fg, {1, 1, 1}),
-                ac_bg = parse_color(wc.active_bg, {1, 0.47, 0}),
-                ac_fg = parse_color(wc.active_fg, {0, 0, 0});
-    const double btn_r = wc.buttons_rounded ? 6 : 0;
+    const Color in_bg = parse_color(wc.inactive_bg, {0, 0, 0, 0}),
+                in_fg = parse_color(wc.inactive_fg, pal.fg_secondary),
+                ac_bg = parse_color(wc.active_bg, pal.accent),
+                ac_fg = parse_color(wc.active_fg, pal.bg_primary);
+    const double btn_r = wc.buttons_rounded ? kWsH / 2.0 : 0;
 
-    const double nat = natural_width(m);
-    const double spacer = std::max(0.0, (W - nat) / 2.0);
+    // ---- group geometry ----
+    const double pad = capsules ? 10 : 0;
+    const double ws_w = ws_total(m), clock_w = m.text_w(clock_text, true), right_w = right_total(m);
+    double ws_x, clock_x, right_x;  // content x of each group
+    if (capsules) {
+      const double left_pill = ws_w + 2 * pad, right_pill = right_w + 2 * pad, clock_pill = clock_w + 2 * pad;
+      double cx = (W - clock_pill) / 2.0;
+      cx = std::max(cx, left_pill + 8);
+      cx = std::min(cx, W - right_pill - 8 - clock_pill);
+      ws_x = pad;
+      clock_x = cx + pad;
+      right_x = W - right_pill + pad;
+      auto pill = [&](double x, double w) {
+        rounded_rect(cr, x, 0, w, H, radius);
+        set_source(cr, bg);
+        cairo_fill(cr);
+      };
+      pill(0, left_pill);
+      pill(cx, clock_pill);
+      pill(W - right_pill, right_pill);
+    } else {
+      rounded_rect(cr, 0, 0, W, H, radius);
+      set_source(cr, bg);
+      cairo_fill(cr);
+      const double nat = natural_width(m);
+      const double spacer = std::max(0.0, (W - nat) / 2.0);
+      ws_x = kMargin;
+      clock_x = kMargin + ws_w + kBoxGap + spacer + kBoxGap;
+      right_x = W - kMargin - right_w;
+    }
 
-    double x = kMargin;
-    // Workspace buttons.
+    // ---- workspaces ----
+    double x = ws_x;
     for (int i = 0; i < 10; ++i) {
-      const double bw = ws_button_w(m, i), bh = 20, by = (H - bh) / 2.0;
+      const double bw = ws_button_w(m, i), bh = kWsH, by = (H - bh) / 2.0;
       ws_rect[i] = {x, by, bw, bh};
       const bool active = i == active_workspace;
-      rounded_rect(cr, x, by, bw, bh, btn_r);
-      set_source(cr, active ? ac_bg : in_bg);
-      cairo_fill(cr);
+      if (active || in_bg.a > 0) {
+        rounded_rect(cr, x, by, bw, bh, btn_r);
+        set_source(cr, active ? ac_bg : in_bg);
+        cairo_fill(cr);
+      }
       char label[4];
       std::snprintf(label, sizeof label, "%d", (i + 1) % 10);
-      const double tw = m.text_w(label);
-      draw_text(cr, label, x + (bw - tw) / 2.0, base, kFont, active ? ac_fg : in_fg);
+      const double tw = m.text_w(label, active);
+      draw_text(cr, label, x + (bw - tw) / 2.0, base, kFont, active ? ac_fg : in_fg, active);
       x += bw + 1;
     }
-    x += -1 + kBoxGap + spacer + kBoxGap;
 
-    // Clock (accent, bold).
-    draw_text(cr, clock_text, x, base, kFont, pal.accent, true);
+    // ---- clock ----
+    draw_text(cr, clock_text, clock_x, base, kFont, pal.accent, true);
 
-    // Right group, laid out from the right edge inward.
-    const double right_w = right_total(m);
-    double rx = W - kMargin - right_w;
+    // ---- status group, laid out from its left edge ----
+    double rx = right_x;
     auto stat = [&](const std::string& s, Rect* rect) {
       const double tw = m.text_w(s);
       if (rect) *rect = {rx, 0, tw + kStatPad, static_cast<double>(H)};
-      draw_text(cr, s, rx + kStatPad / 2, base, kFont, pal.fg_secondary);
+      draw_stat(cr, m, s, rx + kStatPad / 2, base);
       rx += tw + kStatPad + kRightGap;
     };
     stat(cpu_text, nullptr);
@@ -403,13 +455,17 @@ struct Bar {
     }
     rx += kBatteryW + kRightGap;
 
-    // Power button.
-    const double pbh = 20, pby = (H - pbh) / 2.0;
+    // Power button: a bare glyph that lights up on hover (no filled box).
+    const double pbh = kWsH, pby = (H - pbh) / 2.0;
     power_rect = {rx, pby, kPowerW, pbh};
-    rounded_rect(cr, rx, pby, kPowerW, pbh, btn_r);
-    set_source(cr, in_bg);
-    cairo_fill(cr);
-    draw_power_glyph(cr, rx + kPowerW / 2, H / 2.0, hover_power ? pal.accent : in_fg);
+    if (hover_power) {
+      rounded_rect(cr, rx, pby, kPowerW, pbh, btn_r);
+      Color hot = pal.accent;
+      hot.a = 0.18;
+      set_source(cr, hot);
+      cairo_fill(cr);
+    }
+    draw_power_glyph(cr, rx + kPowerW / 2, H / 2.0, hover_power ? pal.accent : pal.fg_secondary);
   }
 
   // -------------------------------------------------------------- sources --
@@ -668,9 +724,9 @@ struct Bar {
       const double cx = battery_rect.x + battery_rect.w / 2;
       tooltip_timer = app.add_oneshot(500, [this, cx] {
         tooltip_timer = 0;
-        const int left = island ? island_left() : 0;
+        const int left = island ? island_left() : layout_style == BarLayout::Capsules ? kCapsuleSideMargin : 0;
         tooltip = std::make_unique<Tooltip>(app, pal, battery_tooltip_text(), left + static_cast<int>(cx),
-                                            (island ? kIslandTopMargin : 0) + kBarHeight + 4);
+                                            (island ? kIslandTopMargin : layout_style == BarLayout::Capsules ? kCapsuleTopMargin : 0) + kBarHeight + 4);
       });
     }
   }

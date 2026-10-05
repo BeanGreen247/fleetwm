@@ -28,10 +28,13 @@ struct ClockFormat {
 // ever mean something to fleetwm-bar's workspace buttons, distinct from
 // the compositor's own window/focus-border theming.
 struct WorkspaceColors {
-  std::string inactive_bg = "#3c3c3c";
-  std::string inactive_fg = "#ffffff";
-  std::string active_bg = "#ff7800";
-  std::string active_fg = "#000000";
+  // Empty = follow the theme: inactive buttons are transparent with the
+  // secondary text colour, the active one is a pill in the accent colour.
+  // Any "#rrggbb" or "#rrggbbaa" value overrides.
+  std::string inactive_bg;
+  std::string inactive_fg;
+  std::string active_bg;
+  std::string active_fg;
   // Independent of theme.toml's own corner_style (which governs window/
   // launcher/panel corners) -- explicit user request to be able to pick
   // a rectangle workspace-switcher even while windows stay rounded, or
@@ -62,15 +65,16 @@ enum class PowerMode {
 // set, so a bar.toml written on a wide display doesn't leave a
 // too-narrow display with an unusable sliver bar.
 enum class BarLayout {
-  Full,
-  Island,
+  Full,      // classic edge-to-edge strip
+  Island,    // one floating pill, centred (needs a >= 1366 px output)
+  Capsules,  // three floating pills: workspaces | clock | status (default)
 };
 
 struct BarConfig {
   ClockFormat clock;
   WorkspaceColors workspace_colors;
   PowerMode power_mode = PowerMode::Normal;
-  BarLayout layout = BarLayout::Full;
+  BarLayout layout = BarLayout::Capsules;
 };
 
 std::string power_mode_to_string(PowerMode mode);

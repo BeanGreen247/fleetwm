@@ -76,7 +76,7 @@ struct ThemeConfig {
   // spacing against the top bar or screen edges -- that's governed
   // separately by the layer-shell exclusive zone (kExclusiveZoneGapPx in
   // output.cpp).
-  int gap_px = 2;
+  int gap_px = 8;
   // Adaptive render throttling (see RenderMode above). custom_fps_lock is
   // only meaningful when render_mode == Custom; clamped to [24, 5000] by
   // both the Settings spinbutton and load_theme_config().
