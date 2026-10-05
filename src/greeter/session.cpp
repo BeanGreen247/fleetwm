@@ -29,6 +29,12 @@ std::vector<std::string> build_env(const passwd* pw,
   // /usr/sbin, so without them those commands are "not found" in the session'"'"'s terminals.
   env.emplace_back("PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin");
   env.emplace_back("XDG_SESSION_TYPE=wayland");
+  // Names the desktop: xdg-desktop-portal picks its backend from it (see
+  // packaging/fleetwm-portals.conf), which is how Chromium and libadwaita learn the dark/light
+  // setting. Qt applications follow the GTK theme through the gtk3 platform theme.
+  env.emplace_back("XDG_CURRENT_DESKTOP=fleetwm");
+  env.emplace_back("XDG_SESSION_DESKTOP=fleetwm");
+  env.emplace_back("QT_QPA_PLATFORMTHEME=gtk3");
   // Same rationale as fleetwm-greeter@.service's own copy of this var
   // (see packaging/fleetwm-greeter@.service): on hardware/VMs with no
   // hardware-accelerated EGL, wlroots refuses to fall back to llvmpipe

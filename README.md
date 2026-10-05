@@ -112,6 +112,14 @@ All shortcuts can be changed in `~/.config/fleetwm/keybinds.toml`. The full list
 format are in [docs/SHORTCUTS.md](docs/SHORTCUTS.md). The shortcuts are also listed in the app
 that opens with Super+/.
 
+## Dark and light mode for other apps
+
+Picking the Light theme in Settings tells GTK apps, Chromium and Qt apps to use their light
+look, and every other theme uses the dark look. This works through GTK's settings, GSettings
+and `xdg-desktop-portal-gtk` (the installer adds them). Apps read the setting when they start,
+so reopen an already running app after changing the theme. Plain X11 programs have no theme
+setting of their own.
+
 ## Login screen
 
 The installer turns on the Fleetwm login screen (`fleetwm-greet`) for the first text console

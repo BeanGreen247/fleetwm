@@ -84,6 +84,7 @@ libcommon_core = static_library(
     'window_list.cpp',
     'shortcut_list.cpp',
     'power_config.cpp',
+    'app_appearance.cpp',
   ),
   dependencies: [tomlplusplus_dep],
   include_directories: include_directories('.'),
