@@ -15,7 +15,7 @@ extern "C" {
 namespace fleetwm::bar {
 
 namespace {
-constexpr guint kWpctlPollIntervalMs = 5000;
+constexpr int kWpctlPollIntervalMs = 5000;
 }  // namespace
 
 void VolumeSource::start(Callback on_update) {
@@ -30,7 +30,7 @@ void VolumeSource::start(Callback on_update) {
 
 VolumeSource::~VolumeSource() {
   if (wpctl_timer_id_ != 0) {
-    g_source_remove(wpctl_timer_id_);
+    app_.unwatch(wpctl_timer_id_);
   }
 #if FLEETWM_HAVE_PIPEWIRE
   teardown_pipewire();
@@ -41,12 +41,7 @@ VolumeSource::~VolumeSource() {
 
 void VolumeSource::start_wpctl_fallback() {
   poll_wpctl_once();
-  wpctl_timer_id_ = g_timeout_add(kWpctlPollIntervalMs, on_wpctl_poll_tick, this);
-}
-
-gboolean VolumeSource::on_wpctl_poll_tick(gpointer user_data) {
-  static_cast<VolumeSource*>(user_data)->poll_wpctl_once();
-  return G_SOURCE_CONTINUE;
+  wpctl_timer_id_ = app_.add_timer(kWpctlPollIntervalMs, [this] { poll_wpctl_once(); });
 }
 
 void VolumeSource::poll_wpctl_once() {
@@ -89,25 +84,11 @@ void VolumeSource::poll_wpctl_once() {
 // g_idle_add before touching on_update_/any GTK state, since GTK is not
 // thread-safe.
 
-namespace {
-struct ReportData {
-  VolumeSource* self;
-  int percent;
-  bool available;
-};
-}  // namespace
-
 void VolumeSource::report(int percent, bool available) {
-  g_idle_add(on_idle_report, new ReportData{this, percent, available});
-}
-
-gboolean VolumeSource::on_idle_report(gpointer data) {
-  auto* rd = static_cast<ReportData*>(data);
-  if (rd->self->on_update_) {
-    rd->self->on_update_(rd->percent, rd->available);
-  }
-  delete rd;
-  return G_SOURCE_REMOVE;
+  // Called from PipeWire's own thread; hop onto the main loop thread.
+  app_.post([this, percent, available] {
+    if (on_update_) on_update_(percent, available);
+  });
 }
 
 void VolumeSource::on_sink_node_param(void* data, int, uint32_t id, uint32_t, uint32_t,
@@ -153,8 +134,58 @@ int VolumeSource::on_metadata_property(void* data, uint32_t, const char* key, co
   std::string name = fleetwm::common::extract_json_string_field(value, "name");
   if (!name.empty()) {
     self->default_sink_name_ = name;
+    self->try_bind_sink();
   }
   return 0;
+}
+
+void VolumeSource::on_registry_global_remove(void* data, uint32_t id) {
+  auto* self = static_cast<VolumeSource*>(data);
+  self->sink_candidates_.erase(id);
+  if (self->sink_node_proxy_ && self->sink_node_id_ == id) {
+    spa_hook_remove(&self->sink_node_listener_);
+    pw_proxy_destroy(self->sink_node_proxy_);
+    self->sink_node_proxy_ = nullptr;
+    self->sink_node_id_ = 0xffffffff;
+    self->report(0, false);
+    self->try_bind_sink();
+  }
+}
+
+void VolumeSource::try_bind_sink() {
+  if (default_sink_name_.empty()) {
+    return;
+  }
+  if (sink_node_proxy_) {
+    auto it = sink_candidates_.find(sink_node_id_);
+    if (it != sink_candidates_.end() && it->second == default_sink_name_) {
+      return;  // already following the default sink
+    }
+    spa_hook_remove(&sink_node_listener_);
+    pw_proxy_destroy(sink_node_proxy_);
+    sink_node_proxy_ = nullptr;
+    sink_node_id_ = 0xffffffff;
+  }
+  for (const auto& [id, name] : sink_candidates_) {
+    if (name != default_sink_name_) {
+      continue;
+    }
+    sink_node_id_ = id;
+    sink_node_proxy_ = static_cast<pw_proxy*>(
+        pw_registry_bind(pw_registry_, id, PW_TYPE_INTERFACE_Node, PW_VERSION_NODE, 0));
+    if (!sink_node_proxy_) {
+      return;
+    }
+    static const pw_node_events node_events = {
+        .version = PW_VERSION_NODE_EVENTS,
+        .info = on_sink_node_info,
+        .param = on_sink_node_param,
+    };
+    pw_proxy_add_object_listener(sink_node_proxy_, &sink_node_listener_, &node_events, this);
+    uint32_t param_id = SPA_PARAM_Props;
+    pw_node_subscribe_params(reinterpret_cast<pw_node*>(sink_node_proxy_), &param_id, 1);
+    return;
+  }
 }
 
 void VolumeSource::on_registry_global(void* data, uint32_t id, uint32_t, const char* type,
@@ -183,31 +214,14 @@ void VolumeSource::on_registry_global(void* data, uint32_t id, uint32_t, const c
     return;
   }
 
-  if (std::string(type) == PW_TYPE_INTERFACE_Node && self->sink_node_proxy_ == nullptr) {
+  if (std::string(type) == PW_TYPE_INTERFACE_Node) {
     const char* media_class = props ? spa_dict_lookup(props, PW_KEY_MEDIA_CLASS) : nullptr;
     const char* node_name = props ? spa_dict_lookup(props, "node.name") : nullptr;
-    if (!media_class || std::string(media_class) != "Audio/Sink") {
+    if (!media_class || std::string(media_class) != "Audio/Sink" || !node_name) {
       return;
     }
-    if (!node_name || self->default_sink_name_.empty() ||
-        std::string(node_name) != self->default_sink_name_) {
-      return;
-    }
-    self->sink_node_id_ = id;
-    self->sink_node_proxy_ = static_cast<pw_proxy*>(
-        pw_registry_bind(self->pw_registry_, id, type, PW_VERSION_NODE, 0));
-    if (!self->sink_node_proxy_) {
-      return;
-    }
-    static const pw_node_events node_events = {
-        .version = PW_VERSION_NODE_EVENTS,
-        .info = on_sink_node_info,
-        .param = on_sink_node_param,
-    };
-    pw_proxy_add_object_listener(self->sink_node_proxy_, &self->sink_node_listener_, &node_events,
-                                  self);
-    uint32_t param_id = SPA_PARAM_Props;
-    pw_node_subscribe_params(reinterpret_cast<pw_node*>(self->sink_node_proxy_), &param_id, 1);
+    self->sink_candidates_[id] = node_name;
+    self->try_bind_sink();
   }
 }
 
@@ -246,6 +260,7 @@ bool VolumeSource::start_pipewire() {
   static const pw_registry_events registry_events = {
       .version = PW_VERSION_REGISTRY_EVENTS,
       .global = on_registry_global,
+      .global_remove = on_registry_global_remove,
   };
   pw_registry_add_listener(pw_registry_, &registry_listener_, &registry_events, this);
   pw_thread_loop_unlock(pw_loop_);

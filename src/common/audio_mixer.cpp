@@ -13,7 +13,8 @@ extern "C" {
 
 namespace fleetwm::common {
 
-bool AudioMixer::start(MasterCallback on_master, StreamsCallback on_streams) {
+bool AudioMixer::start(MasterCallback on_master, StreamsCallback on_streams, Poster post) {
+  post_ = std::move(post);
   on_master_ = std::move(on_master);
   on_streams_ = std::move(on_streams);
   sink_node_ = std::make_unique<NodeState>();
@@ -35,12 +36,12 @@ AudioMixer::~AudioMixer() {
   teardown();
 }
 
-// -- reporting (marshaled onto the GLib main context) ----------------------
+// -- reporting (marshaled onto the application's main loop) -----------------
 //
 // Called from PipeWire's own thread-loop thread; report_master()/
 // report_streams() themselves only read plain data already copied into
 // NodeState by apply_props_param(), so calling them straight from
-// g_idle_add's main-thread callback (not from the PipeWire thread that
+// the poster's main-thread callback (not from the PipeWire thread that
 // received the event) is safe -- same split VolumeSource::report() uses.
 
 void AudioMixer::report_master() {
@@ -61,11 +62,14 @@ void AudioMixer::report_streams() {
   on_streams_(streams);
 }
 
-gboolean AudioMixer::on_idle_report(gpointer data) {
-  auto* self = static_cast<AudioMixer*>(data);
-  self->report_master();
-  self->report_streams();
-  return G_SOURCE_REMOVE;
+void AudioMixer::schedule_report() {
+  if (!post_) {
+    return;
+  }
+  post_([this] {
+    report_master();
+    report_streams();
+  });
 }
 
 // -- shared Props-param parsing ---------------------------------------------
@@ -102,7 +106,7 @@ void AudioMixer::on_sink_node_param(void* data, int, uint32_t id, uint32_t, uint
   }
   apply_props_param(self->sink_node_.get(), param);
   self->available_ = true;
-  g_idle_add(on_idle_report, self);
+  self->schedule_report();
 }
 
 void AudioMixer::on_sink_node_info(void*, const pw_node_info*) {
@@ -120,7 +124,7 @@ void AudioMixer::on_stream_node_param(void* data, int, uint32_t id, uint32_t, ui
   }
   apply_props_param(node, param);
   node->self->available_ = true;
-  g_idle_add(on_idle_report, node->self);
+  node->self->schedule_report();
 }
 
 void AudioMixer::on_stream_node_info(void*, const pw_node_info*) {
@@ -138,8 +142,46 @@ int AudioMixer::on_metadata_property(void* data, uint32_t, const char* key, cons
   std::string name = extract_json_string_field(value, "name");
   if (!name.empty()) {
     self->default_sink_name_ = name;
+    self->try_bind_sink();
   }
   return 0;
+}
+
+void AudioMixer::try_bind_sink() {
+  if (default_sink_name_.empty()) {
+    return;
+  }
+  if (sink_node_->proxy) {
+    auto it = sink_candidates_.find(sink_node_id_);
+    if (it != sink_candidates_.end() && it->second == default_sink_name_) {
+      return;
+    }
+    spa_hook_remove(&sink_node_->listener);
+    pw_proxy_destroy(sink_node_->proxy);
+    sink_node_->proxy = nullptr;
+    sink_node_id_ = 0xffffffff;
+  }
+  for (const auto& [id, name] : sink_candidates_) {
+    if (name != default_sink_name_) {
+      continue;
+    }
+    sink_node_id_ = id;
+    sink_node_->node_id = id;
+    sink_node_->proxy = static_cast<pw_proxy*>(
+        pw_registry_bind(pw_registry_, id, PW_TYPE_INTERFACE_Node, PW_VERSION_NODE, 0));
+    if (!sink_node_->proxy) {
+      return;
+    }
+    static const pw_node_events node_events = {
+        .version = PW_VERSION_NODE_EVENTS,
+        .info = on_sink_node_info,
+        .param = on_sink_node_param,
+    };
+    pw_proxy_add_object_listener(sink_node_->proxy, &sink_node_->listener, &node_events, this);
+    uint32_t param_id = SPA_PARAM_Props;
+    pw_node_subscribe_params(reinterpret_cast<pw_node*>(sink_node_->proxy), &param_id, 1);
+    return;
+  }
 }
 
 void AudioMixer::on_registry_global(void* data, uint32_t id, uint32_t, const char* type, uint32_t,
@@ -176,28 +218,12 @@ void AudioMixer::on_registry_global(void* data, uint32_t id, uint32_t, const cha
     return;
   }
 
-  if (std::string(media_class) == "Audio/Sink" && self->sink_node_->proxy == nullptr) {
+  if (std::string(media_class) == "Audio/Sink") {
     const char* node_name = spa_dict_lookup(props, "node.name");
-    if (!node_name || self->default_sink_name_.empty() ||
-        std::string(node_name) != self->default_sink_name_) {
-      return;
+    if (node_name) {
+      self->sink_candidates_[id] = node_name;
+      self->try_bind_sink();
     }
-    self->sink_node_id_ = id;
-    self->sink_node_->node_id = id;
-    self->sink_node_->proxy = static_cast<pw_proxy*>(
-        pw_registry_bind(self->pw_registry_, id, type, PW_VERSION_NODE, 0));
-    if (!self->sink_node_->proxy) {
-      return;
-    }
-    static const pw_node_events node_events = {
-        .version = PW_VERSION_NODE_EVENTS,
-        .info = on_sink_node_info,
-        .param = on_sink_node_param,
-    };
-    pw_proxy_add_object_listener(self->sink_node_->proxy, &self->sink_node_->listener,
-                                  &node_events, self);
-    uint32_t param_id = SPA_PARAM_Props;
-    pw_node_subscribe_params(reinterpret_cast<pw_node*>(self->sink_node_->proxy), &param_id, 1);
     return;
   }
 
@@ -237,6 +263,16 @@ void AudioMixer::on_registry_global(void* data, uint32_t id, uint32_t, const cha
 
 void AudioMixer::on_registry_global_remove(void* data, uint32_t id) {
   auto* self = static_cast<AudioMixer*>(data);
+  self->sink_candidates_.erase(id);
+  if (self->sink_node_->proxy && self->sink_node_id_ == id) {
+    spa_hook_remove(&self->sink_node_->listener);
+    pw_proxy_destroy(self->sink_node_->proxy);
+    self->sink_node_->proxy = nullptr;
+    self->sink_node_id_ = 0xffffffff;
+    self->available_ = false;
+    self->schedule_report();
+    self->try_bind_sink();
+  }
   auto it = self->streams_.find(id);
   if (it == self->streams_.end()) {
     return;
@@ -245,7 +281,7 @@ void AudioMixer::on_registry_global_remove(void* data, uint32_t id) {
     pw_proxy_destroy(it->second->proxy);
   }
   self->streams_.erase(it);
-  g_idle_add(on_idle_report, self);
+  self->schedule_report();
 }
 
 // -- connect/teardown --------------------------------------------------------
@@ -411,7 +447,7 @@ void AudioMixer::set_stream_muted(uint32_t node_id, bool muted) {
 
 namespace fleetwm::common {
 
-bool AudioMixer::start(MasterCallback on_master, StreamsCallback on_streams) {
+bool AudioMixer::start(MasterCallback on_master, StreamsCallback on_streams, Poster) {
   if (on_master) {
     on_master(0, false, false);
   }

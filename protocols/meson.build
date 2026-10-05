@@ -84,3 +84,57 @@ protocols_dep = declare_dependency(
   link_with: protocols_lib,
   sources: protocol_headers,
 )
+
+# Client-side bindings (xdg-shell + wlr-layer-shell) for the lean, GTK-free
+# Wayland clients (fleetwm-wallpaper). Same `namespace` -> `namespace_`
+# patch as the server header above, applied to the client header.
+client_protocol_headers = []
+client_protocol_sources = []
+foreach p : protocols
+  name = p[0]
+  xml = p[1]
+  if name in ['xdg-shell', 'wlr-layer-shell-unstable-v1']
+    if name == 'wlr-layer-shell-unstable-v1'
+      raw = custom_target(
+        name + '-client-header-raw',
+        input: xml,
+        output: name + '-client-raw.h',
+        command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
+      )
+      client_protocol_headers += custom_target(
+        name + '-client-header',
+        input: raw,
+        output: name + '-client-protocol.h',
+        command: [
+          find_program('python3'),
+          meson.project_source_root() / 'scripts' / 'patch-layer-shell-namespace.py',
+          '@INPUT@', '@OUTPUT@',
+        ],
+      )
+    else
+      client_protocol_headers += custom_target(
+        name + '-client-header',
+        input: xml,
+        output: name + '-client-protocol.h',
+        command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
+      )
+    endif
+    client_protocol_sources += custom_target(
+      name + '-client-source',
+      input: xml,
+      output: name + '-client-protocol.c',
+      command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
+    )
+  endif
+endforeach
+
+client_protocols_lib = static_library(
+  'fleetwm-client-protocols',
+  client_protocol_sources,
+  dependencies: [wayland_client],
+)
+
+client_protocols_dep = declare_dependency(
+  link_with: client_protocols_lib,
+  sources: client_protocol_headers,
+)

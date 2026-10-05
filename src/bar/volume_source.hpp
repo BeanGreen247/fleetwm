@@ -1,9 +1,10 @@
 #pragma once
 
-#include <glib.h>
-
 #include <functional>
+#include <map>
 #include <string>
+
+#include "lean.hpp"
 
 #if FLEETWM_HAVE_PIPEWIRE
 extern "C" {
@@ -33,6 +34,8 @@ class VolumeSource {
   // (called once immediately if an initial value is already known, then
   // again on every subsequent change/poll). `on_update` is stored and
   // called for the lifetime of this object -- must outlive it.
+  // `app` must outlive this object (timers / cross-thread posting).
+  explicit VolumeSource(lean::App& app) : app_(app) {}
   void start(Callback on_update);
 
   ~VolumeSource();
@@ -43,9 +46,9 @@ class VolumeSource {
   void teardown_pipewire();
 #endif
   void start_wpctl_fallback();
-  static gboolean on_wpctl_poll_tick(gpointer user_data);
   void poll_wpctl_once();
 
+  lean::App& app_;
   Callback on_update_;
 
 #if FLEETWM_HAVE_PIPEWIRE
@@ -69,8 +72,13 @@ class VolumeSource {
   // g_idle_add rather than touching on_update_/GTK state directly, since
   // GTK is not thread-safe. on_idle_report() is the g_idle_add
   // trampoline that runs the deferred call on the main thread.
+  // Audio/Sink nodes seen so far (id -> node.name). The default-sink metadata
+  // can arrive before OR after the sink node is announced, so binding happens
+  // whenever either side changes (and re-binds if the default sink changes).
+  std::map<uint32_t, std::string> sink_candidates_;
+  void try_bind_sink();
+  static void on_registry_global_remove(void* data, uint32_t id);
   void report(int percent, bool available);
-  static gboolean on_idle_report(gpointer data);
 
   static void on_registry_global(void* data, uint32_t id, uint32_t permissions, const char* type,
                                   uint32_t version, const spa_dict* props);
@@ -81,7 +89,7 @@ class VolumeSource {
   static void on_sink_node_info(void* data, const struct pw_node_info* info);
 #endif
 
-  guint wpctl_timer_id_ = 0;
+  int wpctl_timer_id_ = 0;
 };
 
 }  // namespace fleetwm::bar

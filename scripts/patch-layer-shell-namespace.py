@@ -25,7 +25,7 @@ def main() -> int:
         text = f.read()
     patched = text.replace("*namespace)", "*namespace_)").replace(
         "*namespace;", "*namespace_;"
-    )
+    ).replace(", namespace)", ", namespace_)")  # client header: argument pass-through
     with open(sys.argv[2], "w") as f:
         f.write(patched)
     return 0
