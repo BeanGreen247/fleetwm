@@ -159,6 +159,14 @@ class View {
   // from construction; resize_border() below applies real dimensions
   // once the surface's actual size is known at map time).
   void set_pinned(bool pinned);
+  // Puts the window in the scene layer that matches its state: fullscreen, always on
+  // top (Settings, dialogs), pinned, or an ordinary window.
+  void update_stacking_layer();
+  // Tells the client its size is decided by the compositor (xdg "tiled" on all edges), so
+  // terminals and other apps keep the window size when their content changes (a bigger
+  // font should shrink the text grid, not grow the window). Leaves dialogs and the
+  // settings window, which size themselves, alone.
+  void update_size_policy();
   void set_floating(bool floating);
   // Requests/clears fullscreen: acknowledges the client's request via
   // wlr_xdg_toplevel_set_fullscreen(), reparents container_tree into/out

@@ -91,6 +91,8 @@ struct BarConfig {
   PowerMode power_mode = PowerMode::Normal;
   BarLayout layout = BarLayout::Capsules;
   TaskbarPosition taskbar_position = TaskbarPosition::Bottom;
+  // How many workspace buttons the Desktop-layout taskbar shows (1-10).
+  int taskbar_workspaces = 4;
 };
 
 std::string power_mode_to_string(PowerMode mode);

@@ -545,3 +545,83 @@ TEST(TileZones, MoreThanThreeWindowsHaveNoZones) {
     for (SnapZone z : zones) EXPECT_EQ(z, SnapZone::None);
   }
 }
+
+// ---- snap_step (Super+arrows) -------------------------------------------------
+
+namespace {
+using K = SnapStep::Kind;
+SnapStep to(SnapZone z) { return {K::Zone, z}; }
+}  // namespace
+
+TEST(SnapStep, LeftSnapsNormalAndMaximizedWindowsToTheLeftHalf) {
+  EXPECT_EQ(snap_step(SnapZone::None, Direction::Left), to(SnapZone::Left));
+  EXPECT_EQ(snap_step(SnapZone::Maximize, Direction::Left), to(SnapZone::Left));
+}
+
+TEST(SnapStep, RightSnapsNormalAndMaximizedWindowsToTheRightHalf) {
+  EXPECT_EQ(snap_step(SnapZone::None, Direction::Right), to(SnapZone::Right));
+  EXPECT_EQ(snap_step(SnapZone::Maximize, Direction::Right), to(SnapZone::Right));
+}
+
+TEST(SnapStep, OppositeKeyUndoesAHalfSnap) {
+  EXPECT_EQ(snap_step(SnapZone::Right, Direction::Left).kind, K::Restore);
+  EXPECT_EQ(snap_step(SnapZone::Left, Direction::Right).kind, K::Restore);
+}
+
+TEST(SnapStep, SameKeyAgainMovesToTheNeighbouringScreen) {
+  EXPECT_EQ(snap_step(SnapZone::Left, Direction::Left).kind, K::MovePrevScreen);
+  EXPECT_EQ(snap_step(SnapZone::Right, Direction::Right).kind, K::MoveNextScreen);
+  // ...and the window keeps its half on the new screen
+  EXPECT_EQ(snap_step(SnapZone::Left, Direction::Left).zone, SnapZone::Left);
+  EXPECT_EQ(snap_step(SnapZone::Right, Direction::Right).zone, SnapZone::Right);
+}
+
+TEST(SnapStep, UpMaximizesOrMakesATopQuarter) {
+  EXPECT_EQ(snap_step(SnapZone::None, Direction::Up), to(SnapZone::Maximize));
+  EXPECT_EQ(snap_step(SnapZone::Left, Direction::Up), to(SnapZone::TopLeft));
+  EXPECT_EQ(snap_step(SnapZone::Right, Direction::Up), to(SnapZone::TopRight));
+  EXPECT_EQ(snap_step(SnapZone::TopLeft, Direction::Up), to(SnapZone::Maximize));
+  EXPECT_EQ(snap_step(SnapZone::TopRight, Direction::Up), to(SnapZone::Maximize));
+  EXPECT_EQ(snap_step(SnapZone::Maximize, Direction::Up).kind, K::Nothing);
+}
+
+TEST(SnapStep, UpFromABottomQuarterGoesBackToTheHalf) {
+  EXPECT_EQ(snap_step(SnapZone::BottomLeft, Direction::Up), to(SnapZone::Left));
+  EXPECT_EQ(snap_step(SnapZone::BottomRight, Direction::Up), to(SnapZone::Right));
+}
+
+TEST(SnapStep, DownRestoresMinimizesOrMakesABottomQuarter) {
+  EXPECT_EQ(snap_step(SnapZone::Maximize, Direction::Down).kind, K::Restore);
+  EXPECT_EQ(snap_step(SnapZone::None, Direction::Down).kind, K::Minimize);
+  EXPECT_EQ(snap_step(SnapZone::Left, Direction::Down), to(SnapZone::BottomLeft));
+  EXPECT_EQ(snap_step(SnapZone::Right, Direction::Down), to(SnapZone::BottomRight));
+  EXPECT_EQ(snap_step(SnapZone::TopLeft, Direction::Down), to(SnapZone::Left));
+  EXPECT_EQ(snap_step(SnapZone::TopRight, Direction::Down), to(SnapZone::Right));
+  EXPECT_EQ(snap_step(SnapZone::BottomLeft, Direction::Down).kind, K::Restore);
+  EXPECT_EQ(snap_step(SnapZone::BottomRight, Direction::Down).kind, K::Restore);
+}
+
+TEST(SnapStep, SideKeysMoveBetweenQuarters) {
+  EXPECT_EQ(snap_step(SnapZone::TopRight, Direction::Left), to(SnapZone::TopLeft));
+  EXPECT_EQ(snap_step(SnapZone::BottomRight, Direction::Left), to(SnapZone::BottomLeft));
+  EXPECT_EQ(snap_step(SnapZone::TopLeft, Direction::Right), to(SnapZone::TopRight));
+  EXPECT_EQ(snap_step(SnapZone::BottomLeft, Direction::Right), to(SnapZone::BottomRight));
+  EXPECT_EQ(snap_step(SnapZone::TopLeft, Direction::Left), to(SnapZone::Left));
+  EXPECT_EQ(snap_step(SnapZone::BottomRight, Direction::Right), to(SnapZone::Right));
+}
+
+TEST(SnapStep, EveryStateAndKeyGivesADefinedAnswer) {
+  for (SnapZone z : {SnapZone::None, SnapZone::Maximize, SnapZone::Left, SnapZone::Right, SnapZone::TopLeft,
+                     SnapZone::TopRight, SnapZone::BottomLeft, SnapZone::BottomRight})
+    for (Direction d : {Direction::Left, Direction::Right, Direction::Up, Direction::Down}) {
+      const SnapStep s = snap_step(z, d);
+      if (s.kind == K::Zone) EXPECT_NE(s.zone, SnapZone::None);  // a snap always names a target
+    }
+}
+
+TEST(SnapStep, FollowingTheKeysNeverGetsStuck) {
+  // From a normal window, Right then Left returns to the starting state.
+  EXPECT_EQ(snap_step(snap_step(SnapZone::None, Direction::Right).zone, Direction::Left).kind, K::Restore);
+  // A maximized window can always be brought back with Down.
+  EXPECT_EQ(snap_step(SnapZone::Maximize, Direction::Down).kind, K::Restore);
+}

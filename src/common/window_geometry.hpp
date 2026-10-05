@@ -139,6 +139,32 @@ enum class BarEdge { None, Top, Bottom, Left, Right };
 // two adjacent edges, all four) reserves nothing.
 BarEdge exclusive_edge(bool left, bool right, bool top, bool bottom);
 
+// ---- Windows-style snap keys (Super+arrows) --------------------------------
+
+enum class Direction { Left, Right, Up, Down };
+
+// What a Super+arrow press does to a window that is currently in `current`
+// (SnapZone::Maximize for a maximized window, SnapZone::None for a normal one).
+struct SnapStep {
+  enum class Kind {
+    Zone,             // snap to `zone`
+    Restore,          // back to the size and place it had before snapping
+    Minimize,
+    MovePrevScreen,   // already against that edge: continue onto the previous screen
+    MoveNextScreen,
+    Nothing,
+  };
+  Kind kind = Kind::Nothing;
+  SnapZone zone = SnapZone::None;
+  bool operator==(const SnapStep&) const = default;
+};
+
+// Mirrors the Windows keys: Left/Right snap to a half (a second press at the edge
+// moves to the neighbouring screen, and the opposite key undoes the snap); Up
+// maximizes, or turns a half into the top quarter; Down restores a maximized
+// window, turns a half into the bottom quarter, and minimizes a normal window.
+SnapStep snap_step(SnapZone current, Direction dir);
+
 // ---- tiled arrangement as snapped windows --------------------------------
 
 // Where the tiling layout's master/stack arrangement puts `count` windows in

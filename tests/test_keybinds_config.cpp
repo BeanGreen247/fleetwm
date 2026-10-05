@@ -33,6 +33,21 @@ TEST_F(KeybindsConfigTest, LoadWithNoConfigFileReturnsDefaults) {
   EXPECT_EQ(config.desktop_file_manager, "super+shift+e");
   EXPECT_EQ(config.desktop_text_editor, "super+shift+t");
   EXPECT_EQ(config.desktop_debug_overlay, "ctrl+alt+i");
+  EXPECT_EQ(config.desktop_snap_left, "super+Left");
+  EXPECT_EQ(config.desktop_snap_down, "super+Down");
+  EXPECT_EQ(config.desktop_close_window, "alt+F4");
+  EXPECT_EQ(config.desktop_toggle_maximize, "alt+F10");
+  EXPECT_EQ(config.desktop_show_desktop, "super+d");
+  EXPECT_EQ(config.desktop_minimize_all, "super+m");
+  EXPECT_EQ(config.desktop_restore_all, "super+shift+m");
+  EXPECT_EQ(config.cycle_windows, "alt+Tab");
+  EXPECT_EQ(config.cycle_windows_reverse, "alt+shift+Tab");
+  EXPECT_EQ(config.send_to_prev_screen, "super+shift+Left");
+  EXPECT_EQ(config.send_to_next_screen, "super+shift+Right");
+  EXPECT_EQ(config.workspace_switch, "super");
+  EXPECT_EQ(config.workspace_send, "super+shift");
+  EXPECT_EQ(config.workspace_prev, "ctrl+alt+Left");
+  EXPECT_EQ(config.workspace_next, "ctrl+alt+Right");
   EXPECT_EQ(config.start_menu_key, "Super_L,Super_R");
 }
 
@@ -540,6 +555,41 @@ TEST(ComboModsMatch, LockKeysDoNotCount) {
   constexpr unsigned kCaps = 2, kNumLock = 16;  // WLR_MODIFIER_CAPS, WLR_MODIFIER_MOD2
   EXPECT_TRUE(combo_mods_match(kModCtrl | kModAlt | kNumLock, kModCtrl | kModAlt));
   EXPECT_TRUE(combo_mods_match(kModLogo | kCaps | kNumLock, kModLogo));
+}
+
+TEST_F(KeybindsConfigTest, WindowManagementKeysRoundTrip) {
+  KeybindsConfig c;
+  c.cycle_windows = "super+Tab";
+  c.cycle_windows_reverse = "super+shift+Tab";
+  c.desktop_snap_left = "ctrl+alt+Left";
+  c.send_to_next_screen = "ctrl+alt+shift+Right";
+  c.workspace_switch = "ctrl";
+  c.workspace_send = "ctrl+shift";
+  c.workspace_prev = "super+Page_Up";
+  c.workspace_next = "super+Page_Down";
+  save_keybinds_config(c);
+  const KeybindsConfig l = load_keybinds_config();
+  EXPECT_EQ(l.cycle_windows, "super+Tab");
+  EXPECT_EQ(l.cycle_windows_reverse, "super+shift+Tab");
+  EXPECT_EQ(l.desktop_snap_left, "ctrl+alt+Left");
+  EXPECT_EQ(l.send_to_next_screen, "ctrl+alt+shift+Right");
+  EXPECT_EQ(l.workspace_switch, "ctrl");
+  EXPECT_EQ(l.workspace_send, "ctrl+shift");
+  EXPECT_EQ(l.workspace_prev, "super+Page_Up");
+  EXPECT_EQ(l.workspace_next, "super+Page_Down");
+}
+
+TEST(WorkspaceIndexForKey, MapsDigitsInKeyboardOrder) {
+  for (int d = 1; d <= 9; ++d) EXPECT_EQ(workspace_index_for_key(std::to_string(d)), d - 1);
+  EXPECT_EQ(workspace_index_for_key("0"), 9);
+}
+
+TEST(WorkspaceIndexForKey, NonDigitsAreNotWorkspaces) {
+  EXPECT_EQ(workspace_index_for_key(""), -1);
+  EXPECT_EQ(workspace_index_for_key("a"), -1);
+  EXPECT_EQ(workspace_index_for_key("10"), -1);
+  EXPECT_EQ(workspace_index_for_key("!"), -1);
+  EXPECT_EQ(workspace_index_for_key("F1"), -1);
 }
 
 TEST(ModifierMask, ParsesNamesCaseInsensitively) {

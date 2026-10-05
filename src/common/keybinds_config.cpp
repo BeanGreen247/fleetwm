@@ -67,6 +67,11 @@ bool combo_mods_match(unsigned held, unsigned wanted) {
   return (held & kCompared) == (wanted & kCompared);
 }
 
+int workspace_index_for_key(const std::string& key) {
+  if (key.size() != 1 || key[0] < '0' || key[0] > '9') return -1;
+  return key[0] == '0' ? 9 : key[0] - '1';
+}
+
 std::vector<std::string> split_key_names(const std::string& list) {
   std::vector<std::string> out;
   size_t pos = 0;
@@ -136,6 +141,23 @@ KeybindsConfig load_keybinds_config() {
   if (auto v = table["desktop_file_manager"].value<std::string>()) config.desktop_file_manager = *v;
   if (auto v = table["desktop_text_editor"].value<std::string>()) config.desktop_text_editor = *v;
   if (auto v = table["desktop_debug_overlay"].value<std::string>()) config.desktop_debug_overlay = *v;
+  if (auto v = table["desktop_snap_left"].value<std::string>()) config.desktop_snap_left = *v;
+  if (auto v = table["desktop_snap_right"].value<std::string>()) config.desktop_snap_right = *v;
+  if (auto v = table["desktop_snap_up"].value<std::string>()) config.desktop_snap_up = *v;
+  if (auto v = table["desktop_snap_down"].value<std::string>()) config.desktop_snap_down = *v;
+  if (auto v = table["desktop_close_window"].value<std::string>()) config.desktop_close_window = *v;
+  if (auto v = table["desktop_toggle_maximize"].value<std::string>()) config.desktop_toggle_maximize = *v;
+  if (auto v = table["desktop_show_desktop"].value<std::string>()) config.desktop_show_desktop = *v;
+  if (auto v = table["desktop_minimize_all"].value<std::string>()) config.desktop_minimize_all = *v;
+  if (auto v = table["desktop_restore_all"].value<std::string>()) config.desktop_restore_all = *v;
+  if (auto v = table["cycle_windows"].value<std::string>()) config.cycle_windows = *v;
+  if (auto v = table["cycle_windows_reverse"].value<std::string>()) config.cycle_windows_reverse = *v;
+  if (auto v = table["send_to_prev_screen"].value<std::string>()) config.send_to_prev_screen = *v;
+  if (auto v = table["send_to_next_screen"].value<std::string>()) config.send_to_next_screen = *v;
+  if (auto v = table["workspace_switch"].value<std::string>()) config.workspace_switch = *v;
+  if (auto v = table["workspace_send"].value<std::string>()) config.workspace_send = *v;
+  if (auto v = table["workspace_prev"].value<std::string>()) config.workspace_prev = *v;
+  if (auto v = table["workspace_next"].value<std::string>()) config.workspace_next = *v;
   if (auto v = table["shortcuts_help"].value<std::string>()) config.shortcuts_help = *v;
   if (auto v = table["debug_overlay"].value<std::string>()) {
     config.debug_overlay = *v;
@@ -169,6 +191,23 @@ void save_keybinds_config(const KeybindsConfig& config) {
   table.insert_or_assign("desktop_file_manager", config.desktop_file_manager);
   table.insert_or_assign("desktop_text_editor", config.desktop_text_editor);
   table.insert_or_assign("desktop_debug_overlay", config.desktop_debug_overlay);
+  table.insert_or_assign("desktop_snap_left", config.desktop_snap_left);
+  table.insert_or_assign("desktop_snap_right", config.desktop_snap_right);
+  table.insert_or_assign("desktop_snap_up", config.desktop_snap_up);
+  table.insert_or_assign("desktop_snap_down", config.desktop_snap_down);
+  table.insert_or_assign("desktop_close_window", config.desktop_close_window);
+  table.insert_or_assign("desktop_toggle_maximize", config.desktop_toggle_maximize);
+  table.insert_or_assign("desktop_show_desktop", config.desktop_show_desktop);
+  table.insert_or_assign("desktop_minimize_all", config.desktop_minimize_all);
+  table.insert_or_assign("desktop_restore_all", config.desktop_restore_all);
+  table.insert_or_assign("cycle_windows", config.cycle_windows);
+  table.insert_or_assign("cycle_windows_reverse", config.cycle_windows_reverse);
+  table.insert_or_assign("send_to_prev_screen", config.send_to_prev_screen);
+  table.insert_or_assign("send_to_next_screen", config.send_to_next_screen);
+  table.insert_or_assign("workspace_switch", config.workspace_switch);
+  table.insert_or_assign("workspace_send", config.workspace_send);
+  table.insert_or_assign("workspace_prev", config.workspace_prev);
+  table.insert_or_assign("workspace_next", config.workspace_next);
 
   std::ofstream out(path);
   if (!out) {

@@ -202,3 +202,65 @@ TEST(ShortcutList, DebugOverlayHasADesktopCombo) {
   const auto tiling = build_shortcut_list(KeybindsConfig{}, WindowLayout::Tiling);
   EXPECT_EQ(find(tiling, "overlay")->keys, "Alt+Shift+I");
 }
+
+TEST(ShortcutList, WindowSwitchingShortcutsWorkInBothLayouts) {
+  for (WindowLayout l : {WindowLayout::Tiling, WindowLayout::Desktop}) {
+    const auto list = build_shortcut_list(KeybindsConfig{}, l);
+    EXPECT_EQ(find(list, "windows on this workspace (")->keys, "Alt+Tab");
+    EXPECT_EQ(find(list, "workspace, the other way")->keys, "Alt+Shift+Tab");
+    EXPECT_EQ(find(list, "Go to workspace")->keys, "Super+1 to 0");
+    EXPECT_EQ(find(list, "Send the window to workspace")->keys, "Super+Shift+1 to 0");
+    EXPECT_EQ(find(list, "Previous workspace")->keys, "Ctrl+Alt+Left");
+    EXPECT_EQ(find(list, "Next workspace")->keys, "Ctrl+Alt+Right");
+    EXPECT_EQ(find(list, "previous screen")->keys, "Super+Shift+Left");
+    EXPECT_EQ(find(list, "next screen")->keys, "Super+Shift+Right");
+    for (const char* d : {"windows on this workspace (", "Go to workspace", "previous screen"})
+      EXPECT_TRUE(find(list, d)->active) << d;
+  }
+}
+
+TEST(ShortcutList, SnapKeysAreListedOnlyInTheDesktopLayout) {
+  const auto desktop = build_shortcut_list(KeybindsConfig{}, WindowLayout::Desktop);
+  EXPECT_EQ(find(desktop, "Snap left")->keys, "Super+Left");
+  EXPECT_EQ(find(desktop, "Snap right")->keys, "Super+Right");
+  EXPECT_EQ(find(desktop, "Maximize (from")->keys, "Super+Up");
+  EXPECT_EQ(find(desktop, "Restore, or minimize")->keys, "Super+Down");
+  EXPECT_EQ(find(build_shortcut_list(KeybindsConfig{}, WindowLayout::Tiling), "Snap left"), nullptr);
+}
+
+TEST(ShortcutList, RemappedWorkspaceModifiersShowUp) {
+  KeybindsConfig b;
+  b.workspace_switch = "ctrl";
+  b.workspace_send = "ctrl+shift";
+  const auto list = build_shortcut_list(b, WindowLayout::Tiling);
+  EXPECT_EQ(find(list, "Go to workspace")->keys, "Ctrl+1 to 0");
+  EXPECT_EQ(find(list, "Send the window to workspace")->keys, "Ctrl+Shift+1 to 0");
+}
+
+TEST(ShortcutList, DesktopHasWindowsStyleWindowKeys) {
+  const auto list = build_shortcut_list(KeybindsConfig{}, WindowLayout::Desktop);
+  EXPECT_EQ(find(list, "Show the desktop")->keys, "Super+D");
+  EXPECT_EQ(find(list, "Minimize all")->keys, "Super+M");
+  EXPECT_EQ(find(list, "Restore all")->keys, "Super+Shift+M");
+  EXPECT_EQ(find(list, "Maximize or restore the focused")->keys, "Alt+F10");
+  for (const char* d : {"Show the desktop", "Minimize all", "Restore all", "Maximize or restore the focused"})
+    EXPECT_TRUE(find(list, d)->active) << d;
+}
+
+TEST(ShortcutList, DesktopCloseWindowIsAltF4) {
+  const auto list = build_shortcut_list(KeybindsConfig{}, WindowLayout::Desktop);
+  bool seen = false;
+  for (const ShortcutEntry& e : list)
+    if (e.keys == "Alt+F4") {
+      seen = true;
+      EXPECT_TRUE(e.active);
+    }
+  EXPECT_TRUE(seen);
+}
+
+TEST(ShortcutList, DesktopOnlyWindowKeysAreAbsentInTiling) {
+  const auto list = build_shortcut_list(KeybindsConfig{}, WindowLayout::Tiling);
+  EXPECT_EQ(find(list, "Show the desktop"), nullptr);
+  EXPECT_EQ(find(list, "Minimize all"), nullptr);
+  for (const ShortcutEntry& e : list) EXPECT_NE(e.keys, "Alt+F4");
+}

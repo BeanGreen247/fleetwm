@@ -130,6 +130,63 @@ std::vector<SnapZone> tile_zones(size_t count) {
   }
 }
 
+SnapStep snap_step(SnapZone cur, Direction dir) {
+  using K = SnapStep::Kind;
+  const auto zone = [](SnapZone z) { return SnapStep{K::Zone, z}; };
+  const SnapStep restore{K::Restore, SnapZone::None}, nothing{K::Nothing, SnapZone::None};
+  switch (dir) {
+    case Direction::Left:
+      switch (cur) {
+        case SnapZone::None:
+        case SnapZone::Maximize:
+        case SnapZone::TopLeft:
+        case SnapZone::BottomLeft: return zone(SnapZone::Left);
+        case SnapZone::Left: return {K::MovePrevScreen, SnapZone::Left};
+        case SnapZone::Right: return restore;
+        case SnapZone::TopRight: return zone(SnapZone::TopLeft);
+        case SnapZone::BottomRight: return zone(SnapZone::BottomLeft);
+      }
+      break;
+    case Direction::Right:
+      switch (cur) {
+        case SnapZone::None:
+        case SnapZone::Maximize:
+        case SnapZone::TopRight:
+        case SnapZone::BottomRight: return zone(SnapZone::Right);
+        case SnapZone::Right: return {K::MoveNextScreen, SnapZone::Right};
+        case SnapZone::Left: return restore;
+        case SnapZone::TopLeft: return zone(SnapZone::TopRight);
+        case SnapZone::BottomLeft: return zone(SnapZone::BottomRight);
+      }
+      break;
+    case Direction::Up:
+      switch (cur) {
+        case SnapZone::None:
+        case SnapZone::TopLeft:
+        case SnapZone::TopRight: return zone(SnapZone::Maximize);
+        case SnapZone::Left: return zone(SnapZone::TopLeft);
+        case SnapZone::Right: return zone(SnapZone::TopRight);
+        case SnapZone::BottomLeft: return zone(SnapZone::Left);
+        case SnapZone::BottomRight: return zone(SnapZone::Right);
+        case SnapZone::Maximize: return nothing;
+      }
+      break;
+    case Direction::Down:
+      switch (cur) {
+        case SnapZone::None: return {K::Minimize, SnapZone::None};
+        case SnapZone::Maximize:
+        case SnapZone::BottomLeft:
+        case SnapZone::BottomRight: return restore;
+        case SnapZone::Left: return zone(SnapZone::BottomLeft);
+        case SnapZone::Right: return zone(SnapZone::BottomRight);
+        case SnapZone::TopLeft: return zone(SnapZone::Left);
+        case SnapZone::TopRight: return zone(SnapZone::Right);
+      }
+      break;
+  }
+  return nothing;
+}
+
 TitlebarLayout layout_titlebar(int width, const TitlebarMetrics& in) {
   TitlebarMetrics m = in;
   m.height = std::max(16, m.height);

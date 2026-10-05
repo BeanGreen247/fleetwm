@@ -785,7 +785,7 @@ struct Settings {
     const bool tiling = config.window_layout == WindowLayout::Tiling;
     const bool desktop = !tiling;
     ui.label(tiling ? "Tiling: windows tile automatically; keyboard shortcuts drive everything (Alt+Shift+/ lists them)."
-                    : "Desktop: floating windows with titlebars, a taskbar and a start menu; only Alt+Enter and Alt+Shift+/ are bound.",
+                    : "Desktop: floating windows with titlebars, a taskbar and a start menu. Super+/ lists the shortcuts.",
              true);
     ui.newline();
 

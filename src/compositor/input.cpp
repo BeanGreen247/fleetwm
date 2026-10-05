@@ -240,6 +240,12 @@ void keyboard_modifiers(wl_listener* listener, void*) {
   wlr_seat_set_keyboard(keyboard->server->seat(), keyboard->wlr_keyboard_ptr);
   wlr_seat_keyboard_notify_modifiers(keyboard->server->seat(),
                                       &keyboard->wlr_keyboard_ptr->modifiers);
+  // Letting go of the Alt in Alt+Tab settles the window cycle on the current window.
+  Server* server = keyboard->server;
+  if (server->cycling() &&
+      (wlr_keyboard_get_modifiers(keyboard->wlr_keyboard_ptr) & server->cycle_hold_mask()) != server->cycle_hold_mask()) {
+    server->end_window_cycle();
+  }
 }
 
 void keyboard_key(wl_listener* listener, void* data) {
@@ -271,28 +277,88 @@ void keyboard_key(wl_listener* listener, void* data) {
     }
   }
 
-  // Combo shortcuts (written as "ctrl+alt+t" in keybinds.toml): the shortcuts window
-  // in either layout, and in the Desktop layout the terminal and the default web
-  // browser / file manager / text editor. They are separate from the Alt-based
-  // Tiling shortcuts, which are all off in the Desktop layout.
+  // Combo shortcuts (written as "ctrl+alt+t" in keybinds.toml). Everywhere: the
+  // shortcuts window, Alt+Tab window cycling, sending a window to another screen, and
+  // workspace switching. Desktop layout only: terminal, default apps, the overlay and
+  // the Windows-style snap keys. They are separate from the Alt-based Tiling shortcuts,
+  // which are all off in the Desktop layout.
   {
-    const unsigned mods = wlr_keyboard_get_modifiers(keyboard->wlr_keyboard_ptr);
-    const Server::ResolvedKeybinds& binds = keyboard->server->keybinds();
-    if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED && !keyboard->server->is_locked()) {
-      auto is = [mods](const Server::ResolvedKeybinds::Combo& c, xkb_keysym_t sym) {
-        return combo_mods_match(mods, c.mods) && xkb_keysym_to_lower(sym) == xkb_keysym_to_lower(c.sym);
+    wlr_keyboard* kb = keyboard->wlr_keyboard_ptr;
+    const unsigned mods = wlr_keyboard_get_modifiers(kb);
+    Server* server = keyboard->server;
+    const Server::ResolvedKeybinds& binds = server->keybinds();
+    if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED && !server->is_locked()) {
+      // The key with no modifiers applied ("1", not "!"), so Shift combos match by key.
+      xkb_keysym_t sym0 = XKB_KEY_NoSymbol;
+      const xkb_layout_index_t layout = xkb_state_key_get_layout(kb->xkb_state, keycode);
+      const xkb_keysym_t* level0 = nullptr;
+      if (xkb_keymap_key_get_syms_by_level(kb->keymap, keycode, layout, 0, &level0) > 0) sym0 = level0[0];
+      auto is = [&](const Server::ResolvedKeybinds::Combo& c, xkb_keysym_t sym) {
+        if (!combo_mods_match(mods, c.mods)) return false;
+        const xkb_keysym_t want = xkb_keysym_to_lower(c.sym);
+        if (xkb_keysym_to_lower(sym) == want || xkb_keysym_to_lower(sym0) == want) return true;
+        return c.sym == XKB_KEY_Tab && sym == XKB_KEY_ISO_Left_Tab;  // Shift+Tab reports a different key
       };
-      const bool desktop = keyboard->server->desktop_layout();
+      const bool desktop = server->desktop_layout();
+      const int digit = sym0 >= XKB_KEY_1 && sym0 <= XKB_KEY_9 ? static_cast<int>(sym0 - XKB_KEY_1)
+                        : sym0 == XKB_KEY_0                   ? 9
+                                                              : -1;
       for (int i = 0; i < nsyms && !handled; ++i) {
         const xkb_keysym_t sym = syms[i];
         if (is(binds.shortcuts_help, sym)) {
           spawn(kShortcutsCommand);
           handled = true;
+        } else if (is(binds.cycle_windows, sym) || is(binds.cycle_windows_reverse, sym)) {
+          const bool back = is(binds.cycle_windows_reverse, sym);
+          const unsigned hold = (back ? binds.cycle_windows_reverse.mods : binds.cycle_windows.mods) & ~kModShift;
+          server->cycle_windows(back, hold);
+          handled = true;
+        } else if (is(binds.send_to_prev_screen, sym) || is(binds.send_to_next_screen, sym)) {
+          if (View* view = server->focused_view_for_actions())
+            server->move_view_to_screen(view, is(binds.send_to_prev_screen, sym) ? -1 : 1);
+          handled = true;
+        } else if (is(binds.workspace_prev, sym) || is(binds.workspace_next, sym)) {
+          server->switch_workspace_relative(is(binds.workspace_prev, sym) ? -1 : 1);
+          handled = true;
+        } else if (digit >= 0 && combo_mods_match(mods, binds.workspace_switch_mods)) {
+          server->switch_workspace(digit);
+          handled = true;
+        } else if (digit >= 0 && combo_mods_match(mods, binds.workspace_send_mods)) {
+          if (View* view = server->focused_view_for_actions()) server->move_view_to_workspace(view, digit);
+          handled = true;
+        } else if (desktop && is(binds.desktop_close_window, sym)) {
+          if (View* view = server->focused_view_for_actions()) view->close();
+          handled = true;
+        } else if (desktop && is(binds.desktop_toggle_maximize, sym)) {
+          if (View* view = server->focused_view_for_actions(); view && !view->fullscreen)
+            view->set_maximized(!view->maximized);
+          handled = true;
+        } else if (desktop && is(binds.desktop_show_desktop, sym)) {
+          server->show_desktop_toggle();
+          handled = true;
+        } else if (desktop && is(binds.desktop_minimize_all, sym)) {
+          server->minimize_all();
+          handled = true;
+        } else if (desktop && is(binds.desktop_restore_all, sym)) {
+          server->restore_all();
+          handled = true;
+        } else if (desktop && is(binds.desktop_snap_left, sym)) {
+          server->snap_step_focused(geom::Direction::Left);
+          handled = true;
+        } else if (desktop && is(binds.desktop_snap_right, sym)) {
+          server->snap_step_focused(geom::Direction::Right);
+          handled = true;
+        } else if (desktop && is(binds.desktop_snap_up, sym)) {
+          server->snap_step_focused(geom::Direction::Up);
+          handled = true;
+        } else if (desktop && is(binds.desktop_snap_down, sym)) {
+          server->snap_step_focused(geom::Direction::Down);
+          handled = true;
         } else if (desktop && is(binds.desktop_debug_overlay, sym)) {
-          keyboard->server->toggle_debug_overlay();
+          server->toggle_debug_overlay();
           handled = true;
         } else if (desktop && is(binds.desktop_terminal, sym)) {
-          spawn_terminal(keyboard->server->default_apps_config().terminal_command.c_str());
+          spawn_terminal(server->default_apps_config().terminal_command.c_str());
           handled = true;
         } else if (desktop) {
           const char* cmd = is(binds.desktop_browser, sym)        ? "fleetwm-launcher --default browser"
