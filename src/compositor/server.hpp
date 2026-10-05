@@ -255,6 +255,13 @@ class Server {
   // write to theme.toml, from fleetwm-settings or anything else, is
   // picked up live without needing a re-login or an explicit IPC ping.
   const ThemeConfig& theme_config() const { return theme_config_; }
+  // The three window border colours, parsed once per theme load instead of on every client
+  // commit (resize_border runs on each one).
+  struct BorderColors {
+    float pinned_focused[4], pinned[4], focus[4];
+  };
+  const BorderColors& border_colors() const { return border_colors_; }
+  void refresh_border_colors();
 
   // Re-reads theme.toml into theme_config_ and refreshes every current
   // View's border (color/thickness may have changed). Called once at
@@ -482,6 +489,7 @@ class Server {
   wlr_buffer* fallback_cursor_ = nullptr;  // built-in arrow, used when no cursor theme is installed
   int fallback_hotspot_x_ = 0, fallback_hotspot_y_ = 0;
   const char* cursor_name_ = nullptr;  // last xcursor name set by set_cursor_name()
+  BorderColors border_colors_{{0.9f, 0.9f, 0.95f, 1.0f}, {0.9f, 0.9f, 0.95f, 1.0f}, {0.9f, 0.9f, 0.95f, 1.0f}};
   PowerConfig power_config_;
   wl_event_source* idle_timer_ = nullptr;
   std::chrono::steady_clock::time_point last_input_;

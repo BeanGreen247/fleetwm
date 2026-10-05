@@ -1451,6 +1451,7 @@ bool Server::init() {
   start_signal_handlers();
 
   theme_config_ = load_theme_config();
+  refresh_border_colors();
   titlebar_reload_palette(theme_config_);
   default_apps_config_ = load_default_apps_config();
   reload_keybinds_config();
@@ -2029,9 +2030,21 @@ void Server::reload_keybinds_config() {
   }
 }
 
+void Server::refresh_border_colors() {
+  const float fallback[4] = {0.9f, 0.9f, 0.95f, 1.0f};
+  auto parse = [&](const std::string& hex, float* out) {
+    std::copy(fallback, fallback + 4, out);
+    parse_hex_color(hex, out);
+  };
+  parse(theme_config_.pinned_focused_border_color, border_colors_.pinned_focused);
+  parse(theme_config_.pinned_border_color, border_colors_.pinned);
+  parse(theme_config_.focus_border_color, border_colors_.focus);
+}
+
 void Server::reload_theme_config() {
   const bool was_desktop = desktop_layout();
   theme_config_ = load_theme_config();
+  refresh_border_colors();
   titlebar_reload_palette(theme_config_);
   if (was_desktop && !desktop_layout()) {
     end_grab();
