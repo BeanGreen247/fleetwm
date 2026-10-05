@@ -199,7 +199,9 @@ class View {
   // can only size in whole cells, so without it the leftover pixels would show
   // the wallpaper as gaps between neighbouring windows.
   wlr_scene_rect* fill_rect = nullptr;
-  geom::Box placed_outer{};
+  // The slot this window holds in a tiled arrangement (index of count), recomputed
+  // from the current work area so it follows a moved or resized taskbar.
+  size_t placed_index = 0, placed_count = 0;
   bool has_placed = false;
   wlr_scene_rect* grab_rect = nullptr;  // invisible ring around the window: resize handles
   int content_w = 0;                    // last known content width
@@ -225,9 +227,11 @@ class View {
   geom::SnapZone snap_zone = geom::SnapZone::None;
   void snap_to(geom::SnapZone zone);
   void refit_snapped();
-  // Puts the window at `outer` (titlebar and border included) without recording a
-  // snap zone -- used for arrangements that have no zone, like a tiled stack of four.
-  void place_outer(const geom::Box& outer);
+  // Puts the window in slot `index` of `count` of the tiled arrangement (see
+  // geom::tile_boxes) without recording a snap zone -- for arrangements that have
+  // none, like a stack of four. refit_placed() redoes it after the work area changes.
+  void place_tile(size_t index, size_t count);
+  void refit_placed();
   // Undoes maximize or a snap, putting the window back where it was.
   void restore_from_snap();
 

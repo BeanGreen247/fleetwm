@@ -572,8 +572,6 @@ void Output::update_usable_area() {
 }
 
 void Output::snap_tiled_windows() {
-  const wlr_box a = usable_area;
-  const geom::Box area{a.x, a.y, a.width, a.height};
   for (Workspace& workspace : workspaces) {
     std::vector<View*> tiled;
     for (View* view : workspace.views()) {
@@ -584,14 +582,13 @@ void Output::snap_tiled_windows() {
       }
       tiled.push_back(view);
     }
-    const std::vector<geom::Box> boxes = geom::tile_boxes(area, tiled.size());
     const std::vector<geom::SnapZone> zones = geom::tile_zones(tiled.size());
     for (size_t i = 0; i < tiled.size(); ++i) {
       // Forget any earlier snap/maximize so the tiled slot wins.
       if (tiled[i]->maximized) tiled[i]->set_maximized(false);
       tiled[i]->snap_zone = geom::SnapZone::None;
       if (zones[i] != geom::SnapZone::None) tiled[i]->snap_to(zones[i]);
-      else tiled[i]->place_outer(boxes[i]);
+      else tiled[i]->place_tile(i, tiled.size());
     }
   }
 }
@@ -610,6 +607,10 @@ void Output::fit_floating_views() {
     }
     if (view->snap_zone != geom::SnapZone::None) {
       view->refit_snapped();
+      continue;
+    }
+    if (view->has_placed) {
+      view->refit_placed();
       continue;
     }
     // Keep the titlebar reachable: not under a taskbar, not off-screen.
