@@ -89,6 +89,20 @@ Shortcuts in this layout (none of the Alt shortcuts above work here):
 
 The browser, file manager and editor are the ones you pick in Settings under Default Apps.
 
+## Workspaces
+
+The bar starts with workspaces 1 to 4. Go to a workspace that is not shown (for example
+Super+6) and its button appears; put a window on it and it stays. Leave a workspace empty and
+its button goes away again. The buttons are always in numerical order, so 1 2 3 4 6 becomes
+1 2 3 4 5 6 when you use 5. This works the same in both layouts.
+
+## Terminal
+
+Plain `foot` opens with a larger font and a short prompt (`~>`, plus the git branch inside a
+repository). The shell setup keeps bash behaving normally and only adds a bigger history,
+case-insensitive completion, history search on Up/Down and fzf keys when fzf is installed. If you
+create your own `~/.config/foot/foot.ini`, foot uses that instead.
+
 ## Settings
 
 Open Settings from the launcher or the start menu. Changes apply right away, and they are saved

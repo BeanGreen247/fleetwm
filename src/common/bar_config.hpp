@@ -91,7 +91,8 @@ struct BarConfig {
   PowerMode power_mode = PowerMode::Normal;
   BarLayout layout = BarLayout::Capsules;
   TaskbarPosition taskbar_position = TaskbarPosition::Bottom;
-  // How many workspace buttons the Desktop-layout taskbar shows (1-10).
+  // The workspaces always shown (1-10, default 4). More appear while they hold windows or
+  // while you are on them, in numerical order, and go away when empty.
   int taskbar_workspaces = 4;
 };
 

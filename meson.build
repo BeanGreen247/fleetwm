@@ -162,6 +162,16 @@ install_subdir(
   strip_directory: false,
 )
 
+# The terminal shell setup and foot config used when the user has none of their own.
+install_data('config/bashrc', install_dir: get_option('sysconfdir') / 'fleetwm')
+configure_file(
+  input: 'config/foot.ini.in',
+  output: 'foot.ini',
+  configuration: {'SYSCONF_DIR': get_option('prefix') / get_option('sysconfdir') / 'fleetwm'},
+  install: true,
+  install_dir: get_option('sysconfdir') / 'fleetwm',
+)
+
 install_data(
   'config/theme.toml',
   install_dir: get_option('sysconfdir') / 'fleetwm',
