@@ -38,6 +38,17 @@ sudo apt-get install -y \
   libsystemd-dev \
   libjemalloc2
 
+# the GTK-free "lean" clients (src/lean: wallpaper, locker, power menu, bar,
+# launcher, audio mixer) draw with cairo and decode images with libpng /
+# libjpeg / libwebp (SVG is handled by the vendored nanosvg); fontconfig
+# resolves cairo's "Sans" family, so keep a default font installed
+sudo apt-get install -y libcairo2-dev libpng-dev libjpeg-dev libwebp-dev fonts-dejavu-core
+
+# runtime audio stack the bar's volume readout and fleetwm-audiomixer talk
+# to (PipeWire + the WirePlumber session manager; pipewire-bin ships
+# pw-cli/pw-cat, handy for testing without sound hardware)
+sudo apt-get install -y pipewire pipewire-bin wireplumber
+
 # runtime dependency for the bar's power menu (fleetwm-powermenu):
 # systemd-logind refuses Sleep/Reboot/Shut down for a non-root caller
 # without a running polkit to authorize the request, regardless of
