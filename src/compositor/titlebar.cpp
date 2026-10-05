@@ -60,6 +60,13 @@ kit::Color mix(const kit::Color& a, const kit::Color& b, double t) {
 
 void titlebar_reload_palette(const ThemeConfig& theme) { g_palette = kit::load_palette(theme); }
 
+void titlebar_backdrop_color(float rgba[4]) {
+  rgba[0] = static_cast<float>(g_palette.bg_primary.r);
+  rgba[1] = static_cast<float>(g_palette.bg_primary.g);
+  rgba[2] = static_cast<float>(g_palette.bg_primary.b);
+  rgba[3] = 1.0f;
+}
+
 geom::TitlebarMetrics titlebar_metrics(const TitlebarConfig& cfg) {
   geom::TitlebarMetrics m;
   m.height = cfg.height;

@@ -20,6 +20,9 @@ geom::TitlebarMetrics titlebar_metrics(const TitlebarConfig& cfg);
 // Reloads the colors used by render_titlebar() from the theme CSS.
 void titlebar_reload_palette(const ThemeConfig& theme);
 
+// The window-backdrop color (theme background) as RGBA floats.
+void titlebar_backdrop_color(float rgba[4]);
+
 struct TitlebarState {
   std::string title;
   bool focused = false;
