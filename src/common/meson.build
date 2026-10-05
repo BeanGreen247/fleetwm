@@ -74,6 +74,7 @@ libcommon_core = static_library(
     'pipewire_json.cpp',
     'window_geometry.cpp',
     'window_list.cpp',
+    'shortcut_list.cpp',
   ),
   dependencies: [tomlplusplus_dep],
   include_directories: include_directories('.'),

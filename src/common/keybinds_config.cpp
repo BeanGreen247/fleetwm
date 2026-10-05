@@ -71,6 +71,9 @@ KeybindsConfig load_keybinds_config() {
   if (auto v = table["quit"].value<std::string>()) {
     config.quit = *v;
   }
+  if (auto v = table["shortcuts"].value<std::string>()) {
+    config.shortcuts = *v;
+  }
   if (auto v = table["debug_overlay"].value<std::string>()) {
     config.debug_overlay = *v;
   }
@@ -96,6 +99,7 @@ void save_keybinds_config(const KeybindsConfig& config) {
   table.insert_or_assign("focus_right", config.focus_right);
   table.insert_or_assign("quit", config.quit);
   table.insert_or_assign("debug_overlay", config.debug_overlay);
+  table.insert_or_assign("shortcuts", config.shortcuts);
 
   std::ofstream out(path);
   if (!out) {

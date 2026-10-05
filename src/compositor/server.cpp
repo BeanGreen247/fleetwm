@@ -164,7 +164,8 @@ static void xdg_toplevel_map(wl_listener* listener, void*) {
   // not window title, since that's stable regardless of locale/theme.
   bool is_settings = view->kind == View::Kind::XdgToplevel && view->xdg_toplevel &&
                       view->xdg_toplevel->app_id &&
-                      std::strcmp(view->xdg_toplevel->app_id, "dev.fleetwm.Settings") == 0;
+                      (std::strcmp(view->xdg_toplevel->app_id, "dev.fleetwm.Settings") == 0 ||
+                       std::strcmp(view->xdg_toplevel->app_id, "dev.fleetwm.Shortcuts") == 0);
   if (is_settings) {
     view->set_floating(true);
     view->always_on_top = true;
@@ -1907,6 +1908,8 @@ void Server::reload_keybinds_config() {
   resolved_keybinds_.quit = resolve_keybind(keybinds_config_.quit, defaults.quit, "quit");
   resolved_keybinds_.debug_overlay =
       resolve_keybind(keybinds_config_.debug_overlay, defaults.debug_overlay, "debug_overlay");
+  resolved_keybinds_.shortcuts =
+      resolve_keybind(keybinds_config_.shortcuts, defaults.shortcuts, "shortcuts");
 }
 
 void Server::reload_theme_config() {

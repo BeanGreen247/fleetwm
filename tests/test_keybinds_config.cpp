@@ -27,6 +27,7 @@ TEST_F(KeybindsConfigTest, LoadWithNoConfigFileReturnsDefaults) {
   EXPECT_EQ(config.focus_right, "l");
   EXPECT_EQ(config.quit, "Escape");
   EXPECT_EQ(config.debug_overlay, "I");
+  EXPECT_EQ(config.shortcuts, "question");
 }
 
 TEST_F(KeybindsConfigTest, SaveThenLoadRoundTripsEveryField) {

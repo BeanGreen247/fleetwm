@@ -50,6 +50,9 @@ struct KeybindsConfig {
   // output.cpp) -- a developer/debugging tool, not a user-facing
   // feature, hence "I" for "info" rather than anything more prominent.
   std::string debug_overlay = "I";
+  // Alt+Shift+/ opens the keyboard-shortcuts window (fleetwm-shortcuts); one of the
+  // few binds that stays active in the Desktop window layout.
+  std::string shortcuts = "question";
 };
 
 // Path helpers, mirroring default_apps.hpp's own pair but for

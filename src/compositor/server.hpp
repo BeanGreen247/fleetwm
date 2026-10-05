@@ -246,6 +246,7 @@ class Server {
     xkb_keysym_t focus_right = XKB_KEY_l;
     xkb_keysym_t quit = XKB_KEY_Escape;
     xkb_keysym_t debug_overlay = XKB_KEY_I;
+    xkb_keysym_t shortcuts = XKB_KEY_question;
   };
   const ResolvedKeybinds& keybinds() const { return resolved_keybinds_; }
   void reload_keybinds_config();
