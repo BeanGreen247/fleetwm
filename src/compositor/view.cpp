@@ -39,6 +39,9 @@ int View::border_thickness() const {
                // precondition (see the fullscreen field's doc comment,
                // view.hpp), and no one wants a focus ring around a game.
   }
+  if (desktop_mode()) {
+    return 0;  // Desktop layout: no focus/pin highlight ring (the titlebar shows both)
+  }
   if (pinned) {
     return server->theme_config().pinned_border_thickness_px;
   }
@@ -305,7 +308,7 @@ void View::refit_snapped() {
   }
   const wlr_box a = output->usable_area;
   const geom::Box outer = geom::snap_box(snap_zone, {a.x, a.y, a.width, a.height});
-  const int bt = std::max(border_thickness(), server->theme_config().focus_border_thickness_px);
+  const int bt = border_thickness();
   wlr_scene_node_set_position(&container_tree->node, outer.x, outer.y);
   const int w = std::max(1, outer.w - 2 * bt), h = std::max(1, outer.h - titlebar_height() - 2 * bt);
   wlr_xdg_toplevel_set_size(xdg_toplevel, w, h);
@@ -335,7 +338,7 @@ void View::refit_maximized() {
   if (!maximized || !output || !xdg_toplevel) {
     return;
   }
-  const int bt = std::max(border_thickness(), server->theme_config().focus_border_thickness_px);
+  const int bt = border_thickness();
   const wlr_box area = output->usable_area;
   wlr_scene_node_set_position(&container_tree->node, area.x, area.y);
   wlr_xdg_toplevel_set_size(xdg_toplevel, std::max(1, area.width - 2 * bt),
@@ -370,7 +373,7 @@ void View::set_maximized(bool want) {
     return;
   }
   const int th = titlebar_height();
-  const int bt = std::max(border_thickness(), server->theme_config().focus_border_thickness_px);
+  const int bt = border_thickness();
   if (want) {
     wlr_box geo{};
     wlr_xdg_surface_get_geometry(xdg_toplevel->base, &geo);

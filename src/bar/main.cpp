@@ -154,12 +154,30 @@ struct Bar {
     const size_t n = tray->items().size();
     return n ? n * kTrayIcon + (n - 1) * kTraySpacing : 0;
   }
+  // Desktop taskbar: CPU/RAM/GPU/Disk collapse into a 2x2 grid in a smaller font.
+  static constexpr double kSmallFont = 11.5, kGridGap = 6;
+  bool compact_stats() const { return taskbar && !vertical(); }
+  double small_w(Metrics& m, const std::string& s) { return measure_text(m.cr, s, kSmallFont).width; }
+  void grid_columns(Metrics& m, double* col_a, double* col_b) {
+    *col_a = std::max(small_w(m, cpu_text), small_w(m, gpu_text));
+    *col_b = std::max(small_w(m, ram_text), small_w(m, disk_text));
+  }
+
   double right_total(Metrics& m) {
     double t = 0;
     int children = 0;
-    for (const std::string* s : {&cpu_text, &ram_text, &gpu_text, &disk_text, &vol_text}) {
-      t += m.text_w(*s) + kStatPad;
+    if (compact_stats()) {
+      double a, b;
+      grid_columns(m, &a, &b);
+      t += a + b + kGridGap + kStatPad;
       ++children;
+      t += m.text_w(vol_text) + kStatPad;
+      ++children;
+    } else {
+      for (const std::string* s : {&cpu_text, &ram_text, &gpu_text, &disk_text, &vol_text}) {
+        t += m.text_w(*s) + kStatPad;
+        ++children;
+      }
     }
     t += tray_total();
     ++children;  // tray box always participates in the spacing
@@ -389,19 +407,20 @@ struct Bar {
 
   // Draws "LABEL value" with a dim label and a bright value (hierarchy inside
   // the status group instead of one flat grey run), returns the full width.
-  void draw_stat(cairo_t* cr, Metrics& m, const std::string& s, double x, double base) {
+  void draw_stat(cairo_t* cr, Metrics& m, const std::string& s, double x, double base, double font = kFont) {
+    (void)m;
     const size_t sp = s.find(' ');
     if (sp == std::string::npos) {
-      draw_text(cr, s, x, base, kFont, pal.fg_primary);
+      draw_text(cr, s, x, base, font, pal.fg_primary);
       return;
     }
     const std::string label = s.substr(0, sp + 1), value = s.substr(sp + 1);
-    const double lw = m.text_w(label);
+    const double lw = measure_text(cr, label, font).width;
     Color dim = pal.fg_secondary;
     dim.a = 0.75;
-    draw_text(cr, label, x, base, kFont, dim);
+    draw_text(cr, label, x, base, font, dim);
     const bool na = value == "N/A" || value == "--%";
-    draw_text(cr, value, x + lw, base, kFont, na ? dim : pal.fg_primary);
+    draw_text(cr, value, x + lw, base, font, na ? dim : pal.fg_primary);
   }
 
   void draw(cairo_t* cr, int W, int H) {
@@ -491,11 +510,30 @@ struct Bar {
       draw_stat(cr, m, s, rx + kStatPad / 2, base);
       rx += tw + kStatPad + kRightGap;
     };
-    stat(cpu_text, &cpu_rect);
-    stat(ram_text, &ram_rect);
-    stat(gpu_text, &gpu_rect);
-    stat(disk_text, &disk_rect);
-    stat(vol_text, &vol_rect);
+    if (compact_stats()) {
+      double col_a, col_b;
+      grid_columns(m, &col_a, &col_b);
+      const double cell_h = H / 2.0;
+      const TextExtents se = measure_text(cr, "Ag", kSmallFont);
+      const double r0 = (cell_h - se.height) / 2.0 + se.ascent, r1 = cell_h + r0;
+      const double x0 = rx + kStatPad / 2, x1 = x0 + col_a + kGridGap;
+      cpu_rect = {rx, 0, col_a + kGridGap, cell_h};
+      gpu_rect = {rx, cell_h, col_a + kGridGap, cell_h};
+      ram_rect = {x1 - kGridGap / 2, 0, col_b + kStatPad, cell_h};
+      disk_rect = {x1 - kGridGap / 2, cell_h, col_b + kStatPad, cell_h};
+      draw_stat(cr, m, cpu_text, x0, r0, kSmallFont);
+      draw_stat(cr, m, gpu_text, x0, r1, kSmallFont);
+      draw_stat(cr, m, ram_text, x1, r0, kSmallFont);
+      draw_stat(cr, m, disk_text, x1, r1, kSmallFont);
+      rx += col_a + col_b + kGridGap + kStatPad + kRightGap;
+      stat(vol_text, &vol_rect);
+    } else {
+      stat(cpu_text, &cpu_rect);
+      stat(ram_text, &ram_rect);
+      stat(gpu_text, &gpu_rect);
+      stat(disk_text, &disk_rect);
+      stat(vol_text, &vol_rect);
+    }
 
     // Tray icons.
     const auto& items = tray->items();
@@ -688,9 +726,24 @@ struct Bar {
     const double base = (H - fe.height) / 2.0 + fe.ascent;
     const double btn_r = pal.rounded ? kWsH / 2.0 : 0;
 
-    const double right_w = right_total(m), clock_w = m.text_w(clock_text, true);
+    // Clock: time on top, date below (just the time, centered, when no date is shown).
+    const size_t split = clock_text.find("  ");
+    const std::string time_line = split == std::string::npos ? clock_text : clock_text.substr(0, split);
+    const std::string date_line = split == std::string::npos ? "" : clock_text.substr(split + 2);
+    const double time_w = measure_text(cr, time_line, kFont, true).width;
+    const double date_w = date_line.empty() ? 0 : measure_text(cr, date_line, kSmallFont).width;
+    const double clock_w = std::max(time_w, date_w);
+    const double right_w = right_total(m);
     const double right_x = W - kMargin - right_w, clock_x = right_x - 18 - clock_w;
-    draw_text(cr, clock_text, clock_x, base, kFont, pal.accent, true);
+    if (date_line.empty()) {
+      draw_text(cr, time_line, clock_x + (clock_w - time_w) / 2, base, kFont, pal.accent, true);
+    } else {
+      const TextExtents te = measure_text(cr, time_line, kFont, true), de = measure_text(cr, date_line, kSmallFont);
+      const double block = te.height + 1 + de.height, top = (H - block) / 2.0;
+      draw_text(cr, time_line, clock_x + (clock_w - time_w) / 2, top + te.ascent, kFont, pal.accent, true);
+      draw_text(cr, date_line, clock_x + (clock_w - date_w) / 2, top + te.height + 1 + de.ascent, kSmallFont,
+                with_alpha(pal.fg_secondary, 0.85));
+    }
     draw_status_group(cr, m, right_x, H, base, btn_r);
 
     start_rect = {6, 4, 46, static_cast<double>(H - 8)};
@@ -724,17 +777,21 @@ struct Bar {
     const double bx = 6, bw = W - 12;
     constexpr double kBtn = 44, kStat = 38, kClock = 46, kBat = 30, kTrayRow = 28;
     const size_t tray_n = tray->items().size();
-    const double cluster_h = kBtn + kClock + kBat + kStat * 5 + tray_n * kTrayRow;
+    const double cluster_h = kBtn + kClock + kBat + kStat * 3 + tray_n * kTrayRow;  // metrics: 2x2 grid + volume
     double y = H - 6 - cluster_h;
 
     // Status cluster, top-down from `y`.
-    Rect* stat_rects[] = {&cpu_rect, &ram_rect, &gpu_rect, &disk_rect, &vol_rect};
-    const std::string* stat_text[] = {&cpu_text, &ram_text, &gpu_text, &disk_text, &vol_text};
-    for (int i = 0; i < 5; ++i) {
-      *stat_rects[i] = {bx, y, bw, kStat};
-      draw_stat_vertical(cr, m, *stat_text[i], *stat_rects[i]);
-      y += kStat;
-    }
+    cpu_rect = {bx, y, bw / 2, kStat};
+    ram_rect = {bx + bw / 2, y, bw / 2, kStat};
+    gpu_rect = {bx, y + kStat, bw / 2, kStat};
+    disk_rect = {bx + bw / 2, y + kStat, bw / 2, kStat};
+    vol_rect = {bx, y + 2 * kStat, bw, kStat};
+    draw_stat_vertical(cr, m, cpu_text, cpu_rect);
+    draw_stat_vertical(cr, m, ram_text, ram_rect);
+    draw_stat_vertical(cr, m, gpu_text, gpu_rect);
+    draw_stat_vertical(cr, m, disk_text, disk_rect);
+    draw_stat_vertical(cr, m, vol_text, vol_rect);
+    y += 3 * kStat;
     const auto& items = tray->items();
     tray_rects.assign(items.size(), Rect{});
     for (size_t i = 0; i < items.size(); ++i) {
