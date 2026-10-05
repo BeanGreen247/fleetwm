@@ -45,6 +45,10 @@ pid_t spawn_login_client(const std::string& wayland_socket, int ipc_fd) {
   if (pid != 0) {
     return pid;
   }
+  // The login card is small; jemalloc (preloaded into fleetwm-greet by its
+  // service) would only add resident arenas there.
+  unsetenv("LD_PRELOAD");
+  unsetenv("MALLOC_CONF");
   setenv("WAYLAND_DISPLAY", wayland_socket.c_str(), 1);
   char fd_buf[16];
   std::snprintf(fd_buf, sizeof(fd_buf), "%d", ipc_fd);

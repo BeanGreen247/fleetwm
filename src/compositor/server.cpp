@@ -1,5 +1,6 @@
 #include "server.hpp"
 
+#include <dirent.h>
 #include <fcntl.h>
 #include <signal.h>
 #include <sys/inotify.h>
@@ -870,6 +871,26 @@ bool Server::confirm_unlock(pid_t requesting_pid) {
   return true;
 }
 
+namespace {
+
+bool has_render_node() {
+  DIR* dir = opendir("/dev/dri");
+  if (!dir) {
+    return false;
+  }
+  bool found = false;
+  while (dirent* e = readdir(dir)) {
+    if (std::strncmp(e->d_name, "renderD", 7) == 0) {
+      found = true;
+      break;
+    }
+  }
+  closedir(dir);
+  return found;
+}
+
+}  // namespace
+
 std::vector<Server::OutputInfo> Server::describe_outputs() const {
   std::vector<OutputInfo> result;
   for (const std::unique_ptr<Output>& output : outputs) {
@@ -1069,7 +1090,18 @@ bool Server::init() {
   // pixman software renderer here -- architecture-agnostic, no backend
   // handle needed -- means any such host still gets a working (if
   // unaccelerated) desktop instead of failing to start.
-  renderer_ = wlr_renderer_autocreate(backend_);
+  // Without a GPU render node (VMs, headless boxes) the GLES2 renderer can only
+  // run on Mesa's llvmpipe software rasterizer, which maps libLLVM and the
+  // gallium driver (about 65 MB resident) and is no faster than pixman for a
+  // tiling desktop. Use pixman directly there. An explicit WLR_RENDERER in the
+  // environment always wins, and any machine with a render node keeps GLES2.
+  if (std::getenv("WLR_RENDERER") == nullptr && !has_render_node()) {
+    wlr_log(WLR_INFO, "fleetwm: no GPU render node, using the pixman renderer");
+    renderer_ = wlr_pixman_renderer_create();
+  }
+  if (!renderer_) {
+    renderer_ = wlr_renderer_autocreate(backend_);
+  }
   if (!renderer_) {
     wlr_log(WLR_ERROR,
             "hardware renderer unavailable, falling back to pixman software renderer");

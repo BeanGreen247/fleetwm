@@ -115,6 +115,27 @@ unused until the next input event.
 - Audio tests: `modprobe snd-dummy`, PipeWire + WirePlumber, and a stream with
   `pw-cat`. Test tray icons with a tiny sd-bus StatusNotifierItem client.
 
+## Where the remaining memory was (and what removed it)
+
+A profile of the live session showed the rewrite was not the whole story:
+
+- **The compositor was 148 MB on the GPU-less test VM**, of which 54 MB was
+  `libLLVM` and 11 MB the gallium driver: with no GPU render node the GLES2
+  renderer runs on Mesa's llvmpipe software rasterizer. The compositor now
+  uses the pixman renderer when `/dev/dri/renderD*` does not exist (an
+  explicit `WLR_RENDERER` still wins, and any machine with a render node keeps
+  GLES2): 148 MB -> 19 MB.
+- **The session-wide jemalloc preload cost about 11 MB per small client**
+  (bar 25 MB with it, 14 MB without). It is only worth having in the
+  compositor, so the compositor (and the greeter, for its login card) now drop
+  `LD_PRELOAD`/`MALLOC_CONF` from the environment after start-up; the bar,
+  wallpaper and everything the user launches run on plain glibc with the
+  `mallopt` tuning.
+
+Result on the VM (RSS): compositor 148 -> 19 MB, bar 25 -> 14 MB, wallpaper
+9 -> 4 MB; the whole resident session is **38 MB**, against 182 MB after the
+client rewrite alone and 280 MB originally.
+
 ## Known gaps
 
 - Volume readouts show PipeWire's linear value, so a sink `wpctl` reports as
