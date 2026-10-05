@@ -11,6 +11,7 @@
 
 #include "ipc_client.hpp"
 #include "output.hpp"
+#include "view.hpp"
 #include "server.hpp"
 #include "workspace.hpp"
 
@@ -104,7 +105,7 @@ void IpcServer::accept_connection() {
   wl_event_source* source = wl_event_loop_add_fd(
       loop, fd, WL_EVENT_READABLE, ipc_server_handle_client, this);
 
-  clients_.push_back(Client{fd, source, {}});
+  clients_.push_back(Client{fd, source, {}, false});
 }
 
 void IpcServer::handle_client_readable(Client& client) {
@@ -183,6 +184,32 @@ void IpcServer::handle_line(Client& client, const std::string& line) {
     return;
   }
 
+  if (line == "SUBSCRIBE_WINDOWS") {
+    client.windows_subscribed = true;
+    std::string reply = format_window_list(server_->window_snapshot()) + "\n";
+    send(client.fd, reply.data(), reply.size(), MSG_NOSIGNAL);
+    return;
+  }
+
+  if (line.rfind("WINDOW_", 0) == 0) {
+    // WINDOW_ACTIVATE|TOGGLE|MINIMIZE|CLOSE <id>
+    const size_t sp = line.find(' ');
+    if (sp == std::string::npos) return;
+    const std::string verb = line.substr(0, sp);
+    View* view = nullptr;
+    try {
+      view = server_->view_by_id(static_cast<uint32_t>(std::stoul(line.substr(sp + 1))));
+    } catch (...) {
+      return;
+    }
+    if (!view) return;
+    if (verb == "WINDOW_ACTIVATE") server_->activate_view(view);
+    else if (verb == "WINDOW_TOGGLE") server_->toggle_view_from_taskbar(view);
+    else if (verb == "WINDOW_MINIMIZE") view->set_minimized(true);
+    else if (verb == "WINDOW_CLOSE") view->close();
+    return;
+  }
+
   if (line == "LOCK") {
     server_->request_lock();
     return;
@@ -246,6 +273,17 @@ void IpcServer::broadcast_focused_title(const std::string& title) {
   std::string msg = "FOCUSED_TITLE " + sanitized + "\n";
   for (Client& client : clients_) {
     send(client.fd, msg.data(), msg.size(), MSG_NOSIGNAL);
+  }
+}
+
+void IpcServer::broadcast_windows(const std::string& line) {
+  if (line == last_windows_line_) return;
+  last_windows_line_ = line;
+  const std::string msg = line + "\n";
+  for (Client& client : clients_) {
+    if (client.windows_subscribed) {
+      send(client.fd, msg.data(), msg.size(), MSG_NOSIGNAL);
+    }
   }
 }
 

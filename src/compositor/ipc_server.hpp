@@ -60,11 +60,16 @@ class IpcServer {
   // Sends "FOCUSED_TITLE <text>\n" to every currently-connected client.
   void broadcast_focused_title(const std::string& title);
 
+  // Sends the formatted WINDOWS line to every client that sent SUBSCRIBE_WINDOWS
+  // (skipped when unchanged since the last send).
+  void broadcast_windows(const std::string& line);
+
  private:
   struct Client {
     int fd;
     wl_event_source* source;
     std::string read_buffer;
+    bool windows_subscribed = false;
   };
 
   void accept_connection();
@@ -76,6 +81,7 @@ class IpcServer {
   int listen_fd_ = -1;
   wl_event_source* listen_source_ = nullptr;
   std::vector<Client> clients_;
+  std::string last_windows_line_;
 
   friend int ipc_server_handle_accept(int fd, uint32_t mask, void* data);
   friend int ipc_server_handle_client(int fd, uint32_t mask, void* data);

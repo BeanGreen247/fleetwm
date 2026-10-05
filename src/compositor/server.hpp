@@ -39,6 +39,7 @@ extern "C" {
 #include "default_apps.hpp"
 #include "keybinds_config.hpp"
 #include "theme.hpp"
+#include "window_list.hpp"
 #include "workspace.hpp"
 
 #if FLEETWM_XWAYLAND
@@ -160,6 +161,23 @@ class Server {
   // Titlebar button hover bookkeeping: clears the old view's highlight.
   void set_hover_view(View* view);
   void toggle_maximize(View* view);
+  void minimize_view(View* view);
+
+  // ---- window list for taskbar clients (IPC) ----
+  // Gives focus to the topmost visible window other than `gone` (focus-on-close
+  // and focus-on-minimize), or clears focus if there is none.
+  void focus_next_after(View* gone);
+  View* view_by_id(uint32_t id) const;
+  // Brings a window to the front: restores it if minimized, then focuses it.
+  void activate_view(View* view);
+  // Taskbar button semantics: restore if minimized, minimize if it already has
+  // focus, otherwise focus it.
+  void toggle_view_from_taskbar(View* view);
+  // Coalesces any number of changes within one event-loop iteration into a
+  // single WINDOWS broadcast.
+  void schedule_windows_broadcast();
+  void broadcast_windows_now();
+  std::vector<WindowEntry> window_snapshot() const;
   // Titlebar double-click detection (button press time, ms).
   bool is_double_click(View* view, uint32_t time_msec);
   bool swallow_release = false;  // a decoration press was consumed; eat its release
@@ -384,6 +402,8 @@ class Server {
   KeybindsConfig keybinds_config_;
   ResolvedKeybinds resolved_keybinds_;
   bool locked_ = false;
+  uint32_t next_view_id_ = 1;
+  wl_event_source* windows_idle_ = nullptr;
 
   enum class GrabMode { None, Move, Resize };
   GrabMode grab_mode_ = GrabMode::None;

@@ -436,7 +436,7 @@ void Output::switch_workspace(int index) {
   active_workspace_index = index;
 
   for (View* view : workspaces[active_workspace_index].views()) {
-    if (!view->pinned) {
+    if (!view->pinned && !view->minimized) {
       wlr_scene_node_set_enabled(&view->container_tree->node, true);
     }
   }

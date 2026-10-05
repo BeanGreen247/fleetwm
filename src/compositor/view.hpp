@@ -2,6 +2,7 @@
 
 #include <wayland-server-core.h>
 
+#include <cstdint>
 #include <string>
 
 extern "C" {
@@ -182,6 +183,11 @@ class View {
   // True when the client asked for server-side decorations through
   // xdg-decoration (set from the decoration handler in server.cpp).
   bool has_decoration = false;
+  // Stable id shown to taskbar clients over IPC (0 = not assigned yet).
+  uint32_t id = 0;
+  // Hidden by the user (titlebar button or taskbar); restored from the taskbar.
+  bool minimized = false;
+  void set_minimized(bool minimized);
   bool maximized = false;
   wlr_box pre_fullscreen_box{};  // same, for leaving fullscreen
   wlr_box restore_box{};  // container position + content size before maximize

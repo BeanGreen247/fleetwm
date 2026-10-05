@@ -73,6 +73,7 @@ libcommon_core = static_library(
     'malloc_tuning.cpp',
     'pipewire_json.cpp',
     'window_geometry.cpp',
+    'window_list.cpp',
   ),
   dependencies: [tomlplusplus_dep],
   include_directories: include_directories('.'),

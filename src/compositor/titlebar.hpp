@@ -16,7 +16,7 @@ namespace fleetwm {
 constexpr int kTitlebarHeight = 32;
 constexpr int kTitlebarButtonWidth = 38;
 
-enum TitlebarButton { kButtonNone = -1, kButtonMaximize = 0, kButtonClose = 1 };
+enum TitlebarButton { kButtonNone = -1, kButtonMaximize = 0, kButtonClose = 1, kButtonMinimize = 2 };
 
 // Which button (if any) is under x (titlebar-local) in a titlebar `width` wide.
 int titlebar_button_at(int width, double x);
