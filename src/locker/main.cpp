@@ -1,4 +1,4 @@
-// fleetwm-locker: lean, GTK-free lock screen. A fullscreen OVERLAY layer
+// fleetwm-locker: GTK-free lock screen. A fullscreen OVERLAY layer
 // surface with EXCLUSIVE keyboard focus, drawn with cairo on wl_shm. Same
 // look as the greeter's login card (avatar, name, password entry, submit
 // button). PAM re-authenticates the running session; on success it sends
@@ -16,7 +16,7 @@
 #include <memory>
 
 #include "ipc_client.hpp"
-#include "lean.hpp"
+#include "fleetkit.hpp"
 #include "malloc_tuning.hpp"
 #include "pam_verify.hpp"
 #include "theme.hpp"
@@ -25,7 +25,7 @@
 namespace {
 
 using namespace fleetwm;
-using namespace fleetwm::lean;
+using namespace fleetwm::kit;
 
 constexpr size_t kMaxPassword = 255;
 constexpr uint32_t kBtnLeft = 0x110;

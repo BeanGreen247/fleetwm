@@ -1,4 +1,4 @@
-# fleetwm "lean" toolkit: GTK-free Wayland client helpers (layer-shell
+# fleetwm "fleetkit" toolkit: GTK-free Wayland client helpers (layer-shell
 # surfaces on wl_shm + cairo, xkbcommon input, timers). Links cairo (which
 # pulls fontconfig/freetype/pixman) but never GTK, GLib or Pango.
 cairo_dep = dependency('cairo')
@@ -11,28 +11,28 @@ libpng_dep = dependency('libpng')
 libjpeg_dep = dependency('libjpeg')
 libwebp_dep = dependency('libwebp')
 
-libleanimage = static_library(
-  'fleetwm-lean-image',
+libfleetkit_image = static_library(
+  'fleetwm-kit-image',
   files('image.cpp', 'svg.cpp'),
   include_directories: include_directories('.'),
   dependencies: [libpng_dep, libjpeg_dep, libwebp_dep],
 )
 
-libleanimage_dep = declare_dependency(
-  link_with: libleanimage,
+libfleetkit_image_dep = declare_dependency(
+  link_with: libfleetkit_image,
   include_directories: include_directories('.'),
   dependencies: [libpng_dep, libjpeg_dep, libwebp_dep],
 )
 
-liblean = static_library(
-  'fleetwm-lean',
-  files('lean.cpp', 'icon_theme.cpp', 'desktop_entry.cpp'),
+libfleetkit = static_library(
+  'fleetwm-kit',
+  files('fleetkit.cpp', 'icon_theme.cpp', 'desktop_entry.cpp', 'ui.cpp', 'mimeapps.cpp'),
   include_directories: include_directories('.'),
-  dependencies: [wayland_client, client_protocols_dep, cairo_dep, xkbcommon_client_dep, libcommon_core_dep, libleanimage_dep],
+  dependencies: [wayland_client, client_protocols_dep, cairo_dep, xkbcommon_client_dep, libcommon_core_dep, libfleetkit_image_dep],
 )
 
-liblean_dep = declare_dependency(
-  link_with: liblean,
+libfleetkit_dep = declare_dependency(
+  link_with: libfleetkit,
   include_directories: include_directories('.'),
-  dependencies: [wayland_client, client_protocols_dep, cairo_dep, xkbcommon_client_dep, libcommon_core_dep, libleanimage_dep],
+  dependencies: [wayland_client, client_protocols_dep, cairo_dep, xkbcommon_client_dep, libcommon_core_dep, libfleetkit_image_dep],
 )

@@ -30,10 +30,10 @@ standalone process over the stated window.
   `-fno-strict-aliasing`, software rendering for the real compositor, idle
   frame throttling (the compositor already measures 0 CPU ticks idle).
 
-## Lean clients: GTK-free shell (2026-10-05)
+## GTK-free shell clients (fleetkit) (2026-10-05)
 
 The always-resident and frequently launched clients were rewritten as plain
-Wayland clients on the small `src/lean` toolkit (layer-shell surfaces on
+Wayland clients on the small `src/fleetkit` toolkit (layer-shell surfaces on
 `wl_shm`, cairo drawing, xkbcommon input, `poll()` loop; nothing redraws unless
 something visible changed). The compositor is unchanged for applications: GTK
 2/3/4, Qt and XWayland apps keep working.
@@ -46,15 +46,16 @@ something visible changed). The compositor is unchanged for applications: GTK
 | launcher | 71 -> 27 | 149 MB -> 10.3 MB | 106 -> 3.9 MB | 28 -> 0; first window 63-79 ms -> 25-27 ms |
 | bar | 72 -> 33 | 147 MB -> 12.1 MB | 105 -> 6.2 MB | 25 ticks/30 s -> 1 |
 | audiomixer | GTK -> 28 | n/a -> 11 MB | | 0 |
+| settings | 72 -> 28 | 75 MB -> 15 MB | 61 -> 5.9 MB | 0 -> 0 |
 | compositor | 99 -> 50 | | | |
 
 Resident shell memory (bar + wallpaper) went from about 260 MB to about 17 MB.
-`fleetwm-settings` and `fleetwm-greeter-login` are rewritten in later steps;
-see the status section at the end of this file.
+`fleetwm-settings` was rewritten as well (see below); `fleetwm-greeter-login`
+follows in a later step.
 
 ### Pieces of the toolkit
 
-- `src/lean/lean.{hpp,cpp}`: `App` (connection, registry, seat, outputs,
+- `src/fleetkit/fleetkit.{hpp,cpp}`: `App` (connection, registry, seat, outputs,
   timers, extra fds, thread-safe `post()`, clipboard paste), `Surface`
   (layer surface + double-buffered shm + cairo, redraw coalescing, frame
   callbacks), `Tooltip`, theme `Palette` read from `themes/*.css`.
@@ -62,8 +63,27 @@ see the status section at the end of this file.
   licence), `icon_theme.cpp` (freedesktop icon theme lookup),
   `desktop_entry.cpp` (.desktop scanning, Exec expansion).
 - `src/common` is split into `libcommon_core` (toml++ only) and `libcommon`
-  (GTK/GLib helpers); the compositor and the lean clients link only the core.
+  (GTK/GLib helpers); the compositor and the fleetkit clients link only the core.
 - The system tray is an sd-bus StatusNotifierWatcher + host in `src/bar`.
+
+### The settings window
+
+`fleetwm-settings` is an `xdg_toplevel` (app id `dev.fleetwm.Settings`, which
+the compositor floats, centres and keeps on top) drawn through
+`src/fleetkit/ui.{hpp,cpp}`, a small immediate-mode widget layer: tabs,
+check boxes, radio groups, buttons, spin buttons (typing, arrows, wheel),
+sliders, a colour picker (saturation/value square, hue bar, presets, hex
+entry), a file chooser, scrolling, Tab/Shift+Tab focus and keyboard
+activation. Widgets are functions called from the draw callback, so nothing is
+retained or redrawn while idle. Default applications are read and written
+through `src/fleetkit/mimeapps.cpp` (mimeapps.list / mimeinfo.cache, the same
+files GIO uses). Every tab of the GTK version is kept: Theme (with the power
+section), Bar, Wallpaper, Default Apps, Audio, Performance, About.
+
+Trap: with immediate-mode widgets a click that opens or closes a dialog only
+takes effect on the *next* frame, so the draw callback must queue another
+frame when `Ui::wants_another_frame()` is set, otherwise the result sits
+unused until the next input event.
 
 ### Bugs found and fixed on the way
 
@@ -75,7 +95,7 @@ see the status section at the end of this file.
 - Compositor: a focused client received no keyboard `enter` when the seat had
   no keyboard device yet (hot-plug, VMs driven by virtual keyboards).
 - This compositor re-sends layer-surface `configure` on every commit; a client
-  that redraws on every configure loops forever. lean redraws only when the
+  that redraws on every configure loops forever. fleetkit redraws only when the
   size changed.
 - libwayland aborts the process when an event arrives with a NULL listener:
   every listener slot is filled. Seat/output listeners must be attached

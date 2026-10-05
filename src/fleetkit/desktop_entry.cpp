@@ -14,7 +14,7 @@
 #include <set>
 #include <sstream>
 
-namespace fleetwm::lean {
+namespace fleetwm::kit {
 
 namespace {
 
@@ -256,4 +256,4 @@ bool spawn_detached(const std::vector<std::string>& argv, const std::string& wor
   return true;
 }
 
-}  // namespace fleetwm::lean
+}  // namespace fleetwm::kit

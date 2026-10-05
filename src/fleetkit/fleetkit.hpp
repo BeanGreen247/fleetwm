@@ -1,6 +1,6 @@
 #pragma once
 
-// fleetwm "lean" toolkit: a tiny GTK-free layer for fleetwm's own Wayland
+// fleetwm "fleetkit" toolkit: a tiny GTK-free layer for fleetwm's own Wayland
 // clients (wallpaper aside, which needs none of it): one wl_display
 // connection + poll() loop, layer-shell surfaces backed by wl_shm buffers
 // drawn with cairo, keyboard (xkbcommon, with key repeat) and pointer input,
@@ -23,8 +23,11 @@
 
 struct zwlr_layer_shell_v1;
 struct zwlr_layer_surface_v1;
+struct xdg_wm_base;
+struct xdg_surface;
+struct xdg_toplevel;
 
-namespace fleetwm::lean {
+namespace fleetwm::kit {
 
 struct Color {
   double r = 0, g = 0, b = 0, a = 1;
@@ -79,6 +82,11 @@ class Surface {
     uint32_t keyboard_mode = 0;  // ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_*
     std::string name = "fleetwm";
     wl_output* output = nullptr;
+    // Regular application window (xdg_toplevel) instead of a layer surface.
+    // width/height are the initial size; the compositor may reconfigure it.
+    bool toplevel = false;
+    std::string app_id, title;
+    int min_width = 0, min_height = 0;
   };
 
   Surface(App& app, const Config& cfg);
@@ -99,6 +107,7 @@ class Surface {
 
   void queue_draw();
   void set_size(int w, int h);
+  void set_title(const std::string& title);
   void set_anchor(uint32_t anchor);
   void set_exclusive_zone(int z);
   void set_margins(int top, int right, int bottom, int left);
@@ -130,6 +139,9 @@ class Surface {
   Config cfg_;
   wl_surface* surface_ = nullptr;
   zwlr_layer_surface_v1* ls_ = nullptr;
+  xdg_surface* xs_ = nullptr;
+  xdg_toplevel* xt_ = nullptr;
+  int pending_w_ = 0, pending_h_ = 0;
   wl_callback* frame_cb_ = nullptr;
   Buffer bufs_[2];
   int width_ = 0, height_ = 0, scale_ = 1;
@@ -176,6 +188,7 @@ class App {
   wl_compositor* compositor() const { return compositor_; }
   wl_shm* shm() const { return shm_; }
   zwlr_layer_shell_v1* layer_shell() const { return layer_shell_; }
+  xdg_wm_base* wm_base() const { return wm_base_; }
   const std::vector<OutputInfo>& outputs() const { return outputs_; }
   int output_scale(wl_output* o) const;
   std::function<void()> on_outputs_changed;
@@ -201,6 +214,7 @@ class App {
   wl_compositor* compositor_ = nullptr;
   wl_shm* shm_ = nullptr;
   zwlr_layer_shell_v1* layer_shell_ = nullptr;
+  xdg_wm_base* wm_base_ = nullptr;
   wl_seat* seat_ = nullptr;
   wl_data_device_manager* data_manager_ = nullptr;
   wl_data_device* data_device_ = nullptr;
@@ -246,4 +260,4 @@ class Tooltip {
 // directories are created if missing. Returns the watch id for App::unwatch.
 int watch_dirs(App& app, const std::vector<std::string>& dirs, std::function<void()> cb);
 
-}  // namespace fleetwm::lean
+}  // namespace fleetwm::kit

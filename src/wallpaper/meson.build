@@ -9,7 +9,7 @@ executable(
   dependencies: [
     wayland_client,
     client_protocols_dep,
-    libleanimage_dep,
+    libfleetkit_image_dep,
     libcommon_core_dep,
   ],
   install: true,

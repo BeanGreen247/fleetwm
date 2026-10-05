@@ -1,4 +1,4 @@
-# GTK-free: lean toolkit (wayland-client + cairo + xkbcommon) + PAM.
+# GTK-free: fleetkit toolkit (wayland-client + cairo + xkbcommon) + PAM.
 pam_dep_locker = cpp.find_library('pam', required: get_option('greeter'))
 
 executable(
@@ -8,6 +8,6 @@ executable(
     'pam_verify.cpp',
   ),
   include_directories: include_directories('.'),
-  dependencies: [liblean_dep, pam_dep_locker, libcommon_core_dep],
+  dependencies: [libfleetkit_dep, pam_dep_locker, libcommon_core_dep],
   install: true,
 )

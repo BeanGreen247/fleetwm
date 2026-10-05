@@ -1,4 +1,4 @@
-// fleetwm-bar: lean, GTK-free top bar. One layer-shell TOP surface drawn
+// fleetwm-bar: GTK-free top bar. One layer-shell TOP surface drawn
 // with cairo on wl_shm: workspace switcher, clock, CPU/GPU/Disk/Volume
 // stats, system tray, battery + power-mode indicator, power button.
 // Redraws only when something visible changed; otherwise it sleeps in poll().
@@ -26,7 +26,7 @@
 #include "bar_config.hpp"
 #include "battery_reading.hpp"
 #include "ipc_client.hpp"
-#include "lean.hpp"
+#include "fleetkit.hpp"
 #include "malloc_tuning.hpp"
 #include "theme.hpp"
 #include "tray.hpp"
@@ -38,7 +38,7 @@ extern char** environ;
 namespace {
 
 using namespace fleetwm;
-using namespace fleetwm::lean;
+using namespace fleetwm::kit;
 using fleetwm::bar::Tray;
 using fleetwm::bar::VolumeSource;
 
@@ -748,7 +748,7 @@ int main() {
   });
   B.app.on_outputs_changed = [&B] { B.apply_layout(); };
 
-  lean::watch_dirs(B.app,
+  kit::watch_dirs(B.app,
                    {std::filesystem::path(user_config_path()).parent_path().string(),
                     std::filesystem::path(bar_user_config_path()).parent_path().string()},
                    [&B] { B.reload_config(); });

@@ -1,6 +1,6 @@
 #pragma once
 
-// Small string helpers shared by lean's translation units (defined inline in
+// Small string helpers shared by fleetkit's translation units (defined inline in
 // one place because unity builds merge the .cpp files into one TU, where two
 // anonymous-namespace copies would collide).
 
@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-namespace fleetwm::lean::detail {
+namespace fleetwm::kit::detail {
 
 inline std::string trim(const std::string& s) {
   const size_t a = s.find_first_not_of(" \t\r\n"), b = s.find_last_not_of(" \t\r\n");
@@ -26,4 +26,4 @@ inline std::vector<std::string> split(const std::string& s, char sep) {
   return out;
 }
 
-}  // namespace fleetwm::lean::detail
+}  // namespace fleetwm::kit::detail

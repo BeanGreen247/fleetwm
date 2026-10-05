@@ -45,7 +45,7 @@ class AudioMixer {
   using MasterCallback = std::function<void(int percent, bool muted, bool available)>;
   using StreamsCallback = std::function<void(const std::vector<AudioStream>& streams)>;
   // Runs a callable on the application's main loop thread (PipeWire events
-  // arrive on its own thread). GTK clients wrap g_idle_add, lean clients App::post.
+  // arrive on its own thread). GTK clients wrap g_idle_add, fleetkit clients App::post.
   using Poster = std::function<void(std::function<void()>)>;
 
   // Starts the backend and begins delivering updates via the two

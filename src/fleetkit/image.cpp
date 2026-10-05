@@ -11,7 +11,7 @@
 #include <fstream>
 #include <iterator>
 
-namespace fleetwm::lean {
+namespace fleetwm::kit {
 
 namespace {
 
@@ -175,4 +175,4 @@ void render_cover(const Image& src_in, int dst_w, int dst_h, uint8_t* dst) {
   }
 }
 
-}  // namespace fleetwm::lean
+}  // namespace fleetwm::kit

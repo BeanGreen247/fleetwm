@@ -10,7 +10,7 @@
 #include <string>
 #include <vector>
 
-#include "lean.hpp"
+#include "fleetkit.hpp"
 
 namespace fleetwm::bar {
 
@@ -23,7 +23,7 @@ class Tray {
     std::string title;
   };
 
-  Tray(lean::App& app, std::function<void()> on_change);
+  Tray(kit::App& app, std::function<void()> on_change);
   ~Tray();
   Tray(const Tray&) = delete;
   Tray& operator=(const Tray&) = delete;

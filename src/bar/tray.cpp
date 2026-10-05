@@ -41,7 +41,7 @@ struct Tray::Impl {
     Impl* owner = nullptr;
   };
 
-  lean::App& app;
+  kit::App& app;
   std::function<void()> on_change;
   sd_bus* bus = nullptr;
   sd_bus_slot* vtable_slot = nullptr;
@@ -51,7 +51,7 @@ struct Tray::Impl {
   std::vector<Item> view;
   cairo_surface_t* placeholder = nullptr;
 
-  Impl(lean::App& a, std::function<void()> cb) : app(a), on_change(std::move(cb)) {}
+  Impl(kit::App& a, std::function<void()> cb) : app(a), on_change(std::move(cb)) {}
 
   ~Impl() {
     if (watch_id) app.unwatch(watch_id);
@@ -274,7 +274,7 @@ struct Tray::Impl {
     if (!icon && !icon_name.empty()) {
       std::vector<std::string> dirs;
       if (!theme_path.empty()) dirs.push_back(theme_path);
-      icon = lean::load_icon(icon_name, kIconPx, dirs);
+      icon = kit::load_icon(icon_name, kIconPx, dirs);
     }
     if (!icon) {
       if (!placeholder) placeholder = make_placeholder();
@@ -336,7 +336,7 @@ int fleetwm_tray_prop_version(sd_bus*, const char*, const char*, const char*, sd
 
 }  // extern "C"
 
-Tray::Tray(lean::App& app, std::function<void()> on_change)
+Tray::Tray(kit::App& app, std::function<void()> on_change)
     : impl_(new Impl(app, std::move(on_change))) {}
 Tray::~Tray() = default;
 void Tray::start() { impl_->start(); }

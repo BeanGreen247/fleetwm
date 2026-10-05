@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-namespace fleetwm::lean {
+namespace fleetwm::kit {
 
 struct DesktopEntry {
   std::string id;          // e.g. "org.gnome.Nautilus.desktop"
@@ -37,4 +37,4 @@ std::string exec_basename(const DesktopEntry& e);
 // non-empty. Returns false if the fork failed.
 bool spawn_detached(const std::vector<std::string>& argv, const std::string& workdir = "");
 
-}  // namespace fleetwm::lean
+}  // namespace fleetwm::kit

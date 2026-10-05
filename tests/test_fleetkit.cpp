@@ -1,14 +1,14 @@
-// Unit tests for the pure (no Wayland) parts of src/lean: desktop-entry Exec
+// Unit tests for the pure (no Wayland) parts of src/fleetkit: desktop-entry Exec
 // expansion, colour parsing, icon-less helpers.
 #include <gtest/gtest.h>
 
 #include "desktop_entry.hpp"
-#include "lean.hpp"
+#include "fleetkit.hpp"
 
-using fleetwm::lean::DesktopEntry;
-using fleetwm::lean::exec_argv;
-using fleetwm::lean::exec_basename;
-using fleetwm::lean::parse_color;
+using fleetwm::kit::DesktopEntry;
+using fleetwm::kit::exec_argv;
+using fleetwm::kit::exec_basename;
+using fleetwm::kit::parse_color;
 
 namespace {
 DesktopEntry entry(const std::string& exec) {
@@ -61,7 +61,7 @@ TEST(DesktopEntryExec, BasenameOfAbsolutePath) {
   EXPECT_EQ(exec_basename(entry("")), "");
 }
 
-TEST(LeanColor, ParsesRgbAndRgba) {
+TEST(FleetkitColor, ParsesRgbAndRgba) {
   const auto c = parse_color("#ff8000");
   EXPECT_DOUBLE_EQ(c.r, 1.0);
   EXPECT_NEAR(c.g, 128 / 255.0, 1e-9);
@@ -71,8 +71,8 @@ TEST(LeanColor, ParsesRgbAndRgba) {
   EXPECT_NEAR(d.a, 128 / 255.0, 1e-9);
 }
 
-TEST(LeanColor, MalformedFallsBack) {
-  fleetwm::lean::Color fb{0.1, 0.2, 0.3, 1.0};
+TEST(FleetkitColor, MalformedFallsBack) {
+  fleetwm::kit::Color fb{0.1, 0.2, 0.3, 1.0};
   EXPECT_DOUBLE_EQ(parse_color("red", fb).r, 0.1);
   EXPECT_DOUBLE_EQ(parse_color("#12345", fb).g, 0.2);
   EXPECT_DOUBLE_EQ(parse_color("#12zz56", fb).b, 0.3);
