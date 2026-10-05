@@ -221,8 +221,8 @@ void View::update_shadow(int outer_w, int outer_h, int outer_radius) {
     if (shadow) wlr_scene_node_set_enabled(&shadow->node, false);
     return;
   }
-  constexpr int kBlur = 12, kMargin = 28, kDy = 6;
-  constexpr float kColor[4] = {0.0f, 0.0f, 0.0f, 0.42f};
+  constexpr int kBlur = 5, kMargin = 12, kDy = 2;
+  constexpr float kColor[4] = {0.0f, 0.0f, 0.0f, 0.24f};
   const int sw = outer_w + 2 * kMargin, sh = outer_h + 2 * kMargin;
   if (!shadow) {
     shadow = wlr_scene_shadow_create(container_tree, sw, sh, outer_radius, kBlur, kColor);
