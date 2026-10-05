@@ -279,6 +279,58 @@ void View::set_hover_button(int button) {
   update_titlebar();
 }
 
+void View::snap_to(geom::SnapZone zone) {
+  if (zone == geom::SnapZone::None || !output || kind != Kind::XdgToplevel || !xdg_toplevel) {
+    return;
+  }
+  if (zone == geom::SnapZone::Maximize) {
+    set_maximized(true);
+    return;
+  }
+  if (maximized) {
+    set_maximized(false);
+  }
+  if (snap_zone == geom::SnapZone::None) {
+    wlr_box geo{};
+    wlr_xdg_surface_get_geometry(xdg_toplevel->base, &geo);
+    restore_box = {container_tree->node.x, container_tree->node.y, geo.width, geo.height};
+  }
+  snap_zone = zone;
+  refit_snapped();
+}
+
+void View::refit_snapped() {
+  if (snap_zone == geom::SnapZone::None || !output || !xdg_toplevel) {
+    return;
+  }
+  const wlr_box a = output->usable_area;
+  const geom::Box outer = geom::snap_box(snap_zone, {a.x, a.y, a.width, a.height});
+  const int bt = std::max(border_thickness(), server->theme_config().focus_border_thickness_px);
+  wlr_scene_node_set_position(&container_tree->node, outer.x, outer.y);
+  const int w = std::max(1, outer.w - 2 * bt), h = std::max(1, outer.h - titlebar_height() - 2 * bt);
+  wlr_xdg_toplevel_set_size(xdg_toplevel, w, h);
+  last_requested_content_w = w;
+  last_requested_content_h = h;
+  resize_border();
+}
+
+void View::restore_from_snap() {
+  if (maximized) {
+    set_maximized(false);
+    return;
+  }
+  if (snap_zone == geom::SnapZone::None || !xdg_toplevel) {
+    return;
+  }
+  snap_zone = geom::SnapZone::None;
+  wlr_scene_node_set_position(&container_tree->node, restore_box.x, restore_box.y);
+  const int w = std::max(1, restore_box.width), h = std::max(1, restore_box.height);
+  wlr_xdg_toplevel_set_size(xdg_toplevel, w, h);
+  last_requested_content_w = w;
+  last_requested_content_h = h;
+  resize_border();
+}
+
 void View::refit_maximized() {
   if (!maximized || !output || !xdg_toplevel) {
     return;

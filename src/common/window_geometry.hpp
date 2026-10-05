@@ -100,6 +100,33 @@ int titlebar_button_at(const TitlebarLayout& layout, double x, double y);
 // starts at its left edge.
 double title_x(const TitlebarLayout& layout, double text_w, TitleAlignment align, int width);
 
+// ---- snapping -------------------------------------------------------------
+
+// Where a dragged window lands when released near a screen edge: halves on
+// the left/right edges, quarters in the corners, maximized on the top edge.
+enum class SnapZone {
+  None,
+  Maximize,
+  Left,
+  Right,
+  TopLeft,
+  TopRight,
+  BottomLeft,
+  BottomRight,
+};
+
+// The zone a pointer at (px, py) is in, for an output whose full box is
+// `screen`. A zone triggers within `edge` px of a screen edge; within `corner`
+// px of a corner it becomes the quarter instead of the half. There is no zone
+// on the bottom edge's middle (that would only ever be a mistake).
+SnapZone snap_zone_at(double px, double py, const Box& screen, int edge = 10, int corner = 64);
+
+// The window's outer box (including titlebar and border) for `zone` inside the
+// work area `area`. Halves split the width, quarters split both; odd sizes give
+// the extra pixel to the right/bottom piece so the pieces tile exactly.
+// SnapZone::None yields an empty box.
+Box snap_box(SnapZone zone, const Box& area);
+
 // How window buttons share `avail` px of a horizontal taskbar: each button is
 // `bw` wide (between min_w and max_w, shrinking as windows are added) with `gap`
 // px between buttons, and only `fit` of the `count` windows are shown.

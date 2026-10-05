@@ -50,6 +50,50 @@ Box cascade_position(const Box& area, int outer_w, int outer_h, int index) {
   return out;
 }
 
+SnapZone snap_zone_at(double px, double py, const Box& s, int edge, int corner) {
+  if (px < s.x || py < s.y || px >= s.x + s.w || py >= s.y + s.h) return SnapZone::None;
+  const bool left = px < s.x + edge, right = px >= s.x + s.w - edge;
+  const bool top = py < s.y + edge, bottom = py >= s.y + s.h - edge;
+  const bool near_top = py < s.y + corner, near_bottom = py >= s.y + s.h - corner;
+  const bool near_left = px < s.x + corner, near_right = px >= s.x + s.w - corner;
+
+  if (left) {
+    if (near_top) return SnapZone::TopLeft;
+    if (near_bottom) return SnapZone::BottomLeft;
+    return SnapZone::Left;
+  }
+  if (right) {
+    if (near_top) return SnapZone::TopRight;
+    if (near_bottom) return SnapZone::BottomRight;
+    return SnapZone::Right;
+  }
+  if (top) {
+    if (near_left) return SnapZone::TopLeft;
+    if (near_right) return SnapZone::TopRight;
+    return SnapZone::Maximize;
+  }
+  if (bottom) {
+    if (near_left) return SnapZone::BottomLeft;
+    if (near_right) return SnapZone::BottomRight;
+  }
+  return SnapZone::None;
+}
+
+Box snap_box(SnapZone zone, const Box& a) {
+  const int half_w = a.w / 2, half_h = a.h / 2;
+  switch (zone) {
+    case SnapZone::None: return {};
+    case SnapZone::Maximize: return a;
+    case SnapZone::Left: return {a.x, a.y, half_w, a.h};
+    case SnapZone::Right: return {a.x + half_w, a.y, a.w - half_w, a.h};
+    case SnapZone::TopLeft: return {a.x, a.y, half_w, half_h};
+    case SnapZone::TopRight: return {a.x + half_w, a.y, a.w - half_w, half_h};
+    case SnapZone::BottomLeft: return {a.x, a.y + half_h, half_w, a.h - half_h};
+    case SnapZone::BottomRight: return {a.x + half_w, a.y + half_h, a.w - half_w, a.h - half_h};
+  }
+  return {};
+}
+
 TitlebarLayout layout_titlebar(int width, const TitlebarMetrics& in) {
   TitlebarMetrics m = in;
   m.height = std::max(16, m.height);

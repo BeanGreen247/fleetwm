@@ -581,6 +581,10 @@ void Output::fit_floating_views() {
       view->refit_maximized();
       continue;
     }
+    if (view->snap_zone != geom::SnapZone::None) {
+      view->refit_snapped();
+      continue;
+    }
     // Keep the titlebar reachable: not under a taskbar, not off-screen.
     constexpr int kKeepVisible = 80;
     const int outer_w = view->content_w + 2 * view->border_thickness();

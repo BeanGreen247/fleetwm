@@ -1608,7 +1608,7 @@ void Server::begin_move(View* view) {
   grab_cursor_x_ = cursor_->x;
   grab_cursor_y_ = cursor_->y;
   grab_box_ = {view->container_tree->node.x, view->container_tree->node.y, 0, 0};
-  grab_unmaximize_pending_ = view->maximized;
+  grab_unmaximize_pending_ = view->maximized || view->snap_zone != geom::SnapZone::None;
   wlr_seat_pointer_clear_focus(seat_);
 }
 
@@ -1619,6 +1619,7 @@ void Server::begin_resize(View* view, uint32_t edges) {
   }
   wlr_box geo{};
   wlr_xdg_surface_get_geometry(view->xdg_toplevel->base, &geo);
+  view->snap_zone = geom::SnapZone::None;  // a resized window is no longer a half/quarter
   grab_mode_ = GrabMode::Resize;
   grab_view_ = view;
   grab_edges_ = edges;
@@ -1643,7 +1644,7 @@ void Server::update_grab() {
       // same relative spot on the titlebar.
       const wlr_box area = view->output ? view->output->usable_area : wlr_box{};
       const double ratio = area.width > 0 ? (grab_cursor_x_ - area.x) / area.width : 0.5;
-      view->set_maximized(false);
+      view->restore_from_snap();
       const int outer_w = view->restore_box.width + 2 * view->border_thickness();
       grab_box_.x = static_cast<int>(grab_cursor_x_ - ratio * outer_w);
       grab_box_.y = static_cast<int>(grab_cursor_y_ - view->titlebar_height() / 2);
@@ -1654,6 +1655,7 @@ void Server::update_grab() {
       y = std::max(y, view->output->usable_area.y);  // keep the titlebar below the bar
     }
     wlr_scene_node_set_position(&view->container_tree->node, x, y);
+    update_snap_preview(view);
     return;
   }
 
@@ -1670,7 +1672,51 @@ void Server::update_grab() {
   }
 }
 
+void Server::update_snap_preview(View* view) {
+  geom::SnapZone zone = geom::SnapZone::None;
+  Output* out = nullptr;
+  wlr_box full{};
+  if (wlr_output* wo = wlr_output_layout_output_at(output_layout_, cursor_->x, cursor_->y)) {
+    out = output_for(wo);
+    wlr_output_layout_get_box(output_layout_, wo, &full);
+  }
+  // Windows only live on their own output, so snapping elsewhere is ignored.
+  if (out && out == view->output && !view->fullscreen) {
+    zone = geom::snap_zone_at(cursor_->x, cursor_->y, {full.x, full.y, full.width, full.height});
+  }
+  if (zone == snap_pending_) return;
+  snap_pending_ = zone;
+  if (zone == geom::SnapZone::None) {
+    hide_snap_preview();
+    return;
+  }
+  const wlr_box a = out->usable_area;
+  const geom::Box box = geom::snap_box(zone, {a.x, a.y, a.width, a.height});
+  float color[4] = {0.5f, 0.6f, 1.0f, 0.2f};
+  if (parse_hex_color(theme_config_.accent.hex, color)) color[3] = 0.2f;
+  if (!snap_preview_) {
+    snap_preview_ = wlr_scene_rect_create(layer_pinned_, box.w, box.h, color);
+  }
+  wlr_scene_rect_set_size(snap_preview_, box.w, box.h);
+  wlr_scene_rect_set_color(snap_preview_, color);
+  wlr_scene_node_set_position(&snap_preview_->node, box.x, box.y);
+  wlr_scene_node_set_enabled(&snap_preview_->node, true);
+}
+
+void Server::hide_snap_preview() {
+  if (snap_preview_) wlr_scene_node_set_enabled(&snap_preview_->node, false);
+}
+
 void Server::end_grab() {
+  if (grab_mode_ == GrabMode::Move && grab_view_ && snap_pending_ != geom::SnapZone::None) {
+    const geom::SnapZone zone = snap_pending_;
+    View* view = grab_view_;
+    snap_pending_ = geom::SnapZone::None;
+    hide_snap_preview();
+    view->snap_to(zone);
+  }
+  snap_pending_ = geom::SnapZone::None;
+  hide_snap_preview();
   grab_mode_ = GrabMode::None;
   grab_view_ = nullptr;
   grab_edges_ = 0;

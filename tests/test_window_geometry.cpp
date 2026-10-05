@@ -339,3 +339,117 @@ TEST(TaskbarSlots, ShownButtonsNeverOverflow) {
     }
   }
 }
+
+// ---- snapping --------------------------------------------------------------
+
+namespace {
+const Box kScreen{0, 0, 1920, 1080};
+}
+
+TEST(SnapZoneAt, InteriorIsNotAZone) {
+  EXPECT_EQ(snap_zone_at(960, 540, kScreen), SnapZone::None);
+  EXPECT_EQ(snap_zone_at(11, 540, kScreen), SnapZone::None);    // just outside the 10px band
+  EXPECT_EQ(snap_zone_at(960, 11, kScreen), SnapZone::None);
+}
+
+TEST(SnapZoneAt, SideEdgesGiveHalves) {
+  EXPECT_EQ(snap_zone_at(0, 540, kScreen), SnapZone::Left);
+  EXPECT_EQ(snap_zone_at(9, 540, kScreen), SnapZone::Left);
+  EXPECT_EQ(snap_zone_at(1919, 540, kScreen), SnapZone::Right);
+  EXPECT_EQ(snap_zone_at(1910, 540, kScreen), SnapZone::Right);
+}
+
+TEST(SnapZoneAt, TopEdgeMaximizes) {
+  EXPECT_EQ(snap_zone_at(960, 0, kScreen), SnapZone::Maximize);
+  EXPECT_EQ(snap_zone_at(960, 9, kScreen), SnapZone::Maximize);
+}
+
+TEST(SnapZoneAt, BottomEdgeMiddleIsNothing) {
+  EXPECT_EQ(snap_zone_at(960, 1079, kScreen), SnapZone::None);
+}
+
+TEST(SnapZoneAt, CornersGiveQuarters) {
+  EXPECT_EQ(snap_zone_at(0, 0, kScreen), SnapZone::TopLeft);
+  EXPECT_EQ(snap_zone_at(1919, 0, kScreen), SnapZone::TopRight);
+  EXPECT_EQ(snap_zone_at(0, 1079, kScreen), SnapZone::BottomLeft);
+  EXPECT_EQ(snap_zone_at(1919, 1079, kScreen), SnapZone::BottomRight);
+}
+
+TEST(SnapZoneAt, CornerReachesAlongBothEdges) {
+  EXPECT_EQ(snap_zone_at(0, 63, kScreen), SnapZone::TopLeft);       // left edge, within 64px of the top
+  EXPECT_EQ(snap_zone_at(0, 64, kScreen), SnapZone::Left);          // just past it
+  EXPECT_EQ(snap_zone_at(63, 0, kScreen), SnapZone::TopLeft);       // top edge, within 64px of the left
+  EXPECT_EQ(snap_zone_at(64, 0, kScreen), SnapZone::Maximize);
+  EXPECT_EQ(snap_zone_at(1919, 1079 - 63, kScreen), SnapZone::BottomRight);
+  EXPECT_EQ(snap_zone_at(1919, 1079 - 64, kScreen), SnapZone::Right);
+  EXPECT_EQ(snap_zone_at(63, 1079, kScreen), SnapZone::BottomLeft);
+  EXPECT_EQ(snap_zone_at(1919 - 63, 1079, kScreen), SnapZone::BottomRight);
+}
+
+TEST(SnapZoneAt, OutsideTheScreenIsNothing) {
+  EXPECT_EQ(snap_zone_at(-1, 540, kScreen), SnapZone::None);
+  EXPECT_EQ(snap_zone_at(1920, 540, kScreen), SnapZone::None);
+  EXPECT_EQ(snap_zone_at(960, -1, kScreen), SnapZone::None);
+  EXPECT_EQ(snap_zone_at(960, 1080, kScreen), SnapZone::None);
+}
+
+TEST(SnapZoneAt, WorksOnAnOutputNotAtTheOrigin) {
+  const Box second{1920, 100, 1280, 720};
+  EXPECT_EQ(snap_zone_at(1920, 400, second), SnapZone::Left);
+  EXPECT_EQ(snap_zone_at(3199, 400, second), SnapZone::Right);
+  EXPECT_EQ(snap_zone_at(2500, 100, second), SnapZone::Maximize);
+  EXPECT_EQ(snap_zone_at(1919, 400, second), SnapZone::None);  // on the neighbouring output
+}
+
+TEST(SnapZoneAt, EdgeAndCornerSizesAreAdjustable) {
+  EXPECT_EQ(snap_zone_at(30, 540, kScreen, 40, 64), SnapZone::Left);
+  EXPECT_EQ(snap_zone_at(30, 540, kScreen, 10, 64), SnapZone::None);
+  EXPECT_EQ(snap_zone_at(0, 100, kScreen, 10, 120), SnapZone::TopLeft);
+}
+
+TEST(SnapBox, NoneIsEmptyAndMaximizeIsTheWholeArea) {
+  const Box area{0, 40, 1280, 720};
+  EXPECT_EQ(snap_box(SnapZone::None, area), (Box{}));
+  EXPECT_EQ(snap_box(SnapZone::Maximize, area), area);
+}
+
+TEST(SnapBox, HalvesTileTheArea) {
+  const Box area{0, 40, 1280, 720};
+  EXPECT_EQ(snap_box(SnapZone::Left, area), (Box{0, 40, 640, 720}));
+  EXPECT_EQ(snap_box(SnapZone::Right, area), (Box{640, 40, 640, 720}));
+}
+
+TEST(SnapBox, QuartersTileTheArea) {
+  const Box area{10, 20, 1000, 600};
+  EXPECT_EQ(snap_box(SnapZone::TopLeft, area), (Box{10, 20, 500, 300}));
+  EXPECT_EQ(snap_box(SnapZone::TopRight, area), (Box{510, 20, 500, 300}));
+  EXPECT_EQ(snap_box(SnapZone::BottomLeft, area), (Box{10, 320, 500, 300}));
+  EXPECT_EQ(snap_box(SnapZone::BottomRight, area), (Box{510, 320, 500, 300}));
+}
+
+TEST(SnapBox, OddSizesStillTileWithoutGapsOrOverlap) {
+  const Box area{3, 7, 1001, 603};
+  const Box l = snap_box(SnapZone::Left, area), r = snap_box(SnapZone::Right, area);
+  EXPECT_EQ(l.x + l.w, r.x);
+  EXPECT_EQ(r.x + r.w, area.x + area.w);
+  const Box tl = snap_box(SnapZone::TopLeft, area), bl = snap_box(SnapZone::BottomLeft, area);
+  EXPECT_EQ(tl.y + tl.h, bl.y);
+  EXPECT_EQ(bl.y + bl.h, area.y + area.h);
+  const Box br = snap_box(SnapZone::BottomRight, area);
+  EXPECT_EQ(br.x + br.w, area.x + area.w);
+  EXPECT_EQ(br.y + br.h, area.y + area.h);
+}
+
+TEST(SnapBox, EveryZoneStaysInsideTheArea) {
+  const Box area{0, 40, 1366, 728};
+  for (SnapZone z : {SnapZone::Maximize, SnapZone::Left, SnapZone::Right, SnapZone::TopLeft,
+                     SnapZone::TopRight, SnapZone::BottomLeft, SnapZone::BottomRight}) {
+    const Box b = snap_box(z, area);
+    EXPECT_GE(b.x, area.x);
+    EXPECT_GE(b.y, area.y);
+    EXPECT_LE(b.x + b.w, area.x + area.w);
+    EXPECT_LE(b.y + b.h, area.y + area.h);
+    EXPECT_GT(b.w, 0);
+    EXPECT_GT(b.h, 0);
+  }
+}
