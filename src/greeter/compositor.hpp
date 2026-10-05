@@ -29,7 +29,7 @@ extern "C" {
 namespace fleetwm::greeter {
 
 // Minimal single-client wlroots compositor that hosts the login card UI
-// (a GTK4 client this process spawns -- src/greeter-login) before any real
+// (a fleetkit client this process spawns -- src/greeter-login) before any real
 // user session exists. Deliberately far smaller than fleetwm::Server
 // (src/compositor/server.{hpp,cpp}): no layer-shell, no workspaces/tiling,
 // no IPC server, no multi-window management -- exactly one xdg_toplevel is
@@ -67,7 +67,7 @@ class GreeterCompositor {
   // keyboard is currently attached -- wlr_seat itself doesn't track this
   // (same reason src/compositor/server.{hpp,cpp} has an identical pair
   // of methods). Without ever calling wlr_seat_set_capabilities at all,
-  // the seat advertises none, and clients (GTK4 included) never route
+  // the seat advertises none, and clients never route
   // key/pointer input at the protocol level even though the compositor
   // itself is forwarding events -- confirmed via real testing: wtype
   // input was silently dropped until this was added.

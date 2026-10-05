@@ -192,7 +192,7 @@ void spawn(const char* cmd) {
 // specifically, not fleetwm's own clients (which spawn() above still hands
 // those vars to unmodified, e.g. kLauncherCommand). Those two vars are set
 // process-wide by the greeter (session.cpp's build_env(), preloading
-// jemalloc for fleetwm's own long-running GTK4 clients' RSS, see that
+// jemalloc for fleetwm's own long-running clients' RSS, see that
 // file's comment for the full rationale) and, being plain environment
 // variables, cascade into every child a plain execlp() spawns -- including
 // this terminal and therefore every command the user types inside it.

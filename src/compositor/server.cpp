@@ -162,7 +162,7 @@ void view_mapped(View* view) {
   // whatever's tiled in the workspace it lands in -- explicit user
   // request. It's a single-instance panel, not something that should
   // compete for tiling space the way a terminal would. Matched by its
-  // GApplication ID (settings/main.cpp's gtk_application_new() call),
+  // app id (set in settings/main.cpp),
   // not window title, since that's stable regardless of locale/theme.
   bool is_settings = view->kind == View::Kind::XdgToplevel && view->xdg_toplevel &&
                       view->xdg_toplevel->app_id &&
@@ -1361,7 +1361,7 @@ bool Server::init() {
     fallback_cursor_ = create_fallback_cursor(&fallback_hotspot_x_, &fallback_hotspot_y_);
   }
 
-  // wp_cursor_shape_v1: clients (foot, GTK4, Qt) ask for "text" or "pointer" and we draw it.
+  // wp_cursor_shape_v1: clients (foot, GTK, Qt) ask for "text" or "pointer" and we draw it.
   cursor_shape_manager_ = wlr_cursor_shape_manager_v1_create(display_, 1);
   request_set_shape_.notify = [](wl_listener* listener, void* data) {
     Server* server = wl_container_of(listener, server, request_set_shape_);

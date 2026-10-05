@@ -70,7 +70,7 @@ The installer's build now trades security hardening for speed, on purpose.
 - Zombie children are reaped via a SIGCHLD handler.
 - The greeter forces `WLR_RENDERER=pixman` (it only draws a login card) so
   Mesa/EGL (about 36 MB) is never mapped into the long-lived greeter process.
-- GTK clients that remain use `GSK_RENDERER=cairo` and `NO_AT_BRIDGE=1`.
+- Fleetwm's own programs no longer use GTK. The session sets `NO_AT_BRIDGE=1` for GTK apps you run (no accessibility bus). It used to force `GSK_RENDERER=cairo` too; that was removed because it made GTK 4 apps skip the GPU.
 - Declined on purpose: disabling XWayland, `-Ofast`,
   `-fno-strict-aliasing`, software rendering for the real compositor, idle
   frame throttling (the compositor already measures 0 CPU ticks idle).

@@ -58,7 +58,7 @@ trap cleanup_runtime_dir EXIT
 dbus-run-session -- env \
   WLR_BACKENDS=headless WLR_RENDERER=pixman \
   XDG_RUNTIME_DIR="$RUNTIME_DIR" HOME="$RUNTIME_DIR" \
-  GSK_RENDERER=cairo LANG=C.UTF-8 LC_ALL=C.UTF-8 \
+  LANG=C.UTF-8 LC_ALL=C.UTF-8 \
   bash "${SCRIPT_DIR}/scripts/pgo-train-session.sh" "$RUNTIME_DIR" "$TRAIN_SECONDS" "$BUILD_DIR"
 
 echo "train $(( SECONDS - T ))" >> "${TIMES}"

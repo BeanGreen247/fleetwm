@@ -14,7 +14,7 @@ namespace fleetwm {
 class Server;
 
 // A wlr-layer-shell-v1 surface (background/bottom/top/overlay), e.g. a
-// gtk4-layer-shell popup like fleetwm-launcher, or (future) fleetwm-bar.
+// popup like fleetwm-launcher, or fleetwm-bar.
 // Unlike View, a LayerSurface does not belong to any Workspace -- its
 // scene node lives in one of Server's always-enabled layer trees and is
 // never touched by Output::switch_workspace().
