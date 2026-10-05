@@ -33,6 +33,7 @@
 #include "malloc_tuning.hpp"
 #include "mimeapps.hpp"
 #include "theme.hpp"
+#include "version.hpp"
 #include "ui.hpp"
 #include "wallpaper_config.hpp"
 
@@ -1054,6 +1055,14 @@ struct Settings {
   void tab_about(cairo_t*) {
     ui.section("fleetwm");
     ui.paragraph("A custom wlroots-based Wayland compositor and desktop shell (bar, settings, launcher, wallpaper, greeter).");
+    ui.space(6);
+    ui.row("Version");
+    ui.label(version_string());
+    ui.newline();
+    ui.row("Built");
+    ui.label(std::string(__DATE__) + ", " + __TIME__, true);
+    ui.newline();
+    ui.space(6);
     if (ui.link("github.com/BeanGreen247/fleetwm"))
       spawn_detached({"xdg-open", "https://github.com/BeanGreen247/fleetwm"});
     ui.newline();
