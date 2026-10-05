@@ -28,6 +28,7 @@ extern "C" {
 
 #include <sys/types.h>
 
+#include <chrono>
 #include <list>
 #include <memory>
 #include <vector>
@@ -211,6 +212,13 @@ class Server {
   // true if the unlock was accepted.
   bool confirm_unlock(pid_t requesting_pid);
 
+  // Called from the SIGCHLD handler for every reaped child. If the lock
+  // screen process dies while the session is still locked (crash, OOM kill),
+  // it is respawned instead of the session being unlocked: fail closed. A
+  // crash loop gives up after a few respawns (the session then stays locked
+  // and can be recovered from another VT/ssh) rather than spinning forever.
+  void on_child_exited(pid_t pid, int status);
+
   std::list<std::unique_ptr<View>> views;  // stacking order: front = topmost
   std::list<std::unique_ptr<LayerSurface>> layer_surfaces;
   std::vector<std::unique_ptr<Output>> outputs;
@@ -330,6 +338,8 @@ class Server {
   KeybindsConfig keybinds_config_;
   ResolvedKeybinds resolved_keybinds_;
   bool locked_ = false;
+  pid_t spawn_locker();
+  std::vector<std::chrono::steady_clock::time_point> locker_respawns_;
   // pid of the currently-spawned fleetwm-locker, or -1 when not locked.
   // Not reaped via waitpid (matches spawn_autostart()'s existing
   // no-reaping convention, server.cpp) -- an unreaped locker becomes a

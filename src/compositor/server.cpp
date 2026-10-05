@@ -757,22 +757,54 @@ void spawn_autostart(const char* name, const char* full_path) {
 
 }  // namespace
 
-void Server::request_lock() {
-  if (locked_) {
-    return;  // already locked; don't spawn a second fleetwm-locker on top
-  }
+pid_t Server::spawn_locker() {
   pid_t pid = fork();
   if (pid < 0) {
     wlr_log(WLR_ERROR, "fleetwm: fork for fleetwm-locker failed: %s", std::strerror(errno));
-    return;
+    return -1;
   }
   if (pid == 0) {
     execlp("fleetwm-locker", "fleetwm-locker", nullptr);
     std::fprintf(stderr, "fleetwm: failed to exec fleetwm-locker: %s\n", std::strerror(errno));
     _exit(1);
   }
+  return pid;
+}
+
+void Server::request_lock() {
+  if (locked_) {
+    return;  // already locked; don't spawn a second fleetwm-locker on top
+  }
+  pid_t pid = spawn_locker();
+  if (pid < 0) {
+    return;
+  }
   locked_ = true;
   locker_pid_ = pid;
+  locker_respawns_.clear();
+}
+
+void Server::on_child_exited(pid_t pid, int status) {
+  if (!locked_ || pid != locker_pid_) {
+    return;  // not the lock screen, or it already unlocked properly before exiting
+  }
+  // The locker exited while the session is still locked: it crashed or was
+  // killed. Never unlock on that (it would let anyone unlock by crashing the
+  // locker) -- start a fresh lock screen instead, unless it keeps dying.
+  wlr_log(WLR_ERROR, "fleetwm: fleetwm-locker (pid %d) exited while locked (status 0x%x); respawning",
+          static_cast<int>(pid), status);
+  const auto now = std::chrono::steady_clock::now();
+  locker_respawns_.erase(std::remove_if(locker_respawns_.begin(), locker_respawns_.end(),
+                                        [&](const auto& t) { return now - t > std::chrono::seconds(10); }),
+                         locker_respawns_.end());
+  if (locker_respawns_.size() >= 5) {
+    wlr_log(WLR_ERROR, "fleetwm: fleetwm-locker keeps dying; staying locked without a lock screen "
+                       "(recover from another VT or over ssh)");
+    locker_pid_ = -1;
+    return;
+  }
+  locker_respawns_.push_back(now);
+  locker_pid_ = spawn_locker();
 }
 
 bool Server::confirm_unlock(pid_t requesting_pid) {
@@ -1048,11 +1080,14 @@ void Server::focus_view(View* view) {
   view->focused = true;
   view->resize_border();
 
+  // Always send the enter, even when the seat has no keyboard yet (hot-plugged
+  // or ephemeral virtual keyboards, VMs driven only through wlr-virtual-
+  // keyboard): wlroots accepts null keycodes/modifiers, and skipping it left
+  // the focused client without keyboard focus until the next focus change.
   wlr_keyboard* keyboard = wlr_seat_get_keyboard(seat_);
-  if (keyboard) {
-    wlr_seat_keyboard_notify_enter(seat_, surface, keyboard->keycodes, keyboard->num_keycodes,
-                                    &keyboard->modifiers);
-  }
+  wlr_seat_keyboard_notify_enter(seat_, surface, keyboard ? keyboard->keycodes : nullptr,
+                                  keyboard ? keyboard->num_keycodes : 0,
+                                  keyboard ? &keyboard->modifiers : nullptr);
 
   // Newly-focused view "steps forward" a few px (grow_at_outer_edges() in
   // output.cpp) -- relayout() recomputes every tiled view's box on this
@@ -1238,8 +1273,11 @@ int server_signal_terminate(int, void* data) {
 // SIGCHLD delivery happens on the main event loop thread (not real
 // signal-handler context), so a plain waitpid() loop here is safe.
 int server_signal_child(int, void* data) {
-  (void)data;
-  while (waitpid(-1, nullptr, WNOHANG) > 0) {
+  auto* server = static_cast<Server*>(data);
+  int status = 0;
+  pid_t pid;
+  while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+    server->on_child_exited(pid, status);
   }
   return 0;
 }
