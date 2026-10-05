@@ -8,7 +8,7 @@
 # wlroots' headless backend (no real DRM/seat needed) inside an isolated
 # D-Bus session bus and scratch XDG_RUNTIME_DIR, exercises it over its
 # own IPC socket (workspace switches), and runs the bar/wallpaper/
-# settings/launcher/powermenu/audiomixer GTK4 clients alongside it for a
+# settings/launcher/powermenu/audiomixer programs alongside it for a
 # fixed window, then quits everything
 # cleanly via SIGTERM -- safe because every fleetwm client now installs
 # fleetwm::install_clean_quit() (src/common/clean_quit.cpp), which
@@ -17,7 +17,7 @@
 #
 # Coverage is narrower than a real human session: locker (needs real
 # PAM auth to reach its own clean-unlock exit) and the greeter binaries
-# (TTY/PAM-driven, not GTK4 GApplications) aren't trained here. Still a
+# (TTY/PAM-driven, not Wayland clients like the rest) aren't trained here. Still a
 # real, repeatable improvement over training only the compositor, which
 # is what every PGO build before this one did.
 #
