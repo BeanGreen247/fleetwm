@@ -25,7 +25,9 @@ std::vector<std::string> build_env(const passwd* pw,
   env.push_back(std::string("USER=") + pw->pw_name);
   env.push_back(std::string("LOGNAME=") + pw->pw_name);
   env.push_back(std::string("SHELL=") + pw->pw_shell);
-  env.emplace_back("PATH=/usr/local/bin:/usr/bin:/bin");
+  // The sbin directories matter on Debian: reboot, poweroff, halt and shutdown live in
+  // /usr/sbin, so without them those commands are "not found" in the session'"'"'s terminals.
+  env.emplace_back("PATH=/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin");
   env.emplace_back("XDG_SESSION_TYPE=wayland");
   // Same rationale as fleetwm-greeter@.service's own copy of this var
   // (see packaging/fleetwm-greeter@.service): on hardware/VMs with no
