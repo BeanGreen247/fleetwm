@@ -1,0 +1,58 @@
+# Fleetwm terminal shell setup.
+#
+# Used by the bundled foot config (see foot.ini). It adds a short prompt and a few safe
+# conveniences on top of normal bash: every command still behaves exactly as it does
+# in a stock shell (no aliases that change cp, mv, rm, cd, ls or grep).
+# Put your own additions in ~/.bash_aliases or ~/.bash_local; or create ~/.config/foot/foot.ini
+# and foot stops using this file altogether.
+
+case $- in *i*) ;; *) return ;; esac
+
+# The distribution's own defaults (completion, window title, ...), as a login-less shell gets.
+[ -f /etc/bash.bashrc ] && . /etc/bash.bashrc
+
+# --- history: bigger, shared between terminals, no duplicates -------------------------
+shopt -s histappend checkwinsize cmdhist
+HISTSIZE=10000
+HISTFILESIZE=20000
+HISTCONTROL=ignoreboth:erasedups
+
+# --- completion: case-insensitive, list on the first Tab, coloured ----------------------
+bind 'set completion-ignore-case on'
+bind 'set show-all-if-ambiguous on'
+bind 'set colored-stats on'
+bind 'set mark-symlinked-directories on'
+
+# Up/Down search history by what is already typed.
+bind '"\e[A": history-search-backward'
+bind '"\e[B": history-search-forward'
+
+# --- colour (still the same commands, just coloured when the output is a terminal) --------
+export LESS='-R -i -M'
+alias ls='ls --color=auto'
+alias grep='grep --color=auto'
+
+# fzf keys (Ctrl+R history, Ctrl+T files, Alt+C directories), when fzf is installed.
+[ -f /usr/share/doc/fzf/examples/key-bindings.bash ] && . /usr/share/doc/fzf/examples/key-bindings.bash
+
+# --- prompt:  ~>   (or ~/git/fleetwm master>) -----------------------------------------
+# The git branch is read straight from .git/HEAD, so the prompt never waits on git.
+__fleetwm_branch() {
+    local dir="$PWD" head
+    while [ -n "$dir" ]; do
+        if [ -f "$dir/.git/HEAD" ]; then
+            read -r head < "$dir/.git/HEAD" || return
+            case "$head" in
+                ref:*) printf ' %s' "${head##*/}" ;;
+                *) printf ' %s' "${head:0:7}" ;;
+            esac
+            return
+        fi
+        dir="${dir%/*}"
+    done
+}
+PS1='\[\e[0;94m\]\w\[\e[0;33m\]$(__fleetwm_branch)\[\e[0;90m\]>\[\e[0m\] '
+
+# Your own additions still load.
+[ -f ~/.bash_aliases ] && . ~/.bash_aliases
+[ -f ~/.bash_local ] && . ~/.bash_local

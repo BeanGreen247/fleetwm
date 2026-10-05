@@ -29,6 +29,7 @@
 #include "icon_theme.hpp"
 #include "window_geometry.hpp"
 #include "window_list.hpp"
+#include "workspace_list.hpp"
 #include "battery_reading.hpp"
 #include "ipc_client.hpp"
 #include "fleetkit.hpp"
@@ -144,13 +145,14 @@ struct Bar {
   // Workspace buttons (the ones the user asked for, 1-10). Laid out in a row, or in two
   // columns when the taskbar is vertical. Returns the far edge (x for a row, y for columns).
   double draw_pager(cairo_t* cr, double x0, double y0, double btn_w, double btn_h, bool columns) {
-    const int count = std::clamp(config.taskbar_workspaces, 1, 10);
+    const std::vector<int> list = ws_visible();
     for (Rect& r : ws_rect) r = Rect{};
     const Color idle = with_alpha(pal.fg_secondary, 0.9);
     double edge = columns ? y0 : x0;
-    for (int i = 0; i < count; ++i) {
-      const double x = columns ? x0 + (i % 2) * (btn_w + 3) : x0 + i * (btn_w + 3);
-      const double y = columns ? y0 + (i / 2) * (btn_h + 3) : y0;
+    for (size_t k = 0; k < list.size(); ++k) {
+      const int i = list[k];
+      const double x = columns ? x0 + (k % 2) * (btn_w + 3) : x0 + k * (btn_w + 3);
+      const double y = columns ? y0 + (k / 2) * (btn_h + 3) : y0;
       ws_rect[i] = {x, y, btn_w, btn_h};
       const bool active = i == active_workspace;
       if (active || i == hover_workspace) {
@@ -183,14 +185,31 @@ struct Bar {
   static constexpr double kTrayIcon = 16, kTraySpacing = 6;
   static constexpr double kBoltW = 8, kBatteryW = 26 + kStatPad + kBoltW, kModeW = 12 + kStatPad, kPowerW = 30;
 
+  // The workspace buttons shown right now (see visible_workspaces()).
+  std::vector<int> ws_visible() const {
+    std::vector<int> occupied;
+    for (const WindowEntry& w : windows) occupied.push_back(w.workspace);
+    return visible_workspaces(occupied, active_workspace, config.taskbar_workspaces);
+  }
+  std::vector<int> ws_last;  // what the island layout was last sized for
+
+  // The island bar is as wide as its content, so it re-lays-out when buttons come or go.
+  void ws_list_changed() {
+    const std::vector<int> now = ws_visible();
+    if (now == ws_last) return;
+    ws_last = now;
+    if (island) apply_layout();
+  }
+
   double ws_button_w(Metrics& m, int i) {
     char label[4];
     std::snprintf(label, sizeof label, "%d", (i + 1) % 10);
     return std::max(26.0, m.text_w(label) + 12);
   }
   double ws_total(Metrics& m) {
-    double t = 9;  // 1px spacing x 9
-    for (int i = 0; i < 10; ++i) t += ws_button_w(m, i);
+    const std::vector<int> list = ws_visible();
+    double t = list.empty() ? 0 : static_cast<double>(list.size()) - 1;  // 1px spacing between
+    for (int i : list) t += ws_button_w(m, i);
     return t;
   }
   double tray_total() {
@@ -526,7 +545,8 @@ struct Bar {
 
     // ---- workspaces ----
     double x = ws_x;
-    for (int i = 0; i < 10; ++i) {
+    for (Rect& r : ws_rect) r = Rect{};
+    for (int i : ws_visible()) {
       const double bw = ws_button_w(m, i), bh = kWsH, by = (H - bh) / 2.0;
       ws_rect[i] = {x, by, bw, bh};
       const bool active = i == active_workspace;
@@ -1234,7 +1254,8 @@ struct Bar {
       if (parse_window_list(line, &parsed) && parsed != windows) {
         windows = std::move(parsed);
         hover_win = -1;
-        if (taskbar) redraw();
+        ws_list_changed();
+        redraw();
       }
       return;
     }
@@ -1247,6 +1268,7 @@ struct Bar {
     }
     if (ws >= 0 && ws != active_workspace) {
       active_workspace = ws;
+      ws_list_changed();
       redraw();
     }
   }

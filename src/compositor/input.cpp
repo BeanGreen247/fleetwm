@@ -15,11 +15,19 @@ extern "C" {
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <string>
+#include <filesystem>
+#include <string>
 #include <memory>
 #include <vector>
 
 #include "output.hpp"
+#include "paths_config.h"
+#include "paths_config.h"
 #include "server.hpp"
+#include "terminal_launch.hpp"
+#include "terminal_launch.hpp"
 #include "view.hpp"
 
 extern char** environ;
@@ -196,7 +204,19 @@ void spawn(const char* cmd) {
 // asked to run under a tuned allocator. A user's shell and whatever they
 // run in it should behave like a stock system shell, not silently inherit
 // fleetwm's own internal memory tuning.
-void spawn_terminal(const char* cmd) {
+void spawn_terminal(const char* command) {
+  const std::string sysconf = FLEETWM_SYSCONF_DIR;
+  const char* home = std::getenv("HOME");
+  const char* xdg = std::getenv("XDG_CONFIG_HOME");
+  const std::string user_ini =
+      (xdg && *xdg ? std::string(xdg) : std::string(home ? home : "") + "/.config") + "/foot/foot.ini";
+  std::error_code ec;
+  const std::vector<std::string> args = terminal_argv(
+      command, sysconf, std::filesystem::exists(user_ini, ec), std::filesystem::exists(sysconf + "/foot.ini", ec));
+  const char* cmd = args[0].c_str();
+  std::vector<char*> argv;
+  for (const std::string& a : args) argv.push_back(const_cast<char*>(a.c_str()));
+  argv.push_back(nullptr);
   pid_t pid = fork();
   if (pid < 0) {
     std::fprintf(stderr, "fleetwm: fork for '%s' spawn failed: %s\n", cmd, std::strerror(errno));
@@ -210,7 +230,7 @@ void spawn_terminal(const char* cmd) {
       }
     }
     env.push_back(nullptr);
-    execvpe(cmd, (char* const[]){const_cast<char*>(cmd), nullptr}, env.data());
+    execvpe(cmd, argv.data(), env.data());
     std::fprintf(stderr, "fleetwm: failed to exec '%s': %s\n", cmd, std::strerror(errno));
     _exit(1);
   }
