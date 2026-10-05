@@ -113,6 +113,14 @@ for vendor_file in /sys/class/drm/card*/device/vendor; do
   esac
 done
 
+# Dark/light mode for other toolkits: the portal (settings backend that Chromium and
+# libadwaita read), an Adwaita dark theme for GTK 3, the Qt platform themes that follow GTK,
+# and the D-Bus pieces that start the portal. Best effort.
+sudo apt-get install -y xdg-desktop-portal xdg-desktop-portal-gtk gnome-themes-extra \
+  qt5-gtk-platformtheme qt6-gtk-platformtheme dbus-user-session dbus-bin libglib2.0-bin \
+  gsettings-desktop-schemas dconf-gsettings-backend ||
+  echo "warning: some theme packages could not be installed; GTK, Chromium and Qt apps may not follow dark/light mode"
+
 # runtime audio stack the bar's volume readout and fleetwm-audiomixer talk
 # to (PipeWire + the WirePlumber session manager; pipewire-bin ships
 # pw-cli/pw-cat, handy for testing without sound hardware)

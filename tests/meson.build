@@ -25,6 +25,7 @@ fleetwm_test_sources = files(
   'test_terminal_launch.cpp',
   'test_workspace_list.cpp',
   'test_power_config.cpp',
+  'test_app_appearance.cpp',
   'test_settings_pages.cpp',
 )
 

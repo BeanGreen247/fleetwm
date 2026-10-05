@@ -24,6 +24,7 @@ extern "C" {
 #include <string>
 #include <vector>
 
+#include "app_appearance.hpp"
 #include "input.hpp"
 #include "ipc_server.hpp"
 #include "layer_surface.hpp"
@@ -1438,6 +1439,15 @@ bool Server::init() {
     return false;
   }
   setenv("WAYLAND_DISPLAY", socket, true);
+  // Portals and other D-Bus-activated services start outside this process; hand them the
+  // session variables they need (best effort, it is fine if the tool is missing).
+  setenv("XDG_CURRENT_DESKTOP", "fleetwm", false);
+  if (fork() == 0) {
+    execlp("dbus-update-activation-environment", "dbus-update-activation-environment", "--systemd",
+           "WAYLAND_DISPLAY", "XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP", "QT_QPA_PLATFORMTHEME",
+           static_cast<char*>(nullptr));
+    _exit(127);
+  }
 
   if (!wlr_backend_start(backend_)) {
     return false;
@@ -1453,6 +1463,7 @@ bool Server::init() {
   theme_config_ = load_theme_config();
   refresh_border_colors();
   titlebar_reload_palette(theme_config_);
+  update_app_appearance();
   default_apps_config_ = load_default_apps_config();
   reload_keybinds_config();
 
@@ -2030,6 +2041,15 @@ void Server::reload_keybinds_config() {
   }
 }
 
+// GTK, Chromium and Qt apps follow the theme's dark/light setting; only touched when it changes.
+void Server::update_app_appearance() {
+  const bool dark = theme_is_dark(theme_config_.theme);
+  if (appearance_applied_ && appearance_dark_ == dark) return;
+  appearance_applied_ = true;
+  appearance_dark_ = dark;
+  apply_app_appearance(dark);
+}
+
 void Server::refresh_border_colors() {
   const float fallback[4] = {0.9f, 0.9f, 0.95f, 1.0f};
   auto parse = [&](const std::string& hex, float* out) {
@@ -2046,6 +2066,7 @@ void Server::reload_theme_config() {
   theme_config_ = load_theme_config();
   refresh_border_colors();
   titlebar_reload_palette(theme_config_);
+  update_app_appearance();
   if (was_desktop && !desktop_layout()) {
     end_grab();
     for (const std::unique_ptr<View>& view : views) {

@@ -138,6 +138,11 @@ install_data(
   install_dir: get_option('sysconfdir') / '..' / 'share' / 'wayland-sessions',
 )
 
+install_data(
+  'packaging/fleetwm-portals.conf',
+  install_dir: get_option('prefix') / 'share' / 'xdg-desktop-portal',
+)
+
 # fleetwm-settings only -- fleetwm-bar/fleetwm-wallpaper are background
 # renderers with no standalone user-facing action (same reason
 # fleetwm-launcher itself has no .desktop entry: GDesktopAppInfo only
