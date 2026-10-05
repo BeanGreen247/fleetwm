@@ -561,7 +561,30 @@ void Output::update_usable_area() {
   }
 
   usable_area = box;
+  fit_floating_views();
   relayout();
+}
+
+void Output::fit_floating_views() {
+  if (!server->desktop_layout()) {
+    return;
+  }
+  for (const std::unique_ptr<View>& view : server->views) {
+    if (view->output != this || view->fullscreen || view->pinned) {
+      continue;
+    }
+    if (view->maximized) {
+      view->refit_maximized();
+      continue;
+    }
+    // Keep the titlebar reachable: not under a taskbar, not off-screen.
+    constexpr int kKeepVisible = 80;
+    const int outer_w = view->content_w + 2 * view->border_thickness();
+    int x = view->container_tree->node.x, y = view->container_tree->node.y;
+    x = std::clamp(x, usable_area.x - outer_w + kKeepVisible, usable_area.x + usable_area.width - kKeepVisible);
+    y = std::clamp(y, usable_area.y, std::max(usable_area.y, usable_area.y + usable_area.height - 32));
+    wlr_scene_node_set_position(&view->container_tree->node, x, y);
+  }
 }
 
 void Output::relayout() {

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 // Pure geometry used by the Desktop (floating) window layout: where a pointer
@@ -47,5 +48,15 @@ Box cascade_position(const Box& area, int outer_w, int outer_h, int index);
 // Titlebar buttons, right-aligned, each `button_w` wide: 1 = close (rightmost),
 // 0 = maximize (second from the right), 2 = minimize (third), -1 = none.
 int titlebar_button_at(int width, double x, int button_w);
+
+// How window buttons share `avail` px of a horizontal taskbar: each button is
+// `bw` wide (between min_w and max_w, shrinking as windows are added) with `gap`
+// px between buttons, and only `fit` of the `count` windows are shown.
+struct TaskbarSlots {
+  double bw = 0;
+  size_t fit = 0;
+};
+TaskbarSlots taskbar_slots(double avail, size_t count, double min_w = 44, double max_w = 200,
+                           double gap = 4);
 
 }  // namespace fleetwm::geom

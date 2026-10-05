@@ -513,4 +513,11 @@ Settings -> Theme -> Window layout (or `window_layout` in `theme.toml`), applied
   terminal shortcut (Alt+Enter) stays bound in this mode; the other shortcuts are off for now.
   Clients that use xdg-decoration (foot, GTK4, Qt) and fleetwm's own apps get the titlebar;
   clients that draw their own (GTK3 headerbars) keep theirs.
+- **Taskbar** (Desktop layout only): the bar becomes a taskbar with a start button, one button per
+  window (click to focus, click the focused one to minimize, click a minimized one to restore,
+  middle-click to close) and the widgets on the right (clock, CPU/RAM/GPU/disk/volume with hover
+  details, tray, battery, power). Settings -> Bar -> Taskbar position puts it on the bottom, top,
+  left or right; left and right make a vertical taskbar. The start button opens a menu with search,
+  all applications, and Settings / Lock / Power buttons; clicking anywhere else or pressing Esc
+  closes it. Window titlebars also get a minimize button.
 

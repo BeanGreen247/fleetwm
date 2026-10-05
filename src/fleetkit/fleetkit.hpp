@@ -248,7 +248,12 @@ class App {
 // screen-logical px.
 class Tooltip {
  public:
-  Tooltip(App& app, const Palette& pal, const std::string& text, int x, int y);
+  // Where (x, y) sits relative to the tooltip: Below = tooltip hangs under the
+  // point, centered (default, for a top bar); Above = sits over it (bottom
+  // bar); Right / Left = beside it, vertically centered (side bars).
+  enum class Placement { Below, Above, Right, Left };
+  Tooltip(App& app, const Palette& pal, const std::string& text, int x, int y,
+          Placement placement = Placement::Below);
 
  private:
   std::unique_ptr<Surface> surface_;

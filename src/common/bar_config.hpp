@@ -70,15 +70,28 @@ enum class BarLayout {
   Capsules,  // three floating pills: workspaces | clock | status (default)
 };
 
+// Which screen edge the Desktop-layout taskbar sits on (the Tiling layout keeps
+// the top bar styles above). Left and Right make a vertical taskbar.
+enum class TaskbarPosition {
+  Bottom,  // default
+  Top,
+  Left,
+  Right,
+};
+
 struct BarConfig {
   ClockFormat clock;
   WorkspaceColors workspace_colors;
   PowerMode power_mode = PowerMode::Normal;
   BarLayout layout = BarLayout::Capsules;
+  TaskbarPosition taskbar_position = TaskbarPosition::Bottom;
 };
 
 std::string power_mode_to_string(PowerMode mode);
 PowerMode power_mode_from_string(const std::string& s);
+
+std::string taskbar_position_to_string(TaskbarPosition position);
+TaskbarPosition taskbar_position_from_string(const std::string& s);
 
 std::string bar_layout_to_string(BarLayout layout);
 BarLayout bar_layout_from_string(const std::string& s);

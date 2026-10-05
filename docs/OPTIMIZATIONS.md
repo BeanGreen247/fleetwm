@@ -184,3 +184,15 @@ client rewrite alone and 280 MB originally.
 - Interactive move/resize maths lives in `src/common/window_geometry.*` (unit tested) so the grab code
   in `server.cpp` stays thin.
 
+## Taskbar and window list
+
+- The compositor publishes its window list to IPC clients that send `SUBSCRIBE_WINDOWS`
+  (`WINDOWS\t<id>\t<flags>\t<app_id>\t<title>...`, parsed by `src/common/window_list.*`). Changes within one
+  event-loop iteration are coalesced into one idle-callback broadcast, and identical snapshots are not re-sent,
+  so a busy terminal changing its title does not flood the bar. Only subscribed clients receive it.
+- The bar redraws on a changed snapshot only; icons are looked up lazily and cached per app id, and the desktop
+  entries are scanned once on the first window.
+- The start menu is `fleetwm-launcher --start-menu --edge <side> --inset <px>`: a full-output transparent
+  overlay with the card placed beside the taskbar, which is what makes click-away and re-clicking the start
+  button close it without any extra IPC.
+
