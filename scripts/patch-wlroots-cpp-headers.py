@@ -10,7 +10,7 @@ them is safe. This is the standard workaround used by other C++ wlroots
 consumers (see docs/adr for the wlroots-vs-Smithay C++ interop rationale);
 patching in-place isn't an option since these are system package headers.
 
-Usage: patch-wlroots-cpp-headers.py <wlroots_include_dir> <output_dir>
+Usage: patch-wlroots-cpp-headers.py <wlroots_include_dir> <output_dir> [<scenefx_include_dir>]
 
 Mirrors the wlroots header tree at <output_dir>/wlr/... : untouched headers
 are copied as-is, the two known-broken ones are rewritten. Pointing the
@@ -37,8 +37,17 @@ PATCHED_FILES = {
 }
 
 
+# Same `[static 4]` array-parameter construct in SceneFX's wlr_scene.h
+# (relative to the scenefx include root, optional 3rd argument).
+SCENEFX_PATCHED_FILES = {
+    "scenefx/types/wlr_scene.h": [
+        (re.compile(r"const float color\[static 4\]"), "const float color[4]"),
+    ],
+}
+
+
 def main() -> int:
-    if len(sys.argv) != 3:
+    if len(sys.argv) not in (3, 4):
         print(__doc__, file=sys.stderr)
         return 1
 
@@ -63,6 +72,19 @@ def main() -> int:
                     file=sys.stderr,
                 )
         dst.write_text(text)
+
+    if len(sys.argv) == 4:
+        sfx_root = Path(sys.argv[3])
+        for rel_path, patches in SCENEFX_PATCHED_FILES.items():
+            src = sfx_root / rel_path
+            dst = Path(sys.argv[2]) / rel_path
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            text = src.read_text()
+            for pattern, replacement in patches:
+                text, count = pattern.subn(replacement, text)
+                if count == 0:
+                    print(f"warning: pattern {pattern.pattern!r} not found in {src}", file=sys.stderr)
+            dst.write_text(text)
 
     return 0
 

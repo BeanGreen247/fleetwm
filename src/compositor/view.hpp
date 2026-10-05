@@ -3,7 +3,7 @@
 #include <wayland-server-core.h>
 
 extern "C" {
-#include <wlr/types/wlr_scene.h>
+#include "scene.hpp"
 #include <wlr/types/wlr_xdg_shell.h>
 }
 
@@ -60,6 +60,9 @@ class View {
   wlr_scene_rect* border_bottom = nullptr;
   wlr_scene_rect* border_left = nullptr;
   wlr_scene_rect* border_right = nullptr;
+#if FLEETWM_SCENEFX
+  wlr_scene_shadow* shadow = nullptr;  // soft drop shadow behind the border
+#endif
   wlr_xdg_toplevel* xdg_toplevel = nullptr;
 
   // Whether this view is pinned always-on-top (PowerToys-style): its
@@ -155,6 +158,9 @@ class View {
   // view can't be sized to an output it isn't mapped on yet).
   void set_fullscreen(bool fullscreen);
   void resize_border();
+#if FLEETWM_SCENEFX
+  void update_shadow(int outer_w, int outer_h, int outer_radius);
+#endif
 
   // Current border thickness in px, per the same pinned/focused priority
   // resize_border() uses internally -- relayout() needs this to size the
