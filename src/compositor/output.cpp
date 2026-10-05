@@ -1,4 +1,5 @@
 #include "output.hpp"
+#include "window_geometry.hpp"
 
 extern "C" {
 #include <wlr/render/gles2.h>
@@ -542,25 +543,26 @@ void Output::update_usable_area() {
     bool anchored_top = anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP;
     bool anchored_bottom = anchor & ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM;
 
-    // Exclusive zone only reserves space for a surface anchored to
-    // exactly one edge (spanning the perpendicular axis) -- matches the
-    // wlr-layer-shell-v1 spec's own definition of exclusive_zone.
+    // Per the wlr-layer-shell spec an exclusive zone reserves space on the one
+    // edge a surface is anchored to: anchored to that edge alone (the centered
+    // "island" bar), or to it plus both perpendicular edges (a full-width bar).
     // The floating (capsule/island) bar of the tiling layout keeps a small gap
     // between it and the windows; the Desktop layout's taskbar is flush with the
     // screen edge, so windows meet it directly.
     const int gap_px = server->desktop_layout() ? 0 : server->theme_config().bar_gap_px;
-    if (anchored_top && !anchored_bottom && anchored_left && anchored_right) {
-      int reserve = static_cast<int>(exclusive_zone) + gap_px;
-      box.y += reserve;
-      box.height -= reserve;
-    } else if (anchored_bottom && !anchored_top && anchored_left && anchored_right) {
-      box.height -= static_cast<int>(exclusive_zone) + gap_px;
-    } else if (anchored_left && !anchored_right && anchored_top && anchored_bottom) {
-      int reserve = static_cast<int>(exclusive_zone) + gap_px;
-      box.x += reserve;
-      box.width -= reserve;
-    } else if (anchored_right && !anchored_left && anchored_top && anchored_bottom) {
-      box.width -= static_cast<int>(exclusive_zone) + gap_px;
+    const int reserve = static_cast<int>(exclusive_zone) + gap_px;
+    switch (geom::exclusive_edge(anchored_left, anchored_right, anchored_top, anchored_bottom)) {
+      case geom::BarEdge::Top:
+        box.y += reserve;
+        box.height -= reserve;
+        break;
+      case geom::BarEdge::Bottom: box.height -= reserve; break;
+      case geom::BarEdge::Left:
+        box.x += reserve;
+        box.width -= reserve;
+        break;
+      case geom::BarEdge::Right: box.width -= reserve; break;
+      case geom::BarEdge::None: break;
     }
   }
 

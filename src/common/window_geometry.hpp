@@ -127,6 +127,17 @@ SnapZone snap_zone_at(double px, double py, const Box& screen, int edge = 10, in
 // SnapZone::None yields an empty box.
 Box snap_box(SnapZone zone, const Box& area);
 
+// ---- layer-shell exclusive zones ------------------------------------------
+
+enum class BarEdge { None, Top, Bottom, Left, Right };
+
+// Which screen edge an exclusive zone reserves for a layer surface with these
+// anchors, per the wlr-layer-shell spec: the surface must be anchored to exactly
+// one edge, either alone (a centered "island" bar) or together with both
+// perpendicular edges (a full-width bar). Anything else (unanchored overlays,
+// two adjacent edges, all four) reserves nothing.
+BarEdge exclusive_edge(bool left, bool right, bool top, bool bottom);
+
 // How window buttons share `avail` px of a horizontal taskbar: each button is
 // `bw` wide (between min_w and max_w, shrinking as windows are added) with `gap`
 // px between buttons, and only `fit` of the `count` windows are shown.

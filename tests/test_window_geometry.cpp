@@ -453,3 +453,28 @@ TEST(SnapBox, EveryZoneStaysInsideTheArea) {
     EXPECT_GT(b.h, 0);
   }
 }
+
+// ---- exclusive_edge ----------------------------------------------------------
+
+TEST(ExclusiveEdge, FullWidthBarsReserveTheirEdge) {
+  EXPECT_EQ(exclusive_edge(true, true, true, false), BarEdge::Top);       // capsule / strip / top taskbar
+  EXPECT_EQ(exclusive_edge(true, true, false, true), BarEdge::Bottom);    // bottom taskbar
+  EXPECT_EQ(exclusive_edge(true, false, true, true), BarEdge::Left);      // left taskbar
+  EXPECT_EQ(exclusive_edge(false, true, true, true), BarEdge::Right);     // right taskbar
+}
+
+TEST(ExclusiveEdge, CenteredIslandBarAnchoredToOneEdgeReservesIt) {
+  EXPECT_EQ(exclusive_edge(false, false, true, false), BarEdge::Top);     // the Island bar
+  EXPECT_EQ(exclusive_edge(false, false, false, true), BarEdge::Bottom);
+  EXPECT_EQ(exclusive_edge(true, false, false, false), BarEdge::Left);
+  EXPECT_EQ(exclusive_edge(false, true, false, false), BarEdge::Right);
+}
+
+TEST(ExclusiveEdge, AmbiguousAnchorsReserveNothing) {
+  EXPECT_EQ(exclusive_edge(false, false, false, false), BarEdge::None);   // launcher, tooltips
+  EXPECT_EQ(exclusive_edge(true, true, true, true), BarEdge::None);       // full-screen overlay
+  EXPECT_EQ(exclusive_edge(true, false, true, false), BarEdge::None);     // a corner
+  EXPECT_EQ(exclusive_edge(false, true, false, true), BarEdge::None);
+  EXPECT_EQ(exclusive_edge(true, true, false, false), BarEdge::None);     // spans x but no vertical edge
+  EXPECT_EQ(exclusive_edge(false, false, true, true), BarEdge::None);
+}

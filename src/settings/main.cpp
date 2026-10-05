@@ -769,73 +769,74 @@ struct Settings {
       save_theme();
     }
     ui.newline();
-    if (config.window_layout == WindowLayout::Desktop) {
-      ui.label("Desktop mode: drag titlebars to move, drag edges to resize, double-click to maximize. Only Alt+Enter (terminal) stays bound.", true);
-      ui.newline();
-    }
+    const bool tiling = config.window_layout == WindowLayout::Tiling;
+    const bool desktop = !tiling;
+    ui.label(tiling ? "Tiling: windows tile automatically; keyboard shortcuts drive everything (Alt+Shift+/ lists them)."
+                    : "Desktop: floating windows with titlebars, a taskbar and a start menu; only Alt+Enter and Alt+Shift+/ are bound.",
+             true);
+    ui.newline();
 
-    if (config.window_layout == WindowLayout::Desktop) {
-      ui.space(4);
-      ui.section("Window titlebar");
-      TitlebarConfig& tb = config.titlebar;
-      ui.row("Titlebar height (px)");
-      if (ui.spin(&tb.height, 20, 64)) {
-        tb.button_height = std::min(tb.button_height, tb.height);
-        save_theme();
-      }
-      ui.newline();
-      ui.row("Button width (px)");
-      if (ui.spin(&tb.button_width, 20, 80)) save_theme();
-      ui.newline();
-      ui.row("Button height (px)");
-      if (ui.spin(&tb.button_height, 14, tb.height)) save_theme();
-      ui.newline();
-      ui.row("Buttons position");
-      int side = tb.buttons_side == ButtonSide::Left ? 1 : 0;
-      if (ui.segmented({"Right", "Left"}, &side)) {
-        tb.buttons_side = side == 1 ? ButtonSide::Left : ButtonSide::Right;
-        save_theme();
-      }
-      ui.newline();
-      ui.row("Title position");
-      int align = static_cast<int>(tb.title_align);
-      if (ui.segmented({"Left", "Middle", "Right"}, &align)) {
-        tb.title_align = static_cast<TitleAlign>(align);
-        save_theme();
-      }
-      ui.newline();
-      ui.row("Buttons shown");
-      if (ui.checkbox("Pin", &tb.show_pin)) save_theme();
-      if (ui.checkbox("Minimize", &tb.show_minimize)) save_theme();
-      if (ui.checkbox("Maximize", &tb.show_maximize)) save_theme();
-      ui.newline();
-      ui.space(4);
-      ui.section("Window spacing and borders");
-    }
-
+    // Settings that only one layout uses stay visible but greyed out in the other.
+    ui.space(6);
+    ui.section(tiling ? "Tiling layout" : "Tiling layout (not in use)");
     ui.row("Focus border (px)");
-    if (ui.spin(&config.focus_border_thickness_px, 0, 10)) save_theme();
+    if (ui.spin(&config.focus_border_thickness_px, 0, 10, 1, tiling)) save_theme();
     ui.newline();
     ui.row("Focus border color");
-    if (ui.color_button(&config.focus_border_color)) save_theme();
+    if (ui.color_button(&config.focus_border_color, tiling)) save_theme();
     ui.newline();
     ui.row("Gap between windows (px)");
-    if (ui.spin(&config.gap_px, 0, 64)) save_theme();
+    if (ui.spin(&config.gap_px, 0, 64, 1, tiling)) save_theme();
     ui.newline();
     ui.row("Gap at screen edges (px)");
-    if (ui.spin(&config.outer_gap_px, 0, 64)) save_theme();
+    if (ui.spin(&config.outer_gap_px, 0, 64, 1, tiling)) save_theme();
     ui.newline();
     ui.row("Gap next to the bar (px)");
-    if (ui.spin(&config.bar_gap_px, 0, 64)) save_theme();
+    if (ui.spin(&config.bar_gap_px, 0, 64, 1, tiling)) save_theme();
     ui.newline();
     ui.row("Pinned border (px)");
-    if (ui.spin(&config.pinned_border_thickness_px, 0, 10)) save_theme();
+    if (ui.spin(&config.pinned_border_thickness_px, 0, 10, 1, tiling)) save_theme();
     ui.newline();
     ui.row("Pinned border color");
-    if (ui.color_button(&config.pinned_border_color)) save_theme();
+    if (ui.color_button(&config.pinned_border_color, tiling)) save_theme();
     ui.newline();
     ui.row("Pinned+focused border color");
-    if (ui.color_button(&config.pinned_focused_border_color)) save_theme();
+    if (ui.color_button(&config.pinned_focused_border_color, tiling)) save_theme();
+    ui.newline();
+
+    ui.space(8);
+    ui.section(desktop ? "Desktop layout: window titlebar" : "Desktop layout: window titlebar (not in use)");
+    TitlebarConfig& tb = config.titlebar;
+    ui.row("Titlebar height (px)");
+    if (ui.spin(&tb.height, 20, 64, 1, desktop)) {
+      tb.button_height = std::min(tb.button_height, tb.height);
+      save_theme();
+    }
+    ui.newline();
+    ui.row("Button width (px)");
+    if (ui.spin(&tb.button_width, 20, 80, 1, desktop)) save_theme();
+    ui.newline();
+    ui.row("Button height (px)");
+    if (ui.spin(&tb.button_height, 14, tb.height, 1, desktop)) save_theme();
+    ui.newline();
+    ui.row("Buttons position");
+    int side = tb.buttons_side == ButtonSide::Left ? 1 : 0;
+    if (ui.segmented({"Right", "Left"}, &side, desktop)) {
+      tb.buttons_side = side == 1 ? ButtonSide::Left : ButtonSide::Right;
+      save_theme();
+    }
+    ui.newline();
+    ui.row("Title position");
+    int align = static_cast<int>(tb.title_align);
+    if (ui.segmented({"Left", "Middle", "Right"}, &align, desktop)) {
+      tb.title_align = static_cast<TitleAlign>(align);
+      save_theme();
+    }
+    ui.newline();
+    ui.row("Buttons shown");
+    if (ui.checkbox("Pin", &tb.show_pin, desktop)) save_theme();
+    if (ui.checkbox("Minimize", &tb.show_minimize, desktop)) save_theme();
+    if (ui.checkbox("Maximize", &tb.show_maximize, desktop)) save_theme();
     ui.newline();
 
     if (has_battery) {
@@ -865,7 +866,29 @@ struct Settings {
   }
 
   void tab_bar(cairo_t*) {
-    ui.section("Workspace colors");
+    const bool tiling = config.window_layout == WindowLayout::Tiling;
+    const bool desktop = !tiling;
+    ui.label(tiling ? "Tiling layout: a top bar with workspace buttons. The taskbar settings below are not in use."
+                    : "Desktop layout: the bar is a taskbar. The top-bar settings below are not in use.",
+             true);
+    ui.newline();
+    ui.space(6);
+
+    ui.section(tiling ? "Top bar (Tiling layout)" : "Top bar (Tiling layout, not in use)");
+    ui.row("Bar layout");
+    // Display order differs from the enum order: Capsules first (the default).
+    static const BarLayout kOrder[] = {BarLayout::Capsules, BarLayout::Island, BarLayout::Full};
+    int layout = 0;
+    for (int i = 0; i < 3; ++i)
+      if (kOrder[i] == bar.layout) layout = i;
+    if (ui.segmented({"Capsules", "Island", "Strip"}, &layout, tiling)) {
+      bar.layout = kOrder[layout];
+      save_bar();
+    }
+    ui.newline();
+    ui.space(4);
+    ui.label("Workspace colors", true);
+    ui.newline();
     ui.paragraph("By default the active workspace uses the theme accent and the others stay transparent.");
     auto hex_of = [](const Color& c) { return color_to_hex(c.r, c.g, c.b); };
     struct {
@@ -880,7 +903,7 @@ struct Settings {
     for (auto& c : colors) {
       ui.row(c.label);
       std::string shown = c.field->empty() ? c.theme_default : *c.field;
-      if (ui.color_button(&shown)) {
+      if (ui.color_button(&shown, tiling)) {
         *c.field = shown;
         save_bar();
       }
@@ -890,35 +913,25 @@ struct Settings {
       }
       ui.newline();
     }
-    if (any_override && ui.button("Reset to theme colors")) {
+    if (any_override && ui.button("Reset to theme colors", tiling)) {
       for (auto& c : colors) c.field->clear();
       save_bar();
     }
     ui.newline();
     ui.space(4);
-    if (ui.checkbox("Rounded workspace buttons", &bar.workspace_colors.buttons_rounded)) save_bar();
+    if (ui.checkbox("Rounded workspace buttons", &bar.workspace_colors.buttons_rounded, tiling)) save_bar();
     ui.newline();
+
     ui.space(8);
-    ui.section("Layout");
-    ui.row("Bar layout");
-    // Display order differs from the enum order: Capsules first (the default).
-    static const BarLayout kOrder[] = {BarLayout::Capsules, BarLayout::Island, BarLayout::Full};
-    int layout = 0;
-    for (int i = 0; i < 3; ++i)
-      if (kOrder[i] == bar.layout) layout = i;
-    if (ui.segmented({"Capsules", "Island", "Strip"}, &layout)) {
-      bar.layout = kOrder[layout];
-      save_bar();
-    }
-    ui.newline();
+    ui.section(desktop ? "Taskbar (Desktop layout)" : "Taskbar (Desktop layout, not in use)");
     ui.row("Taskbar position");
     int tpos = static_cast<int>(bar.taskbar_position);
-    if (ui.segmented({"Bottom", "Top", "Left", "Right"}, &tpos)) {
+    if (ui.segmented({"Bottom", "Top", "Left", "Right"}, &tpos, desktop)) {
       bar.taskbar_position = static_cast<TaskbarPosition>(tpos);
       save_bar();
     }
     ui.newline();
-    ui.label("The taskbar (start menu, window list and widgets) is used in the Desktop window layout.", true);
+    ui.label("Start menu, one button per window, and the clock and status widgets on the right.", true);
     ui.newline();
   }
 
