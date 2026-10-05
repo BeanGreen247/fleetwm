@@ -349,7 +349,9 @@ until you log out, so whatever it mapped while showing the login screen
 stays resident the entire time you're logged in. Measured effect on a
 real box: `fleetwm-greet`'s idle Pss dropped from ~103MB to ~15MB.
 
-If the real desktop compositor falls back to Mesa's llvmpipe software
+On a machine with no GPU render node the compositor picks the pixman
+renderer on its own (no libLLVM, about 65 MB less resident). If the real
+desktop compositor still falls back to Mesa's llvmpipe software
 rasterizer (no real GPU render node present -- check for a
 `renderD*` device in `/dev/dri/`, not just a `card*` one, which can
 exist for display-only KMS with no actual render capability behind
