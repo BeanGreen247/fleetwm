@@ -60,6 +60,10 @@ sudo apt-get install -y \
 # libjpeg / libwebp (SVG is handled by the vendored nanosvg); fontconfig
 # resolves cairo's "Inter" family (it falls back to the system sans when missing), so install Inter plus a default font
 sudo apt-get install -y libcairo2-dev libpng-dev libjpeg-dev libwebp-dev fonts-inter fonts-dejavu-core
+# A mouse cursor theme. Without one there is no pointer image to draw (the compositor
+# has a built-in fallback arrow, but apps load their own); best effort, since the
+# package name differs between distributions.
+sudo apt-get install -y dmz-cursor-theme || echo "warning: no cursor theme package installed; the built-in pointer will be used" 
 
 # runtime audio stack the bar's volume readout and fleetwm-audiomixer talk
 # to (PipeWire + the WirePlumber session manager; pipewire-bin ships

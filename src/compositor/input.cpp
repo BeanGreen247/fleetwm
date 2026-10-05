@@ -288,6 +288,9 @@ void keyboard_key(wl_listener* listener, void* data) {
         if (is(binds.shortcuts_help, sym)) {
           spawn(kShortcutsCommand);
           handled = true;
+        } else if (desktop && is(binds.desktop_debug_overlay, sym)) {
+          keyboard->server->toggle_debug_overlay();
+          handled = true;
         } else if (desktop && is(binds.desktop_terminal, sym)) {
           spawn_terminal(keyboard->server->default_apps_config().terminal_command.c_str());
           handled = true;

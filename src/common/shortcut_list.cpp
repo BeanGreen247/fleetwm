@@ -97,7 +97,8 @@ std::vector<ShortcutEntry> build_shortcut_list(const KeybindsConfig& b, WindowLa
   add("Focus", format_alt_combo(b.focus_right), "Focus the window to the right");
 
   add("Session", format_alt_combo(b.quit), "Quit fleetwm (log out)");
-  add("Session", format_alt_combo(b.debug_overlay), "Toggle the frame-time debug overlay");
+  add("Session", desktop ? format_key_combo(b.desktop_debug_overlay) : format_alt_combo(b.debug_overlay),
+      "Toggle the frame-time / FPS / RAM overlay", true);
 
   if (desktop) {
     out.push_back({"Mouse", "Drag a titlebar", "Move the window", true});

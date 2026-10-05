@@ -194,3 +194,11 @@ TEST(ShortcutList, DesktopDefaultsAvoidTmuxAndReadline) {
     EXPECT_NE(e.keys, "Ctrl+B") << e.description << " shadows tmux's prefix";
   }
 }
+
+TEST(ShortcutList, DebugOverlayHasADesktopCombo) {
+  const auto desktop = build_shortcut_list(KeybindsConfig{}, WindowLayout::Desktop);
+  EXPECT_EQ(find(desktop, "overlay")->keys, "Ctrl+Alt+I");
+  EXPECT_TRUE(find(desktop, "overlay")->active);
+  const auto tiling = build_shortcut_list(KeybindsConfig{}, WindowLayout::Tiling);
+  EXPECT_EQ(find(tiling, "overlay")->keys, "Alt+Shift+I");
+}
