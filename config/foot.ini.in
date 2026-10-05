@@ -1,6 +1,7 @@
 # Fleetwm's default foot configuration. Used only when ~/.config/foot/foot.ini does not
 # exist; create that file and foot uses yours instead.
-font=monospace:size=14
+font=monospace:size=13
+initial-window-size-chars=110x32
 shell=bash --rcfile @SYSCONF_DIR@/bashrc -i
 pad=6x4
 

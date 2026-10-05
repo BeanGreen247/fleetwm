@@ -141,7 +141,7 @@ SnapStep snap_step(SnapZone cur, Direction dir) {
         case SnapZone::Maximize:
         case SnapZone::TopLeft:
         case SnapZone::BottomLeft: return zone(SnapZone::Left);
-        case SnapZone::Left: return {K::MovePrevScreen, SnapZone::Left};
+        case SnapZone::Left: return {K::MovePrevScreen, SnapZone::Right};
         case SnapZone::Right: return restore;
         case SnapZone::TopRight: return zone(SnapZone::TopLeft);
         case SnapZone::BottomRight: return zone(SnapZone::BottomLeft);
@@ -153,7 +153,7 @@ SnapStep snap_step(SnapZone cur, Direction dir) {
         case SnapZone::Maximize:
         case SnapZone::TopRight:
         case SnapZone::BottomRight: return zone(SnapZone::Right);
-        case SnapZone::Right: return {K::MoveNextScreen, SnapZone::Right};
+        case SnapZone::Right: return {K::MoveNextScreen, SnapZone::Left};
         case SnapZone::Left: return restore;
         case SnapZone::TopLeft: return zone(SnapZone::TopRight);
         case SnapZone::BottomLeft: return zone(SnapZone::BottomRight);
