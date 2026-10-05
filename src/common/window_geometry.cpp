@@ -53,6 +53,7 @@ Box cascade_position(const Box& area, int outer_w, int outer_h, int index) {
 int titlebar_button_at(int width, double x, int button_w) {
   if (x >= width - button_w && x < width) return 1;
   if (x >= width - 2 * button_w && x < width - button_w) return 0;
+  if (x >= width - 3 * button_w && x < width - 2 * button_w) return 2;
   return -1;
 }
 

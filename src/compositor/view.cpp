@@ -277,6 +277,29 @@ void View::set_hover_button(int button) {
   update_titlebar();
 }
 
+void View::set_minimized(bool want) {
+  if (minimized == want || !workspace) {
+    return;
+  }
+  minimized = want;
+  if (want) {
+    wlr_scene_node_set_enabled(&container_tree->node, false);
+    if (server->grab_view() == this) {
+      server->end_grab();
+    }
+    if (server->seat()->keyboard_state.focused_surface == surface()) {
+      server->focus_next_after(this);
+    }
+  } else {
+    wlr_scene_node_set_enabled(&container_tree->node, true);
+    if (output) {
+      output->relayout();
+    }
+    server->focus_view(this);
+  }
+  server->schedule_windows_broadcast();
+}
+
 void View::set_maximized(bool want) {
   if (maximized == want || !output || kind != Kind::XdgToplevel || !xdg_toplevel) {
     return;

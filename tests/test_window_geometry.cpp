@@ -147,9 +147,15 @@ TEST(TitlebarButtons, RightmostIsCloseThenMaximize) {
   EXPECT_EQ(titlebar_button_at(W, W - 2 * B, B), 0);
 }
 
+TEST(TitlebarButtons, MinimizeIsThirdFromTheRight) {
+  constexpr int W = 600, B = 38;
+  EXPECT_EQ(titlebar_button_at(W, W - 2 * B - 1, B), 2);
+  EXPECT_EQ(titlebar_button_at(W, W - 3 * B, B), 2);
+}
+
 TEST(TitlebarButtons, TitleAreaAndOutOfRangeAreNotButtons) {
   constexpr int W = 600, B = 38;
-  EXPECT_EQ(titlebar_button_at(W, W - 2 * B - 1, B), -1);
+  EXPECT_EQ(titlebar_button_at(W, W - 3 * B - 1, B), -1);
   EXPECT_EQ(titlebar_button_at(W, 0, B), -1);
   EXPECT_EQ(titlebar_button_at(W, W, B), -1);
   EXPECT_EQ(titlebar_button_at(W, -4, B), -1);
@@ -159,4 +165,5 @@ TEST(TitlebarButtons, NarrowWindowStillResolves) {
   EXPECT_EQ(titlebar_button_at(70, 69, 38), 1);
   EXPECT_EQ(titlebar_button_at(70, 20, 38), 0);
   EXPECT_EQ(titlebar_button_at(70, 40, 38), 1);
+  EXPECT_EQ(titlebar_button_at(70, -10, 38), 2);
 }

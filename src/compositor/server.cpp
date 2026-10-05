@@ -268,6 +268,7 @@ static void xdg_toplevel_map(wl_listener* listener, void*) {
   }
 
   view->server->focus_view(view);
+  view->server->schedule_windows_broadcast();
 }
 
 static void xdg_toplevel_unmap(wl_listener* listener, void*) {
@@ -276,6 +277,7 @@ static void xdg_toplevel_unmap(wl_listener* listener, void*) {
   bool was_focused = server->seat()->keyboard_state.focused_surface == view->surface();
   Output* output = view->output;
   server->forget_view(view);
+  server->schedule_windows_broadcast();
 
   if (view->workspace) {
     view->workspace->remove_view(view);
@@ -291,20 +293,10 @@ static void xdg_toplevel_unmap(wl_listener* listener, void*) {
     return;
   }
 
-  // i3/dwm-style focus-on-close: hand focus to the next visible view in
-  // stacking order (server->views is already front-to-back, topmost
-  // first -- see focus_view()'s splice-to-front). "Visible" means
-  // pinned (always shown) or still enabled on its own workspace's
-  // current output -- container_tree->node.enabled already encodes
-  // that (see Output::switch_workspace).
-  for (const std::unique_ptr<View>& candidate : server->views) {
-    if (candidate.get() != view &&
-        (candidate->pinned || candidate->container_tree->node.enabled)) {
-      server->focus_view(candidate.get());
-      return;
-    }
-  }
-  server->focus_view(nullptr);
+  // i3/dwm-style focus-on-close: hand focus to the topmost remaining visible
+  // view (server->views is front-to-back, see focus_view()'s splice-to-front),
+  // or clear focus when none is left.
+  server->focus_next_after(view);
 }
 
 static void xdg_toplevel_destroy(wl_listener* listener, void*) {
@@ -416,6 +408,7 @@ static void xdg_toplevel_request_resize(wl_listener* listener, void* data) {
 static void xdg_toplevel_set_title(wl_listener* listener, void*) {
   View* view = wl_container_of(listener, view, set_title);
   view->update_titlebar();  // a title change does not necessarily come with a commit
+  view->server->schedule_windows_broadcast();
 }
 
 static void xdg_toplevel_request_maximize(wl_listener* listener, void*) {
@@ -498,6 +491,7 @@ void server_new_xdg_toplevel(wl_listener* listener, void* data) {
 
   auto view = std::make_unique<View>(server, View::Kind::XdgToplevel);
   view->xdg_toplevel = toplevel;
+  view->id = server->next_view_id_++;
 
   // container_tree wraps the actual surface content (scene_tree) plus
   // four border rects framing it -- see view.hpp for why positioning/
@@ -859,6 +853,8 @@ void server_cursor_button(wl_listener* listener, void* data) {
           server->begin_resize(view, zone.edges);
         } else if (zone.button == kButtonClose) {
           view->close();
+        } else if (zone.button == kButtonMinimize) {
+          server->minimize_view(view);
         } else if (zone.button == kButtonMaximize) {
           server->toggle_maximize(view);
         } else if (zone.drag) {
@@ -917,6 +913,9 @@ void server_request_set_selection(wl_listener* listener, void* data) {
 Server::Server() = default;
 
 Server::~Server() {
+  if (windows_idle_) {
+    wl_event_source_remove(windows_idle_);
+  }
   if (theme_watch_source_) {
     wl_event_source_remove(theme_watch_source_);
   }
@@ -1472,6 +1471,7 @@ void Server::focus_view(View* view) {
     if (ipc_server) {
       ipc_server->broadcast_focused_title("");
     }
+    schedule_windows_broadcast();
     return;
   }
 
@@ -1560,6 +1560,7 @@ void Server::focus_view(View* view) {
     }
     ipc_server->broadcast_focused_title(title);
   }
+  schedule_windows_broadcast();
 }
 
 void Server::focus_layer_surface(LayerSurface* layer_surface) {
@@ -1697,6 +1698,93 @@ bool Server::is_double_click(View* view, uint32_t time_msec) {
   last_click_view_ = dbl ? nullptr : view;
   last_click_time_ = time_msec;
   return dbl;
+}
+
+// ---- window list for taskbar clients --------------------------------------
+
+void Server::minimize_view(View* view) {
+  if (view) view->set_minimized(true);
+}
+
+void Server::focus_next_after(View* gone) {
+  for (const std::unique_ptr<View>& candidate : views) {
+    if (candidate.get() != gone && candidate->workspace && !candidate->minimized &&
+        (candidate->pinned || candidate->container_tree->node.enabled)) {
+      focus_view(candidate.get());
+      return;
+    }
+  }
+  focus_view(nullptr);
+}
+
+View* Server::view_by_id(uint32_t id) const {
+  if (id == 0) return nullptr;
+  for (const std::unique_ptr<View>& view : views) {
+    if (view->id == id && view->workspace) return view.get();
+  }
+  return nullptr;
+}
+
+void Server::activate_view(View* view) {
+  if (!view) return;
+  if (view->minimized) {
+    view->set_minimized(false);
+  } else {
+    focus_view(view);
+  }
+}
+
+void Server::toggle_view_from_taskbar(View* view) {
+  if (!view) return;
+  const bool has_focus = seat_->keyboard_state.focused_surface == view->surface();
+  if (view->minimized) {
+    view->set_minimized(false);
+  } else if (has_focus) {
+    view->set_minimized(true);
+  } else {
+    focus_view(view);
+  }
+}
+
+std::vector<WindowEntry> Server::window_snapshot() const {
+  std::vector<WindowEntry> out;
+  wlr_surface* focused = seat_->keyboard_state.focused_surface;
+  for (const std::unique_ptr<View>& view : views) {
+    // Only mapped, top-level windows; dialogs belong to their parent's button.
+    if (!view->workspace || view->kind != View::Kind::XdgToplevel || !view->xdg_toplevel ||
+        view->xdg_toplevel->parent) {
+      continue;
+    }
+    WindowEntry entry;
+    entry.id = view->id;
+    entry.focused = focused && view->surface() == focused;
+    entry.minimized = view->minimized;
+    if (view->xdg_toplevel->app_id) entry.app_id = view->xdg_toplevel->app_id;
+    if (view->xdg_toplevel->title) entry.title = view->xdg_toplevel->title;
+    out.push_back(std::move(entry));
+  }
+  std::sort(out.begin(), out.end(),
+            [](const WindowEntry& a, const WindowEntry& b) { return a.id < b.id; });
+  return out;
+}
+
+namespace {
+void windows_idle_cb(void* data) {
+  auto* server = static_cast<Server*>(data);
+  server->broadcast_windows_now();
+}
+}  // namespace
+
+void Server::schedule_windows_broadcast() {
+  if (windows_idle_ || !ipc_server || !display_) return;
+  windows_idle_ = wl_event_loop_add_idle(wl_display_get_event_loop(display_), windows_idle_cb, this);
+}
+
+void Server::broadcast_windows_now() {
+  windows_idle_ = nullptr;
+  if (ipc_server) {
+    ipc_server->broadcast_windows(format_window_list(window_snapshot()));
+  }
 }
 
 void Server::toggle_debug_overlay() {

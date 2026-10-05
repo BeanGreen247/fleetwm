@@ -95,7 +95,7 @@ wlr_buffer* render_titlebar(int width, const std::string& title, bool focused, b
   cairo_fill(cr);
 
   // Title: centered, ellipsized to the room between the margins and buttons.
-  const double avail = width - 2 * (2 * kTitlebarButtonWidth) - 8;
+  const double avail = width - 2 * (3 * kTitlebarButtonWidth) - 8;
   std::string text = title;
   if (avail > 20 && !text.empty()) {
     bool cut = false;
@@ -115,11 +115,11 @@ wlr_buffer* render_titlebar(int width, const std::string& title, bool focused, b
 
   // Buttons.
   auto button_center = [&](int which) {
-    const int idx = which == kButtonClose ? 0 : 1;
+    const int idx = which == kButtonClose ? 0 : which == kButtonMaximize ? 1 : 2;
     return width - (idx + 0.5) * kTitlebarButtonWidth;
   };
   const double cy = (height - 1) / 2.0;
-  for (int which : {kButtonMaximize, kButtonClose}) {
+  for (int which : {kButtonMinimize, kButtonMaximize, kButtonClose}) {
     const double cx = button_center(which);
     kit::Color glyph = fg;
     if (hover_button == which) {
@@ -138,6 +138,10 @@ wlr_buffer* render_titlebar(int width, const std::string& title, bool focused, b
       cairo_line_to(cr, cx + 4, cy + 4);
       cairo_move_to(cr, cx + 4, cy - 4);
       cairo_line_to(cr, cx - 4, cy + 4);
+      cairo_stroke(cr);
+    } else if (which == kButtonMinimize) {
+      cairo_move_to(cr, cx - 4, cy + 4);
+      cairo_line_to(cr, cx + 4, cy + 4);
       cairo_stroke(cr);
     } else if (maximized) {
       cairo_rectangle(cr, cx - 4, cy - 2, 6, 6);  // restore: two overlapping squares

@@ -44,8 +44,8 @@ Box resized_box(const Box& start, uint32_t edges, double dx, double dy, int min_
 // of the result are meaningful.
 Box cascade_position(const Box& area, int outer_w, int outer_h, int index);
 
-// Titlebar buttons, right-aligned, each `button_w` wide: 0 = maximize
-// (second from the right), 1 = close (rightmost), -1 = none.
+// Titlebar buttons, right-aligned, each `button_w` wide: 1 = close (rightmost),
+// 0 = maximize (second from the right), 2 = minimize (third), -1 = none.
 int titlebar_button_at(int width, double x, int button_w);
 
 }  // namespace fleetwm::geom
