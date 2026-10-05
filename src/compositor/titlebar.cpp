@@ -134,16 +134,13 @@ wlr_buffer* render_titlebar(int width, const TitlebarState& st, const TitlebarCo
     const double glyph_r = std::clamp(std::min(slot.w, slot.h) * 0.17, 3.0, 7.0);
     kit::Color glyph = fg;
     const bool hot = st.hover_button == which;
-    const bool lit_pin = which == geom::kBtnPin && st.pinned;
-    if (hot || lit_pin) {
+    if (hot) {
       const kit::Color fill = which == geom::kBtnClose ? kit::Color{0.90, 0.28, 0.30, 1.0}
-                              : lit_pin && !hot        ? mix(bg, pal.accent, 0.35)
                                                        : mix(bg, pal.fg_primary, 0.18);
       kit::set_source(cr, fill);
       kit::rounded_rect(cr, slot.x + 2, slot.y, slot.w - 4, slot.h, std::min(slot.h / 2.0, 8.0));
       cairo_fill(cr);
-      if (which == geom::kBtnClose && hot) glyph = {1, 1, 1, 1};
-      if (lit_pin) glyph = pal.accent;
+      if (which == geom::kBtnClose) glyph = {1, 1, 1, 1};
     }
     kit::set_source(cr, glyph);
     cairo_set_line_width(cr, 1.4);
