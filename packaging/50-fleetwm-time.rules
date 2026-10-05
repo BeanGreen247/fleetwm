@@ -1,0 +1,12 @@
+// Lets members of the administrative groups, in an active local session, change
+// the time zone and switch automatic network time from fleetwm-settings
+// without a password prompt (fleetwm has no polkit authentication agent).
+// Remove this file to require full authentication again.
+polkit.addRule(function(action, subject) {
+  if ((action.id == "org.freedesktop.timedate1.set-timezone" ||
+       action.id == "org.freedesktop.timedate1.set-ntp") &&
+      subject.local && subject.active &&
+      (subject.isInGroup("sudo") || subject.isInGroup("wheel") || subject.isInGroup("adm"))) {
+    return polkit.Result.YES;
+  }
+});

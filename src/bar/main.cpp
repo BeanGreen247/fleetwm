@@ -415,11 +415,18 @@ struct Bar {
   // -------------------------------------------------------------- sources --
   std::string format_clock() {
     const ClockFormat& fmt = config.clock;
+    // The bar's own zone override (if any) wins over the system zone; tzset()
+    // each time also picks up a system zone change made while we run.
+    if (!fmt.timezone.empty()) setenv("TZ", fmt.timezone.c_str(), 1);
+    else unsetenv("TZ");
+    tzset();
     time_t now = time(nullptr);
     tm lt{};
     localtime_r(&now, &lt);
-    char tb[16];
-    std::strftime(tb, sizeof tb, fmt.show_seconds ? "%H:%M:%S" : "%H:%M", &lt);
+    char tb[24];
+    const char* tfmt = fmt.use_24h ? (fmt.show_seconds ? "%H:%M:%S" : "%H:%M")
+                                   : (fmt.show_seconds ? "%-I:%M:%S %p" : "%-I:%M %p");
+    std::strftime(tb, sizeof tb, tfmt, &lt);
     std::string label = tb;
     if (fmt.show_date) {
       std::string date;
@@ -679,6 +686,7 @@ struct Bar {
     config = load_bar_config();
     pal = load_palette(theme);
     apply_layout();
+    clock_tick();  // show a changed hour format / time zone right away
     redraw();
   }
 };

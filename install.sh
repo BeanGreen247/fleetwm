@@ -62,6 +62,13 @@ sudo apt-get install -y pipewire pipewire-bin wireplumber
 # on Ubuntu 26.04.
 sudo apt-get install -y polkitd pkexec
 
+# fleetwm-settings' Date & Time tab changes the system time zone and the
+# automatic-time (NTP) switch through timedatectl. Without a polkit
+# authentication agent (fleetwm has none) that is refused with "Interactive
+# authentication required", so allow it for administrators in an active
+# local session. Delete the file to go back to prompting.
+sudo install -m 644 "${SCRIPT_DIR}/packaging/50-fleetwm-time.rules" /etc/polkit-1/rules.d/50-fleetwm-time.rules
+
 sudo apt-get install -y xwayland foot
 
 # end-user runtime: Alt+Shift+S's screenshot keybind

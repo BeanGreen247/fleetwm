@@ -4,12 +4,15 @@
 // saved immediately; the compositor, bar, wallpaper and clients pick the new
 // config up live through their own inotify watches.
 
+#include <fcntl.h>
 #include <signal.h>
+#include <sys/wait.h>
 #include <sys/signalfd.h>
 #include <unistd.h>
 
 #include <algorithm>
 #include <cmath>
+#include <fstream>
 #include <functional>
 #include <cstdio>
 #include <cstdlib>
@@ -39,6 +42,51 @@ using namespace fleetwm::kit;
 
 constexpr int kWindowW = 620, kWindowH = 600;
 constexpr double kFont = 14.67;
+// Runs argv (no shell), returns the exit status and its stdout+stderr. Used for
+// timedatectl, which answers (or refuses) immediately thanks to --no-ask-password.
+int run_capture(const std::vector<std::string>& argv, std::string* out) {
+  int fds[2];
+  if (pipe(fds) != 0) return -1;
+  const pid_t pid = fork();
+  if (pid < 0) {
+    close(fds[0]);
+    close(fds[1]);
+    return -1;
+  }
+  if (pid == 0) {
+    dup2(fds[1], STDOUT_FILENO);
+    dup2(fds[1], STDERR_FILENO);
+    const int devnull = open("/dev/null", O_RDONLY);
+    if (devnull >= 0) dup2(devnull, STDIN_FILENO);
+    close(fds[0]);
+    close(fds[1]);
+    std::vector<char*> args;
+    for (const auto& a : argv) args.push_back(const_cast<char*>(a.c_str()));
+    args.push_back(nullptr);
+    execvp(args[0], args.data());
+    _exit(127);
+  }
+  close(fds[1]);
+  char buf[4096];
+  ssize_t n;
+  while ((n = read(fds[0], buf, sizeof buf)) > 0) out->append(buf, static_cast<size_t>(n));
+  close(fds[0]);
+  int status = 0;
+  waitpid(pid, &status, 0);
+  return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+}
+
+struct TimeInfo {
+  bool loaded = false;
+  std::vector<std::string> regions;
+  std::map<std::string, std::vector<std::string>> cities;  // region -> zone remainder
+  int region_sel = 0, city_sel = 0;
+  std::string system_tz;
+  bool ntp = false, synced = false;
+  std::string server;
+  std::string status;  // result of the last action
+};
+
 constexpr int kKeepPos = -999999;  // OUTPUT_SET: leave the position unchanged
 
 struct DispMode {
@@ -122,7 +170,7 @@ struct Settings {
 
   int tab = 0;
   double scroll[10] = {};
-  std::vector<std::string> tab_names{"Theme", "Bar", "Wallpaper", "Display", "Default Apps", "Audio", "Performance", "About"};
+  std::vector<std::string> tab_names{"Theme", "Bar", "Wallpaper", "Display", "Date & Time", "Default Apps", "Audio", "Performance", "About"};
 
   // power
   bool has_battery = false;
@@ -134,6 +182,8 @@ struct Settings {
   std::vector<MimeRow> mime_rows;
   std::vector<int> terminal_apps;
   int terminal_selected = -1;
+
+  TimeInfo tinfo;
 
   // display
   std::vector<DispMon> mons;
@@ -238,6 +288,178 @@ struct Settings {
   void update_battery() {
     battery = battery_internal::read_battery_reading(battery_dir);
     redraw();
+  }
+
+  // ---------------------------------------------------------- date & time --
+  static std::string trim_nl(std::string v) {
+    while (!v.empty() && (v.back() == '\n' || v.back() == '\r' || v.back() == ' ')) v.pop_back();
+    return v;
+  }
+
+  void load_time_info() {
+    tinfo = TimeInfo{};
+    tinfo.loaded = true;
+    std::string out;
+    run_capture({"timedatectl", "show", "-p", "Timezone", "-p", "NTP", "-p", "NTPSynchronized"}, &out);
+    std::istringstream in(out);
+    std::string line;
+    while (std::getline(in, line)) {
+      const size_t eq = line.find('=');
+      if (eq == std::string::npos) continue;
+      const std::string k = line.substr(0, eq), v = trim_nl(line.substr(eq + 1));
+      if (k == "Timezone") tinfo.system_tz = v;
+      else if (k == "NTP") tinfo.ntp = v == "yes";
+      else if (k == "NTPSynchronized") tinfo.synced = v == "yes";
+    }
+    out.clear();
+    run_capture({"timedatectl", "timesync-status"}, &out);
+    std::istringstream in2(out);
+    while (std::getline(in2, line)) {
+      const size_t p = line.find("Server:");
+      if (p != std::string::npos) tinfo.server = trim_nl(line.substr(p + 7));
+      while (!tinfo.server.empty() && tinfo.server.front() == ' ') tinfo.server.erase(0, 1);
+    }
+    // zone list
+    std::vector<std::string> zones;
+    out.clear();
+    if (run_capture({"timedatectl", "list-timezones"}, &out) == 0) {
+      std::istringstream zs(out);
+      while (std::getline(zs, line)) {
+        line = trim_nl(line);
+        if (!line.empty()) zones.push_back(line);
+      }
+    }
+    if (zones.empty()) {  // no systemd: read the tz database index directly
+      std::ifstream tab("/usr/share/zoneinfo/zone1970.tab");
+      while (std::getline(tab, line)) {
+        if (line.empty() || line[0] == '#') continue;
+        std::istringstream f(line);
+        std::string cc, coord, tz;
+        if (f >> cc >> coord >> tz) zones.push_back(tz);
+      }
+      std::sort(zones.begin(), zones.end());
+    }
+    for (const auto& z : zones) {
+      const size_t slash = z.find('/');
+      const std::string region = slash == std::string::npos ? z : z.substr(0, slash);
+      const std::string city = slash == std::string::npos ? z : z.substr(slash + 1);
+      if (!tinfo.cities.count(region)) tinfo.regions.push_back(region);
+      tinfo.cities[region].push_back(city);
+    }
+    select_zone(effective_timezone());
+  }
+
+  std::string effective_timezone() const {
+    return !bar.clock.timezone.empty() ? bar.clock.timezone : tinfo.system_tz;
+  }
+
+  void select_zone(const std::string& tz) {
+    const size_t slash = tz.find('/');
+    const std::string region = slash == std::string::npos ? tz : tz.substr(0, slash);
+    const std::string city = slash == std::string::npos ? tz : tz.substr(slash + 1);
+    for (size_t i = 0; i < tinfo.regions.size(); ++i)
+      if (tinfo.regions[i] == region) {
+        tinfo.region_sel = static_cast<int>(i);
+        const auto& cs = tinfo.cities[region];
+        tinfo.city_sel = 0;
+        for (size_t j = 0; j < cs.size(); ++j)
+          if (cs[j] == city) tinfo.city_sel = static_cast<int>(j);
+      }
+  }
+
+  std::string selected_zone() {
+    if (tinfo.regions.empty()) return "";
+    const std::string& region = tinfo.regions[static_cast<size_t>(tinfo.region_sel)];
+    const auto& cs = tinfo.cities[region];
+    if (cs.empty()) return region;
+    const std::string& city = cs[static_cast<size_t>(std::min<int>(tinfo.city_sel, static_cast<int>(cs.size()) - 1))];
+    return city == region ? region : region + "/" + city;
+  }
+
+  void apply_timezone() {
+    const std::string tz = selected_zone();
+    if (tz.empty()) return;
+    std::string out;
+    const int rc = run_capture({"timedatectl", "--no-ask-password", "set-timezone", tz}, &out);
+    if (rc == 0) {
+      bar.clock.timezone.clear();  // the system zone now says it all
+      tinfo.system_tz = tz;
+      tinfo.status = "System time zone set to " + tz + ".";
+    } else {
+      bar.clock.timezone = tz;  // still show the chosen zone on the bar clock
+      tinfo.status = "Bar clock set to " + tz + ". Changing the system time zone needs administrator rights (sudo timedatectl set-timezone " + tz + ").";
+    }
+    save_bar();
+  }
+
+  void set_ntp(bool on) {
+    std::string out;
+    const int rc = run_capture({"timedatectl", "--no-ask-password", "set-ntp", on ? "true" : "false"}, &out);
+    if (rc == 0) {
+      tinfo.ntp = on;
+      tinfo.status = on ? "Automatic time is on." : "Automatic time is off.";
+    } else {
+      tinfo.status = "Could not change automatic time: " + trim_nl(out);
+    }
+    // re-read the real state
+    const std::string keep = tinfo.status;
+    load_time_info();
+    tinfo.status = keep;
+  }
+
+  void tab_datetime(cairo_t*) {
+    if (!tinfo.loaded) load_time_info();
+
+    ui.heading("Clock");
+    ui.row("Time format");
+    int f24 = bar.clock.use_24h ? 0 : 1;
+    if (ui.radio_group({"24-hour", "12-hour (AM/PM)"}, &f24)) {
+      bar.clock.use_24h = f24 == 0;
+      save_bar();
+    }
+    ui.newline();
+    struct {
+      const char* label;
+      bool* field;
+    } toggles[] = {{"Show seconds", &bar.clock.show_seconds}, {"Show date", &bar.clock.show_date},
+                   {"Show year", &bar.clock.show_year},       {"Show month", &bar.clock.show_month},
+                   {"Show day", &bar.clock.show_day}};
+    for (auto& t : toggles) {
+      ui.row("");
+      if (ui.checkbox(t.label, t.field)) save_bar();
+      ui.newline(-2);
+    }
+
+    ui.space(8);
+    ui.heading("Time zone");
+    ui.label("Current: " + (effective_timezone().empty() ? std::string("unknown") : effective_timezone()), true);
+    ui.newline();
+    if (!tinfo.regions.empty()) {
+      ui.row("Region");
+      if (ui.dropdown(tinfo.regions, &tinfo.region_sel, 200)) tinfo.city_sel = 0;
+      ui.newline();
+      const std::string& region = tinfo.regions[static_cast<size_t>(tinfo.region_sel)];
+      ui.row("City");
+      ui.dropdown(tinfo.cities[region], &tinfo.city_sel, 260);
+      ui.newline();
+      ui.row("");
+      if (ui.button("Set time zone", true, true)) apply_timezone();
+      ui.newline();
+    }
+
+    ui.space(8);
+    ui.heading("Network time");
+    bool ntp = tinfo.ntp;
+    if (ui.checkbox("Set the time automatically from the nearest time server", &ntp)) set_ntp(ntp);
+    ui.newline();
+    ui.label(std::string("Clock synchronized: ") + (tinfo.synced ? "yes" : "no") +
+                 (tinfo.server.empty() ? "" : "   Server: " + tinfo.server),
+             true);
+    ui.newline();
+    ui.paragraph("Uses the system time service (systemd-timesyncd), which picks servers from the public NTP pool closest to you.");
+    if (!tinfo.status.empty()) ui.paragraph(tinfo.status, false);
+    if (ui.button("Refresh")) load_time_info();
+    ui.newline();
   }
 
   // ------------------------------------------------------------ display --
@@ -586,18 +808,6 @@ struct Settings {
   }
 
   void tab_bar(cairo_t*) {
-    ui.heading("Clock");
-    struct {
-      const char* label;
-      bool* field;
-    } toggles[] = {{"Show seconds", &bar.clock.show_seconds}, {"Show date", &bar.clock.show_date},
-                   {"Show year", &bar.clock.show_year},       {"Show month", &bar.clock.show_month},
-                   {"Show day", &bar.clock.show_day}};
-    for (auto& t : toggles) {
-      if (ui.checkbox(t.label, t.field)) save_bar();
-      ui.newline(-2);
-    }
-    ui.space(8);
     ui.heading("Workspace colors");
     struct {
       const char* label;
@@ -756,9 +966,10 @@ struct Settings {
       case 1: tab_bar(cr); break;
       case 2: tab_wallpaper(cr); break;
       case 3: tab_display(cr); break;
-      case 4: tab_default_apps(cr); break;
-      case 5: tab_audio(cr); break;
-      case 6: tab_performance(cr); break;
+      case 4: tab_datetime(cr); break;
+      case 5: tab_default_apps(cr); break;
+      case 6: tab_audio(cr); break;
+      case 7: tab_performance(cr); break;
       default: tab_about(cr); break;
     }
     ui.end_scroll();

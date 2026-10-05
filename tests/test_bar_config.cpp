@@ -372,5 +372,17 @@ TEST(PowerMode, ToStringAndProfilesDaemonNameDifferForBatterySaver) {
             power_mode_to_profiles_daemon_name(PowerMode::BatterySaver));
 }
 
+TEST_F(BarConfigTest, ClockHourFormatAndTimezoneRoundTrip) {
+  BarConfig config;
+  EXPECT_TRUE(config.clock.use_24h);
+  EXPECT_TRUE(config.clock.timezone.empty());
+  config.clock.use_24h = false;
+  config.clock.timezone = "America/New_York";
+  save_bar_config(config);
+  BarConfig loaded = load_bar_config();
+  EXPECT_FALSE(loaded.clock.use_24h);
+  EXPECT_EQ(loaded.clock.timezone, "America/New_York");
+}
+
 }  // namespace
 }  // namespace fleetwm

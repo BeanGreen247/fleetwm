@@ -74,6 +74,8 @@ BarConfig load_bar_config() {
   toml::table table = toml::parse_file(path.string());
   toml::table* clock = table["clock"].as_table();
   if (clock) {
+    if (auto v = (*clock)["use_24h"].value<bool>()) config.clock.use_24h = *v;
+    if (auto v = (*clock)["timezone"].value<std::string>()) config.clock.timezone = *v;
     if (auto v = (*clock)["show_seconds"].value<bool>()) config.clock.show_seconds = *v;
     if (auto v = (*clock)["show_date"].value<bool>()) config.clock.show_date = *v;
     if (auto v = (*clock)["show_year"].value<bool>()) config.clock.show_year = *v;
@@ -106,6 +108,8 @@ void save_bar_config(const BarConfig& config) {
   fs::create_directories(path.parent_path());
 
   toml::table clock;
+  clock.insert_or_assign("use_24h", config.clock.use_24h);
+  if (!config.clock.timezone.empty()) clock.insert_or_assign("timezone", config.clock.timezone);
   clock.insert_or_assign("show_seconds", config.clock.show_seconds);
   clock.insert_or_assign("show_date", config.clock.show_date);
   clock.insert_or_assign("show_year", config.clock.show_year);
