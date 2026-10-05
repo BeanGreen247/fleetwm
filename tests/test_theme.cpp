@@ -589,6 +589,20 @@ TEST_F(ThemeTest, DefaultCornerStyleIsRounded) {
   EXPECT_EQ(ThemeConfig{}.corner_style, CornerStyle::Rounded);
 }
 
+TEST_F(ThemeTest, WindowCornerRadiusAndShadowsRoundTripAndClamp) {
+  ThemeConfig c;
+  EXPECT_EQ(c.window_corner_radius, 10);
+  EXPECT_TRUE(c.window_shadows);
+  c.window_corner_radius = 14;
+  c.window_shadows = false;
+  save_theme_config(c);
+  ThemeConfig loaded = load_theme_config();
+  EXPECT_EQ(loaded.window_corner_radius, 14);
+  EXPECT_FALSE(loaded.window_shadows);
+  std::ofstream(user_config_path()) << "window_corner_radius = 500\n";
+  EXPECT_EQ(load_theme_config().window_corner_radius, 32);
+}
+
 TEST(ThemeHome, MissingHomeAndXdgConfigHomeThrows) {
   ::unsetenv("XDG_CONFIG_HOME");
   const char* old_home = std::getenv("HOME");

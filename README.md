@@ -500,3 +500,10 @@ If this project is useful to you, consider supporting its development via PayPal
 [![Donate with PayPal](.github/paypal-qr.png)](https://paypal.me/beangreen2471)
 
 **PayPal:** https://paypal.me/beangreen2471
+
+## Rounded window corners
+
+With [SceneFX](https://github.com/wlrfx/scenefx) installed (`scripts/build-scenefx.sh`), fleetwm
+rounds window corners and draws soft shadows (`window_corner_radius`, `window_shadows` in
+theme.toml; set radius 0 and shadows false to keep the plain renderer). Without it, or without
+a GPU render node, windows stay square. wlroots itself has no corner-radius API.

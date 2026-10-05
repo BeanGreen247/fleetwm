@@ -1095,7 +1095,23 @@ bool Server::init() {
   // gallium driver (about 65 MB resident) and is no faster than pixman for a
   // tiling desktop. Use pixman directly there. An explicit WLR_RENDERER in the
   // environment always wins, and any machine with a render node keeps GLES2.
-  if (std::getenv("WLR_RENDERER") == nullptr && !has_render_node()) {
+#if FLEETWM_SCENEFX
+  // Rounded corners and shadows need SceneFX's effects renderer (GLES-based).
+  // Opt out by setting both window_corner_radius = 0 and window_shadows = false.
+  {
+    const ThemeConfig fx_cfg = load_theme_config();
+    if (fx_cfg.window_corner_radius > 0 || fx_cfg.window_shadows) {
+      renderer_ = fx_renderer_create(backend_);
+      if (renderer_) {
+        fx_enabled_ = true;
+        wlr_log(WLR_INFO, "fleetwm: using the SceneFX renderer (rounded corners / shadows)");
+      } else {
+        wlr_log(WLR_ERROR, "fleetwm: SceneFX renderer unavailable, windows stay square");
+      }
+    }
+  }
+#endif
+  if (!renderer_ && std::getenv("WLR_RENDERER") == nullptr && !has_render_node()) {
     wlr_log(WLR_INFO, "fleetwm: no GPU render node, using the pixman renderer");
     renderer_ = wlr_pixman_renderer_create();
   }

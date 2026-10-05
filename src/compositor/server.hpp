@@ -11,7 +11,7 @@ extern "C" {
 #include <wlr/types/wlr_data_device.h>
 #include <wlr/types/wlr_layer_shell_v1.h>
 #include <wlr/types/wlr_output_layout.h>
-#include <wlr/types/wlr_scene.h>
+#include "scene.hpp"
 #include <wlr/types/wlr_screencopy_v1.h>
 #include <wlr/types/wlr_seat.h>
 #include <wlr/types/wlr_subcompositor.h>
@@ -142,6 +142,9 @@ class Server {
   // zone handling (layer_surface.cpp) to route from wlr_layer_surface_v1::
   // output back to the owning Output for update_usable_area().
   Output* output_for(wlr_output* wlr_output_ptr) const;
+
+  // True when the SceneFX effects renderer is active (rounded corners, shadows).
+  bool fx_enabled() const { return fx_enabled_; }
 
   // ---- display management (resolution + position of each monitor) ----
   struct ModeInfo {
@@ -359,6 +362,7 @@ class Server {
   KeybindsConfig keybinds_config_;
   ResolvedKeybinds resolved_keybinds_;
   bool locked_ = false;
+  bool fx_enabled_ = false;
   OutputSettings output_settings_;
   void reconfigure_layer_surfaces(wlr_output* wlr_out);
   pid_t spawn_locker();
