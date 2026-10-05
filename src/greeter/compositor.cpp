@@ -181,7 +181,7 @@ void greeter_toplevel_destroy(wl_listener* listener, void*) {
 // nothing calls any of them for a brand new toplevel unless the
 // compositor does (see src/compositor/server.cpp's identically-named
 // listener for the from-source confirmation). Spec-compliant clients
-// (GTK4 included) wait for that first configure before attaching a
+// wait for that first configure before attaching a
 // buffer, so without this the login client creates its surface and then
 // hangs forever with nothing rendered. `initial_commit` is wlroots' flag
 // for "the surface just initialized, safe to configure now". Sizing to

@@ -73,7 +73,7 @@ $ scripts/smoke-test.sh build
 
 fleetwm's own clients no longer use GTK at all (see
 [GTK-free shell clients](#gtk-free-shell-clients-fleetkit)), which is where
-most of the memory went: a GTK4 client pulls in GLib, Pango, GdkPixbuf and
+most of the memory went: a typical GTK client pulls in GLib, Pango, GdkPixbuf and
 (with the GL renderer) Mesa's full GL/EGL/gallium stack, 100-160 MB resident
 per process. Measured on the test VM, the bar went from 147 MB to 12 MB.
 

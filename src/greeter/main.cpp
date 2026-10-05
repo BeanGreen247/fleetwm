@@ -181,8 +181,8 @@ bool run_login_cycle(const std::string& tty_name) {
 
 int main(int argc, char** argv) {
   // See src/common/malloc_tuning.hpp's doc comment for the general
-  // rationale (not linked here -- pulling in libcommon would drag GTK4
-  // into this TTY-only, root-run process for no reason). Especially
+  // rationale (not linked here -- pulling in libcommon would drag the
+  // toolkit into this TTY-only, root-run process for no reason). Especially
   // relevant here: run_login_cycle() below retries in a loop on
   // failure, each attempt standing up and tearing down a full embedded
   // compositor (compositor.cpp) -- exactly the "spawn/destroy a lot of

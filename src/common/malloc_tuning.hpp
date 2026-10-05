@@ -7,7 +7,7 @@ namespace fleetwm {
 // them (never shrinks back down) every time a large-enough chunk gets
 // freed. Long-running fleetwm processes that spawn/destroy lots of
 // short-lived objects over time -- the compositor opening/closing
-// windows, the bar's systray icons coming and going, any GTK4 client's
+// windows, the bar's systray icons coming and going, any client's
 // theme/config reloads -- otherwise accumulate freed-but-never-returned
 // memory in the heap arena instead of giving it back to the OS.
 //

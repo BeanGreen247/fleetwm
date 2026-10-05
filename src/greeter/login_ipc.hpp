@@ -5,7 +5,7 @@
 
 // Tiny blocking protocol carried over a UNIX socketpair between
 // fleetwm-greet (root, owns PAM auth + the wlroots display) and
-// fleetwm-greeter-login (the GTK4 login-card client it spawns as a child,
+// fleetwm-greeter-login (the fleetkit login-card client it spawns as a child,
 // also root pre-auth -- see docs/adr/0006 and docs/adr/0007). Deliberately
 // hand-rolled rather than pulling in a serialization library: two message
 // shapes each way, never versioned independently of the two binaries that

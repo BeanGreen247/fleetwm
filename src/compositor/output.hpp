@@ -115,7 +115,7 @@ class Output {
   // this output's last kDebugBarCount frame times, colored green/
   // yellow/red against a 60Hz (16.6ms) budget. No text/fonts involved
   // -- this compositor does zero text rendering anywhere today (every
-  // GTK4 client handles its own), and reusing the same wlr_scene_rect
+  // client handles its own), and reusing the same wlr_scene_rect
   // machinery already used for window borders keeps this to plain
   // rectangles. Called every frame from output_frame() regardless of
   // whether the overlay is currently shown; it's a cheap no-op time-

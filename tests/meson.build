@@ -2,7 +2,7 @@
 # compositor, Wayland session, or fleetwm-dev VM hardware required, so
 # these can run anywhere (including plain `meson test` in a throwaway
 # build dir). Intentionally does NOT cover anything that needs a live
-# wlroots scene tree, a real GTK4 window, or spawns real system commands
+# wlroots scene tree, a real window, or spawns real system commands
 # (systemd/loginctl/g_spawn_async) -- those need the fleetwm-dev VM and
 # are out of scope for a unit test.
 gtest_dep = dependency('gtest', main: true, required: true, fallback: ['gtest', 'gtest_main_dep'])

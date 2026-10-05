@@ -60,8 +60,7 @@ Environment=LIBSEAT_BACKEND=seatd
 # rendering over a working hardware path.
 Environment=WLR_RENDERER_ALLOW_SOFTWARE=1
 # The greeter only ever draws a static login card -- no GPU compositing
-# need at all, same reasoning as GSK_RENDERER=cairo below for the GTK4
-# login client. Forcing pixman means Mesa/EGL/GLES2's driver stack
+# need at all. Forcing pixman means Mesa/EGL/GLES2's driver stack
 # (libEGL_mesa, libgallium, libLLVM -- confirmed ~36MB via smaps on the
 # real desktop compositor's own GLES2 mapping) never gets mapped into
 # this process at all, which matters even after a successful login:
@@ -73,10 +72,6 @@ Environment=WLR_RENDERER_ALLOW_SOFTWARE=1
 # explicit user choice, see project memory), there's no real-desktop
 # workload here to trade away -- safe to force unconditionally.
 Environment=WLR_RENDERER=pixman
-# Same GSK_RENDERER rationale as src/greeter/session.cpp's copy of this
-# var -- avoids GTK4 pulling in Mesa's GL/EGL/gallium/LLVM stack for the
-# login card, which needs no GPU compositing.
-Environment=GSK_RENDERER=cairo
 # Same NO_AT_BRIDGE rationale as src/greeter/session.cpp's copy of this
 # var -- skips AT-SPI accessibility D-Bus activation for the login
 # client, explicit user choice (startup-time/memory win over assistive
