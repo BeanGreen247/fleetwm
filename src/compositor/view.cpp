@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include <cstring>
+#include <vector>
 
 #include "output.hpp"
 #include "server.hpp"
@@ -220,8 +221,12 @@ void View::resize_border() {
         slot = {0, 0, b.w, b.h};
         on = true;
       } else if (has_placed) {
-        slot = {0, 0, placed_outer.w, placed_outer.h};
-        on = true;
+        const std::vector<geom::Box> boxes =
+            geom::tile_boxes({a.x, a.y, a.width, a.height}, placed_count);
+        if (placed_index < boxes.size()) {
+          slot = {0, 0, boxes[placed_index].w, boxes[placed_index].h};
+          on = true;
+        }
       }
     }
     wlr_scene_node_set_enabled(&fill_rect->node, on);
@@ -330,13 +335,27 @@ void View::snap_to(geom::SnapZone zone) {
   refit_snapped();
 }
 
-void View::place_outer(const geom::Box& outer) {
-  if (!output || !xdg_toplevel) {
+void View::place_tile(size_t index, size_t count) {
+  if (!output || !xdg_toplevel || count == 0 || index >= count) {
     return;
   }
   snap_zone = geom::SnapZone::None;  // an explicit placement replaces any earlier snap
-  placed_outer = outer;
+  placed_index = index;
+  placed_count = count;
   has_placed = true;
+  refit_placed();
+}
+
+void View::refit_placed() {
+  if (!has_placed || !output || !xdg_toplevel) {
+    return;
+  }
+  const wlr_box a = output->usable_area;
+  const std::vector<geom::Box> boxes = geom::tile_boxes({a.x, a.y, a.width, a.height}, placed_count);
+  if (placed_index >= boxes.size()) {
+    return;
+  }
+  const geom::Box& outer = boxes[placed_index];
   const int bt = border_thickness();
   wlr_scene_node_set_position(&container_tree->node, outer.x, outer.y);
   const int w = std::max(1, outer.w - 2 * bt), h = std::max(1, outer.h - titlebar_height() - 2 * bt);
