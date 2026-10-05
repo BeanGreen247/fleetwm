@@ -21,8 +21,9 @@ cd fleetwm
 ./install.sh
 ```
 
-The script installs what it needs with `apt`, builds the project and installs it to
-`/usr/local`. Log out and back in afterwards (the install adds you to the `input`, `video`,
+Run it as your normal user, not with `sudo`; it asks for your password when it needs it. It
+installs what it needs with `apt`, builds the project and installs it to `/usr/local`. The build
+runs the tests first and takes a while on a small machine (about 25 minutes on a 2-core Celeron). Log out and back in afterwards (the install adds you to the `input`, `video`,
 `render` and `audio` groups, which only takes effect on a new login), then pick **Fleetwm**
 from your login screen's session list.
 

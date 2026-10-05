@@ -14,6 +14,24 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # installed binaries were built from.
 BUILD_DIR="${SCRIPT_DIR}/build-pgo"
 
+# The script asks for sudo itself when it needs it. Running the whole thing as root
+# leaves root-owned build files behind, which then break every later normal run.
+if [[ ${EUID} -eq 0 ]]; then
+  echo "error: run ./install.sh as your normal user, not with sudo or as root." >&2
+  echo "       It asks for your password itself when it needs it." >&2
+  exit 1
+fi
+
+# A build folder left behind by an earlier 'sudo' run is owned by root and makes
+# the build fail with a permission error. Give it back to the current user.
+for d in build-pgo build-test build; do
+  p="${SCRIPT_DIR}/${d}"
+  if [[ -e "${p}" ]] && [[ -n "$(find "${p}" ! -user "$(id -u)" -print -quit 2>/dev/null)" ]]; then
+    echo "==> ${d}/ has files owned by another user (an earlier sudo run?); fixing ownership"
+    sudo chown -R "$(id -u):$(id -g)" "${p}"
+  fi
+done
+
 echo "==> Installing build dependencies (requires sudo)"
 sudo apt-get update
 
@@ -127,6 +145,17 @@ bash "${SCRIPT_DIR}/scripts/build-pgo-auto.sh"
 
 echo "==> Installing (requires sudo)"
 sudo ninja -C "${BUILD_DIR}" install
+# 'sudo ninja' can leave root-owned files in the build folder; hand them back so the
+# next run (or fleetwm-update) can rebuild without a permission error.
+sudo chown -R "$(id -u):$(id -g)" "${BUILD_DIR}"
+
+# The install prefix is /usr/local, but display managers (GDM, SDDM, LightDM) list the
+# sessions in /usr/share/wayland-sessions, so put the session entry there too.
+if [[ -f /usr/local/share/wayland-sessions/fleetwm.desktop ]]; then
+  echo "==> Adding the Fleetwm session to /usr/share/wayland-sessions"
+  sudo install -D -m 644 /usr/local/share/wayland-sessions/fleetwm.desktop \
+    /usr/share/wayland-sessions/fleetwm.desktop
+fi
 
 echo "==> Recording source checkout path for 'fleetwm update'"
 echo "${SCRIPT_DIR}" | sudo tee /etc/fleetwm-source-path >/dev/null
