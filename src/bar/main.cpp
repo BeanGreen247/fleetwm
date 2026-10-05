@@ -622,14 +622,50 @@ struct Bar {
     if (surface) surface->queue_draw();
   }
 
-  void clock_tick() {
-    bool ch = set_if_changed(clock_text, format_clock());
-    ch |= update_cpu();
+  // The clock and the CPU/GPU stats run on separate timers so an idle desktop
+  // is not woken (and the compositor not made to composite a frame) once a
+  // second: with seconds hidden the clock redraws once a minute, aligned to
+  // the minute boundary; stats refresh every 2 s and only redraw on change.
+  int clock_timer = 0;
+
+  void clock_update() {
+    if (set_if_changed(clock_text, format_clock())) {
+      if (island) apply_layout();
+      redraw();
+    }
+  }
+
+  void schedule_clock() {
+    if (clock_timer) {
+      app.unwatch(clock_timer);
+      clock_timer = 0;
+    }
+    timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    const long period = config.clock.show_seconds ? 1000 : 60000;
+    const long now_ms = static_cast<long>(ts.tv_sec) * 1000 + ts.tv_nsec / 1000000;
+    long wait = period - now_ms % period;
+    if (wait < 30) wait += period;
+    clock_timer = app.add_oneshot(static_cast<int>(wait), [this] {
+      clock_timer = 0;
+      clock_update();
+      schedule_clock();
+    });
+  }
+
+  void stats_tick() {
+    bool ch = update_cpu();
     ch |= update_gpu();
     if (ch) {
       if (island) apply_layout();  // text widths changed, island width follows
       redraw();
     }
+  }
+
+  void clock_tick() {  // full refresh, used at start-up and after config changes
+    clock_update();
+    stats_tick();
+    schedule_clock();
   }
 
   // ------------------------------------------------------------------ ipc --
@@ -803,7 +839,7 @@ int main() {
   B.apply_layout();
   B.try_connect();
 
-  B.app.add_timer(1000, [&B] { B.clock_tick(); });
+  B.app.add_timer(2000, [&B] { B.stats_tick(); });
   B.app.add_timer(5000, [&B] {
     if (B.update_disk()) B.redraw();
   });

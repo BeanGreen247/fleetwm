@@ -48,7 +48,7 @@ TEST(BarLayout, UnknownStringFallsBackToFull) {
 
 TEST_F(BarConfigTest, LoadWithNoConfigFileReturnsDefaults) {
   BarConfig config = load_bar_config();
-  EXPECT_TRUE(config.clock.show_seconds);
+  EXPECT_FALSE(config.clock.show_seconds);
   EXPECT_FALSE(config.clock.show_date);
   EXPECT_TRUE(config.workspace_colors.inactive_bg.empty());
   EXPECT_EQ(config.power_mode, PowerMode::Normal);
@@ -57,7 +57,7 @@ TEST_F(BarConfigTest, LoadWithNoConfigFileReturnsDefaults) {
 
 TEST_F(BarConfigTest, SaveThenLoadRoundTripsNestedTables) {
   BarConfig config;
-  config.clock.show_seconds = false;
+  config.clock.show_seconds = true;
   config.clock.show_date = true;
   config.clock.show_year = false;
   config.clock.show_month = false;
@@ -73,7 +73,7 @@ TEST_F(BarConfigTest, SaveThenLoadRoundTripsNestedTables) {
   save_bar_config(config);
   BarConfig loaded = load_bar_config();
 
-  EXPECT_FALSE(loaded.clock.show_seconds);
+  EXPECT_TRUE(loaded.clock.show_seconds);
   EXPECT_TRUE(loaded.clock.show_date);
   EXPECT_FALSE(loaded.clock.show_year);
   EXPECT_EQ(loaded.workspace_colors.inactive_bg, "#111111");
@@ -114,18 +114,18 @@ TEST_F(BarConfigTest, MissingNestedTableKeepsDefaults) {
 
   BarConfig config = load_bar_config();
   EXPECT_EQ(config.power_mode, PowerMode::BatterySaver);
-  EXPECT_TRUE(config.clock.show_seconds);
+  EXPECT_FALSE(config.clock.show_seconds);
   EXPECT_TRUE(config.workspace_colors.inactive_bg.empty());
 }
 
 TEST_F(BarConfigTest, PartiallyFilledNestedTableKeepsRemainingDefaults) {
   std::filesystem::create_directories(dir_ / "fleetwm");
   std::ofstream out(dir_ / "fleetwm" / "bar.toml");
-  out << "[clock]\nshow_seconds = false\n";
+  out << "[clock]\nshow_seconds = true\n";
   out.close();
 
   BarConfig config = load_bar_config();
-  EXPECT_FALSE(config.clock.show_seconds);
+  EXPECT_TRUE(config.clock.show_seconds);
   EXPECT_FALSE(config.clock.show_date);  // still default
   EXPECT_TRUE(config.clock.show_year);   // still default
 }
@@ -137,7 +137,7 @@ TEST_F(BarConfigTest, WrongTypeShowSecondsIgnored) {
   std::ofstream out(dir_ / "fleetwm" / "bar.toml");
   out << "[clock]\nshow_seconds = \"yes\"\n";
   out.close();
-  EXPECT_TRUE(load_bar_config().clock.show_seconds);
+  EXPECT_FALSE(load_bar_config().clock.show_seconds);
 }
 
 TEST_F(BarConfigTest, IntegerShowDateCoercesToBoolNotIgnored) {
@@ -188,7 +188,7 @@ TEST_F(BarConfigTest, OnlyShowYearSetKeepsOtherClockDefaults) {
 
   BarConfig config = load_bar_config();
   EXPECT_FALSE(config.clock.show_year);
-  EXPECT_TRUE(config.clock.show_seconds);
+  EXPECT_FALSE(config.clock.show_seconds);
   EXPECT_TRUE(config.clock.show_month);
   EXPECT_TRUE(config.clock.show_day);
 }
@@ -234,7 +234,7 @@ TEST_F(BarConfigTest, EmptyConfigFileYieldsDefaults) {
 
   BarConfig config = load_bar_config();
   EXPECT_EQ(config.power_mode, PowerMode::Normal);
-  EXPECT_TRUE(config.clock.show_seconds);
+  EXPECT_FALSE(config.clock.show_seconds);
 }
 
 TEST_F(BarConfigTest, EmptyClockTableKeepsDefaults) {
@@ -244,7 +244,7 @@ TEST_F(BarConfigTest, EmptyClockTableKeepsDefaults) {
   out.close();
 
   BarConfig config = load_bar_config();
-  EXPECT_TRUE(config.clock.show_seconds);
+  EXPECT_FALSE(config.clock.show_seconds);
   EXPECT_FALSE(config.clock.show_date);
 }
 
@@ -350,9 +350,9 @@ TEST_F(BarConfigTest, DefaultPowerModeIsNormal) {
   EXPECT_EQ(BarConfig{}.power_mode, PowerMode::Normal);
 }
 
-TEST_F(BarConfigTest, DefaultClockShowsSecondsAndYearButNotDate) {
+TEST_F(BarConfigTest, DefaultClockHidesSecondsAndDateShowsYear) {
   ClockFormat clock;
-  EXPECT_TRUE(clock.show_seconds);
+  EXPECT_FALSE(clock.show_seconds);
   EXPECT_FALSE(clock.show_date);
   EXPECT_TRUE(clock.show_year);
 }
