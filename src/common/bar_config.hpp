@@ -11,6 +11,11 @@ namespace fleetwm {
 // for settings that only ever mean something to fleetwm-bar, starting
 // with clock display toggles.
 struct ClockFormat {
+  bool use_24h = true;       // false = 12-hour clock with AM/PM
+  // IANA zone name for the bar clock ("Europe/Prague"). Empty = follow the
+  // system time zone. fleetwm-settings sets the system zone when it is
+  // allowed to and keeps this override when it is not.
+  std::string timezone;
   bool show_seconds = true;
   bool show_date = false;
   bool show_year = true;
