@@ -8,7 +8,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/install-ui.sh
-UI_TOTAL_STEPS=12  # keep equal to the number of ui_step calls below
+UI_TOTAL_STEPS=13  # keep equal to the number of ui_step calls below
 source "${SCRIPT_DIR}/scripts/install-ui.sh"
 # shellcheck source=scripts/install-stats.sh
 source "${SCRIPT_DIR}/scripts/install-stats.sh"
@@ -196,6 +196,48 @@ apt_install polkitd pkexec
 # local session. Delete the file to go back to prompting.
 sudo install -m 644 "${SCRIPT_DIR}/packaging/50-fleetwm-time.rules" /etc/polkit-1/rules.d/50-fleetwm-time.rules
 
+ui_step "Installing network support (Wi-Fi drivers, firmware and a network manager if needed)" \
+  "What: the Wi-Fi tools (wpa_supplicant, iw, rfkill, the regulatory database), firmware for Realtek, Intel," \
+  "      Atheros, Broadcom, MediaTek and other Wi-Fi/Ethernet chips, and, only when this computer has Wi-Fi" \
+  "      hardware and nothing manages it yet, NetworkManager." \
+  "Why:  Wi-Fi cards will not work without their firmware file, and Settings -> Network needs a manager to" \
+  "      list and join networks. Fleetwm works with NetworkManager (GNOME, KDE, XFCE use it) and with plain" \
+  "      wpa_supplicant (netplan, systemd-networkd). An existing setup is never replaced or restarted."
+ui_item "wpasupplicant iw rfkill" "join Wi-Fi networks, scan and switch the radio"
+ui_item "wireless-regdb" "the legal channel list for your country (enables 5 GHz channels)"
+ui_item "usb-modeswitch" "makes USB Wi-Fi sticks that first show up as a CD drive switch to Wi-Fi"
+ui_item "firmware-realtek/-iwlwifi/-atheros/-brcm80211/-mediatek/-libertas/-ti-connectivity" "Wi-Fi chip firmware"
+# Looked at before installing anything: wpasupplicant's package starts its own service, which
+# would make every machine look as if a network manager were already in charge.
+HAS_WIFI=0
+for w in /sys/class/net/*/wireless /sys/class/net/*/phy80211; do [[ -e "${w}" ]] && HAS_WIFI=1; done
+NET_MANAGED=0
+for unit in NetworkManager iwd connman systemd-networkd wpa_supplicant; do
+  systemctl is-active --quiet "${unit}.service" 2>/dev/null && NET_MANAGED=1
+  systemctl is-enabled --quiet "${unit}.service" 2>/dev/null && NET_MANAGED=1
+done
+apt_install wpasupplicant iw rfkill wireless-regdb usb-modeswitch ||
+  echo "warning: some Wi-Fi tools could not be installed"
+if dpkg -s armbian-firmware-full >/dev/null 2>&1; then
+  echo "    Armbian's full firmware package is installed and already covers these chips; skipping the firmware packages."
+else
+  # One at a time: a package missing on this release (or conflicting) must not block the others.
+  for fw in firmware-realtek firmware-iwlwifi firmware-atheros firmware-brcm80211 firmware-mediatek \
+            firmware-libertas firmware-ti-connectivity firmware-misc-nonfree; do
+    if apt-cache show "${fw}" >/dev/null 2>&1; then
+      apt_install "${fw}" || echo "warning: ${fw} not installed"
+    fi
+  done
+fi
+if (( HAS_WIFI )) && (( ! NET_MANAGED )); then
+  echo "    Wi-Fi hardware found and no network manager is running: installing NetworkManager."
+  apt_install network-manager || echo "warning: NetworkManager could not be installed"
+elif (( HAS_WIFI )); then
+  echo "    Wi-Fi hardware found; keeping the network manager that is already in charge."
+else
+  echo "    No Wi-Fi hardware found; not installing a network manager."
+fi
+
 ui_step "Installing everyday programs and helpers" \
   "What: XWayland (runs older X11 programs inside Fleetwm), the foot terminal, grim/slurp/wl-clipboard" \
   "      (Alt+Shift+S screenshots), wlrctl/wtype/gdb/imagemagick (testing over SSH) and the tools the" \
@@ -308,7 +350,7 @@ echo "==> Adding $(whoami) to device-access groups (input/video/render/audio)"
 # systems that gate them separately from video. Only add groups that
 # actually exist on this system -- not all of these exist on every distro
 # or hardware configuration.
-for group in input video render audio plugdev; do
+for group in input video render audio plugdev netdev; do
   if getent group "${group}" >/dev/null 2>&1; then
     sudo usermod -aG "${group}" "$(whoami)"
   fi

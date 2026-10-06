@@ -35,6 +35,10 @@
 #include "fleetkit.hpp"
 #include "malloc_tuning.hpp"
 #include "theme.hpp"
+#include "network_glyphs.hpp"
+#include "network_parse.hpp"
+#include "network_types.hpp"
+#include "system_devices.hpp"
 #include "tray.hpp"
 #include "volume_source.hpp"
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
@@ -110,6 +114,9 @@ struct Bar {
   bool gpu_query_running = false;
 
   // Hit rects, rebuilt on every draw.
+  Rect net_rect;
+  net::Device net_dev;  // the card the network icon stands for
+  bool net_have = false;
   Rect ws_rect[10], vol_rect, power_rect, battery_rect, ram_rect, cpu_rect, gpu_rect, disk_rect;
   int tooltip_for = 0;  // 1 battery, 2 RAM, 3 CPU, 4 GPU, 5 disk, 6 volume, 1000+id window
   std::vector<Rect> tray_rects;
@@ -183,7 +190,7 @@ struct Bar {
   static constexpr double kBoxGap = 8;       // bar_box child spacing
   static constexpr double kMargin = 8;
   static constexpr double kTrayIcon = 16, kTraySpacing = 6;
-  static constexpr double kBoltW = 8, kBatteryW = 26 + kStatPad + kBoltW, kModeW = 12 + kStatPad, kPowerW = 30;
+  static constexpr double kBoltW = 8, kBatteryW = 26 + kStatPad + kBoltW, kModeW = 12 + kStatPad, kPowerW = 30, kNetW = 18 + kStatPad;
 
   // The workspace buttons shown right now (see visible_workspaces()).
   std::vector<int> ws_visible() const {
@@ -249,6 +256,10 @@ struct Bar {
     }
     t += tray_total();
     ++children;  // tray box always participates in the spacing
+    if (net_have) {
+      t += kNetW;
+      ++children;
+    }
     t += kModeW + battery_w(m);  // power-mode glyph + battery/plug, shown on every machine
     children += 2;
     t += kPowerW;
@@ -625,6 +636,13 @@ struct Bar {
     }
     rx += kRightGap;
 
+    if (net_have) {
+      net_rect = {rx, 0, kNetW, static_cast<double>(H)};
+      draw_net_glyph(cr, rx + kNetW / 2, H / 2.0, 16);
+      rx += kNetW + kRightGap;
+    } else {
+      net_rect = {};
+    }
     draw_mode_glyph(cr, rx + kModeW / 2, H / 2.0, pal.fg_secondary);
     rx += kModeW + kRightGap;
     const double bw_total = battery_w(m);
@@ -651,6 +669,45 @@ struct Bar {
     }
     draw_power_glyph(cr, rx + kPowerW / 2, H / 2.0, hover_power ? pal.accent : pal.fg_secondary);
       return rx + kPowerW;
+  }
+
+  // The network icon: a Wi-Fi fan lit to the signal strength, or an Ethernet port, by what is in use.
+  void draw_net_glyph(cairo_t* cr, double cx, double cy, double size) {
+    const bool up = net_dev.state == net::State::Connected;
+    const bool off = net_dev.state == net::State::Unavailable;
+    const net::GlyphColor fg{pal.fg_secondary.r, pal.fg_secondary.g, pal.fg_secondary.b, 1.0};
+    if (net_dev.kind == net::Kind::Wifi)
+      net::draw_wifi_glyph(cr, cx, cy, size, up ? net::wifi_arcs_lit(net_dev.signal > 0 ? net_dev.signal : 100) : 0, fg, off);
+    else
+      net::draw_ethernet_glyph(cr, cx, cy, size, up, fg, off);
+  }
+
+  bool update_network() {
+    const std::vector<net::Device> devices = net::read_system_devices();
+    const net::Device* p = net::primary_device(devices);
+    const bool have = p != nullptr;
+    const bool changed = have != net_have || (have && (p->name != net_dev.name || p->state != net_dev.state ||
+                                                       p->signal != net_dev.signal || p->kind != net_dev.kind));
+    net_have = have;
+    if (have) net_dev = *p;
+    if (changed) apply_layout_if_island();
+    return changed;
+  }
+
+  // Asked fresh on every hover so it reflects NetworkManager, wpa_supplicant or the bare kernel view.
+  std::string net_tooltip_text() {
+    net::Snapshot snap = net::make_backend()->snapshot();
+    const net::Device* primary = net::primary_device(snap.devices);
+    if (!primary) return "No network card found";
+    std::string t;
+    for (const net::Device& d : snap.devices) {
+      if (&d != primary && d.state != net::State::Connected) continue;
+      if (!t.empty()) t += "\n\n";
+      t += std::string(d.kind == net::Kind::Wifi ? "Wi-Fi: " : "Ethernet: ") + net::describe_device(d) + "\n" + d.name;
+      for (const std::string& a : d.addresses) t += "  " + a;
+      if (!d.gateway.empty()) t += "\nGateway " + d.gateway;
+    }
+    return t + "\n\nClick to open network settings";
   }
 
   // ------------------------------------------------------------- taskbar --
@@ -849,9 +906,9 @@ struct Bar {
 
   void draw_taskbar_vertical(cairo_t* cr, Metrics& m, int W, int H) {
     const double bx = 6, bw = W - 12;
-    constexpr double kBtn = 44, kStat = 38, kClock = 46, kBat = 30, kTrayRow = 28;
+    constexpr double kBtn = 44, kStat = 38, kClock = 46, kBat = 30, kTrayRow = 28, kNetRow = 28;
     const size_t tray_n = tray->items().size();
-    const double cluster_h = kBtn + kClock + kBat + kStat * 3 + tray_n * kTrayRow;  // metrics: 2x2 grid + volume
+    const double cluster_h = kBtn + kClock + kBat + kStat * 3 + tray_n * kTrayRow + (net_have ? kNetRow : 0);  // metrics: 2x2 grid + volume
     double y = H - 6 - cluster_h;
 
     // Status cluster, top-down from `y`.
@@ -882,6 +939,13 @@ struct Bar {
         cairo_restore(cr);
       }
       y += kTrayRow;
+    }
+    if (net_have) {
+      net_rect = {bx, y, bw, kNetRow};
+      draw_net_glyph(cr, W / 2.0, y + kNetRow / 2, 16);
+      y += kNetRow;
+    } else {
+      net_rect = {};
     }
     // Power-mode glyph and battery/plug on one row.
     draw_mode_glyph(cr, W / 2.0 - 17, y + kBat / 2, pal.fg_secondary);
@@ -1168,6 +1232,7 @@ struct Bar {
       case 3: return cpu_tooltip_text();
       case 4: return gpu_tooltip_text();
       case 5: return disk_tooltip_text();
+      case 7: return net_tooltip_text();
       default: return vol_tooltip_text();
     }
   }
@@ -1319,6 +1384,7 @@ struct Bar {
         }
       if (vol_rect.hit(x, y)) return spawn("fleetwm-audiomixer");
       if (battery_rect.hit(x, y)) return spawn_settings_page("power");
+      if (net_have && net_rect.hit(x, y)) return spawn_settings_page("network");
       if (power_rect.hit(x, y)) return spawn("fleetwm-powermenu");
     }
     for (size_t i = 0; i < tray_rects.size(); ++i)
@@ -1366,11 +1432,11 @@ struct Bar {
         redraw();
       }
     }
-    const Rect* rects[] = {&battery_rect, &ram_rect, &cpu_rect, &gpu_rect, &disk_rect, &vol_rect};
+    const Rect* rects[] = {&battery_rect, &ram_rect, &cpu_rect, &gpu_rect, &disk_rect, &vol_rect, &net_rect};
     int want = 0;  // 1..6 = rects above (index + 1); 1000 + id = a window button
     Rect r;
-    for (int i = 0; i < 6; ++i)
-      if (rects[i]->hit(x, y)) {
+    for (int i = 0; i < 7; ++i)
+      if (rects[i]->hit(x, y) && (i != 6 || net_have)) {
         want = i + 1;
         r = *rects[i];
       }
@@ -1515,6 +1581,7 @@ int main() {
   B.battery_dir = find_battery_dir();
   if (const char* d = std::getenv("FLEETWM_BATTERY_DIR")) B.battery_dir = d;  // test hook
   B.update_battery();
+  B.update_network();
   B.clock_tick();
   B.apply_layout();
   B.try_connect();
@@ -1525,6 +1592,9 @@ int main() {
   });
   B.app.add_timer(15000, [&B] {
     if (B.update_battery()) B.redraw();
+  });
+  B.app.add_timer(5000, [&B] {
+    if (B.update_network()) B.redraw();
   });
   B.app.on_outputs_changed = [&B] { B.apply_layout(); };
 

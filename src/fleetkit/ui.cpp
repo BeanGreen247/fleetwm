@@ -769,7 +769,7 @@ bool Ui::tabs(const std::vector<std::string>& names, int* current) {
   return mark(changed);
 }
 
-bool Ui::text_entry(std::string* text, double width, bool enabled) {
+bool Ui::text_entry(std::string* text, double width, bool enabled, bool mask) {
   const int id = next_id();
   register_focusable_if(id, enabled);
   const UiRect r = place(width, 30);
@@ -811,6 +811,8 @@ bool Ui::text_entry(std::string* text, double width, bool enabled) {
           text->erase(edit_cursor_, n);
           changed = true;
         }
+      } else if (k.sym == XKB_KEY_Return || k.sym == XKB_KEY_KP_Enter) {
+        entry_submitted_ = true;
       } else if (k.sym == XKB_KEY_Left) edit_cursor_ -= prev_len(*text, edit_cursor_);
       else if (k.sym == XKB_KEY_Right) edit_cursor_ += next_len(*text, edit_cursor_);
       else if (k.sym == XKB_KEY_Home) edit_cursor_ = 0;
@@ -840,10 +842,21 @@ bool Ui::text_entry(std::string* text, double width, bool enabled) {
     cairo_save(cr_);
     cairo_rectangle(cr_, r.x + 4, r.y, r.w - 8, r.h);
     cairo_clip(cr_);
-    const TextExtents te = measure_text(cr_, *text, kFont);
-    const double caret = measure_text(cr_, text->substr(0, std::min(edit_cursor_, text->size())), kFont).width;
+    std::string shown_text = *text, shown_head = text->substr(0, std::min(edit_cursor_, text->size()));
+    if (mask) {  // one bullet per character
+      auto bullets = [](const std::string& s) {
+        std::string out;
+        for (unsigned char c : s)
+          if ((c & 0xC0) != 0x80) out += "\xE2\x80\xA2";
+        return out;
+      };
+      shown_text = bullets(shown_text);
+      shown_head = bullets(shown_head);
+    }
+    const TextExtents te = measure_text(cr_, shown_text, kFont);
+    const double caret = measure_text(cr_, shown_head, kFont).width;
     const double shift = std::max(0.0, caret - (r.w - 20));
-    draw_text(cr_, *text, r.x + 8 - shift, r.y + (r.h - te.height) / 2 + te.ascent, kFont,
+    draw_text(cr_, shown_text, r.x + 8 - shift, r.y + (r.h - te.height) / 2 + te.ascent, kFont,
               enabled ? pal_.fg_primary : with_alpha(pal_.fg_secondary, 0.6));
     if (focused(id) && edit_id_ == id) {
       cairo_rectangle(cr_, r.x + 8 + caret - shift, r.y + 6, 1.2, r.h - 12);

@@ -33,6 +33,7 @@
 #include "desktop_entry.hpp"
 #include "fleetkit.hpp"
 #include "malloc_tuning.hpp"
+#include "network_tab.hpp"
 #include "mimeapps.hpp"
 #include "theme.hpp"
 #include "version.hpp"
@@ -174,8 +175,11 @@ struct Settings {
   DefaultAppsConfig default_apps;
 
   int tab = 0;
-  double scroll[10] = {};
-  std::vector<std::string> tab_names{"Theme", "Bar", "Wallpaper", "Display", "Power", "Date & Time", "Default Apps", "Audio", "Performance", "About"};
+  double scroll[11] = {};
+  std::vector<std::string> tab_names{"Theme", "Bar", "Wallpaper", "Display", "Network", "Power", "Date & Time", "Default Apps", "Audio", "Performance", "About"};
+
+  // network
+  std::unique_ptr<NetworkTab> net_tab;
 
   // power
   bool has_battery = false;
@@ -1184,11 +1188,12 @@ struct Settings {
       case 1: tab_bar(cr); break;
       case 2: tab_wallpaper(cr); break;
       case 3: tab_display(cr); break;
-      case 4: tab_power(cr); break;
-      case 5: tab_datetime(cr); break;
-      case 6: tab_default_apps(cr); break;
-      case 7: tab_audio(cr); break;
-      case 8: tab_performance(cr); break;
+      case 4: net_tab->draw(ui, cr); break;
+      case 5: tab_power(cr); break;
+      case 6: tab_datetime(cr); break;
+      case 7: tab_default_apps(cr); break;
+      case 8: tab_audio(cr); break;
+      case 9: tab_performance(cr); break;
       default: tab_about(cr); break;
     }
     ui.space(24);
@@ -1211,6 +1216,7 @@ int main(int argc, char** argv) {
   S.default_apps = load_default_apps_config();
   S.power = load_power_config();
   S.apply_theme();
+  S.net_tab = std::make_unique<NetworkTab>(S.app, [&S] { S.redraw(); });
   // `fleetwm-settings --page power` opens on that page (the bar's battery icon uses it).
   for (int i = 1; i + 1 < argc; ++i) {
     if (std::string(argv[i]) == "--page") {

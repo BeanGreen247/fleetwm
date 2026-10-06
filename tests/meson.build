@@ -26,6 +26,7 @@ fleetwm_test_sources = files(
   'test_workspace_list.cpp',
   'test_power_config.cpp',
   'test_lock_tooltip.cpp',
+  'test_network.cpp',
   'test_app_appearance.cpp',
   'test_settings_pages.cpp',
 )
@@ -33,7 +34,7 @@ fleetwm_test_sources = files(
 fleetwm_unit_tests = executable(
   'fleetwm-unit-tests',
   fleetwm_test_sources,
-  dependencies: [gtest_dep, libcommon_core_dep, libfleetkit_dep],
+  dependencies: [gtest_dep, libcommon_core_dep, libfleetkit_dep, libnetmgr_dep],
 )
 
 test('fleetwm-unit-tests', fleetwm_unit_tests, protocol: 'gtest')
@@ -50,6 +51,7 @@ test_areas = {
   'ipc': 'ExtractJsonStringField.*:IpcSocketPathTest.*:IpcClient.*:IpcClientWithServerTest.*',
   'config': 'WallpaperConfigTest.*:DefaultAppsTest.*:OutputConfigTest.*',
   'fleetkit': 'DesktopEntryExec.*:FleetkitColor.*',
+  'network': 'NetworkParse.*:SystemDevices.*:WpaFixture.*',
 }
 foreach area, filter : test_areas
   test(area, fleetwm_unit_tests, args: ['--gtest_filter=' + filter], suite: 'areas', protocol: 'gtest')
