@@ -5,8 +5,11 @@
 // the scripts as text; nothing is started.
 #include <gtest/gtest.h>
 
+#include <unistd.h>
+
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -125,4 +128,129 @@ TEST(PgoTraining, TheInstallerTellsTheTruthAboutTheLength) {
   const std::string install = tr_read(tr_root() / "install.sh");
   EXPECT_EQ(install.find("short training"), std::string::npos) << "the training run is no longer short; say what it does";
   EXPECT_NE(install.find("training"), std::string::npos);
+}
+
+// ---- the instrumented programs are the ones the training starts ---------------------------------------
+//
+// The compositor and the desktop start the bar, the wallpaper, the launcher and the rest by name. On a
+// machine that already has Fleetwm installed that finds the old copies, which record nothing for the
+// profile (and on a fresh machine it finds nothing). scripts/pgo-path-shim.sh puts the built programs
+// first on PATH.
+
+namespace {
+
+std::string tr_run(const std::string& cmd) {
+  std::string out;
+  if (FILE* p = popen((cmd + " 2>&1").c_str(), "r")) {
+    char buf[512];
+    while (std::fgets(buf, sizeof buf, p)) out += buf;
+    pclose(p);
+  }
+  while (!out.empty() && (out.back() == '\n' || out.back() == '\r')) out.pop_back();
+  return out;
+}
+
+void tr_write_program(const tr_fs::path& path, const std::string& says) {
+  tr_fs::create_directories(path.parent_path());
+  std::ofstream(path) << "#!/bin/sh\necho " << says << "\n";
+  tr_fs::permissions(path, tr_fs::perms::owner_all | tr_fs::perms::group_read | tr_fs::perms::group_exec,
+                     tr_fs::perm_options::replace);
+}
+
+// A throwaway build tree, an "already installed" decoy directory and a shim directory.
+struct TrTree {
+  tr_fs::path root, build, installed, shim;
+  TrTree() {
+    char tmpl[] = "/tmp/fleetwm-shim-test-XXXXXX";
+    root = ::mkdtemp(tmpl);
+    build = root / "build";
+    installed = root / "installed";
+    shim = root / "shim";
+    tr_write_program(build / "src/bar/fleetwm-bar", "built-bar");
+    tr_write_program(build / "src/wallpaper/fleetwm-wallpaper", "built-wallpaper");
+    tr_write_program(build / "apps/launcher/fleetwm-launcher", "built-launcher");
+    tr_write_program(build / "apps/powermenu/fleetwm-powermenu", "built-powermenu");
+    tr_write_program(build / "src/compositor/fleetwm", "built-compositor");
+    tr_write_program(build / "tests/fleetwm-unit-tests", "built-tests");
+    tr_write_program(build / "src/locker/fleetwm-locker", "built-locker");
+    tr_write_program(build / "src/greeter/fleetwm-greet", "built-greet");
+    tr_write_program(build / "src/greeter-login/fleetwm-greeter-login", "built-greeter-login");
+    std::ofstream(build / "src/bar/fleetwm-notes.txt") << "not a program\n";  // no execute bit
+    std::ofstream(build / "src/bar/libfleetwm-bits.a") << "archive\n";
+    tr_write_program(installed / "fleetwm-bar", "OLD-installed-bar");
+    tr_write_program(installed / "fleetwm-launcher", "OLD-installed-launcher");
+    tr_write_program(installed / "fleetwm-settings", "OLD-installed-settings");
+  }
+  ~TrTree() {
+    std::error_code ec;
+    tr_fs::remove_all(root, ec);
+  }
+  std::string shim_cmd() const {
+    return "bash '" + (tr_root() / "scripts/pgo-path-shim.sh").string() + "' '" + build.string() + "' '" + shim.string() + "'";
+  }
+  // What running `name` finds when the shim comes first, then the installed decoys, then the system.
+  std::string run_by_name(const std::string& name) const {
+    return tr_run("PATH='" + shim.string() + ":" + installed.string() + ":/usr/bin:/bin' " + name);
+  }
+};
+
+}  // namespace
+
+TEST(PgoTrainingShim, BuiltProgramsWinOverInstalledCopies) {
+  TrTree t;
+  ASSERT_EQ(tr_run(t.shim_cmd()), "");
+  EXPECT_EQ(t.run_by_name("fleetwm-bar"), "built-bar") << "the old installed bar would record nothing";
+  EXPECT_EQ(t.run_by_name("fleetwm-launcher"), "built-launcher");
+  EXPECT_EQ(t.run_by_name("fleetwm-wallpaper"), "built-wallpaper") << "not installed at all, only built";
+  EXPECT_EQ(t.run_by_name("fleetwm-powermenu"), "built-powermenu");
+  EXPECT_EQ(t.run_by_name("fleetwm"), "built-compositor");
+}
+
+TEST(PgoTrainingShim, ProgramsThatMustNotRunDuringTrainingAreLeftOut) {
+  TrTree t;
+  ASSERT_EQ(tr_run(t.shim_cmd()), "");
+  for (const char* excluded : {"fleetwm-unit-tests", "fleetwm-locker", "fleetwm-greet", "fleetwm-greeter-login", "fleetwm-notes.txt", "libfleetwm-bits.a"})
+    EXPECT_FALSE(tr_fs::exists(t.shim / excluded)) << excluded << " must not be on the training PATH";
+  // A program that is only installed, not built, is still found (the shim does not hide the rest of the system).
+  EXPECT_EQ(t.run_by_name("fleetwm-settings"), "OLD-installed-settings");
+}
+
+TEST(PgoTrainingShim, RunningItTwiceChangesNothing) {
+  TrTree t;
+  ASSERT_EQ(tr_run(t.shim_cmd()), "");
+  ASSERT_EQ(tr_run(t.shim_cmd()), "");
+  EXPECT_EQ(t.run_by_name("fleetwm-bar"), "built-bar");
+  int links = 0;
+  for (const auto& e : tr_fs::directory_iterator(t.shim)) links += tr_fs::is_symlink(e.path());
+  EXPECT_EQ(links, 5);
+}
+
+TEST(PgoTrainingShim, ExplainsAMissingArgument) {
+  const std::string out = tr_run("bash '" + (tr_root() / "scripts/pgo-path-shim.sh").string() + "'");
+  EXPECT_NE(out.find("usage"), std::string::npos);
+}
+
+TEST(PgoTraining, PutsTheShimFirstOnPathBeforeAnythingStarts) {
+  const std::string script = tr_read(tr_root() / "scripts/pgo-train-session.sh");
+  const size_t shim = script.find("pgo-path-shim.sh\" \"$BUILD_DIR\" \"$SHIM_DIR\"");
+  const size_t path = script.find("export PATH=\"${SHIM_DIR}:${PATH}\"");
+  const size_t compositor = script.find("\"${BUILD_DIR}/src/compositor/fleetwm\" >");
+  ASSERT_NE(shim, std::string::npos);
+  ASSERT_NE(path, std::string::npos);
+  ASSERT_NE(compositor, std::string::npos);
+  EXPECT_LT(shim, path);
+  EXPECT_LT(path, compositor) << "the compositor autostarts the bar by name, so PATH must be set before it starts";
+}
+
+TEST(PgoTraining, NeverStartsAnInstalledCopyOrASecondOne) {
+  const std::string script = tr_read(tr_root() / "scripts/pgo-train-session.sh");
+  EXPECT_EQ(script.find("/usr/local"), std::string::npos) << "the training must not name an installed path";
+  EXPECT_EQ(script.find("FLEETWM_BINDIR"), std::string::npos);
+  for (const char* program : {"src/bar/fleetwm-bar", "src/wallpaper/fleetwm-wallpaper", "apps/lockapplet/fleetwm-lockapplet"}) {
+    EXPECT_NE(script.find(std::string("ensure_running \"${BUILD_DIR}/") + program + "\""), std::string::npos)
+        << program << " must be started only when the compositor's autostart did not";
+    EXPECT_EQ(script.find(std::string("\nspawn_client \"${BUILD_DIR}/") + program + "\""), std::string::npos)
+        << program << " is autostarted by the compositor; starting it again would run two";
+  }
+  EXPECT_NE(script.find("readlink"), std::string::npos) << "ensure_running compares the real executable, not a name";
 }

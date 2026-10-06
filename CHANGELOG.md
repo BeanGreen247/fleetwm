@@ -33,6 +33,11 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
   Alt+Tab, snap keys, the performance overlay, layout switching, terminals scrolling output, screen capture,
   pointer sweeps and the compositor's IPC queries (key, pointer, terminal and capture steps run when
   wtype, wlrctl, foot and grim are installed, which the installer does). `PgoTraining` tests keep it that way.
+- The training run now puts the freshly built programs first on `PATH` (`scripts/pgo-path-shim.sh`), so the bar,
+  wallpaper, padlock, launcher, Settings, power menu and the rest that the compositor and the desktop start by
+  name are the instrumented ones: before, a machine with Fleetwm already installed profiled nothing for them
+  (the old copies ran), and a fresh machine started nothing (the names resolved to nothing). Programs the
+  compositor did not autostart are started once, never twice. Tests run the shim against a fake build tree.
 - The polkit rule behaviour tests no longer skip on a machine without node: they carry a small evaluator and
   compare it with real JavaScript when node is there.
 

@@ -159,7 +159,10 @@ twelve are drawn, shortcuts and language windows, start menu and launcher search
 snap keys, overlay, keyboard layout switching, idle inhibit, window queries, live layout flips with windows
 open, terminals scrolling output, screen capture, pointer sweeps). Steps that need wtype, wlrctl, foot or
 grim are skipped when they are missing. `tests/test_pgo_training.cpp` checks the length and the coverage.
-The extra install time is about two and a half minutes.
+Programs the desktop starts by name (the compositor autostarts the bar, wallpaper and padlock; keys and
+menus start the launcher, Settings and the power menu) resolve through a `PATH` shim
+(`scripts/pgo-path-shim.sh`) to the instrumented copies, so they are profiled even on a machine that has an
+older Fleetwm installed, and nothing runs twice. The extra install time is about two and a half minutes.
 
 ### What other compositors do, and where Fleetwm stands
 

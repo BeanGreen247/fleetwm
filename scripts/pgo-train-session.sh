@@ -43,6 +43,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# Every program found by name from here on is the instrumented one from the build directory, not an old
+# installed copy (which would record nothing) or nothing at all (see scripts/pgo-path-shim.sh).
+SHIM_DIR="${RUNTIME_DIR}/bin"
+bash "$(dirname "${BASH_SOURCE[0]}")/pgo-path-shim.sh" "$BUILD_DIR" "$SHIM_DIR"
+export PATH="${SHIM_DIR}:${PATH}"
+
 echo "    starting instrumented compositor (headless backend)..."
 "${BUILD_DIR}/src/compositor/fleetwm" >"$COMP_LOG" 2>&1 &
 comp_pid=$!
@@ -161,14 +167,29 @@ close_windows() {
   WIN_PIDS=()
 }
 
-echo "    starting the desktop programs: bar, wallpaper, keep-awake padlock, audio mixer..."
+echo "    making sure the desktop programs run: bar, wallpaper, keep-awake padlock, audio mixer..."
 # Locker and the greeter binaries are deliberately not included here: locker needs a real PAM round trip to
 # reach its clean-unlock exit path, and the greeter is TTY/PAM-driven, not a Wayland client like the others.
-spawn_client "${BUILD_DIR}/src/bar/fleetwm-bar"
-spawn_client "${BUILD_DIR}/src/wallpaper/fleetwm-wallpaper"
-spawn_client "${BUILD_DIR}/apps/lockapplet/fleetwm-lockapplet"
-spawn_client "${BUILD_DIR}/apps/audiomixer/fleetwm-audiomixer"
+# The compositor autostarts the bar, the wallpaper and the padlock itself (by name, so the instrumented copies
+# through the PATH above). Start any of them it did not, so they always run, and never twice.
 sleep 2
+is_running() {  # is a process running this exact executable?
+  local p
+  for p in /proc/[0-9]*; do
+    [[ "$(readlink "$p/exe" 2>/dev/null)" == "$1" ]] && return 0
+  done
+  return 1
+}
+ensure_running() {
+  local exe
+  exe="$(readlink -f "$1")"
+  is_running "$exe" || spawn_client "$1"
+}
+ensure_running "${BUILD_DIR}/src/bar/fleetwm-bar"
+ensure_running "${BUILD_DIR}/src/wallpaper/fleetwm-wallpaper"
+ensure_running "${BUILD_DIR}/apps/lockapplet/fleetwm-lockapplet"
+spawn_client "${BUILD_DIR}/apps/audiomixer/fleetwm-audiomixer"
+sleep 1
 
 SETTINGS_PAGES=(theme bar wallpaper display network keyboard power date default audio performance about)
 round=0
