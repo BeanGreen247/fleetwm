@@ -2,7 +2,7 @@
 
 All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags are on GitHub.
 
-## Unreleased
+## 0.3.0 - 2026-10-06
 
 ### Added
 - Performance section in the README and a 2026-10-06 section in docs/OPTIMIZATIONS.md (measurements, what other
