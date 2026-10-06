@@ -159,6 +159,9 @@ KeybindsConfig load_keybinds_config() {
   if (auto v = table["workspace_prev"].value<std::string>()) config.workspace_prev = *v;
   if (auto v = table["workspace_next"].value<std::string>()) config.workspace_next = *v;
   if (auto v = table["shortcuts_help"].value<std::string>()) config.shortcuts_help = *v;
+  if (auto v = table["keyboard_next_layout"].value<std::string>()) config.keyboard_next_layout = *v;
+  if (auto v = table["keyboard_prev_layout"].value<std::string>()) config.keyboard_prev_layout = *v;
+  if (auto v = table["tiling_modifier"].value<std::string>(); v && (*v == "alt" || *v == "super")) config.tiling_modifier = *v;
   if (auto v = table["debug_overlay"].value<std::string>()) {
     config.debug_overlay = *v;
   }
@@ -185,6 +188,9 @@ void save_keybinds_config(const KeybindsConfig& config) {
   table.insert_or_assign("quit", config.quit);
   table.insert_or_assign("debug_overlay", config.debug_overlay);
   table.insert_or_assign("shortcuts_help", config.shortcuts_help);
+  table.insert_or_assign("keyboard_next_layout", config.keyboard_next_layout);
+  table.insert_or_assign("keyboard_prev_layout", config.keyboard_prev_layout);
+  table.insert_or_assign("tiling_modifier", config.tiling_modifier);
   table.insert_or_assign("start_menu_key", config.start_menu_key);
   table.insert_or_assign("desktop_terminal", config.desktop_terminal);
   table.insert_or_assign("desktop_browser", config.desktop_browser);

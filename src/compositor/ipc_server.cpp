@@ -219,6 +219,23 @@ void IpcServer::handle_line(Client& client, const std::string& line) {
     return;
   }
 
+  if (line == "LAYOUTS?") {
+    const std::string reply = server_->layouts_line() + "\n";
+    send(client.fd, reply.data(), reply.size(), MSG_NOSIGNAL);
+    return;
+  }
+  if (line == "LAYOUT_NEXT") {
+    server_->step_layout(1);
+    return;
+  }
+  if (line.rfind("LAYOUT_SET ", 0) == 0) {
+    try {
+      server_->set_layout(std::stoi(line.substr(11)));
+    } catch (...) {
+    }
+    return;
+  }
+
   if (line == "IDLE_INHIBITORS?") {
     const std::string reply = server_->idle_inhibitor_report() + "END\n";
     send(client.fd, reply.data(), reply.size(), MSG_NOSIGNAL);
@@ -269,6 +286,11 @@ void IpcServer::broadcast_workspace_changed(int index) {
   for (Client& client : clients_) {
     send(client.fd, msg.data(), msg.size(), MSG_NOSIGNAL);
   }
+}
+
+void IpcServer::broadcast_line(const std::string& line) {
+  const std::string msg = line + "\n";
+  for (Client& client : clients_) send(client.fd, msg.data(), msg.size(), MSG_NOSIGNAL);
 }
 
 void IpcServer::broadcast_outputs_changed() {

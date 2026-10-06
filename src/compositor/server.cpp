@@ -9,6 +9,7 @@
 #include <wayland-server-core.h>
 
 extern "C" {
+#include <wlr/interfaces/wlr_keyboard.h>
 #include <wlr/render/pixman.h>
 #include <wlr/util/log.h>
 }
@@ -167,7 +168,8 @@ void view_mapped(View* view) {
   bool is_settings = view->kind == View::Kind::XdgToplevel && view->xdg_toplevel &&
                       view->xdg_toplevel->app_id &&
                       (std::strcmp(view->xdg_toplevel->app_id, "dev.fleetwm.Settings") == 0 ||
-                       std::strcmp(view->xdg_toplevel->app_id, "dev.fleetwm.Shortcuts") == 0);
+                       std::strcmp(view->xdg_toplevel->app_id, "dev.fleetwm.Shortcuts") == 0 ||
+                       std::strcmp(view->xdg_toplevel->app_id, "dev.fleetwm.LangPicker") == 0);
   if (is_settings) {
     view->set_floating(true);
     view->always_on_top = true;
@@ -630,7 +632,7 @@ void server_new_virtual_pointer(wl_listener* listener, void* data) {
 void server_new_virtual_keyboard(wl_listener* listener, void* data) {
   Server* server = wl_container_of(listener, server, new_virtual_keyboard_);
   auto* virtual_keyboard = static_cast<wlr_virtual_keyboard_v1*>(data);
-  new Keyboard(server, &virtual_keyboard->keyboard);  // owns itself; see server_new_input
+  new Keyboard(server, &virtual_keyboard->keyboard, true);  // owns itself; see server_new_input
 }
 
 // -- cursor ------------------------------------------------------------
@@ -1444,6 +1446,7 @@ bool Server::init() {
   titlebar_reload_palette(theme_config_);
   update_app_appearance();
   default_apps_config_ = load_default_apps_config();
+  keyboard_config_ = load_keyboard_config();
   reload_keybinds_config();
 
   // Settings' Performance tab "Show performance overlay on startup" --
@@ -1930,6 +1933,67 @@ xkb_keysym_t resolve_keybind(const std::string& name, xkb_keysym_t fallback,
 
 }  // namespace
 
+// ---- keyboard layouts ----
+
+void Server::unregister_keyboard(Keyboard* kb) {
+  keyboards_.erase(std::remove(keyboards_.begin(), keyboards_.end(), kb), keyboards_.end());
+}
+
+std::string Server::layouts_line() const {
+  std::string line = "LAYOUTS " + std::to_string(layout_index_);
+  for (const KeyboardLayout& l : keyboard_config_.layouts) line += " " + l.layout + ":" + l.variant;
+  return line;
+}
+
+void Server::apply_keyboard_config(Keyboard* kb) {
+  if (kb->is_virtual) return;
+  wlr_keyboard* wk = kb->wlr_keyboard_ptr;
+  const XkbNames names = xkb_names_for(keyboard_config_);
+  xkb_rule_names rules{};
+  rules.layout = names.layout.c_str();
+  rules.variant = names.variant.c_str();
+  rules.model = names.model.empty() ? nullptr : names.model.c_str();
+  rules.options = names.options.empty() ? nullptr : names.options.c_str();
+  xkb_context* context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
+  xkb_keymap* keymap = xkb_keymap_new_from_names(context, &rules, XKB_KEYMAP_COMPILE_NO_FLAGS);
+  if (!keymap) {  // a name xkb does not know: keep the keyboard usable with the default map
+    wlr_log(WLR_ERROR, "fleetwm: keyboard.toml: xkb rejected layout '%s' variant '%s'; using the default",
+            names.layout.c_str(), names.variant.c_str());
+    keymap = xkb_keymap_new_from_names(context, nullptr, XKB_KEYMAP_COMPILE_NO_FLAGS);
+  }
+  if (keymap) {
+    wlr_keyboard_set_keymap(wk, keymap);
+    xkb_keymap_unref(keymap);
+  }
+  xkb_context_unref(context);
+  wlr_keyboard_set_repeat_info(wk, keyboard_config_.repeat_rate, keyboard_config_.repeat_delay);
+  const int n = static_cast<int>(xkb_keymap_num_layouts(wk->keymap));
+  if (n > 0) {
+    wlr_keyboard_notify_modifiers(wk, wk->modifiers.depressed, wk->modifiers.latched, wk->modifiers.locked,
+                                  static_cast<uint32_t>(std::clamp(layout_index_, 0, n - 1)));
+  }
+}
+
+void Server::reload_keyboard_config() {
+  keyboard_config_ = load_keyboard_config();
+  layout_index_ = std::clamp(layout_index_, 0, static_cast<int>(keyboard_config_.layouts.size()) - 1);
+  for (Keyboard* kb : keyboards_) apply_keyboard_config(kb);
+  if (ipc_server) ipc_server->broadcast_line(layouts_line());
+}
+
+void Server::set_layout(int index) {
+  const int n = static_cast<int>(keyboard_config_.layouts.size());
+  if (n <= 0) return;
+  layout_index_ = ((index % n) + n) % n;
+  for (Keyboard* kb : keyboards_) {
+    if (kb->is_virtual) continue;
+    wlr_keyboard* wk = kb->wlr_keyboard_ptr;
+    wlr_keyboard_notify_modifiers(wk, wk->modifiers.depressed, wk->modifiers.latched, wk->modifiers.locked,
+                                  static_cast<uint32_t>(layout_index_));
+  }
+  if (ipc_server) ipc_server->broadcast_line(layouts_line());
+}
+
 void Server::reload_keybinds_config() {
   keybinds_config_ = load_keybinds_config();
   ResolvedKeybinds defaults;  // XKB_KEY_* defaults, see server.hpp
@@ -1970,6 +2034,11 @@ void Server::reload_keybinds_config() {
     return Server::ResolvedKeybinds::Combo{combo.mods, sym};
   };
   resolved_keybinds_.shortcuts_help = resolve_combo(keybinds_config_.shortcuts_help, defaults.shortcuts_help, "shortcuts_help");
+  resolved_keybinds_.keyboard_next_layout =
+      resolve_combo(keybinds_config_.keyboard_next_layout, defaults.keyboard_next_layout, "keyboard_next_layout");
+  resolved_keybinds_.keyboard_prev_layout =
+      resolve_combo(keybinds_config_.keyboard_prev_layout, defaults.keyboard_prev_layout, "keyboard_prev_layout");
+  resolved_keybinds_.tiling_mod = keybinds_config_.tiling_modifier == "super" ? kModLogo : kModAlt;
   resolved_keybinds_.desktop_terminal = resolve_combo(keybinds_config_.desktop_terminal, defaults.desktop_terminal, "desktop_terminal");
   resolved_keybinds_.desktop_browser = resolve_combo(keybinds_config_.desktop_browser, defaults.desktop_browser, "desktop_browser");
   resolved_keybinds_.desktop_file_manager =
@@ -2094,6 +2163,7 @@ int server_theme_watch_readable(int fd, uint32_t, void* data) {
   bool got_default_apps_event = false;
   bool got_keybinds_event = false;
   bool got_power_event = false;
+  bool got_keyboard_event = false;
   ssize_t n;
   while ((n = read(fd, buf, sizeof(buf))) > 0) {
     ssize_t offset = 0;
@@ -2107,6 +2177,8 @@ int server_theme_watch_readable(int fd, uint32_t, void* data) {
         got_keybinds_event = true;
       } else if (event->len > 0 && std::strcmp(event->name, "power.toml") == 0) {
         got_power_event = true;
+      } else if (event->len > 0 && std::strcmp(event->name, "keyboard.toml") == 0) {
+        got_keyboard_event = true;
       }
       offset += static_cast<ssize_t>(sizeof(struct inotify_event)) + event->len;
     }
@@ -2122,6 +2194,9 @@ int server_theme_watch_readable(int fd, uint32_t, void* data) {
   }
   if (got_power_event) {
     server->reload_power_config();
+  }
+  if (got_keyboard_event) {
+    server->reload_keyboard_config();
   }
   return 0;
 }

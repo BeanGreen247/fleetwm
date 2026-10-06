@@ -33,6 +33,7 @@
 #include "desktop_entry.hpp"
 #include "fleetkit.hpp"
 #include "malloc_tuning.hpp"
+#include "keyboard_tab.hpp"
 #include "network_tab.hpp"
 #include "mimeapps.hpp"
 #include "theme.hpp"
@@ -175,11 +176,12 @@ struct Settings {
   DefaultAppsConfig default_apps;
 
   int tab = 0;
-  double scroll[11] = {};
-  std::vector<std::string> tab_names{"Theme", "Bar", "Wallpaper", "Display", "Network", "Power", "Date & Time", "Default Apps", "Audio", "Performance", "About"};
+  double scroll[12] = {};
+  std::vector<std::string> tab_names{"Theme", "Bar", "Wallpaper", "Display", "Network", "Keyboard", "Power", "Date & Time", "Default Apps", "Audio", "Performance", "About"};
 
   // network
   std::unique_ptr<NetworkTab> net_tab;
+  std::unique_ptr<KeyboardTab> kb_tab;
 
   // power
   bool has_battery = false;
@@ -241,6 +243,7 @@ struct Settings {
     wallpaper = load_wallpaper_config();
     default_apps = load_default_apps_config();
     power = load_power_config();
+    if (kb_tab) kb_tab->reload();
     apply_theme();
     redraw();
   }
@@ -1192,11 +1195,12 @@ struct Settings {
       case 2: tab_wallpaper(cr); break;
       case 3: tab_display(cr); break;
       case 4: net_tab->draw(ui, cr); break;
-      case 5: tab_power(cr); break;
-      case 6: tab_datetime(cr); break;
-      case 7: tab_default_apps(cr); break;
-      case 8: tab_audio(cr); break;
-      case 9: tab_performance(cr); break;
+      case 5: kb_tab->draw(ui, cr); break;
+      case 6: tab_power(cr); break;
+      case 7: tab_datetime(cr); break;
+      case 8: tab_default_apps(cr); break;
+      case 9: tab_audio(cr); break;
+      case 10: tab_performance(cr); break;
       default: tab_about(cr); break;
     }
     ui.space(24);
@@ -1236,6 +1240,7 @@ int main(int argc, char** argv) {
   S.load_apps();
 
   if (!S.app.connect()) return 1;
+  S.kb_tab = std::make_unique<KeyboardTab>(S.app, [&S] { S.redraw(); });
 
   Surface::Config cfg;
   cfg.toplevel = true;

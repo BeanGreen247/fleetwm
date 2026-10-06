@@ -277,7 +277,8 @@ void keyboard_key(wl_listener* listener, void* data) {
   const xkb_keysym_t* syms;
   int nsyms = xkb_state_key_get_syms(keyboard->wlr_keyboard_ptr->xkb_state, keycode, &syms);
 
-  bool alt_held = (wlr_keyboard_get_modifiers(keyboard->wlr_keyboard_ptr) & WLR_MODIFIER_ALT) != 0;
+  // The Tiling layout's held modifier: Alt by default, Super when Settings -> Keyboard says so.
+  bool alt_held = (wlr_keyboard_get_modifiers(keyboard->wlr_keyboard_ptr) & keyboard->server->keybinds().tiling_mod) != 0;
   bool handled = false;
 
   // Desktop layout: tapping Super (Windows/Meta) alone opens the start menu; a
@@ -295,6 +296,33 @@ void keyboard_key(wl_listener* listener, void* data) {
       if (keyboard->server->desktop_layout() && !keyboard->server->is_locked()) {
         spawn_shell(kStartMenuCommand);
       }
+    }
+  }
+
+  // Alt+Shift (pressed together, nothing else in between) switches the keyboard layout when
+  // letting go of one of them, like Windows. Any other key pressed meanwhile cancels it. The
+  // keys are tracked from the key events themselves: the modifier state wlroots reports lags
+  // one event behind inside this handler.
+  {
+    const KeyboardConfig& kc = keyboard->server->keyboard_config();
+    bool is_alt = false, is_shift = false;
+    for (int i = 0; i < nsyms; ++i) {
+      if (syms[i] == XKB_KEY_Alt_L || syms[i] == XKB_KEY_Alt_R) is_alt = true;
+      if (syms[i] == XKB_KEY_Shift_L || syms[i] == XKB_KEY_Shift_R) is_shift = true;
+    }
+    const bool pressed = event->state == WL_KEYBOARD_KEY_STATE_PRESSED;
+    if (pressed) {
+      if (is_alt) keyboard->alt_down = true;
+      if (is_shift) keyboard->shift_down = true;
+      if (!is_alt && !is_shift) keyboard->layout_chord = false;
+      else if (keyboard->alt_down && keyboard->shift_down) keyboard->layout_chord = true;
+    } else if (is_alt || is_shift) {
+      const bool fire = keyboard->layout_chord;
+      if (is_alt) keyboard->alt_down = false;
+      if (is_shift) keyboard->shift_down = false;
+      keyboard->layout_chord = false;
+      if (fire && !keyboard->server->is_locked() && kc.layouts.size() > 1 && kc.switch_keys != LayoutSwitchKeys::SuperSpace)
+        keyboard->server->step_layout(1);
     }
   }
 
@@ -328,6 +356,10 @@ void keyboard_key(wl_listener* listener, void* data) {
         const xkb_keysym_t sym = syms[i];
         if (is(binds.shortcuts_help, sym)) {
           spawn(kShortcutsCommand);
+          handled = true;
+        } else if (server->keyboard_config().switch_keys != LayoutSwitchKeys::AltShift &&
+                   (is(binds.keyboard_next_layout, sym) || is(binds.keyboard_prev_layout, sym))) {
+          server->step_layout(is(binds.keyboard_prev_layout, sym) ? -1 : 1);
           handled = true;
         } else if (is(binds.cycle_windows, sym) || is(binds.cycle_windows_reverse, sym)) {
           const bool back = is(binds.cycle_windows_reverse, sym);
@@ -427,16 +459,18 @@ void keyboard_destroy(wl_listener* listener, void*) {
 
 }  // namespace
 
-Keyboard::Keyboard(Server* server_, wlr_keyboard* wlr_keyboard_ptr_)
-    : server(server_), wlr_keyboard_ptr(wlr_keyboard_ptr_) {
-  xkb_context* context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
-  xkb_keymap* keymap =
-      xkb_keymap_new_from_names(context, nullptr, XKB_KEYMAP_COMPILE_NO_FLAGS);
-
-  wlr_keyboard_set_keymap(wlr_keyboard_ptr, keymap);
-  xkb_keymap_unref(keymap);
-  xkb_context_unref(context);
-  wlr_keyboard_set_repeat_info(wlr_keyboard_ptr, 25, 600);
+Keyboard::Keyboard(Server* server_, wlr_keyboard* wlr_keyboard_ptr_, bool is_virtual_)
+    : server(server_), wlr_keyboard_ptr(wlr_keyboard_ptr_), is_virtual(is_virtual_) {
+  if (is_virtual) {
+    xkb_context* context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
+    xkb_keymap* keymap = xkb_keymap_new_from_names(context, nullptr, XKB_KEYMAP_COMPILE_NO_FLAGS);
+    wlr_keyboard_set_keymap(wlr_keyboard_ptr, keymap);
+    xkb_keymap_unref(keymap);
+    xkb_context_unref(context);
+    wlr_keyboard_set_repeat_info(wlr_keyboard_ptr, 25, 600);
+  }
+  server->register_keyboard(this);
+  server->apply_keyboard_config(this);  // keymap from keyboard.toml, repeat rate, current layout
 
   modifiers.notify = keyboard_modifiers;
   wl_signal_add(&wlr_keyboard_ptr->events.modifiers, &modifiers);
@@ -451,6 +485,7 @@ Keyboard::Keyboard(Server* server_, wlr_keyboard* wlr_keyboard_ptr_)
 }
 
 Keyboard::~Keyboard() {
+  server->unregister_keyboard(this);
   wl_list_remove(&modifiers.link);
   wl_list_remove(&key.link);
   wl_list_remove(&destroy.link);

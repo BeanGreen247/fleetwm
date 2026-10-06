@@ -35,11 +35,13 @@
 #include "fleetkit.hpp"
 #include "malloc_tuning.hpp"
 #include "theme.hpp"
+#include "keyboard_config.hpp"
 #include "network_glyphs.hpp"
 #include "network_parse.hpp"
 #include "network_types.hpp"
 #include "system_devices.hpp"
 #include "tray.hpp"
+#include "xkb_rules.hpp"
 #include "volume_source.hpp"
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
 
@@ -114,7 +116,9 @@ struct Bar {
   bool gpu_query_running = false;
 
   // Hit rects, rebuilt on every draw.
-  Rect net_rect;
+  Rect net_rect, layout_rect;
+  std::vector<KeyboardLayout> kb_layouts;  // from the compositor (LAYOUTS lines)
+  int kb_current = 0;
   net::Device net_dev;  // the card the network icon stands for
   bool net_have = false;
   Rect ws_rect[10], vol_rect, power_rect, battery_rect, ram_rect, cpu_rect, gpu_rect, disk_rect;
@@ -256,6 +260,10 @@ struct Bar {
     }
     t += tray_total();
     ++children;  // tray box always participates in the spacing
+    if (!kb_layouts.empty()) {
+      t += layout_pill_w(m);
+      ++children;
+    }
     if (net_have) {
       t += kNetW;
       ++children;
@@ -636,6 +644,14 @@ struct Bar {
     }
     rx += kRightGap;
 
+    if (!kb_layouts.empty()) {
+      const double lw = layout_pill_w(m);
+      layout_rect = {rx, 0, lw, static_cast<double>(H)};
+      draw_layout_pill(cr, m, rx, H / 2.0, lw);
+      rx += lw + kRightGap;
+    } else {
+      layout_rect = {};
+    }
     if (net_have) {
       net_rect = {rx, 0, kNetW, static_cast<double>(H)};
       draw_net_glyph(cr, rx + kNetW / 2, H / 2.0, 16);
@@ -669,6 +685,46 @@ struct Bar {
     }
     draw_power_glyph(cr, rx + kPowerW / 2, H / 2.0, hover_power ? pal.accent : pal.fg_secondary);
       return rx + kPowerW;
+  }
+
+  // The keyboard layout in use as a pill ("US", "CZ"); width follows the text.
+  std::string layout_text() const {
+    if (kb_layouts.empty()) return "";
+    return layout_pill_text(kb_layouts[static_cast<size_t>(std::clamp(kb_current, 0, static_cast<int>(kb_layouts.size()) - 1))]);
+  }
+  double layout_pill_w(Metrics& m) { return std::max(30.0, m.text_w(layout_text()) + 16); }
+  void draw_layout_pill(cairo_t* cr, Metrics& m, double x, double cy, double w) {
+    const double h = 20;
+    rounded_rect(cr, x, cy - h / 2, w, h, pal.rounded ? h / 2 : 3);
+    set_source(cr, with_alpha(pal.accent, 0.22));
+    cairo_fill(cr);
+    const std::string t = layout_text();
+    const TextExtents te = measure_text(cr, t, 11.5, true);
+    draw_text(cr, t, x + (w - te.width) / 2, cy - te.height / 2 + te.ascent, 11.5, pal.fg_primary, true);
+  }
+  std::string layout_tooltip_text() {
+    const std::vector<LayoutInfo> info = load_xkb_layouts();
+    std::string t;
+    for (size_t i = 0; i < kb_layouts.size(); ++i) {
+      if (i) t += "\n";
+      t += (static_cast<int>(i) == kb_current ? "> " : "   ") + describe_layout(info, kb_layouts[i].layout, kb_layouts[i].variant);
+    }
+    return t + "\n\nClick: next layout   Right-click: keyboard settings";
+  }
+  bool parse_layouts_line(const std::string& line) {  // LAYOUTS <current> us: cz:qwerty
+    std::istringstream in(line.substr(8));
+    int idx = 0;
+    if (!(in >> idx)) return false;
+    std::vector<KeyboardLayout> parsed;
+    std::string tok;
+    while (in >> tok) {
+      const size_t colon = tok.find(':');
+      parsed.push_back({tok.substr(0, colon), colon == std::string::npos ? "" : tok.substr(colon + 1)});
+    }
+    const bool changed = idx != kb_current || !(parsed == kb_layouts);
+    kb_current = idx;
+    kb_layouts = parsed;
+    return changed;
   }
 
   // The network icon: a Wi-Fi fan lit to the signal strength, or an Ethernet port, by what is in use.
@@ -917,9 +973,10 @@ struct Bar {
 
   void draw_taskbar_vertical(cairo_t* cr, Metrics& m, int W, int H) {
     const double bx = 6, bw = W - 12;
-    constexpr double kBtn = 44, kStat = 38, kClock = 46, kBat = 30, kTrayRow = 28, kNetRow = 28;
+    constexpr double kBtn = 44, kStat = 38, kClock = 46, kBat = 30, kTrayRow = 28, kNetRow = 28, kLayoutRow = 28;
     const size_t tray_n = tray->items().size();
-    const double cluster_h = kBtn + kClock + kBat + kStat * 3 + tray_n * kTrayRow + (net_have ? kNetRow : 0);  // metrics: 2x2 grid + volume
+    const double cluster_h = kBtn + kClock + kBat + kStat * 3 + tray_n * kTrayRow + (net_have ? kNetRow : 0) +
+                             (kb_layouts.empty() ? 0 : kLayoutRow);  // metrics: 2x2 grid + volume
     double y = H - 6 - cluster_h;
 
     // Status cluster, top-down from `y`.
@@ -950,6 +1007,15 @@ struct Bar {
         cairo_restore(cr);
       }
       y += kTrayRow;
+    }
+    if (!kb_layouts.empty()) {
+      layout_rect = {bx, y, bw, kLayoutRow};
+      Metrics pm{cr};
+      const double lw = std::min(bw, layout_pill_w(pm));
+      draw_layout_pill(cr, pm, (W - lw) / 2.0, y + kLayoutRow / 2, lw);
+      y += kLayoutRow;
+    } else {
+      layout_rect = {};
     }
     if (net_have) {
       net_rect = {bx, y, bw, kNetRow};
@@ -1244,6 +1310,7 @@ struct Bar {
       case 4: return gpu_tooltip_text();
       case 5: return disk_tooltip_text();
       case 7: return net_tooltip_text();
+      case 8: return layout_tooltip_text();
       default: return vol_tooltip_text();
     }
   }
@@ -1325,6 +1392,13 @@ struct Bar {
 
   // ------------------------------------------------------------------ ipc --
   void handle_ipc_line(const std::string& line) {
+    if (line.rfind("LAYOUTS ", 0) == 0) {
+      if (parse_layouts_line(line)) {
+        if (island) apply_layout();
+        redraw();
+      }
+      return;
+    }
     if (line.rfind("WINDOWS", 0) == 0) {
       std::vector<WindowEntry> parsed;
       if (parse_window_list(line, &parsed) && parsed != windows) {
@@ -1360,6 +1434,7 @@ struct Bar {
         }
       });
       ipc.send_command("WORKSPACE?");
+      ipc.send_command("LAYOUTS?");
       ipc.send_command("SUBSCRIBE_WINDOWS");
       return;
     }
@@ -1386,6 +1461,11 @@ struct Bar {
         else if (b == kBtnMiddle) ipc.send_command("WINDOW_CLOSE " + std::to_string(shown[i].id));
         return;
       }
+    }
+    if (!kb_layouts.empty() && layout_rect.hit(x, y)) {
+      if (b == kBtnLeft) ipc.send_command("LAYOUT_NEXT");
+      else if (b == 0x111) spawn_settings_page("keyboard");
+      return;
     }
     if (b == kBtnLeft) {
       for (int i = 0; i < 10; ++i)
@@ -1443,11 +1523,11 @@ struct Bar {
         redraw();
       }
     }
-    const Rect* rects[] = {&battery_rect, &ram_rect, &cpu_rect, &gpu_rect, &disk_rect, &vol_rect, &net_rect};
+    const Rect* rects[] = {&battery_rect, &ram_rect, &cpu_rect, &gpu_rect, &disk_rect, &vol_rect, &net_rect, &layout_rect};
     int want = 0;  // 1..6 = rects above (index + 1); 1000 + id = a window button
     Rect r;
-    for (int i = 0; i < 7; ++i)
-      if (rects[i]->hit(x, y) && (i != 6 || net_have)) {
+    for (int i = 0; i < 8; ++i)
+      if (rects[i]->hit(x, y) && (i != 6 || net_have) && (i != 7 || !kb_layouts.empty())) {
         want = i + 1;
         r = *rects[i];
       }

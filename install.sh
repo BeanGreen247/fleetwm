@@ -103,16 +103,18 @@ apt_install \
   libsystemd-dev \
   libjemalloc2
 
-ui_step "Installing drawing, font and cursor support" \
+ui_step "Installing drawing, font, language and cursor support" \
   "What: cairo (draws every window decoration, bar and menu), image decoders for wallpapers and icons," \
-  "      the Inter font, a fallback font and a mouse pointer theme." \
+  "      the Inter font, a fallback font, the language and keyboard-layout lists (locales, xkb-data) and" \
+  "      a mouse pointer theme." \
   "Why:  Fleetwm's own programs use no big toolkit (no GTK/Qt): they draw directly with cairo, which keeps" \
   "      them small, quick to start and light on memory."
 # the GTK-free "fleetkit" clients (src/fleetkit: wallpaper, locker, power menu, bar,
 # launcher, audio mixer) draw with cairo and decode images with libpng /
 # libjpeg / libwebp (SVG is handled by the vendored nanosvg); fontconfig
 # resolves cairo's "Inter" family (it falls back to the system sans when missing), so install Inter plus a default font
-apt_install libcairo2-dev libpng-dev libjpeg-dev libwebp-dev fonts-inter fonts-dejavu-core
+apt_install libcairo2-dev libpng-dev libjpeg-dev libwebp-dev fonts-inter fonts-dejavu-core \
+  fontconfig locales xkb-data
 # A mouse cursor theme. Without one there is no pointer image to draw (the compositor
 # has a built-in fallback arrow, but apps load their own); best effort, since the
 # package name differs between distributions.
@@ -195,6 +197,8 @@ apt_install polkitd pkexec
 # authentication required", so allow it for administrators in an active
 # local session. Delete the file to go back to prompting.
 sudo install -m 644 "${SCRIPT_DIR}/packaging/50-fleetwm-time.rules" /etc/polkit-1/rules.d/50-fleetwm-time.rules
+# The same for the locale and font-cache builder that Languages and keyboard layouts runs.
+sudo install -m 644 "${SCRIPT_DIR}/packaging/50-fleetwm-locale.rules" /etc/polkit-1/rules.d/50-fleetwm-locale.rules
 
 ui_step "Installing network support (Wi-Fi drivers, firmware and a network manager if needed)" \
   "What: the Wi-Fi tools (wpa_supplicant, iw, rfkill, the regulatory database), firmware for Realtek, Intel," \

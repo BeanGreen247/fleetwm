@@ -25,6 +25,10 @@ class Server;
 //                         data, so no other process on this socket can
 //                         send this itself (see Server::confirm_unlock's
 //                         doc comment, server.hpp)
+//   LAYOUTS?          -> "LAYOUTS <current> <layout>:<variant> ..." (also broadcast whenever the
+//                         current layout or the layout list changes)
+//   LAYOUT_SET n      -> switch every keyboard to layout n
+//   LAYOUT_NEXT       -> switch to the next layout
 //   IDLE_INHIBIT 1|0  -> keep the screen on and the computer awake (1) or stop doing
 //                         so (0) for as long as this connection stays open; the
 //                         request goes away on its own when the sender exits
@@ -59,6 +63,8 @@ class IpcServer {
 
   // Sends "WORKSPACE_CHANGED N\n" to every currently-connected client.
   void broadcast_workspace_changed(int index);
+  // Sends one line to every connected client (used for LAYOUTS).
+  void broadcast_line(const std::string& line);
   // Tells every client the monitor set/modes/positions changed (re-query with OUTPUTS?).
   void broadcast_outputs_changed();
 

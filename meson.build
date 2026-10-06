@@ -125,6 +125,7 @@ subdir('apps/powermenu')
 subdir('apps/audiomixer')
 subdir('apps/shortcuts')
 subdir('apps/lockapplet')
+subdir('apps/langpicker')
 if get_option('greeter')
   subdir('src/greeter')
   subdir('src/greeter-login')
@@ -154,6 +155,12 @@ install_data(
 install_data(
   'packaging/fleetwm-settings.desktop',
   install_dir: get_option('prefix') / 'share' / 'applications',
+)
+
+install_data(
+  'packaging/fleetwm-locale-build',
+  install_dir: get_option('bindir'),
+  install_mode: 'rwxr-xr-x',
 )
 
 install_data(
