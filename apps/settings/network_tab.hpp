@@ -72,8 +72,15 @@ class NetworkTab {
   using Clock = std::chrono::steady_clock;
 
   void status_card(kit::Ui& ui, cairo_t* cr, const kit::Palette& p, const net::Device& d) {
+    // One fact per line: addresses, hardware address, gateway, driver.
+    std::vector<std::pair<std::string, std::string>> lines;
+    for (const std::string& a : d.addresses) lines.emplace_back("IP address", a);
+    if (!d.hw_addr.empty()) lines.emplace_back("MAC address", d.hw_addr);
+    if (!d.gateway.empty()) lines.emplace_back("Gateway", d.gateway);
+    if (!d.driver.empty()) lines.emplace_back("Driver", d.driver);
+
     kit::UiRect r;
-    ui.canvas(d.kind == net::Kind::Wifi ? 58 : 74, &r);
+    ui.canvas(std::max(58.0, 46.0 + 18.0 * static_cast<double>(lines.size()) + 8), &r);
     const net::GlyphColor fg{p.fg_secondary.r, p.fg_secondary.g, p.fg_secondary.b, 1.0};
     const net::GlyphColor accent{p.accent.r, p.accent.g, p.accent.b, 1.0};
     const bool up = d.state == net::State::Connected;
@@ -84,25 +91,16 @@ class NetworkTab {
     else
       net::draw_ethernet_glyph(cr, r.x + 28, cy, 32, up, up ? accent : fg, d.state == net::State::Unavailable);
 
-    kit::draw_text(cr, net::describe_device(d), r.x + 64, cy - 4, 17, p.fg_primary, true);
-    std::string detail;
-    for (const std::string& a : d.addresses) detail += (detail.empty() ? "" : "   ") + a;
-    if (!d.gateway.empty()) detail += (detail.empty() ? "" : "   ") + std::string("gateway ") + d.gateway;
-    if (!detail.empty()) kit::draw_text(cr, detail, r.x + 64, cy + 18, 13, p.fg_secondary);
-    if (d.kind == net::Kind::Ethernet) {
-      std::string hw = d.hw_addr;
-      if (!d.driver.empty()) hw += (hw.empty() ? "" : "   driver ") + d.driver;
-      kit::draw_text(cr, hw, r.x + 64, cy + 36, 12, kit::Color{p.fg_secondary.r, p.fg_secondary.g, p.fg_secondary.b, 0.75});
+    kit::draw_text(cr, net::describe_device(d), r.x + 64, cy + 5, 17, p.fg_primary, true);
+    double y = r.y + 58;
+    for (const auto& [label, value] : lines) {
+      kit::draw_text(cr, label, r.x + 64, y, 13, p.fg_secondary);
+      kit::draw_text(cr, value, r.x + 64 + 104, y, 13, p.fg_primary);
+      y += 18;
     }
   }
 
   void wifi_block(kit::Ui& ui, cairo_t* cr, const kit::Palette& p, const net::Device& d) {
-    if (!d.hw_addr.empty() || !d.driver.empty()) {
-      std::string hw = d.hw_addr;
-      if (!d.driver.empty()) hw += (hw.empty() ? "" : "   driver ") + d.driver;
-      ui.label(hw, true);
-      ui.newline();
-    }
     if (!d.controllable) {
       ui.paragraph("This card is managed by something else, so it can only be viewed here.");
       return;
@@ -136,9 +134,26 @@ class NetworkTab {
     const bool open_row = selected_ == key;
     kit::UiRect r;
     const kit::Ui::CanvasEvent ev = ui.canvas(40, &r);
+    std::string tag;
+    if (ap.active) tag = d.state == net::State::Connecting ? "Connecting..." : "Connected";
+    else if (attempt_.device == d.name && attempt_.ssid == ap.ssid) tag = "Connecting...";
+    else if (ap.saved) tag = "Saved";
+    if (ap.secured) tag += tag.empty() ? "Secured" : "  -  Secured";
+    else tag += tag.empty() ? "Open" : "  -  Open";
+
+    // "Forget" sits in the row of every saved network, left of its status text.
+    const double tag_w = kit::measure_text(cr, tag, 12).width;
+    kit::UiRect forget{r.x + r.w - tag_w - 14 - 74, r.y + 8, 62, 24};
+    const bool over_forget = ap.saved && ev.x >= forget.x - r.x && ev.x < forget.x - r.x + forget.w &&
+                             ev.y >= forget.y - r.y && ev.y < forget.y - r.y + forget.h;
     if (ev.pressed) {
+      if (over_forget) {
+        act(d.name, ap.ssid, "", Action::Forget);
+        return;
+      }
       selected_ = open_row ? "" : key;
       password_.clear();
+      show_password_ = false;
     }
     const bool hover = ev.x >= 0 && ev.x < r.w && ev.y >= 0 && ev.y < r.h;
     kit::rounded_rect(cr, r.x, r.y, r.w, r.h, p.rounded ? 8 : 0);
@@ -151,31 +166,31 @@ class NetworkTab {
     net::draw_signal_bars(cr, r.x + 14, r.y + 28, 18, net::signal_bars_lit(ap.strength), ap.active ? net::GlyphColor{p.accent.r, p.accent.g, p.accent.b, 1.0} : fg);
     const double nx = r.x + 46;
     kit::draw_text(cr, ap.ssid, nx, r.y + 25, 15, p.fg_primary, ap.active);
-    std::string tag;
-    if (ap.active) tag = d.state == net::State::Connecting ? "Connecting..." : "Connected";
-    else if (attempt_.device == d.name && attempt_.ssid == ap.ssid) tag = "Connecting...";
-    else if (ap.saved) tag = "Saved";
-    if (ap.secured) tag += tag.empty() ? "Secured" : "  -  Secured";
-    else tag += tag.empty() ? "Open" : "  -  Open";
     const kit::TextExtents te = kit::measure_text(cr, tag, 12);
     kit::draw_text(cr, tag, r.x + r.w - te.width - 14, r.y + 25, 12, ap.active ? p.accent : p.fg_secondary);
+    if (ap.saved) {
+      kit::rounded_rect(cr, forget.x, forget.y, forget.w, forget.h, p.rounded ? 6 : 0);
+      kit::Color edge = over_forget ? p.accent : p.fg_secondary;
+      edge.a = over_forget ? 1.0 : 0.45;
+      kit::set_source(cr, edge);
+      cairo_set_line_width(cr, 1);
+      cairo_stroke(cr);
+      const kit::TextExtents fe = kit::measure_text(cr, "Forget", 12);
+      kit::draw_text(cr, "Forget", forget.x + (forget.w - fe.width) / 2, forget.y + 16.5, 12, over_forget ? p.accent : p.fg_secondary);
+    }
 
     if (!open_row) return;
     // The panel under the row: what can be done with this network.
     if (ap.active) {
       if (ui.button("Disconnect")) act(d.name, ap.ssid, "", Action::Disconnect);
-      ui.same_line();
-      if (ap.saved && ui.button("Forget this network")) act(d.name, ap.ssid, "", Action::Forget);
       ui.newline();
     } else if (ap.saved || !ap.secured) {
       if (ui.button("Connect", true, true)) act(d.name, ap.ssid, "", Action::Connect);
-      ui.same_line();
-      if (ap.saved && ui.button("Forget this network")) act(d.name, ap.ssid, "", Action::Forget);
       ui.newline();
     } else {
       ui.label("Password for " + ap.ssid, true);
       ui.newline();
-      ui.text_entry(&password_, 300, true, true);
+      ui.text_entry(&password_, 300, true, true, &show_password_);
       const bool enter = ui.entry_submitted();
       ui.same_line();
       if ((ui.button("Join", !password_.empty(), true) || (enter && !password_.empty()))) {
@@ -296,6 +311,7 @@ class NetworkTab {
   bool any_wifi_ = false, refresh_pending_ = false;
   int timer_ = 0;
   unsigned frames_ = 0, last_frames_ = 0, ticks_ = 0;
+  bool show_password_ = false;
   std::string selected_, password_, message_, ignore_;
   Attempt attempt_;
   Clock::time_point scan_due_{};
