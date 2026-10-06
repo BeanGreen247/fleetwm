@@ -30,7 +30,7 @@ declare -A AREAS=(
   [ipc]='ExtractJsonStringField.*:IpcSocketPathTest.*:IpcClient.*:IpcClientWithServerTest.*'
   [config]='WallpaperConfigTest.*:DefaultAppsTest.*:OutputConfigTest.*'
   [fleetkit]='DesktopEntryExec.*:FleetkitColor.*:GlassCache.*'
-  [build]='PgoTraining.*'
+  [build]='PgoTraining.*:PgoTrainingShim.*'
   [power]='PowerActions.*:PowerPolkitRule.*:PowerInstaller.*:PowerIcons.*:PolkitRules.*:PolkitRuleBehaviour.*'
 )
 declare -A AREA_HELP=(

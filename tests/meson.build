@@ -59,7 +59,7 @@ test_areas = {
   'fleetkit': 'DesktopEntryExec.*:FleetkitColor.*:GlassCache.*',
   'network': 'NetworkParse.*:SystemDevices.*:WpaFixture.*',
   'keyboard': 'KeyboardConfigTest.*:KeyboardNames.*:XkbRules.*:Locales.*',
-  'build': 'PgoTraining.*',
+  'build': 'PgoTraining.*:PgoTrainingShim.*',
   'power': 'PowerActions.*:PowerPolkitRule.*:PowerInstaller.*:PowerIcons.*:PolkitRules.*:PolkitRuleBehaviour.*',
 }
 foreach area, filter : test_areas
