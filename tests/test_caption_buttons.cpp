@@ -296,20 +296,23 @@ TEST(CaptionButtons, AnEmptyStripDrawsNothingAndDoesNotCrash) {
 TEST(CaptionButtons, TheCompositorDrawsItsTitlebarButtonsWithTheStrip) {
   const std::string titlebar = cb_read("src/compositor/titlebar.cpp");
   EXPECT_NE(titlebar.find("m.strip = true"), std::string::npos) << "the layout must be the joined strip";
-  EXPECT_NE(titlebar.find("kit::draw_caption_buttons("), std::string::npos);
-  EXPECT_NE(titlebar.find("caption.hover_id = st.hover_button"), std::string::npos);
-  EXPECT_EQ(titlebar.find("cairo_arc(cr, cx, cy, rr, 0, 2 * M_PI)"), std::string::npos) << "the old round orbs are gone";
+  EXPECT_NE(titlebar.find("kit::draw_titlebar("), std::string::npos);
+  EXPECT_NE(titlebar.find("paint.hover_id = st.hover_button"), std::string::npos);
+  const std::string draw = cb_read("src/fleetkit/titlebar_draw.cpp");
+  EXPECT_NE(draw.find("caption.hover_id = p.hover_id"), std::string::npos);
+  EXPECT_NE(draw.find("draw_caption_buttons("), std::string::npos);
+  EXPECT_EQ(draw.find("cairo_arc(cr, cx, cy, rr, 0, 2 * M_PI)"), std::string::npos) << "the old round orbs are gone";
 }
 
 // ---- the same strip in glass and in matte mode (Desktop layout) ------------------------------------------
 
 TEST(CaptionButtons, TheStripIsDrawnTheSameWayWhetherGlassIsOnOrOff) {
-  const std::string titlebar = cb_read("src/compositor/titlebar.cpp");
-  const size_t draw = titlebar.find("kit::draw_caption_buttons(");
+  const std::string titlebar = cb_read("src/fleetkit/titlebar_draw.cpp");
+  const size_t draw = titlebar.find("draw_strip_cached(cr, strip, p.layout.count");
   ASSERT_NE(draw, std::string::npos);
   // The call must not sit inside an `if (st.glass)` / `else` branch: find the last `if (st.glass)` before
   // the call and check that its block was closed before the call.
-  const size_t last_glass_if = titlebar.rfind("if (st.glass)", draw);
+  const size_t last_glass_if = titlebar.rfind("if (p.glass)", draw);
   ASSERT_NE(last_glass_if, std::string::npos) << "the background still differs between glass and matte";
   int depth = 0;
   bool opened = false;
@@ -338,7 +341,7 @@ TEST(CaptionButtons, TheStripIsDrawnTheSameWayWhetherGlassIsOnOrOff) {
     }
   }
   EXPECT_LT(end_of_statement, draw) << "the caption strip is drawn inside the glass/matte branch: it must be drawn for both";
-  EXPECT_EQ(titlebar.find("st.glass", draw), std::string::npos) << "nothing after the call may depend on glass either";
+  EXPECT_EQ(titlebar.find("p.glass", draw), std::string::npos) << "nothing after the call may depend on glass either";
   // and the buttons only exist in the Desktop layout, which is where the compositor draws titlebars at all
   const std::string view = cb_read("src/compositor/view.cpp");
   EXPECT_NE(view.find("if (!desktop_mode() || fullscreen || !is_window())"), std::string::npos);

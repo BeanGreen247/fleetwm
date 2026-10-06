@@ -794,7 +794,7 @@ struct Settings {
       save_theme();
     }
     ui.newline();
-    ui.row("Glass effects");
+    ui.row("Glass effects (Windows Aero)");
     if (ui.checkbox("Translucent frames and menus", &config.glass)) save_theme();
     ui.newline();
     ui.label("The bar, the taskbar, titlebars, the start menu and the Alt+Tab panel get a see-through, frosted look. Off is flat and matte.", true);
