@@ -8,6 +8,7 @@ extern "C" {
 }
 
 #include <array>
+#include <memory>
 #include <ctime>
 
 #include "workspace.hpp"
@@ -15,22 +16,7 @@ extern "C" {
 namespace fleetwm {
 
 class Server;
-
-// A fixed-capacity row of tiny rects rendering plain digits/letters via
-// a hand-coded 3x5-pixel bitmap font (kDebugGlyphs, output.cpp) --
-// deliberately not a real font/text-rendering library: this compositor
-// draws zero text anywhere else, and the debug overlay's character set
-// is small and fixed (digits, '.', and a handful of unit letters), so
-// a real font stack would be a lot of new dependency for very little
-// gained legibility. Rects are created once per row and reused on
-// every update (recolored/hidden in place), same create-once-then-
-// mutate pattern as Output's frame-time bar graph.
-struct DebugTextRow {
-  static constexpr int kMaxChars = 8;
-  static constexpr int kGlyphCells = 15;  // 3 wide x 5 tall
-  std::array<std::array<wlr_scene_rect*, kGlyphCells>, kMaxChars> cells{};
-  bool created = false;
-};
+class DebugOverlay;
 
 // One physical/virtual display. Owns its own WorkspaceArray (per-output
 // workspace model, ADR 0002) so switching workspaces on one monitor never
@@ -111,53 +97,13 @@ class Output {
   // workspace-switch).
   void relayout();
 
-  // Alt+Shift+I (default) debug overlay: a bottom-right bar graph of
-  // this output's last kDebugBarCount frame times, colored green/
-  // yellow/red against a 60Hz (16.6ms) budget. No text/fonts involved
-  // -- this compositor does zero text rendering anywhere today (every
-  // client handles its own), and reusing the same wlr_scene_rect
-  // machinery already used for window borders keeps this to plain
-  // rectangles. Called every frame from output_frame() regardless of
-  // whether the overlay is currently shown; it's a cheap no-op time-
-  // stamp update when disabled (see update_debug_overlay()'s own doc
-  // comment for why that matters).
-  void update_debug_overlay();
+  // Alt+Shift+I (default) performance overlay: see debug_overlay.hpp. frame_begin runs right before
+  // the commit (the picture it repaints goes out with that commit), frame_end right after it.
+  void debug_frame_begin(const timespec& now);
+  void debug_frame_end(double cost_ms);
 
  private:
-  static constexpr int kDebugBarCount = 64;
-  std::array<wlr_scene_rect*, kDebugBarCount> debug_bars_{};
-  std::array<float, kDebugBarCount> debug_frame_times_ms_{};
-  int debug_next_index_ = 0;
-  bool debug_bars_created_ = false;
-  bool debug_has_last_frame_time_ = false;
-  timespec debug_last_frame_time_{};
-  int debug_base_x_ = 0;
-  int debug_base_y_ = 0;
-
-  // Numeric text rows (avg frame time / compositor RSS / live CPU MHz)
-  // stacked above the bar graph. Read/reformatted on a slower cadence
-  // than the per-frame bar graph -- see kDebugTextIntervalMs (output.cpp)
-  // -- both because /proc reads aren't free and because these numbers
-  // don't meaningfully change frame to frame anyway.
-  DebugTextRow debug_frame_time_row_;
-  DebugTextRow debug_cpu_pct_row_;
-  wlr_scene_rect* debug_panel_ = nullptr;
-  unsigned long debug_cpu_prev_ticks_ = 0;
-  timespec debug_cpu_prev_wall_{};
-  DebugTextRow debug_ram_row_;
-  DebugTextRow debug_cpu_row_;
-  // Renderer backend name (e.g. "GLES2", "PIXMAN") -- rendered once at
-  // creation, not on the 500ms refresh cadence like the rows above,
-  // since the renderer backend never changes for the lifetime of the
-  // compositor process (see Server::init(), server.cpp).
-  DebugTextRow debug_renderer_row_;
-  timespec debug_last_text_update_{};
-  bool debug_has_last_text_update_ = false;
-
-  void create_debug_bars();
-  void draw_debug_bars();
-  void create_debug_text_rows();
-  void update_debug_text();
+  std::unique_ptr<DebugOverlay> debug_overlay_;
 };
 
 }  // namespace fleetwm
