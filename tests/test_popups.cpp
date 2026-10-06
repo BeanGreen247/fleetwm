@@ -279,3 +279,34 @@ TEST(PopupDismissal, EachPopupProgramUsesItsNamespaceFromTheSharedHeader) {
       << "if the mixer's layer name drifts from the list, clicks outside stop closing it";
   EXPECT_NE(pp_read(pp_root() / "apps/launcher/main.cpp").find("cfg.name = fleetwm::kStartMenuNamespace"), std::string::npos);
 }
+
+TEST(AudioInstaller, AppliesTheDeviceBootSequenceSoSoundWorksWithoutAReboot) {
+  const std::string install = pp_read(pp_root() / "install.sh");
+  const size_t packages = install.find("apt_install pipewire-pulse pipewire-alsa alsa-ucm-conf alsa-utils");
+  ASSERT_NE(packages, std::string::npos);
+  const size_t init = install.find("sudo alsactl init", packages);
+  const size_t store = install.find("sudo alsactl store", packages);
+  const size_t restart = install.find("systemctl --user try-restart wireplumber.service", packages);
+  ASSERT_NE(init, std::string::npos) << "the UCM BootSequence (output mixers on, volumes) is only applied by alsactl init";
+  ASSERT_NE(store, std::string::npos) << "the result must be saved so the next boot restores it";
+  ASSERT_NE(restart, std::string::npos) << "WirePlumber has to re-apply the profile on top of the new mixer state";
+  EXPECT_LT(init, store);
+  EXPECT_LT(store, restart);
+  // all of it only on a machine that has a sound card, and none of it may stop the install
+  const size_t guard = install.rfind("aplay -l", init);
+  ASSERT_NE(guard, std::string::npos);
+  EXPECT_LT(packages, guard);
+  EXPECT_LT(guard, init) << "the sound-card check comes before alsactl";
+  for (size_t at : {init, store, restart}) {
+    const size_t eol = install.find('\n', at);
+    EXPECT_NE(install.substr(at, eol - at).find("|| true"), std::string::npos) << install.substr(at, eol - at);
+  }
+  EXPECT_NE(install.find("fi", restart), std::string::npos);
+}
+
+TEST(AudioInstaller, TheSoundNotesExplainTheCauseAndHowToCheck) {
+  const std::string notes = pp_read(pp_root() / "docs/AUDIO.md");
+  ASSERT_FALSE(notes.empty());
+  for (const char* what : {"alsactl init", "alsa-ucm-conf", "BootSequence", "ES8336", "wpctl status", "amixer", "pipewire-pulse"})
+    EXPECT_NE(notes.find(what), std::string::npos) << "docs/AUDIO.md should mention " << what;
+}

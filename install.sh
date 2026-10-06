@@ -184,6 +184,18 @@ apt_install pipewire pipewire-bin wireplumber
 # profile, speakers and headphones stay switched off or at 0% and nothing is audible. alsa-utils
 # provides amixer and alsactl for checking and restoring mixer state.
 apt_install pipewire-pulse pipewire-alsa alsa-ucm-conf alsa-utils
+# alsa-ucm-conf only describes the mixer set-up. Its BootSequence (route the DAC to the outputs, set the
+# volumes, unmute the amplifier path) is applied by `alsactl init`, which the alsa-restore service runs at
+# the next BOOT when there is no saved state. Without that a codec such as the Intel SOF/ES8336 stays at its
+# power-on defaults (output mixers off, headphone volume 0%) and the speakers are silent even though PipeWire
+# shows a Speakers sink. So apply it now, save the result for the next boot, and restart the user's sound
+# services so WirePlumber re-applies the profile on top. Everything here is best effort: no sound card, no
+# user session bus or an unusual setup must never stop the install.
+if command -v aplay >/dev/null 2>&1 && aplay -l 2>/dev/null | grep -q '^card'; then
+  sudo alsactl init >/dev/null 2>&1 || true
+  sudo alsactl store >/dev/null 2>&1 || true
+  systemctl --user try-restart wireplumber.service pipewire.service pipewire-pulse.service >/dev/null 2>&1 || true
+fi
 
 # runtime dependency for the bar's power menu (fleetwm-powermenu):
 # systemd-logind refuses Sleep/Reboot/Shut down for a non-root caller
