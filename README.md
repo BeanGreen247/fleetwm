@@ -218,6 +218,9 @@ Every item below was measured, and the numbers and the things that were tried an
   wallpaper) went from about 260 MB to about 17 MB.
 - **Seconds clock repaints a strip.** The bar redraws and reports only the clock's rectangle when it
   ticks: 0.72% to 0.28% CPU with glass on.
+- **Glass (Windows Aero) titlebars are cached.** The glass background and the caption buttons are drawn once per
+  state and copied, so moving the pointer across the buttons costs about a seventh of what it did and glass costs
+  the same as the flat look.
 - **Glass is cached.** Each glass rectangle is painted once and reused; the blurred wallpaper is decoded
   once per process. Glass on costs the bar about the same as glass off.
 - **Cheap performance overlay.** One small picture repainted four times a second inside the frame being
