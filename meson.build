@@ -115,6 +115,7 @@ gles2_dep = dependency('glesv2')
 
 subdir('src/common')
 subdir('src/fleetkit')
+subdir('src/netmgr')
 subdir('src/compositor')
 subdir('src/bar')
 subdir('apps/settings')

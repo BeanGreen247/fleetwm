@@ -114,6 +114,23 @@ playing video, or anything else that asks the compositor, systemd or `org.freede
 to stay awake). The setting is not saved: it is off after every login, and it switches itself off
 if the applet quits.
 
+## Network
+
+The bar shows a network icon: a Wi-Fi fan lit to the signal strength when you are on Wi-Fi, or an
+Ethernet port when you are on a cable. Hover it for the name, address and gateway, click it to
+open Settings -> Network.
+
+Settings -> Network lists every network card in its own block. Ethernet cards show the link state,
+speed and address. Wi-Fi cards also list the networks in range: click one to connect (a password
+field appears for secured networks), disconnect, or forget a saved one.
+
+It works with whatever already manages your network. With NetworkManager (what GNOME, KDE and XFCE
+use) it can do everything, including switching the Wi-Fi radio. With plain wpa_supplicant (netplan,
+systemd-networkd) it handles Wi-Fi; add your user to the `netdev` group, which the installer does.
+With neither, it shows what the system reports and nothing more. The installer adds the Wi-Fi tools
+and firmware for common chips, and installs NetworkManager only when there is Wi-Fi hardware and
+nothing manages it yet.
+
 ## Settings
 
 Open Settings from the launcher or the start menu. Changes apply right away, and they are saved

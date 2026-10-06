@@ -8,6 +8,9 @@ Quick way to run the unit tests: `scripts/test.sh` (see `scripts/test.sh --help`
 - `src/compositor` -- the compositor (`fleetwm`); `src/common` and `src/fleetkit` -- shared code
   and the small drawing toolkit; `src/bar`, `src/wallpaper`, `src/locker`, `src/greeter*` -- the
   shell parts the session needs.
+- `src/netmgr` -- network backends (NetworkManager over D-Bus, wpa_supplicant over its control socket,
+  a read-only kernel view) and the network icons, used by `fleetwm-settings` and `fleetwm-bar`. Test hooks:
+  `FLEETWM_WPA_DIR` and `FLEETWM_SYS_NET` point it at a fake supplicant and a fake `/sys/class/net`.
 - `apps/` -- the programs you open and use: `audiomixer`, `launcher`, `powermenu`, `settings`,
   `shortcuts` and `lockapplet` (the keep-awake padlock in the tray). New small tools go here,
   one folder each with its own `meson.build`, added with `subdir('apps/<name>')`.

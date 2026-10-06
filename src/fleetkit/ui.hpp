@@ -115,7 +115,14 @@ class Ui {
   bool slider(int* value, int min, int max, double width = 0, bool enabled = true);
   bool color_button(std::string* hex, bool enabled = true);
   bool tabs(const std::vector<std::string>& names, int* current);
-  bool text_entry(std::string* text, double width, bool enabled = true);
+  // `mask` shows bullets instead of the text (passwords).
+  bool text_entry(std::string* text, double width, bool enabled = true, bool mask = false);
+  // True once after Enter was pressed in a focused text entry.
+  bool entry_submitted() {
+    const bool s = entry_submitted_;
+    entry_submitted_ = false;
+    return s;
+  }
   // A button showing options[*index]; clicking opens a list. Returns true
   // when the selection changed.
   bool dropdown(const std::vector<std::string>& options, int* index, double width = 180, bool enabled = true);
@@ -193,6 +200,7 @@ class Ui {
     return v;
   }
   bool text_focus_ = false;
+  bool entry_submitted_ = false;
   std::string pending_paste_;
 
   // spin / entry editing
