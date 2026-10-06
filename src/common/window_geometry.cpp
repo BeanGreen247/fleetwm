@@ -1,6 +1,7 @@
 #include "window_geometry.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 namespace fleetwm::geom {
 
@@ -219,12 +220,18 @@ TitlebarLayout layout_titlebar(int width, const TitlebarMetrics& in) {
 
   TitlebarLayout out;
   out.count = n;
-  const double cluster = static_cast<double>(n) * m.button_w;
-  const double x0 = m.buttons_right ? width - cluster : 0.0;
-  const double y = (m.height - m.button_h) / 2.0;
+  double cluster = 0;
+  double widths[4];
   for (int i = 0; i < n; ++i) {
-    out.buttons[i] = {ids[i], x0 + i * m.button_w, y, static_cast<double>(m.button_w),
-                      static_cast<double>(m.button_h)};
+    widths[i] = m.strip && ids[i] == kBtnClose ? std::round(m.button_w * kStripCloseScale) : static_cast<double>(m.button_w);
+    cluster += widths[i];
+  }
+  const double x0 = m.buttons_right ? width - cluster : 0.0;
+  const double y = m.strip ? 0.0 : (m.height - m.button_h) / 2.0;  // a strip hangs from the top edge
+  double x = x0;
+  for (int i = 0; i < n; ++i) {
+    out.buttons[i] = {ids[i], x, y, widths[i], static_cast<double>(m.button_h)};
+    x += widths[i];
   }
   constexpr double kMargin = 8;
   if (m.buttons_right) {

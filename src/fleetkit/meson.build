@@ -26,7 +26,7 @@ libfleetkit_image_dep = declare_dependency(
 
 libfleetkit = static_library(
   'fleetwm-kit',
-  files('fleetkit.cpp', 'icon_theme.cpp', 'desktop_entry.cpp', 'ui.cpp', 'mimeapps.cpp', 'backdrop.cpp'),
+  files('fleetkit.cpp', 'icon_theme.cpp', 'desktop_entry.cpp', 'ui.cpp', 'mimeapps.cpp', 'backdrop.cpp', 'caption_buttons.cpp'),
   include_directories: include_directories('.'),
   dependencies: [wayland_client, client_protocols_dep, cairo_dep, xkbcommon_client_dep, libcommon_core_dep, libfleetkit_image_dep],
 )

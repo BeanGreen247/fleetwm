@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <vector>
 
 #include "window_geometry.hpp"
@@ -650,4 +651,86 @@ TEST(SnapStep, FollowingTheKeysNeverGetsStuck) {
   EXPECT_EQ(snap_step(snap_step(SnapZone::None, Direction::Right).zone, Direction::Left).kind, K::Restore);
   // A maximized window can always be brought back with Down.
   EXPECT_EQ(snap_step(SnapZone::Maximize, Direction::Down).kind, K::Restore);
+}
+
+// ---- the joined caption strip (Windows 7 look) -----------------------------------------------------------
+
+namespace {
+TitlebarMetrics strip_metrics() {
+  TitlebarMetrics m = metrics();
+  m.strip = true;
+  return m;
+}
+}  // namespace
+
+TEST(TitlebarStrip, HangsFromTheTopRightCornerWithNoGaps) {
+  const TitlebarMetrics m = strip_metrics();
+  const TitlebarLayout l = layout_titlebar(600, m);
+  ASSERT_EQ(l.count, 4);
+  EXPECT_EQ(ids(l), (std::vector<int>{kBtnPin, kBtnMinimize, kBtnMaximize, kBtnClose}));
+  for (int i = 0; i < l.count; ++i) {
+    EXPECT_DOUBLE_EQ(l.buttons[i].y, 0.0) << "the strip lies on the top edge of the bar";
+    EXPECT_DOUBLE_EQ(l.buttons[i].h, m.button_h);
+    if (i > 0) EXPECT_DOUBLE_EQ(l.buttons[i].x, l.buttons[i - 1].x + l.buttons[i - 1].w) << "buttons touch";
+  }
+  EXPECT_DOUBLE_EQ(l.buttons[3].x + l.buttons[3].w, 600.0) << "flush with the window's right edge";
+}
+
+TEST(TitlebarStrip, CloseIsWiderThanTheOthers) {
+  const TitlebarMetrics m = strip_metrics();
+  const TitlebarLayout l = layout_titlebar(600, m);
+  for (int i = 0; i < 3; ++i) EXPECT_DOUBLE_EQ(l.buttons[i].w, m.button_w);
+  EXPECT_DOUBLE_EQ(l.buttons[3].w, std::round(m.button_w * kStripCloseScale));
+  EXPECT_GT(l.buttons[3].w, l.buttons[2].w * 1.4);
+  EXPECT_LT(l.buttons[3].w, l.buttons[2].w * 1.8);
+}
+
+TEST(TitlebarStrip, LeftSideStripIsFlushWithTheLeftEdgeAndCloseStillAtTheEdge) {
+  TitlebarMetrics m = strip_metrics();
+  m.buttons_right = false;
+  const TitlebarLayout l = layout_titlebar(600, m);
+  EXPECT_EQ(ids(l), (std::vector<int>{kBtnClose, kBtnMinimize, kBtnMaximize, kBtnPin}));
+  EXPECT_DOUBLE_EQ(l.buttons[0].x, 0.0);
+  EXPECT_DOUBLE_EQ(l.buttons[0].w, std::round(m.button_w * kStripCloseScale));
+  EXPECT_DOUBLE_EQ(l.buttons[0].y, 0.0);
+}
+
+TEST(TitlebarStrip, HitTestingFollowsTheWiderCloseButton) {
+  const TitlebarMetrics m = strip_metrics();
+  const TitlebarLayout l = layout_titlebar(600, m);
+  const double close_x = l.buttons[3].x;
+  EXPECT_EQ(titlebar_button_at(l, 599, 0), kBtnClose) << "the very corner";
+  EXPECT_EQ(titlebar_button_at(l, close_x + 1, 1), kBtnClose);
+  EXPECT_EQ(titlebar_button_at(l, close_x - 1, 1), kBtnMaximize);
+  EXPECT_EQ(titlebar_button_at(l, l.buttons[0].x + 1, 1), kBtnPin);
+  EXPECT_EQ(titlebar_button_at(l, 599, m.button_h + 1), kBtnNone) << "below the strip is the bar again";
+  EXPECT_EQ(titlebar_button_at(l, l.buttons[0].x - 1, 1), kBtnNone);
+}
+
+TEST(TitlebarStrip, TitleSpanStopsBeforeTheWholeStrip) {
+  const TitlebarMetrics m = strip_metrics();
+  const TitlebarLayout l = layout_titlebar(600, m);
+  EXPECT_LE(l.title_x1, l.buttons[0].x);
+  EXPECT_GE(l.title_x1, l.title_x0);
+  TitlebarLayout narrow = layout_titlebar(60, m);
+  EXPECT_GE(narrow.title_x1, narrow.title_x0) << "a narrow window never gets an inverted span";
+}
+
+TEST(TitlebarStrip, HiddenButtonsLeaveTheRestJoined) {
+  TitlebarMetrics m = strip_metrics();
+  m.show_pin = false;
+  m.show_minimize = false;
+  const TitlebarLayout l = layout_titlebar(600, m);
+  ASSERT_EQ(l.count, 2);
+  EXPECT_EQ(ids(l), (std::vector<int>{kBtnMaximize, kBtnClose}));
+  EXPECT_DOUBLE_EQ(l.buttons[0].x + l.buttons[0].w, l.buttons[1].x);
+  EXPECT_DOUBLE_EQ(l.buttons[1].x + l.buttons[1].w, 600.0);
+}
+
+TEST(TitlebarStrip, OffKeepsTheSeparateCentredButtons) {
+  const TitlebarMetrics m = metrics();
+  ASSERT_FALSE(m.strip) << "the strip is opt-in in the geometry module; the compositor turns it on";
+  const TitlebarLayout l = layout_titlebar(600, m);
+  EXPECT_DOUBLE_EQ(l.buttons[3].w, m.button_w);
+  EXPECT_DOUBLE_EQ(l.buttons[0].y, (m.height - m.button_h) / 2.0);
 }
