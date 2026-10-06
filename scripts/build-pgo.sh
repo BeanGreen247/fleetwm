@@ -76,8 +76,11 @@ if [[ "$MODE" == "use" ]]; then
 fi
 LINK_FLAGS='-no-pie -Wl,--gc-sections -Wl,-O1 -Wl,--as-needed -Wl,--sort-common -Wl,-z,lazy -Wl,-z,norelro -Wl,-z,noseparate-code'
 
-# Configure and build quietly: the full output goes to a log, only a progress counter and
-# any real error reach the terminal.
+# shellcheck source=scripts/install-ui.sh
+source "${SCRIPT_DIR}/scripts/install-ui.sh"
+
+# Configure and build quietly: the full output goes to a log, the terminal gets a live
+# progress line (counter, current file, time spent) and any real error.
 LOG="${BUILD_DIR}.log"
 : > "${LOG}"
 fail() {
@@ -86,31 +89,35 @@ fail() {
   grep -E "error|Error|FAILED|undefined reference" "${LOG}" | head -20 >&2 || tail -20 "${LOG}" >&2
   exit 1
 }
-meson setup "${BUILD_DIR}" "${SCRIPT_DIR}" --prefix=/usr/local --buildtype=release \
+echo "==> Configuring (${MODE}): checking the libraries and choosing the compiler flags"
+ui_live plain "Meson" "${LOG}.setup" \
+  meson setup "${BUILD_DIR}" "${SCRIPT_DIR}" --prefix=/usr/local --buildtype=release \
   -Db_ndebug=true -Db_lto=true -Db_pgo="${MODE}" -Dtests=true -Dunity=on -Dwarning_level=0 -Ddefault_library=static \
   -Dc_args="${COMMON_FLAGS}" -Dcpp_args="${COMMON_FLAGS}" \
   -Dc_link_args="${LINK_FLAGS}" -Dcpp_link_args="${LINK_FLAGS}" \
-  "${EXTRA_OPTS[@]}" --reconfigure >> "${LOG}" 2>&1 || fail
+  "${EXTRA_OPTS[@]}" --reconfigure || fail
+cat "${LOG}.setup" >> "${LOG}"
 
-echo "==> Compiling (${MODE})"
-set +o pipefail
-ninja -C "${BUILD_DIR}" 2>&1 | tee -a "${LOG}" | awk '/^\[[0-9]+\/[0-9]+\]/ { printf "\r  %s   ", $1; fflush() } END { print "" }'
-status=${PIPESTATUS[0]}
-set -o pipefail
-[[ "${status}" -eq 0 ]] || fail
+echo "==> Compiling (${MODE}): every source file is compiled, then linked into the programs"
+NINJA_LOG="${LOG}.ninja"
+ui_live ninja "Compile" "${NINJA_LOG}" ninja -C "${BUILD_DIR}" && ninja_rc=0 || ninja_rc=$?
+cat "${NINJA_LOG}" >> "${LOG}"
+[[ "${ninja_rc}" -eq 0 ]] || fail
 
-echo "==> Running unit tests"
-# Run the gtest binary directly rather than `meson test` -- meson treats
-# the whole binary as a single test ("1/1 fleetwm-unit-tests OK"), which
-# hides the real per-case count/results. Running it directly prints every
-# individual RUN/OK line plus gtest's own summary ("N tests from M test
-# suites ran ... PASSED N tests"), and still exits non-zero on any
-# failure, so `set -euo pipefail` above still aborts the install exactly
-# as before.
-"${BUILD_DIR}/tests/fleetwm-unit-tests" --gtest_brief=1 2>&1 | tee "${BUILD_DIR}.tests"
+echo "==> Running unit tests: small automatic checks of the configuration, geometry and protocol code"
+# Run the gtest binary directly rather than `meson test` -- meson treats the whole binary as a
+# single test, which hides the real per-case count/results. Running it directly gives the
+# individual results and gtest's own summary, and still exits non-zero on any failure, so
+# `set -euo pipefail` above still aborts the install exactly as before. The progress line
+# counts the finished test cases; the log (${BUILD_DIR}.tests) keeps every result.
+ui_live tests "Tests" "${BUILD_DIR}.tests" "${BUILD_DIR}/tests/fleetwm-unit-tests" || { grep -E "FAILED|Failure" "${BUILD_DIR}.tests" | head -20 >&2; exit 1; }
+grep -h "tests from" "${BUILD_DIR}.tests" | tail -1
+grep -h "PASSED" "${BUILD_DIR}.tests" | tail -1
 
 echo
-if [[ "$MODE" == "generate" ]]; then
+if [[ "$MODE" == "generate" && -n "${FLEETWM_PGO_AUTO:-}" ]]; then
+  :  # build-pgo-auto.sh does the training itself; no manual instructions
+elif [[ "$MODE" == "generate" ]]; then
   echo "==> Instrumented build ready in ${BUILD_DIR}."
   echo "    sudo ninja -C ${BUILD_DIR} install"
   echo

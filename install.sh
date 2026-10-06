@@ -7,6 +7,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/install-ui.sh
+UI_TOTAL_STEPS=12  # keep equal to the number of ui_step calls below
+source "${SCRIPT_DIR}/scripts/install-ui.sh"
 # shellcheck source=scripts/install-stats.sh
 source "${SCRIPT_DIR}/scripts/install-stats.sh"
 # scripts/build-pgo-auto.sh (invoked below, see "Building with PGO")
@@ -24,6 +27,12 @@ if [[ ${EUID} -eq 0 ]]; then
   exit 1
 fi
 
+ui_step "Checking your account and asking for permission once" \
+  "What: confirms you are a normal user and asks for your sudo password a single time." \
+  "Why:  the install changes system files (packages, /usr/local, login screen). Asking now, and keeping the" \
+  "      permission alive, means no password prompt can pop up in the middle of a progress line later."
+ui_sudo_keepalive || { echo "error: sudo permission is required." >&2; exit 1; }
+
 # A build folder left behind by an earlier 'sudo' run is owned by root and makes
 # the build fail with a permission error. Give it back to the current user.
 for d in build-pgo build-test build; do
@@ -34,6 +43,11 @@ for d in build-pgo build-test build; do
   fi
 done
 
+ui_step "Enabling Debian's non-free software sources" \
+  "What: adds 'contrib', 'non-free' and 'non-free-firmware' to Debian's package sources (the original" \
+  "      file is kept next to it as <file>.fleetwm-bak). Nothing changes if they are already enabled." \
+  "Why:  the best graphics and video drivers (the Intel media driver with extra codecs, GPU firmware)" \
+  "      are only published there. Other distributions skip this step."
 # The best graphics and video drivers are in Debian's non-free parts (the Intel video driver
 # with the extra codecs, GPU firmware). Make sure those repositories are enabled; nothing
 # is changed when they already are, and the original file is kept as <file>.fleetwm-bak.
@@ -55,8 +69,19 @@ if [[ "${ID:-}" == "debian" ]]; then
 fi
 
 stats_phase_start deps
-echo "==> Installing build dependencies (requires sudo)"
-sudo apt-get update -qq
+ui_step "Installing the compiler and the libraries Fleetwm is built from" \
+  "What: refreshes the package lists, then installs the tools that compile the source and the" \
+  "      libraries the compositor links against." \
+  "Why:  Fleetwm is built from source on your machine, tuned for your exact CPU, which is part of why" \
+  "      it can be faster than a generic prebuilt package."
+ui_item "build-essential meson ninja git" "compiler and build system (ninja runs the compile in parallel)"
+ui_item "libwlroots-0.18-dev" "wlroots: the window-system core the compositor is built on"
+ui_item "wayland-protocols libwayland-dev" "the Wayland protocol the programs speak to each other"
+ui_item "libinput libxkbcommon libdrm" "keyboard, mouse and touchpad input, key maps, direct screen access"
+ui_item "libegl/libgles2 libpixman" "OpenGL ES drawing (GPU) and the software fallback"
+ui_item "libpipewire libpam libsystemd" "sound volume, password check for the lock screen, session and power control"
+ui_item "libjemalloc2" "a faster memory allocator for the compositor"
+ui_live plain "Refreshing the package lists" "$(mktemp)" sudo apt-get update -qq
 
 # NOTE: this is deliberately several separate `apt-get install` calls,
 # not one big backslash-continued list -- a `#` comment on its own line
@@ -78,6 +103,11 @@ apt_install \
   libsystemd-dev \
   libjemalloc2
 
+ui_step "Installing drawing, font and cursor support" \
+  "What: cairo (draws every window decoration, bar and menu), image decoders for wallpapers and icons," \
+  "      the Inter font, a fallback font and a mouse pointer theme." \
+  "Why:  Fleetwm's own programs use no big toolkit (no GTK/Qt): they draw directly with cairo, which keeps" \
+  "      them small, quick to start and light on memory."
 # the GTK-free "fleetkit" clients (src/fleetkit: wallpaper, locker, power menu, bar,
 # launcher, audio mixer) draw with cairo and decode images with libpng /
 # libjpeg / libwebp (SVG is handled by the vendored nanosvg); fontconfig
@@ -88,6 +118,11 @@ apt_install libcairo2-dev libpng-dev libjpeg-dev libwebp-dev fonts-inter fonts-d
 # package name differs between distributions.
 apt_install dmz-cursor-theme || echo "warning: no cursor theme package installed; the built-in pointer will be used" 
 
+ui_step "Installing graphics and video drivers" \
+  "What: the Mesa drivers for Intel, AMD and NVIDIA (open Nouveau) GPUs, Vulkan, and video acceleration" \
+  "      (VA-API) plus the matching firmware for the GPU found in this machine." \
+  "Why:  the compositor draws every frame on the GPU. Without a GPU driver it falls back to software" \
+  "      drawing, which is many times slower, and video would play on the CPU."
 # Graphics drivers (Mesa) and Vulkan. The compositor renders with GLES2 and falls back to
 # software when no GPU driver loads, so the Mesa drivers decide how fast everything feels.
 # These are the userspace drivers for Intel, AMD and Nouveau GPUs (mesa-vulkan-drivers holds
@@ -119,6 +154,10 @@ for vendor_file in /sys/class/drm/card*/device/vendor; do
   esac
 done
 
+ui_step "Installing dark/light theme support for other programs" \
+  "What: the desktop portal, Adwaita dark theme, and the Qt theme plugins that follow GTK." \
+  "Why:  when you switch the Fleetwm theme between light and dark, Chromium, Thunar, Qt and GTK programs" \
+  "      read that setting from these pieces and switch with it."
 # Dark/light mode for other toolkits: the portal (settings backend that Chromium and
 # libadwaita read), an Adwaita dark theme for GTK 3, the Qt platform themes that follow GTK,
 # and the D-Bus pieces that start the portal. Best effort.
@@ -127,6 +166,10 @@ apt_install xdg-desktop-portal xdg-desktop-portal-gtk gnome-themes-extra \
   gsettings-desktop-schemas dconf-gsettings-backend ||
   echo "warning: some theme packages could not be installed; GTK, Chromium and Qt apps may not follow dark/light mode"
 
+ui_step "Installing sound and power-control permissions" \
+  "What: PipeWire and WirePlumber (sound), polkit and the time-zone permission rule." \
+  "Why:  the bar's volume readout and the audio mixer talk to PipeWire; the power menu (suspend, reboot," \
+  "      shut down) and Date & Time settings are refused by the system without polkit."
 # runtime audio stack the bar's volume readout and fleetwm-audiomixer talk
 # to (PipeWire + the WirePlumber session manager; pipewire-bin ships
 # pw-cli/pw-cat, handy for testing without sound hardware)
@@ -153,6 +196,12 @@ apt_install polkitd pkexec
 # local session. Delete the file to go back to prompting.
 sudo install -m 644 "${SCRIPT_DIR}/packaging/50-fleetwm-time.rules" /etc/polkit-1/rules.d/50-fleetwm-time.rules
 
+ui_step "Installing everyday programs and helpers" \
+  "What: XWayland (runs older X11 programs inside Fleetwm), the foot terminal, grim/slurp/wl-clipboard" \
+  "      (Alt+Shift+S screenshots), wlrctl/wtype/gdb/imagemagick (testing over SSH) and the tools the" \
+  "      training run in the build needs (dbus-daemon, python3)." \
+  "Why:  without XWayland X11 programs will not start; without foot there is no terminal; without the" \
+  "      screenshot tools the screenshot shortcut does nothing."
 apt_install xwayland foot
 
 # end-user runtime: Alt+Shift+S's screenshot keybind
@@ -177,7 +226,10 @@ apt_install wlrctl wtype gdb imagemagick
 apt_install dbus-daemon python3
 
 stats_phase_end deps
-echo "==> Setting system default locale to C.UTF-8"
+ui_step "Setting the system language" \
+  "What: sets the default locale to C.UTF-8." \
+  "Why:  it exists on every system and handles all characters, so text in the terminal and in" \
+  "      Fleetwm's programs never breaks because a language pack was never generated."
 # fleetwm-greet's session env (src/greeter/session.cpp) also hardcodes
 # this as a floor for every fleetwm session regardless of the system
 # default, but setting it here too keeps outside-of-fleetwm logins (a
@@ -188,7 +240,13 @@ echo "==> Setting system default locale to C.UTF-8"
 # glibc system with no locale-gen step required.
 sudo update-locale LANG=C.UTF-8 LC_ALL=C.UTF-8 LANGUAGE=
 
-echo "==> Building with PGO (profile-guided optimization)"
+ui_step "Building Fleetwm (optimized, in three stages)" \
+  "What: stage 1 compiles an instrumented copy, stage 2 runs it for a short training session that records" \
+  "      which code is used most, stage 3 recompiles using that record. The unit tests run after each" \
+  "      compile and must pass before anything is installed." \
+  "Why:  this profile-guided build makes the hot paths (drawing, window moves, input) faster. It is the" \
+  "      slowest part of the install: the compile counter and the timer keep moving even during the" \
+  "      long link step at the end of each stage."
 # Every install now goes through the full instrumented-build ->
 # synthetic-training -> profile-optimized-rebuild pipeline
 # (scripts/build-pgo-auto.sh), not just a single release build --
@@ -213,7 +271,11 @@ bash "${SCRIPT_DIR}/scripts/build-pgo-auto.sh"
 STATS_BUILD_CPU=$(awk -v a="${STATS_BUILD_CPU0}" -v b="$(stats_cpu_seconds)" 'BEGIN { printf "%.0f", b - a }')
 
 stats_phase_start install
-echo "==> Installing (requires sudo)"
+ui_step "Installing Fleetwm and setting up your account" \
+  "What: copies the programs to /usr/local, adds the Fleetwm entry to the login session list, lets the" \
+  "      compositor run at higher priority, and adds you to the input/video/render/audio groups." \
+  "Why:  the groups give the compositor access to your keyboard, mouse, screen and sound; the priority" \
+  "      keeps the desktop responsive when the machine is busy. Log out and back in afterwards."
 sudo ninja -C "${BUILD_DIR}" install
 # 'sudo ninja' can leave root-owned files in the build folder; hand them back so the
 # next run (or fleetwm-update) can rebuild without a permission error.
@@ -260,7 +322,11 @@ if [[ -x "${BUILD_DIR}/src/greeter/fleetwm-greet" ]]; then
   # DRM access before anyone's logged in -- seatd, not logind (see
   # packaging/fleetwm-greeter@.service's own comment for why logind
   # specifically doesn't work here: it segfaults on a real login).
-  echo "==> Installing seatd (required by the greeter's login-screen compositor)"
+  ui_step "Setting up the login screen" \
+    "What: installs seatd, the login screen's PAM files and service, and enables it on tty1 (unless a" \
+    "      display manager is already in charge or FLEETWM_NO_GREETER=1 is set)." \
+    "Why:  the login screen runs its own small compositor, which needs seatd to open the screen before" \
+    "      anyone is logged in. Other consoles keep a normal text login in case you need it."
   apt_install seatd
   sudo systemctl enable --now seatd.service
 
@@ -300,6 +366,9 @@ if [[ -x "${BUILD_DIR}/src/greeter/fleetwm-greet" ]]; then
   # already-running session).
   echo "==> Installing locker PAM config"
   sudo install -m 644 "${SCRIPT_DIR}/packaging/fleetwm-locker-pam.conf" /etc/pam.d/fleetwm-locker
+else
+  ui_step "Setting up the login screen" \
+    "Skipped: this build was made without the greeter (-Dgreeter=false)."
 fi
 
 stats_phase_end install
