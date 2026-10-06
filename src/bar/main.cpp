@@ -170,6 +170,40 @@ struct Bar {
             pal.fg_secondary.b + (pal.fg_primary.b - pal.fg_secondary.b) * 0.6, 1.0};
   }
   Rect net_rect, layout_rect;
+  // Where the clock was drawn last and how wide its text was: a tick that keeps the width repaints
+  // only this strip (the glass behind it is repainted inside the clip, so it stays seamless).
+  static constexpr double kClockPad = 6;
+  Rect clock_rect;
+  double clock_w_drawn = 0;
+  cairo_surface_t* scratch_surface = nullptr;
+  cairo_t* scratch = nullptr;
+  int island_w_applied = -1;  // width the island surface was last sized to
+  void ensure_scratch() {
+    if (scratch) return;
+    scratch_surface = cairo_image_surface_create(CAIRO_FORMAT_A8, 1, 1);
+    scratch = cairo_create(scratch_surface);
+  }
+  // Text changed in the island: re-send the layout only when its width really moved (a ticking
+  // clock keeps the same width almost every second). Returns true when the layout was re-applied.
+  bool island_resize_if_needed() {
+    if (!island) return false;
+    ensure_scratch();
+    Metrics m{scratch};
+    const int mw = monitor_width();
+    const double natural = natural_width(m), cap = mw > 0 ? mw - 2 * kIslandSideInset : natural;
+    const int w = std::max(1, static_cast<int>(std::ceil(natural > 0 ? std::min(natural, cap) : cap)));
+    if (w == island_w_applied) return false;
+    apply_layout();
+    return true;
+  }
+  double clock_width_now() {
+    ensure_scratch();
+    if (!taskbar) return measure_text(scratch, clock_text, kFont, true).width;
+    const size_t split = clock_text.find("  ");
+    const std::string t = split == std::string::npos ? clock_text : clock_text.substr(0, split);
+    const std::string d = split == std::string::npos ? "" : clock_text.substr(split + 2);
+    return std::max(measure_text(scratch, t, kFont, true).width, d.empty() ? 0.0 : measure_text(scratch, d, kSmallFont).width);
+  }
   std::vector<KeyboardLayout> kb_layouts;  // from the compositor (LAYOUTS lines)
   int kb_current = 0;
   net::Device net_dev;  // the card the network icon stands for
@@ -410,6 +444,7 @@ struct Bar {
       surface->set_margins(kIslandTopMargin, 0, 0, 0);
       surface->set_exclusive_zone(kBarHeight + kIslandTopMargin);
       surface->set_size(w, kBarHeight);
+      island_w_applied = w;
     }
     surface->queue_draw();
   }
@@ -563,6 +598,7 @@ struct Bar {
   }
 
   void draw(cairo_t* cr, int W, int H) {
+    clock_rect = Rect{};  // set again by the layout that draws a clock
     if (taskbar) {
       draw_taskbar(cr, W, H);
       return;
@@ -630,6 +666,8 @@ struct Bar {
     }
 
     // ---- clock ----
+    clock_rect = {clock_x - kClockPad, 0, clock_w + 2 * kClockPad, static_cast<double>(H)};
+    clock_w_drawn = clock_w;
     draw_text(cr, clock_text, clock_x, base, kFont, pal.accent, true);
 
     draw_status_group(cr, m, right_x, H, base, btn_r);
@@ -999,6 +1037,8 @@ struct Bar {
     const double clock_w = std::max(time_w, date_w);
     const double right_w = right_total(m);
     const double right_x = W - kMargin - right_w, clock_x = right_x - 18 - clock_w;
+    clock_rect = {clock_x - kClockPad, 0, clock_w + 2 * kClockPad, static_cast<double>(H)};
+    clock_w_drawn = clock_w;
     if (date_line.empty()) {
       draw_text(cr, time_line, clock_x + (clock_w - time_w) / 2, base, kFont, pal.accent, true);
     } else {
@@ -1511,8 +1551,12 @@ struct Bar {
 
   void clock_update() {
     if (set_if_changed(clock_text, format_clock())) {
-      if (island) apply_layout();
-      redraw();
+      const bool resized = island_resize_if_needed();
+      if (!resized && surface && clock_rect.w > 0 && std::abs(clock_width_now() - clock_w_drawn) < 0.01)
+        surface->queue_draw_rect(static_cast<int>(std::floor(clock_rect.x)), 0, static_cast<int>(std::ceil(clock_rect.w)) + 1,
+                                 surface->height());
+      else
+        redraw();
     }
   }
 
@@ -1539,7 +1583,7 @@ struct Bar {
     ch |= update_ram();
     ch |= update_gpu();
     if (ch) {
-      if (island) apply_layout();  // text widths changed, island width follows
+      island_resize_if_needed();  // text widths changed, island width follows
       redraw();
     }
   }

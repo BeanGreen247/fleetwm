@@ -109,6 +109,10 @@ class Surface {
   std::function<void()> on_closed;
 
   void queue_draw();
+  // Redraws only this rectangle (logical px): on_draw runs with a clip set to it and the rest of
+  // the picture is carried over from the last frame, so a ticking clock costs a strip, not a bar.
+  // Any queue_draw() before the next frame upgrades it to a full redraw.
+  void queue_draw_rect(int x, int y, int w, int h);
   void set_size(int w, int h);
   void set_title(const std::string& title);
   void set_anchor(uint32_t anchor);
@@ -149,6 +153,13 @@ class Surface {
   Buffer bufs_[2];
   int width_ = 0, height_ = 0, scale_ = 1;
   bool configured_ = false, dirty_ = false, frame_pending_ = false;
+  void mark_full() {
+    dirty_ = true;
+    partial_ = false;
+  }
+  bool partial_ = false;      // dirty_ is only the rectangle below
+  int px_ = 0, py_ = 0, pw_ = 0, ph_ = 0;
+  Buffer* last_ = nullptr;    // the buffer holding what is on screen now
   std::vector<wl_output*> entered_;
 };
 

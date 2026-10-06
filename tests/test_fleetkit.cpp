@@ -108,3 +108,73 @@ TEST(Backdrop, DownscaleKeepsTheAspectRatioAndNeverEnlarges) {
   EXPECT_EQ(w, 400);
   std::free(out);
 }
+
+namespace {
+// A 24x24 backdrop with a diagonal ramp, so a wrong crop or offset shows up in the pixels.
+cairo_surface_t* ramp_backdrop() {
+  cairo_surface_t* s = cairo_image_surface_create(CAIRO_FORMAT_RGB24, 24, 24);
+  unsigned char* d = cairo_image_surface_get_data(s);
+  const int stride = cairo_image_surface_get_stride(s);
+  for (int y = 0; y < 24; ++y)
+    for (int x = 0; x < 24; ++x)
+      reinterpret_cast<uint32_t*>(d + y * stride)[x] = (0xFFu << 24) | ((x * 10) << 16) | ((y * 10) << 8) | 0x40;
+  cairo_surface_mark_dirty(s);
+  return s;
+}
+
+int max_channel_diff(cairo_surface_t* a, cairo_surface_t* b, int w, int h, int x0 = 0, int y0 = 0) {
+  cairo_surface_flush(a);
+  cairo_surface_flush(b);
+  const unsigned char *da = cairo_image_surface_get_data(a), *db = cairo_image_surface_get_data(b);
+  const int sa = cairo_image_surface_get_stride(a), sb = cairo_image_surface_get_stride(b);
+  int worst = 0;
+  for (int y = y0; y < y0 + h; ++y)
+    for (int x = x0 * 4; x < (x0 + w) * 4; ++x) worst = std::max(worst, std::abs(int(da[y * sa + x]) - int(db[y * sb + x])));
+  return worst;
+}
+}  // namespace
+
+// The cached glass tile must look the same as painting it directly (a tiny sub-pixel offset forces the
+// direct path), and a second paint from the cache must be identical to the first.
+TEST(GlassCache, TileMatchesDirectPaint) {
+  cairo_surface_t* bd = ramp_backdrop();
+  fleetwm::kit::GlassStyle st;
+  st.radius = 10;
+  const int W = 160, H = 60;
+  cairo_surface_t* cached = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, W, H);
+  cairo_surface_t* direct = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, W, H);
+  cairo_surface_t* again = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, W, H);
+  cairo_t* c1 = cairo_create(cached);
+  cairo_t* c2 = cairo_create(direct);
+  cairo_t* c3 = cairo_create(again);
+  fleetwm::kit::paint_glass(c1, bd, 800, 600, 0, 0, 0, 0, W, H, st);
+  fleetwm::kit::paint_glass(c2, bd, 800, 600, 0, 0, 0.00001, 0, W, H, st);  // not a whole pixel: painted directly
+  fleetwm::kit::paint_glass(c3, bd, 800, 600, 0, 0, 0, 0, W, H, st);
+  EXPECT_EQ(max_channel_diff(cached, again, W, H), 0);
+  EXPECT_LE(max_channel_diff(cached, direct, W, H), 2);  // the direct path, 1e-5 px away
+  // Half a pixel away the rim lines move, but the interior must still match the tile.
+  cairo_surface_t* frac = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, W, H);
+  cairo_t* c4 = cairo_create(frac);
+  fleetwm::kit::paint_glass(c4, bd, 800, 600, 0, 0, 0.5, 0, W - 1, H, st);
+  EXPECT_LE(max_channel_diff(cached, frac, W - 24, H - 16, 8, 8), 6);
+  for (cairo_t* c : {c1, c2, c3, c4}) cairo_destroy(c);
+  for (cairo_surface_t* s : {cached, direct, again, frac, bd}) cairo_surface_destroy(s);
+}
+
+TEST(GlassCache, DifferentStyleIsNotServedFromAnotherTile) {
+  cairo_surface_t* bd = ramp_backdrop();
+  fleetwm::kit::GlassStyle a, b;
+  a.tint_alpha = 0.2;
+  b.tint_alpha = 0.9;
+  const int W = 64, H = 40;
+  cairo_surface_t* sa = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, W, H);
+  cairo_surface_t* sb = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, W, H);
+  cairo_t* ca = cairo_create(sa);
+  cairo_t* cb = cairo_create(sb);
+  fleetwm::kit::paint_glass(ca, bd, 400, 300, 0, 0, 0, 0, W, H, a);
+  fleetwm::kit::paint_glass(cb, bd, 400, 300, 0, 0, 0, 0, W, H, b);
+  EXPECT_GT(max_channel_diff(sa, sb, W, H), 10);
+  cairo_destroy(ca);
+  cairo_destroy(cb);
+  for (cairo_surface_t* s : {sa, sb, bd}) cairo_surface_destroy(s);
+}

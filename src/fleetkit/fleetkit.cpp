@@ -123,7 +123,7 @@ Surface::Surface(App& app, const Config& cfg) : app_(app), cfg_(cfg) {
         const int sc = s->app_.output_scale(o);
         if (sc > s->scale_) {
           s->scale_ = sc;
-          s->dirty_ = true;
+          s->mark_full();
         }
       },
       [](void* d, wl_surface*, wl_output* o) {
@@ -134,7 +134,7 @@ Surface::Surface(App& app, const Config& cfg) : app_(app), cfg_(cfg) {
         for (auto* e : s->entered_) sc = std::max(sc, s->app_.output_scale(e));
         if (sc != s->scale_) {
           s->scale_ = sc;
-          s->dirty_ = true;
+          s->mark_full();
         }
       },
       [](void*, wl_surface*, int32_t) {}, [](void*, wl_surface*, uint32_t) {}};
@@ -154,7 +154,7 @@ Surface::Surface(App& app, const Config& cfg) : app_(app), cfg_(cfg) {
           s->height_ = nh;
           s->configured_ = true;
           if (changed) {
-            s->dirty_ = true;
+            s->mark_full();
             if (s->on_configure) s->on_configure(s->width_, s->height_);
           }
         }};
@@ -196,7 +196,7 @@ Surface::Surface(App& app, const Config& cfg) : app_(app), cfg_(cfg) {
         s->height_ = nh;
         s->configured_ = true;
         if (changed) {
-          s->dirty_ = true;
+          s->mark_full();
           if (s->on_configure) s->on_configure(s->width_, s->height_);
         }
       },
@@ -225,7 +225,25 @@ Surface::~Surface() {
   if (surface_) wl_surface_destroy(surface_);
 }
 
-void Surface::queue_draw() { dirty_ = true; }
+void Surface::queue_draw() { mark_full(); }
+
+void Surface::queue_draw_rect(int x, int y, int w, int h) {
+  if (dirty_ && !partial_) return;  // a full redraw is already due
+  if (w <= 0 || h <= 0) return;
+  if (!dirty_) {
+    px_ = x;
+    py_ = y;
+    pw_ = w;
+    ph_ = h;
+  } else {
+    const int x1 = std::max(px_ + pw_, x + w), y1 = std::max(py_ + ph_, y + h);
+    px_ = std::min(px_, x);
+    py_ = std::min(py_, y);
+    pw_ = x1 - px_;
+    ph_ = y1 - py_;
+  }
+  dirty_ = partial_ = true;
+}
 
 void Surface::set_input_passthrough() {
   wl_region* empty = wl_compositor_create_region(app_.compositor());
@@ -299,6 +317,7 @@ bool Surface::alloc(Buffer& b, int w, int h) {
 }
 
 void Surface::free_buf(Buffer& b) {
+  if (last_ == &b) last_ = nullptr;
   if (b.buf) wl_buffer_destroy(b.buf);
   if (b.data) munmap(b.data, b.size);
   b = Buffer{};
@@ -326,10 +345,17 @@ void Surface::render() {
     return;
   }
 
+  // A partial redraw starts from a copy of what is on screen (the other buffer is a frame stale).
+  const bool part = partial_ && last_ && last_->w == bw && last_->h == bh;
+  if (part && b != last_) std::memcpy(b->data, last_->data, b->size);
   cairo_surface_t* cs = cairo_image_surface_create_for_data(
       static_cast<unsigned char*>(b->data), CAIRO_FORMAT_ARGB32, bw, bh, bw * 4);
   cairo_surface_set_device_scale(cs, scale_, scale_);
   cairo_t* cr = cairo_create(cs);
+  if (part) {
+    cairo_rectangle(cr, px_, py_, pw_, ph_);
+    cairo_clip(cr);
+  }
   cairo_set_operator(cr, CAIRO_OPERATOR_CLEAR);
   cairo_paint(cr);
   cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
@@ -340,7 +366,14 @@ void Surface::render() {
 
   wl_surface_set_buffer_scale(surface_, scale_);
   wl_surface_attach(surface_, b->buf, 0, 0);
-  wl_surface_damage_buffer(surface_, 0, 0, bw, bh);
+  if (part) {
+    const int dx = std::max(0, px_ * scale_), dy = std::max(0, py_ * scale_);
+    wl_surface_damage_buffer(surface_, dx, dy, std::min(bw - dx, pw_ * scale_), std::min(bh - dy, ph_ * scale_));
+  } else {
+    wl_surface_damage_buffer(surface_, 0, 0, bw, bh);
+  }
+  partial_ = false;
+  last_ = b;
   b->busy = true;
   frame_pending_ = true;
   frame_cb_ = wl_surface_frame(surface_);
