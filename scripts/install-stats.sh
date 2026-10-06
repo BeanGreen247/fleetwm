@@ -24,13 +24,16 @@ stats_cpu_seconds() {
 }
 STATS_CPU_START=$(stats_cpu_seconds)
 
-# apt-get install, remembering what was downloaded and how fast ("Fetched 14.7 MB in 3s").
+# apt-get install with a live progress line, remembering what was downloaded and how fast
+# ("Fetched 14.7 MB in 3s"). Non-interactive on purpose: the output is hidden behind the
+# progress line, so a question from a package (a config file prompt) would look like a hang;
+# existing config files are kept.
 apt_install() {
-  local out rc
+  local out rc fetched bytes secs
   out="$(mktemp)"
-  sudo apt-get install -y "$@" 2>&1 | tee "${out}"
-  rc=${PIPESTATUS[0]}
-  local fetched
+  ui_live apt "Installing $*" "${out}" \
+    sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+      -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold "$@" && rc=0 || rc=$?
   fetched="$(awk '/^Fetched /' "${out}" | tail -1)"
   if [[ -n "${fetched}" ]]; then
     read -r bytes secs < <(echo "${fetched}" | awk '{

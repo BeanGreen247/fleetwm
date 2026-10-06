@@ -39,15 +39,16 @@ for tool in dbus-run-session python3; do
   fi
 done
 
+export FLEETWM_PGO_AUTO=1
 TIMES="${BUILD_DIR}.times"
 : > "${TIMES}"
 T=$SECONDS
-echo "==> Stage 1/3: instrumented (profile-generate) build"
+echo "==> Stage 1/3: instrumented build: a first compile that counts how often each part of the code runs"
 bash "${SCRIPT_DIR}/scripts/build-pgo.sh" generate
 
 echo "stage1 $(( SECONDS - T ))" >> "${TIMES}"
 T=$SECONDS
-echo "==> Stage 2/3: synthetic training pass (${TRAIN_SECONDS}s)"
+echo "==> Stage 2/3: training run (${TRAIN_SECONDS}s): the instrumented desktop runs on a virtual screen while it records which code is used"
 RUNTIME_DIR="$(mktemp -d /tmp/fleetwm-pgo-train.XXXXXX)"
 chmod 700 "$RUNTIME_DIR"
 cleanup_runtime_dir() {
@@ -55,7 +56,9 @@ cleanup_runtime_dir() {
 }
 trap cleanup_runtime_dir EXIT
 
-dbus-run-session -- env \
+# shellcheck source=scripts/install-ui.sh
+source "${SCRIPT_DIR}/scripts/install-ui.sh"
+ui_live plain "Training" "${BUILD_DIR}.train.log" dbus-run-session -- env \
   WLR_BACKENDS=headless WLR_RENDERER=pixman \
   XDG_RUNTIME_DIR="$RUNTIME_DIR" HOME="$RUNTIME_DIR" \
   LANG=C.UTF-8 LC_ALL=C.UTF-8 \
@@ -63,7 +66,7 @@ dbus-run-session -- env \
 
 echo "train $(( SECONDS - T ))" >> "${TIMES}"
 T=$SECONDS
-echo "==> Stage 3/3: profile-use build (final PGO-optimized binaries)"
+echo "==> Stage 3/3: final build: compiled again, now optimized with what the training run recorded"
 bash "${SCRIPT_DIR}/scripts/build-pgo.sh" use
 echo "stage3 $(( SECONDS - T ))" >> "${TIMES}"
 
