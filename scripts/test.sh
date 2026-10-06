@@ -29,7 +29,7 @@ declare -A AREAS=(
   [shortcuts]='FormatAltCombo.*:FormatAltShiftCombo.*:ShortcutList.*'
   [ipc]='ExtractJsonStringField.*:IpcSocketPathTest.*:IpcClient.*:IpcClientWithServerTest.*'
   [config]='WallpaperConfigTest.*:DefaultAppsTest.*:OutputConfigTest.*'
-  [fleetkit]='DesktopEntryExec.*:FleetkitColor.*'
+  [fleetkit]='DesktopEntryExec.*:FleetkitColor.*:GlassCache.*'
 )
 declare -A AREA_HELP=(
   [theme]='theme.toml: colors, layout, gaps, titlebar settings'
@@ -65,6 +65,10 @@ while [[ $# -gt 0 ]]; do
       areas+=("$1"); shift ;;
   esac
 done
+
+# Static check first (fast): two files of one directory defining the same file-scope name break the
+# installer's unity build (see scripts/check-unity-collisions.py).
+python3 "${SCRIPT_DIR}/check-unity-collisions.py" "${ROOT}" || exit 1
 
 if (( build )); then
   if [[ ! -f "${BUILD_DIR}/build.ninja" ]]; then

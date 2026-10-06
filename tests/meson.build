@@ -51,7 +51,7 @@ test_areas = {
   'shortcuts': 'FormatAltCombo.*:FormatAltShiftCombo.*:ShortcutList.*',
   'ipc': 'ExtractJsonStringField.*:IpcSocketPathTest.*:IpcClient.*:IpcClientWithServerTest.*',
   'config': 'WallpaperConfigTest.*:DefaultAppsTest.*:OutputConfigTest.*',
-  'fleetkit': 'DesktopEntryExec.*:FleetkitColor.*',
+  'fleetkit': 'DesktopEntryExec.*:FleetkitColor.*:GlassCache.*',
   'network': 'NetworkParse.*:SystemDevices.*:WpaFixture.*',
   'keyboard': 'KeyboardConfigTest.*:KeyboardNames.*:XkbRules.*:Locales.*',
 }
@@ -59,3 +59,11 @@ foreach area, filter : test_areas
   test(area, fleetwm_unit_tests, args: ['--gtest_filter=' + filter], suite: 'areas', protocol: 'gtest')
 endforeach
 
+# Static check for the installer's unity build: no two files of one directory may define the same
+# file-scope name (scripts/check-unity-collisions.py), plus the checker's own self-test.
+python3 = find_program('python3', required: false)
+if python3.found()
+  unity_check = meson.project_source_root() / 'scripts' / 'check-unity-collisions.py'
+  test('unity-name-clashes', python3, args: [unity_check, meson.project_source_root()], suite: 'static')
+  test('unity-check-self-test', python3, args: [unity_check, '--self-test'], suite: 'static')
+endif

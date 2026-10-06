@@ -256,3 +256,17 @@ This only concerns fleetwm's own clients. The compositor still serves
 GTK 2/3/4, Qt, XWayland and any other Wayland or X11 application exactly as
 before. fleetwm itself has no GTK dependency left. Measurements, the method, and the bugs found while
 doing this are written up in [OPTIMIZATIONS.md](OPTIMIZATIONS.md).
+
+## Before tagging a release
+
+The installer builds with `-Dunity=on` (a target's `.cpp` files are pasted into one translation unit),
+which a plain development build does not. A name defined at file scope in two files of one target
+compiles alone and fails there; 0.3.0 shipped with exactly that (`kPad` in the overlay and the switcher).
+
+1. `scripts/test.sh` runs the quick static check first (`scripts/check-unity-collisions.py`; it is also a
+   `meson test --suite static`).
+2. `scripts/check-unity.sh` does the real thing: a unity release build that reports every error, then
+   the unit tests. Run it before every tag.
+3. Give file-scope helpers and constants in an anonymous namespace a per-file prefix (`kOvPad`,
+   `ov_read_rss_mb`) or put what is shared in a header.
+
