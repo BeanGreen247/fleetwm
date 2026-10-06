@@ -30,6 +30,7 @@ declare -A AREAS=(
   [ipc]='ExtractJsonStringField.*:IpcSocketPathTest.*:IpcClient.*:IpcClientWithServerTest.*'
   [config]='WallpaperConfigTest.*:DefaultAppsTest.*:OutputConfigTest.*'
   [fleetkit]='DesktopEntryExec.*:FleetkitColor.*:GlassCache.*'
+  [build]='PgoTraining.*'
   [power]='PowerActions.*:PowerPolkitRule.*:PowerInstaller.*:PowerIcons.*:PolkitRules.*:PolkitRuleBehaviour.*'
 )
 declare -A AREA_HELP=(
@@ -42,6 +43,7 @@ declare -A AREA_HELP=(
   [ipc]='compositor socket client'
   [config]='wallpaper, default apps, outputs'
   [fleetkit]='toolkit helpers: colors, desktop entries'
+  [build]='the profile-guided build: training run length and coverage'
   [power]='power menu: commands, the polkit rule and its installer step, icon drawing'
 )
 

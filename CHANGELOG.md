@@ -27,6 +27,15 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
 - Power menu icons redrawn as one outline set on a 24 px grid: the old set mixed a filled moon with thin outlines,
   sat off centre and had a glitchy reboot arrow. Tests check size, weight and centring.
 
+- The profile-guided build's training run is much longer and wider: 150 s instead of 20 s, on the virtual
+  screen, cycling six look/layout combinations (Tiling and Desktop, glass on and off, dark and light) with
+  every Settings page, the start menu and launcher search, the power menu, shortcuts and language windows,
+  Alt+Tab, snap keys, the performance overlay, layout switching, terminals scrolling output, screen capture,
+  pointer sweeps and the compositor's IPC queries (key, pointer, terminal and capture steps run when
+  wtype, wlrctl, foot and grim are installed, which the installer does). `PgoTraining` tests keep it that way.
+- The polkit rule behaviour tests no longer skip on a machine without node: they carry a small evaluator and
+  compare it with real JavaScript when node is there.
+
 ### Added (tooling)
 - `scripts/check-unity-collisions.py` (also runs with `scripts/test.sh` and `meson test --suite static`) and
   `scripts/check-unity.sh` (a real unity build that reports every error, then the unit tests) so a clash like
