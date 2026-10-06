@@ -1374,6 +1374,11 @@ struct Bar {
         want = i + 1;
         r = *rects[i];
       }
+    for (size_t i = 0; i < tray_rects.size(); ++i)
+      if (tray_rects[i].hit(x, y)) {
+        want = 2000 + static_cast<int>(i);
+        r = tray_rects[i];
+      }
     if (taskbar && hover_win >= 0 && hover_win < static_cast<int>(shown.size())) {
       want = 1000 + static_cast<int>(shown[static_cast<size_t>(hover_win)].id);
       r = win_rects[static_cast<size_t>(hover_win)];
@@ -1391,8 +1396,19 @@ struct Bar {
   }
 
   void show_tooltip(const Rect& r, int kind) {
+    if (kind >= 2000) {  // a tray item: ask it for its text at this moment
+      const size_t index = static_cast<size_t>(kind - 2000);
+      tray->tooltip(index, [this, r, kind](std::string text) {
+        if (tooltip_for == kind && !tooltip && !text.empty()) place_tooltip(r, text);
+      });
+      return;
+    }
     const std::string text = kind >= 1000 ? window_tooltip(static_cast<uint32_t>(kind - 1000)) : tooltip_text(kind);
     if (text.empty()) return;
+    place_tooltip(r, text);
+  }
+
+  void place_tooltip(const Rect& r, const std::string& text) {
     const double cx = r.x + r.w / 2, cy = r.y + r.h / 2;
     int tx, ty;
     Tooltip::Placement pl = Tooltip::Placement::Below;

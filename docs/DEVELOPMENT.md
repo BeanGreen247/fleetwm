@@ -3,6 +3,15 @@
 Quick way to run the unit tests: `scripts/test.sh` (see `scripts/test.sh --help`). The older
 `scripts/run-tests.sh` still works too.
 
+## Where things live
+
+- `src/compositor` -- the compositor (`fleetwm`); `src/common` and `src/fleetkit` -- shared code
+  and the small drawing toolkit; `src/bar`, `src/wallpaper`, `src/locker`, `src/greeter*` -- the
+  shell parts the session needs.
+- `apps/` -- the programs you open and use: `audiomixer`, `launcher`, `powermenu`, `settings`,
+  `shortcuts` and `lockapplet` (the keep-awake padlock in the tray). New small tools go here,
+  one folder each with its own `meson.build`, added with `subdir('apps/<name>')`.
+
 ## Building from source
 
 ```sh

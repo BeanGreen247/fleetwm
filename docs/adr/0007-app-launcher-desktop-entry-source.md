@@ -13,7 +13,7 @@ dependency chain.
 
 ## Decision
 - New `fleetwm-launcher` GTK4 + `gtk4-layer-shell` popup process
-  (`src/launcher/`), spawned fresh on each invocation by the compositor's
+  (`apps/launcher/`), spawned fresh on each invocation by the compositor's
   existing keybind-spawn mechanism (`spawn()` in
   `src/compositor/input.cpp`, generalized from the prior
   `spawn_terminal()`), bound to Alt+D. Not a resident daemon -- avoids
@@ -40,7 +40,7 @@ dependency chain.
 - README's process count goes from five to six: `fleetwm-launcher` is
   "spawned on demand" like `fleetwm-settings`.
 - `gio-2.0` becomes an explicit meson dependency in
-  `src/launcher/meson.build`, though it was already transitively present
+  `apps/launcher/meson.build`, though it was already transitively present
   via `gtk4_dep` everywhere GTK4 is used in this repo -- no new class of
   dependency is introduced, so (unlike the greeter's `-Dgreeter` gate)
   the launcher's `subdir()` call is unconditional, consistent with

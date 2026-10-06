@@ -25,6 +25,11 @@ class Server;
 //                         data, so no other process on this socket can
 //                         send this itself (see Server::confirm_unlock's
 //                         doc comment, server.hpp)
+//   IDLE_INHIBIT 1|0  -> keep the screen on and the computer awake (1) or stop doing
+//                         so (0) for as long as this connection stays open; the
+//                         request goes away on its own when the sender exits
+//   IDLE_INHIBITORS?  -> one "INHIBITOR wayland <pid> <program>" line per program
+//                         holding an idle-inhibit request, then "END"
 //
 // Broadcast (unsolicited, sent to every connected client whenever a
 // keybind-driven workspace switch happens, so the bar's highlighted
@@ -70,6 +75,7 @@ class IpcServer {
     wl_event_source* source;
     std::string read_buffer;
     bool windows_subscribed = false;
+    bool idle_inhibiting = false;
   };
 
   void accept_connection();

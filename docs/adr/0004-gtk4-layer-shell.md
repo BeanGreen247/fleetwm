@@ -29,7 +29,7 @@ outweighed by the build-velocity win for v1.
   "Features" for the full list. Both are GTK4 pages within the same
   one-shot `fleetwm-settings` process, not separate binaries.
 - The bar and settings app are two separate GTK4 processes (see
-  `src/bar/meson.build`, `src/settings/meson.build`), not one, so the
+  `src/bar/meson.build`, `apps/settings/meson.build`), not one, so the
   always-resident bar's binary and resident set stay free of the settings
   app's heavier one-shot code paths (color picker, image decode for accent
   auto-extraction).

@@ -91,10 +91,10 @@ echo "    starting the desktop programs: bar, wallpaper, settings, launcher, pow
 # project_fleetwm_tests.md / project_fleetwm_backlog.md).
 spawn_client "${BUILD_DIR}/src/bar/fleetwm-bar"
 spawn_client "${BUILD_DIR}/src/wallpaper/fleetwm-wallpaper"
-spawn_client "${BUILD_DIR}/src/settings/fleetwm-settings"
-spawn_client "${BUILD_DIR}/src/launcher/fleetwm-launcher"
-spawn_client "${BUILD_DIR}/src/powermenu/fleetwm-powermenu"
-spawn_client "${BUILD_DIR}/src/audiomixer/fleetwm-audiomixer"
+spawn_client "${BUILD_DIR}/apps/settings/fleetwm-settings"
+spawn_client "${BUILD_DIR}/apps/launcher/fleetwm-launcher"
+spawn_client "${BUILD_DIR}/apps/powermenu/fleetwm-powermenu"
+spawn_client "${BUILD_DIR}/apps/audiomixer/fleetwm-audiomixer"
 
 echo "    letting everything run for ${TRAIN_SECONDS}s..."
 sleep "$TRAIN_SECONDS"
