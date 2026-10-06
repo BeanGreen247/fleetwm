@@ -33,6 +33,15 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
   Alt+Tab, snap keys, the performance overlay, layout switching, terminals scrolling output, screen capture,
   pointer sweeps and the compositor's IPC queries (key, pointer, terminal and capture steps run when
   wtype, wlrctl, foot and grim are installed, which the installer does). `PgoTraining` tests keep it that way.
+- Volume mixer: it opens next to the bar or taskbar it came from (bottom right above a bottom taskbar, and so on)
+  instead of always at the top right, which in the Desktop layout was the other side of the screen; it was also
+  placed with a wrong bar height (24 where the bar is 30). Clicking anywhere outside it closes it (the compositor
+  does that, like the start menu), and launching it again closes the open one instead of stacking another (dozens
+  piled up). Tests: `PopupSpot`, `SingleInstance`, `PopupDismissal`.
+- No sound on some laptops: the installer now also installs `pipewire-pulse` (the PulseAudio-compatible server
+  browsers and players use), `pipewire-alsa`, `alsa-ucm-conf` (device profiles: an Intel SOF/ES8336 laptop got
+  the silent "stereo-fallback" profile without it and showed only a generic stereo sink) and `alsa-utils`. On the
+  test laptop PipeWire then showed Speakers, three HDMI outputs and the analog microphone on the HiFi profile.
 - The training run now puts the freshly built programs first on `PATH` (`scripts/pgo-path-shim.sh`), so the bar,
   wallpaper, padlock, launcher, Settings, power menu and the rest that the compositor and the desktop start by
   name are the instrumented ones: before, a machine with Fleetwm already installed profiled nothing for them

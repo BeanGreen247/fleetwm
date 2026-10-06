@@ -32,6 +32,7 @@ fleetwm_test_sources = files(
   'test_settings_pages.cpp',
   'test_power_menu.cpp',
   'test_pgo_training.cpp',
+  'test_popups.cpp',
 )
 
 fleetwm_unit_tests = executable(
@@ -59,6 +60,7 @@ test_areas = {
   'fleetkit': 'DesktopEntryExec.*:FleetkitColor.*:GlassCache.*',
   'network': 'NetworkParse.*:SystemDevices.*:WpaFixture.*',
   'keyboard': 'KeyboardConfigTest.*:KeyboardNames.*:XkbRules.*:Locales.*',
+  'popups': 'PopupSpot.*:SingleInstance.*:AudioInstaller.*:PopupDismissal.*',
   'build': 'PgoTraining.*:PgoTrainingShim.*',
   'power': 'PowerActions.*:PowerPolkitRule.*:PowerInstaller.*:PowerIcons.*:PolkitRules.*:PolkitRuleBehaviour.*',
 }
