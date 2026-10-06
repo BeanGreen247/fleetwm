@@ -178,12 +178,19 @@ install_subdir(
 
 # The terminal shell setup and foot config used when the user has none of their own.
 install_data('config/bashrc', install_dir: get_option('sysconfdir') / 'fleetwm')
-configure_file(
+foot_ini = configure_file(
   input: 'config/foot.ini.in',
   output: 'foot.ini',
   configuration: {'SYSCONF_DIR': get_option('prefix') / get_option('sysconfdir') / 'fleetwm'},
   install: true,
   install_dir: get_option('sysconfdir') / 'fleetwm',
+)
+# The same file where foot itself looks for a system-wide config. The session puts that folder
+# first in XDG_CONFIG_DIRS, so every foot started from anywhere (the launcher, the start menu, a
+# shortcut, another program) gets Fleetwm's look, and ~/.config/foot/foot.ini still wins.
+install_data(
+  foot_ini,
+  install_dir: get_option('sysconfdir') / 'fleetwm' / 'xdg' / 'foot',
 )
 
 install_data(
