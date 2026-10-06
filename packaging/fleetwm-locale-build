@@ -1,0 +1,56 @@
+#!/bin/bash
+# fleetwm-locale-build [locale ...]: make the given locales (such as cs_CZ.UTF-8) available on
+# this system and rebuild the font cache. Needs root; fleetwm-langpicker runs it through pkexec.
+# It only ever adds locales (it never removes what is already enabled) and only accepts names
+# that appear in the system's own list of supported locales.
+set -u
+STATUS=/run/fleetwm-locale-build.status
+status() { echo "$1" > "${STATUS}" 2>/dev/null && chmod 644 "${STATUS}" 2>/dev/null; }
+
+if [[ ${EUID} -ne 0 ]]; then
+  echo "fleetwm-locale-build: needs root (run it with sudo)" >&2
+  exit 1
+fi
+
+status "running: checking the locale tools"
+if ! command -v locale-gen >/dev/null 2>&1; then
+  status "running: installing the locales package"
+  DEBIAN_FRONTEND=noninteractive apt-get install -y locales fontconfig >/dev/null 2>&1 ||
+    { status "failed: could not install the locales package"; exit 1; }
+fi
+
+changed=0
+for code in "$@"; do
+  if [[ ! "${code}" =~ ^[A-Za-z0-9_@.-]+$ ]]; then
+    echo "skipping invalid locale name: ${code}" >&2
+    continue
+  fi
+  if ! grep -qE "^${code//./\\.} +UTF-8$" /usr/share/i18n/SUPPORTED 2>/dev/null; then
+    echo "skipping unsupported locale: ${code}" >&2
+    continue
+  fi
+  pattern="${code//./\\.}"
+  if grep -qE "^${pattern} UTF-8" /etc/locale.gen 2>/dev/null; then
+    :  # already enabled
+  elif grep -qE "^# *${pattern} UTF-8" /etc/locale.gen 2>/dev/null; then
+    sed -i -E "s/^# *(${pattern} UTF-8)/\1/" /etc/locale.gen
+    changed=1
+  else
+    echo "${code} UTF-8" >> /etc/locale.gen
+    changed=1
+  fi
+  # Enabled in the file but never generated (an earlier failure, or a fresh image)?
+  normalized="${code%%.*}.utf8"
+  locale -a 2>/dev/null | grep -qix "${normalized}" || changed=1
+done
+
+if (( changed )); then
+  status "running: generating locales"
+  locale-gen >/dev/null 2>&1 || { status "failed: locale-gen failed"; exit 1; }
+fi
+
+status "running: rebuilding the font cache"
+if command -v fc-cache >/dev/null 2>&1; then
+  fc-cache -f >/dev/null 2>&1 || { status "failed: fc-cache failed"; exit 1; }
+fi
+status "done"

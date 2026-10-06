@@ -114,6 +114,23 @@ playing video, or anything else that asks the compositor, systemd or `org.freede
 to stay awake). The setting is not saved: it is off after every login, and it switches itself off
 if the applet quits.
 
+## Keyboard
+
+Settings -> Keyboard lists the layouts you switch between, in order, with the one in use marked.
+Click a layout to switch to it, reorder or remove them with the buttons, and press "Add or remove
+languages and layouts" to open a checklist of every layout (with its variants) and every language
+the system knows, with a search box. Tick what you want and press Done: the layouts take effect
+at once, and the locales and the font cache are built in the background so the new languages work
+and stay fast. The system part runs through polkit, which the installer allows for members of the
+`sudo`, `wheel` or `adm` group; for anyone else, run `sudo fleetwm-locale-build` once.
+
+Switch layouts while you work with Win+Space (Win+Shift+Space goes back) and/or Alt+Shift, as in
+Windows; Settings -> Keyboard picks which. The bar shows the layout in use as a small pill (`US`,
+`CZ`): click it for the next layout, right-click for the keyboard settings, hover for the list.
+The same page sets the key held for the Tiling layout shortcuts (Alt or Super), the key repeat
+speed and delay, and has a field to try the keyboard in. Settings are saved in
+`~/.config/fleetwm/keyboard.toml`.
+
 ## Network
 
 The bar shows a network icon: a Wi-Fi fan lit to the signal strength when you are on Wi-Fi, or an

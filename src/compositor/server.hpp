@@ -34,6 +34,7 @@ extern "C" {
 #include <list>
 
 #include "output_config.hpp"
+#include "keyboard_config.hpp"
 #include "power_config.hpp"
 #include <memory>
 #include <vector>
@@ -55,6 +56,7 @@ extern "C" {
 namespace fleetwm {
 
 class Output;
+class Keyboard;
 class View;
 class LayerSurface;
 class IpcServer;
@@ -316,6 +318,9 @@ class Server {
       xkb_keysym_t sym = XKB_KEY_NoSymbol;
     };
     Combo shortcuts_help{kModLogo, XKB_KEY_slash};
+    Combo keyboard_next_layout{kModLogo, XKB_KEY_space};
+    Combo keyboard_prev_layout{kModLogo | kModShift, XKB_KEY_space};
+    unsigned tiling_mod = kModAlt;  // held for the Tiling layout's shortcuts
     Combo desktop_terminal{kModCtrl | kModAlt, XKB_KEY_t};
     Combo desktop_browser{kModLogo | kModShift, XKB_KEY_b};
     Combo desktop_file_manager{kModLogo | kModShift, XKB_KEY_e};
@@ -342,6 +347,18 @@ class Server {
   };
   const ResolvedKeybinds& keybinds() const { return resolved_keybinds_; }
   void reload_keybinds_config();
+
+  // ---- keyboard layouts (Settings -> Keyboard, keyboard.toml) ----
+  void reload_keyboard_config();            // rebuilds the keymap of every keyboard
+  void apply_keyboard_config(Keyboard* kb);  // keymap, repeat and current layout for one keyboard
+  void set_layout(int index);               // switch every keyboard to layout `index` (wraps)
+  void step_layout(int delta) { set_layout(layout_index_ + delta); }
+  int layout_index() const { return layout_index_; }
+  const KeyboardConfig& keyboard_config() const { return keyboard_config_; }
+  // "LAYOUTS <current> us: cz:qwerty" -- the line sent to IPC clients (variant after the colon).
+  std::string layouts_line() const;
+  void register_keyboard(Keyboard* kb) { keyboards_.push_back(kb); }
+  void unregister_keyboard(Keyboard* kb);
 
   // Screen-lock state (bar's power-menu "Lock" action, see
   // bar_window.cpp's build_power_menu()/on_power_action()). `locked_`
@@ -491,6 +508,9 @@ class Server {
   wlr_xcursor_manager* cursor_mgr_ = nullptr;
   wlr_seat* seat_ = nullptr;
   int keyboard_count_ = 0;
+  std::vector<Keyboard*> keyboards_;
+  KeyboardConfig keyboard_config_;
+  int layout_index_ = 0;
 
   ThemeConfig theme_config_;
   DefaultAppsConfig default_apps_config_;

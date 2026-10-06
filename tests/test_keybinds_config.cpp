@@ -638,5 +638,19 @@ TEST(SplitKeyNames, DropsEmptyEntries) {
   EXPECT_EQ(split_key_names("a,,b"), (std::vector<std::string>{"a", "b"}));
 }
 
+TEST_F(KeybindsConfigTest, LayoutSwitchKeysAndTilingModifierHaveDefaultsAndValidate) {
+  KeybindsConfig c = load_keybinds_config();
+  EXPECT_EQ(c.keyboard_next_layout, "super+space");
+  EXPECT_EQ(c.keyboard_prev_layout, "super+shift+space");
+  EXPECT_EQ(c.tiling_modifier, "alt");
+  write_config("keybinds.toml", "tiling_modifier = \"super\"\n");
+  EXPECT_EQ(load_keybinds_config().tiling_modifier, "super");
+  write_config("keybinds.toml", "tiling_modifier = \"hyper\"\n");  // unknown value: keep Alt
+  EXPECT_EQ(load_keybinds_config().tiling_modifier, "alt");
+  c.tiling_modifier = "super";
+  save_keybinds_config(c);
+  EXPECT_EQ(load_keybinds_config().tiling_modifier, "super");
+}
+
 }  // namespace
 }  // namespace fleetwm

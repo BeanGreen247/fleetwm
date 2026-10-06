@@ -85,6 +85,8 @@ std::vector<ShortcutEntry> build_shortcut_list(const KeybindsConfig& b, WindowLa
   add("Applications", format_alt_combo(b.screenshot), "Screenshot a region to the clipboard");
   add("Applications", format_alt_combo(b.lock), "Lock the screen");
   add("Help", format_key_combo(b.shortcuts_help), "Show this list of shortcuts", true);
+  add("Switching", format_key_combo(b.keyboard_next_layout), "Next keyboard layout (Alt+Shift also works; set in Settings -> Keyboard)", true);
+  add("Switching", format_key_combo(b.keyboard_prev_layout), "Previous keyboard layout", true);
 
   add("Windows", format_alt_combo(b.close_window), "Close the focused window");
   add("Windows", format_alt_combo(b.toggle_pin), "Pin the focused window (always on top, on every workspace)");

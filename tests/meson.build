@@ -27,6 +27,7 @@ fleetwm_test_sources = files(
   'test_power_config.cpp',
   'test_lock_tooltip.cpp',
   'test_network.cpp',
+  'test_keyboard.cpp',
   'test_app_appearance.cpp',
   'test_settings_pages.cpp',
 )
@@ -52,6 +53,7 @@ test_areas = {
   'config': 'WallpaperConfigTest.*:DefaultAppsTest.*:OutputConfigTest.*',
   'fleetkit': 'DesktopEntryExec.*:FleetkitColor.*',
   'network': 'NetworkParse.*:SystemDevices.*:WpaFixture.*',
+  'keyboard': 'KeyboardConfigTest.*:KeyboardNames.*:XkbRules.*:Locales.*',
 }
 foreach area, filter : test_areas
   test(area, fleetwm_unit_tests, args: ['--gtest_filter=' + filter], suite: 'areas', protocol: 'gtest')

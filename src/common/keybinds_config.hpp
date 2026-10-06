@@ -97,6 +97,13 @@ struct KeybindsConfig {
   std::string workspace_next = "ctrl+alt+Right";
   // Opens the keyboard-shortcuts window (fleetwm-shortcuts) in either layout.
   std::string shortcuts_help = "super+slash";
+  // Switch to the next / previous keyboard layout (Windows' Win+Space). Which of these and Alt+Shift
+  // are active is chosen in Settings -> Keyboard (keyboard.toml).
+  std::string keyboard_next_layout = "super+space";
+  std::string keyboard_prev_layout = "super+shift+space";
+  // The key held for the Tiling layout's shortcuts (Alt+Return, Alt+D, ...): "alt" or "super".
+  // Settings -> Keyboard changes it.
+  std::string tiling_modifier = "alt";
   // Key(s) that open the start menu when tapped on their own (Desktop layout), as
   // xkb keysym names separated by commas. Remap it here if your keyboard has no
   // Super key, e.g. "Menu" or "F12".

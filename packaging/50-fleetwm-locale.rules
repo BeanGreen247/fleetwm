@@ -1,0 +1,12 @@
+// Lets members of the administrative groups, in an active local session, run the locale and
+// font-cache builder that fleetwm-langpicker starts, without a password prompt (fleetwm has no
+// polkit authentication agent). Only that one program is allowed. Remove this file to require
+// full authentication again.
+polkit.addRule(function(action, subject) {
+  if (action.id == "org.freedesktop.policykit.exec" &&
+      action.lookup("program") == "/usr/local/bin/fleetwm-locale-build" &&
+      subject.local && subject.active &&
+      (subject.isInGroup("sudo") || subject.isInGroup("wheel") || subject.isInGroup("adm"))) {
+    return polkit.Result.YES;
+  }
+});

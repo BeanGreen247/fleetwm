@@ -12,7 +12,7 @@ Quick way to run the unit tests: `scripts/test.sh` (see `scripts/test.sh --help`
   a read-only kernel view) and the network icons, used by `fleetwm-settings` and `fleetwm-bar`. Test hooks:
   `FLEETWM_WPA_DIR` and `FLEETWM_SYS_NET` point it at a fake supplicant and a fake `/sys/class/net`.
 - `apps/` -- the programs you open and use: `audiomixer`, `launcher`, `powermenu`, `settings`,
-  `shortcuts` and `lockapplet` (the keep-awake padlock in the tray). New small tools go here,
+  `shortcuts`, `langpicker` (the language and layout checklist) and `lockapplet` (the keep-awake padlock in the tray). New small tools go here,
   one folder each with its own `meson.build`, added with `subdir('apps/<name>')`.
 
 ## Building from source

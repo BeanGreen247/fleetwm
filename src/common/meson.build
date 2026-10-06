@@ -84,6 +84,8 @@ libcommon_core = static_library(
     'window_list.cpp',
     'shortcut_list.cpp',
     'power_config.cpp',
+    'keyboard_config.cpp',
+    'xkb_rules.cpp',
     'lock_tooltip.cpp',
     'app_appearance.cpp',
   ),
