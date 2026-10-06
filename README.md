@@ -122,6 +122,15 @@ playing video, or anything else that asks the compositor, systemd or `org.freede
 to stay awake). The setting is not saved: it is off after every login, and it switches itself off
 if the applet quits.
 
+## Glass effects
+
+Settings -> Theme -> Glass effects switches between a flat, matte look and a see-through, frosted one. Glass
+applies to the bar (capsules, island and strip), the taskbar and its window buttons, window titlebars (with round
+glossy buttons), the start menu and the Alt+Tab panel. The frost is a small blurred copy of your wallpaper that is
+made once when the wallpaper changes and kept in `~/.cache/fleetwm`; surfaces only show the part of it behind them.
+Nothing is blurred while you work, so glass costs almost nothing. It does not blur windows that sit behind a
+surface, only the wallpaper.
+
 ## Keyboard
 
 Settings -> Keyboard lists the layouts you switch between, in order, with the one in use marked.

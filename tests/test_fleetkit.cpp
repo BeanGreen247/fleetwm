@@ -77,3 +77,34 @@ TEST(FleetkitColor, MalformedFallsBack) {
   EXPECT_DOUBLE_EQ(parse_color("#12345", fb).g, 0.2);
   EXPECT_DOUBLE_EQ(parse_color("#12zz56", fb).b, 0.3);
 }
+
+#include "backdrop.hpp"
+
+TEST(Backdrop, BlurKeepsAFlatPictureFlat) {
+  std::vector<uint8_t> px(8 * 8 * 4, 120);
+  fleetwm::kit::box_blur_rgba(px.data(), 8, 8, 2, 3);
+  for (uint8_t v : px) EXPECT_EQ(v, 120);
+}
+
+TEST(Backdrop, BlurSpreadsABrightPixelAndKeepsTheTotalCloseToConstant) {
+  std::vector<uint8_t> px(9 * 9 * 4, 0);
+  px[(4 * 9 + 4) * 4] = 255;
+  fleetwm::kit::box_blur_rgba(px.data(), 9, 9, 1, 1);
+  EXPECT_LT(px[(4 * 9 + 4) * 4], 255);
+  EXPECT_GT(px[(4 * 9 + 5) * 4], 0);
+  EXPECT_GT(px[(5 * 9 + 5) * 4], 0);
+}
+
+TEST(Backdrop, DownscaleKeepsTheAspectRatioAndNeverEnlarges) {
+  std::vector<uint8_t> src(400 * 200 * 4, 77);
+  uint8_t* out = nullptr;
+  int w = 0, h = 0;
+  fleetwm::kit::downscale_rgba(src.data(), 400, 200, 100, &out, &w, &h);
+  EXPECT_EQ(w, 100);
+  EXPECT_EQ(h, 50);
+  EXPECT_EQ(out[0], 77);
+  std::free(out);
+  fleetwm::kit::downscale_rgba(src.data(), 400, 200, 1000, &out, &w, &h);
+  EXPECT_EQ(w, 400);
+  std::free(out);
+}

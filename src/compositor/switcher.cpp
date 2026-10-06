@@ -12,6 +12,7 @@ extern "C" {
 #include <wlr/types/wlr_scene.h>
 }
 
+#include "backdrop.hpp"
 #include "fleetkit.hpp"
 #include "output.hpp"
 #include "pixel_buffer.hpp"
@@ -82,17 +83,30 @@ void WindowSwitcher::show(const std::vector<View*>& order, size_t selected) {
                                                               panel_w, panel_h, static_cast<int>(stride));
   cairo_t* cr = cairo_create(surf);
 
-  // The glass panel: translucent theme background with a soft light edge.
-  kit::Color bg = pal.bg_primary;
-  bg.a = 0.82;
-  kit::rounded_rect(cr, 0.5, 0.5, panel_w - 1, panel_h - 1, 14);
-  kit::set_source(cr, bg);
-  cairo_fill_preserve(cr);
-  kit::Color edge = pal.fg_primary;
-  edge.a = 0.35;
-  kit::set_source(cr, edge);
-  cairo_set_line_width(cr, 1);
-  cairo_stroke(cr);
+  if (server_->theme_config().glass) {
+    // Glass: the frosted wallpaper behind the panel, a tint, a sheen and a light rim. The panel buffer
+    // is drawn once per Alt+Tab step, so this costs nothing while idle.
+    cairo_surface_t* backdrop = kit::load_backdrop();
+    kit::GlassStyle st;
+    st.tint = pal.bg_primary;
+    st.tint_alpha = 0.62;
+    st.radius = 14;
+    kit::paint_glass(cr, backdrop, area.width, area.height, (area.width - panel_w) / 2.0, (area.height - panel_h) / 2.0, 0, 0,
+                     panel_w, panel_h, st);
+    if (backdrop) cairo_surface_destroy(backdrop);
+  } else {
+    // Matte: the translucent theme background with a soft light edge.
+    kit::Color bg = pal.bg_primary;
+    bg.a = 0.82;
+    kit::rounded_rect(cr, 0.5, 0.5, panel_w - 1, panel_h - 1, 14);
+    kit::set_source(cr, bg);
+    cairo_fill_preserve(cr);
+    kit::Color edge = pal.fg_primary;
+    edge.a = 0.35;
+    kit::set_source(cr, edge);
+    cairo_set_line_width(cr, 1);
+    cairo_stroke(cr);
+  }
 
   // The title of the window you are switching to, centered on top.
   const size_t sel = std::min(selected, order.size() - 1);

@@ -308,12 +308,13 @@ void View::update_titlebar() {
   const int height = titlebar_height();
   if (content_w == titlebar_w_ && height == titlebar_h_ && focused == rendered_.focused &&
       maximized == rendered_.maximized && pinned == rendered_.pinned &&
-      hover_button == rendered_.hover_button && rendered_.title == title) {
+      hover_button == rendered_.hover_button && rendered_.title == title &&
+      server->theme_config().glass == rendered_.glass) {
     return;
   }
   titlebar_w_ = content_w;
   titlebar_h_ = height;
-  rendered_ = {title, focused, maximized, pinned, hover_button};
+  rendered_ = {title, focused, maximized, pinned, hover_button, server->theme_config().glass};
   if (wlr_buffer* buffer = render_titlebar(content_w, rendered_, server->theme_config().titlebar)) {
     wlr_scene_buffer_set_buffer(titlebar, buffer);
     wlr_buffer_drop(buffer);

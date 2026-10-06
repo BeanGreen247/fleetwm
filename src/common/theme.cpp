@@ -163,6 +163,7 @@ ThemeConfig load_theme_config() {
   if (auto v = table["show_debug_overlay_on_startup"].value<bool>()) {
     config.show_debug_overlay_on_startup = *v;
   }
+  if (auto v = table["glass_effects"].value<bool>()) config.glass = *v;
 
   return config;
 }
@@ -191,6 +192,7 @@ void save_theme_config(const ThemeConfig& config) {
                           config.render_mode == RenderMode::Custom ? "custom" : "synced");
   table.insert_or_assign("custom_fps_lock", static_cast<int64_t>(config.custom_fps_lock));
   table.insert_or_assign("show_debug_overlay_on_startup", config.show_debug_overlay_on_startup);
+  table.insert_or_assign("glass_effects", config.glass);
 
   const TitlebarConfig& tb = config.titlebar;
   toml::table titlebar;

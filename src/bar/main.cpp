@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -35,6 +36,7 @@
 #include "fleetkit.hpp"
 #include "malloc_tuning.hpp"
 #include "theme.hpp"
+#include "backdrop.hpp"
 #include "keyboard_config.hpp"
 #include "network_glyphs.hpp"
 #include "network_parse.hpp"
@@ -109,13 +111,64 @@ struct Bar {
   // CPU / GPU sampling state.
   unsigned long long prev_idle = 0, prev_total = 0;
   bool have_prev = false;
-  int cpu_fd = -1, gpu_fd = -1;
-  std::string gpu_path;
-  bool gpu_nvidia = false;
+  int cpu_fd = -1;
+  // One entry per GPU found. AMD has a "busy percent" file; Intel has none, so its idle time (RC6
+  // residency) over wall-clock time gives the share of time it was awake; NVIDIA is asked through
+  // nvidia-smi in the background (one line per card).
+  struct Gpu {
+    enum class Kind { AmdBusy, IntelIdle, Nvidia } kind = Kind::AmdBusy;
+    std::string vendor, driver;  // "AMD", "amdgpu"
+    std::string path;            // the busy or idle-residency file
+    std::string freq_path, freq_max_path;
+    int fd = -1;
+    long long idle_prev_ms = -1;
+    std::chrono::steady_clock::time_point idle_prev_time;
+    int percent = -1;
+  };
+  std::vector<Gpu> gpus;
+  int nvidia_cards = 0;  // how many nvidia-smi reported, once it has answered
   int gpu_tick = 0;
   bool gpu_query_running = false;
+  bool has_nvidia_smi = false;
 
   // Hit rects, rebuilt on every draw.
+  // Glass look (theme.toml glass_effects): the blurred wallpaper behind translucent surfaces.
+  bool glass = false;
+  cairo_surface_t* backdrop = nullptr;
+  void refresh_glass() {
+    glass = theme.glass;
+    if (backdrop) cairo_surface_destroy(backdrop);
+    backdrop = glass ? load_backdrop() : nullptr;
+  }
+  // Paints the bar background of one rectangle: flat, or glass when that is on. (sx, sy) is where the
+  // rectangle sits on the screen, which is what the backdrop is lined up with.
+  void bar_surface(cairo_t* cr, double x, double y, double w, double h, double radius, double sx, double sy, double flat_alpha) {
+    if (glass) {
+      GlassStyle st;
+      st.tint = pal.bg_primary;
+      st.tint_alpha = 0.55;
+      st.radius = radius;
+      paint_glass(cr, backdrop, monitor_width(), monitor_height(), sx, sy, x, y, w, h, st);
+      return;
+    }
+    Color bg = pal.bg_primary;
+    bg.a = flat_alpha;
+    rounded_rect(cr, x, y, w, h, radius);
+    set_source(cr, bg);
+    cairo_fill(cr);
+  }
+  // Higher contrast than the theme's secondary text: glyphs and labels lean most of the way to the
+  // primary colour so they stay readable on translucent and busy backgrounds too.
+  Color icon_fg() const {
+    return {pal.fg_secondary.r + (pal.fg_primary.r - pal.fg_secondary.r) * 0.85,
+            pal.fg_secondary.g + (pal.fg_primary.g - pal.fg_secondary.g) * 0.85,
+            pal.fg_secondary.b + (pal.fg_primary.b - pal.fg_secondary.b) * 0.85, 1.0};
+  }
+  Color soft_fg() const {
+    return {pal.fg_secondary.r + (pal.fg_primary.r - pal.fg_secondary.r) * 0.6,
+            pal.fg_secondary.g + (pal.fg_primary.g - pal.fg_secondary.g) * 0.6,
+            pal.fg_secondary.b + (pal.fg_primary.b - pal.fg_secondary.b) * 0.6, 1.0};
+  }
   Rect net_rect, layout_rect;
   std::vector<KeyboardLayout> kb_layouts;  // from the compositor (LAYOUTS lines)
   int kb_current = 0;
@@ -503,8 +556,7 @@ struct Bar {
     }
     const std::string label = s.substr(0, sp + 1), value = s.substr(sp + 1);
     const double lw = measure_text(cr, label, font).width;
-    Color dim = pal.fg_secondary;
-    dim.a = 0.75;
+    Color dim = soft_fg();
     draw_text(cr, label, x, base, font, dim);
     const bool na = value == "N/A" || value == "--%";
     draw_text(cr, value, x + lw, base, font, na ? dim : pal.fg_primary);
@@ -526,7 +578,7 @@ struct Bar {
 
     const WorkspaceColors& wc = config.workspace_colors;
     const Color in_bg = parse_color(wc.inactive_bg, {0, 0, 0, 0}),
-                in_fg = parse_color(wc.inactive_fg, pal.fg_secondary),
+                in_fg = parse_color(wc.inactive_fg, soft_fg()),
                 ac_bg = parse_color(wc.active_bg, pal.accent),
                 ac_fg = parse_color(wc.active_fg, pal.bg_primary);
     const double btn_r = wc.buttons_rounded ? kWsH / 2.0 : 0;
@@ -544,17 +596,13 @@ struct Bar {
       clock_x = cx + pad;
       right_x = W - right_pill + pad;
       auto pill = [&](double x, double w) {
-        rounded_rect(cr, x, 0, w, H, radius);
-        set_source(cr, bg);
-        cairo_fill(cr);
+        bar_surface(cr, x, 0, w, H, radius, kCapsuleSideMargin + x, kCapsuleTopMargin, 0.94);
       };
       pill(0, left_pill);
       pill(cx, clock_pill);
       pill(W - right_pill, right_pill);
     } else {
-      rounded_rect(cr, 0, 0, W, H, radius);
-      set_source(cr, bg);
-      cairo_fill(cr);
+      bar_surface(cr, 0, 0, W, H, radius, island ? island_left() : 0, island ? kIslandTopMargin : 0, 0.94);
       const double nat = natural_width(m);
       const double spacer = std::max(0.0, (W - nat) / 2.0);
       ws_x = kMargin;
@@ -659,17 +707,17 @@ struct Bar {
     } else {
       net_rect = {};
     }
-    draw_mode_glyph(cr, rx + kModeW / 2, H / 2.0, pal.fg_secondary);
+    draw_mode_glyph(cr, rx + kModeW / 2, H / 2.0, icon_fg());
     rx += kModeW + kRightGap;
     const double bw_total = battery_w(m);
     battery_rect = {rx, 0, bw_total, static_cast<double>(H)};
     if (battery.available) {
       if (battery.charging) draw_bolt(cr, rx + kStatPad / 2 + kBoltW / 2.0, H / 2.0);
-      draw_battery(cr, rx + kStatPad / 2 + kBoltW, (H - 14) / 2.0, pal.fg_secondary);
+      draw_battery(cr, rx + kStatPad / 2 + kBoltW, (H - 14) / 2.0, icon_fg());
       // The percentage as readable text beside the icon.
       draw_text(cr, battery_percent_text(), rx + kBatteryW + 2, base, kFont, pal.fg_primary);
     } else {
-      draw_plug(cr, rx + kBatteryW / 2, H / 2.0, pal.fg_secondary);
+      draw_plug(cr, rx + kBatteryW / 2, H / 2.0, icon_fg());
     }
     rx += bw_total + kRightGap;
 
@@ -683,7 +731,7 @@ struct Bar {
       set_source(cr, hot);
       cairo_fill(cr);
     }
-    draw_power_glyph(cr, rx + kPowerW / 2, H / 2.0, hover_power ? pal.accent : pal.fg_secondary);
+    draw_power_glyph(cr, rx + kPowerW / 2, H / 2.0, hover_power ? pal.accent : icon_fg());
       return rx + kPowerW;
   }
 
@@ -731,7 +779,8 @@ struct Bar {
   void draw_net_glyph(cairo_t* cr, double cx, double cy, double size) {
     const bool up = net_dev.state == net::State::Connected;
     const bool off = net_dev.state == net::State::Unavailable;
-    const net::GlyphColor fg{pal.fg_secondary.r, pal.fg_secondary.g, pal.fg_secondary.b, 1.0};
+    const Color ic = icon_fg();
+    const net::GlyphColor fg{ic.r, ic.g, ic.b, 1.0};
     if (net_dev.kind == net::Kind::Wifi)
       net::draw_wifi_glyph(cr, cx, cy, size, up ? net::wifi_arcs_lit(net_dev.signal > 0 ? net_dev.signal : 100) : 0, fg, off);
     else
@@ -861,6 +910,23 @@ struct Bar {
       rounded_rect(cr, r.x, r.y, r.w, r.h, radius);
       set_source(cr, with_alpha(pal.accent, active ? 0.22 : 0.12));
       cairo_fill(cr);
+      if (glass) {  // a sheen over the button and a light rim
+        cairo_save(cr);
+        rounded_rect(cr, r.x, r.y, r.w, r.h, radius);
+        cairo_clip(cr);
+        cairo_pattern_t* sheen = cairo_pattern_create_linear(0, r.y, 0, r.y + r.h);
+        cairo_pattern_add_color_stop_rgba(sheen, 0, 1, 1, 1, active ? 0.30 : 0.18);
+        cairo_pattern_add_color_stop_rgba(sheen, 0.5, 1, 1, 1, 0.04);
+        cairo_pattern_add_color_stop_rgba(sheen, 1, 1, 1, 1, 0.0);
+        cairo_set_source(cr, sheen);
+        cairo_paint(cr);
+        cairo_pattern_destroy(sheen);
+        cairo_restore(cr);
+        rounded_rect(cr, r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1, radius);
+        set_source(cr, with_alpha({1, 1, 1, 1}, active ? 0.40 : 0.25));
+        cairo_set_line_width(cr, 1);
+        cairo_stroke(cr);
+      }
     }
     const double isz = vertical() ? 28 : 22;
     const double ix = with_title ? r.x + 9 : r.x + (r.w - isz) / 2, iy = r.y + (r.h - isz) / 2;
@@ -869,12 +935,12 @@ struct Bar {
       const double tx = ix + isz + 8;
       const std::string label = fit_text(cr, w.title.empty() ? w.app_id : w.title, kFont, r.x + r.w - 8 - tx);
       const TextExtents te = measure_text(cr, label, kFont);
-      Color c = active ? pal.fg_primary : pal.fg_secondary;
+      Color c = active ? pal.fg_primary : soft_fg();
       if (w.minimized) c.a = 0.6;
       draw_text(cr, label, tx, r.y + (r.h - te.height) / 2 + te.ascent, kFont, c, active);
     }
     // Indicator on the edge facing the desktop-side of the button.
-    set_source(cr, active ? pal.accent : with_alpha(pal.fg_secondary, w.minimized ? 0.25 : 0.45));
+    set_source(cr, active ? pal.accent : with_alpha(icon_fg(), w.minimized ? 0.4 : 0.7));
     if (!vertical() && active) {
       // The active button's line runs the full width of the bottom edge and follows the corner
       // curve, instead of stopping short of it or poking out past it.
@@ -899,11 +965,13 @@ struct Bar {
   void draw_taskbar(cairo_t* cr, int W, int H) {
     Metrics m{cr};
     rebuild_shown();
-    Color bg = pal.bg_primary;
-    bg.a = 0.97;
-    cairo_rectangle(cr, 0, 0, W, H);
-    set_source(cr, bg);
-    cairo_fill(cr);
+    {
+      const int mw = monitor_width(), mh = monitor_height();
+      double sx = 0, sy = 0;  // where the taskbar sits on the screen
+      if (tb_pos == TaskbarPosition::Bottom) sy = mh - H;
+      else if (tb_pos == TaskbarPosition::Right) sx = mw - W;
+      bar_surface(cr, 0, 0, W, H, 0, sx, sy, 0.97);
+    }
     // Hairline on the edge that faces the desktop.
     set_source(cr, with_alpha(pal.fg_secondary, 0.22));
     switch (tb_pos) {
@@ -938,7 +1006,7 @@ struct Bar {
       const double block = te.height + 1 + de.height, top = (H - block) / 2.0;
       draw_text(cr, time_line, clock_x + (clock_w - time_w) / 2, top + te.ascent, kFont, pal.accent, true);
       draw_text(cr, date_line, clock_x + (clock_w - date_w) / 2, top + te.height + 1 + de.ascent, kSmallFont,
-                with_alpha(pal.fg_secondary, 0.85));
+                with_alpha(icon_fg(), 0.95));
     }
     draw_status_group(cr, m, right_x, H, base, btn_r);
 
@@ -966,9 +1034,9 @@ struct Bar {
     const bool na = value == "N/A" || value == "--%";
     const TextExtents le = measure_text(cr, label, 10.5), ve = measure_text(cr, value, kFont);
     draw_text(cr, label, r.x + (r.w - le.width) / 2, r.y + 4 + le.ascent, 10.5,
-              with_alpha(pal.fg_secondary, 0.75));
+              with_alpha(soft_fg(), 1.0));
     draw_text(cr, value, r.x + (r.w - m.text_w(value)) / 2, r.y + 6 + le.height + ve.ascent - 2, kFont,
-              na ? with_alpha(pal.fg_secondary, 0.75) : pal.fg_primary);
+              na ? with_alpha(soft_fg(), 1.0) : pal.fg_primary);
   }
 
   void draw_taskbar_vertical(cairo_t* cr, Metrics& m, int W, int H) {
@@ -1025,14 +1093,14 @@ struct Bar {
       net_rect = {};
     }
     // Power-mode glyph and battery/plug on one row.
-    draw_mode_glyph(cr, W / 2.0 - 17, y + kBat / 2, pal.fg_secondary);
+    draw_mode_glyph(cr, W / 2.0 - 17, y + kBat / 2, icon_fg());
     battery_rect = {W / 2.0 - 4, y, W / 2.0 - 2, kBat};
     const double bcx = W / 2.0 + 12;
     if (battery.available) {
       if (battery.charging) draw_bolt(cr, bcx - 15, y + kBat / 2);
-      draw_battery(cr, bcx - 13, y + (kBat - 14) / 2.0, pal.fg_secondary);
+      draw_battery(cr, bcx - 13, y + (kBat - 14) / 2.0, icon_fg());
     } else {
-      draw_plug(cr, bcx, y + kBat / 2, pal.fg_secondary);
+      draw_plug(cr, bcx, y + kBat / 2, icon_fg());
     }
     y += kBat;
     // Clock: time over date.
@@ -1043,7 +1111,7 @@ struct Bar {
     draw_text(cr, time_line, (W - te.width) / 2, y + 8 + te.ascent, kFont, pal.accent, true);
     if (!date_line.empty()) {
       const double dw = measure_text(cr, date_line, 10.5).width;
-      draw_text(cr, date_line, (W - dw) / 2, y + 10 + te.height + 8, 10.5, with_alpha(pal.fg_secondary, 0.85));
+      draw_text(cr, date_line, (W - dw) / 2, y + 10 + te.height + 8, 10.5, with_alpha(icon_fg(), 0.95));
     }
     y += kClock;
     // Power button.
@@ -1053,7 +1121,7 @@ struct Bar {
       set_source(cr, with_alpha(pal.accent, 0.18));
       cairo_fill(cr);
     }
-    draw_power_glyph(cr, W / 2.0, y + kBtn / 2, hover_power ? pal.accent : pal.fg_secondary);
+    draw_power_glyph(cr, W / 2.0, y + kBtn / 2, hover_power ? pal.accent : icon_fg());
 
     // Start button and window buttons.
     start_rect = {bx, 6, bw, kBtn};
@@ -1151,17 +1219,52 @@ struct Bar {
     return changed;
   }
 
+  static std::string read_word(const std::string& path) {
+    std::string w;
+    std::ifstream(path) >> w;
+    return w;
+  }
+  static long long read_number(const std::string& path) {
+    long long v = -1;
+    std::ifstream(path) >> v;
+    return v;
+  }
+
   void init_gpu() {
     for (int card = 0; card < 8; ++card) {
       const std::string base = "/sys/class/drm/card" + std::to_string(card);
+      const std::string vendor_id = read_word(base + "/device/vendor");
+      if (vendor_id.empty()) continue;
+      std::error_code ec;
+      const std::string driver = std::filesystem::read_symlink(base + "/device/driver", ec).filename().string();
+      Gpu g;
+      g.driver = driver;
+      if (vendor_id == "0x1002") g.vendor = "AMD";
+      else if (vendor_id == "0x8086") g.vendor = "Intel";
+      else if (vendor_id == "0x10de") g.vendor = "NVIDIA";
+      else g.vendor = vendor_id;
       if (std::ifstream(base + "/device/gpu_busy_percent").good()) {
-        gpu_path = base + "/device/gpu_busy_percent";
-        return;
+        g.kind = Gpu::Kind::AmdBusy;
+        g.path = base + "/device/gpu_busy_percent";
+      } else if (vendor_id == "0x8086") {
+        for (const char* rel : {"/gt/gt0/rc6_residency_ms", "/power/rc6_residency_ms", "/device/tile0/gt0/gtidle/idle_residency_ms"})
+          if (std::ifstream(base + rel).good()) {
+            g.kind = Gpu::Kind::IntelIdle;
+            g.path = base + rel;
+            break;
+          }
+        for (const char* rel : {"/gt/gt0/rps_act_freq_mhz", "/gt_act_freq_mhz", "/device/tile0/gt0/freq0/act_freq"})
+          if (std::ifstream(base + rel).good()) {
+            g.freq_path = base + rel;
+            break;
+          }
+        for (const char* rel : {"/gt/gt0/rps_RP0_freq_mhz", "/gt_RP0_freq_mhz", "/device/tile0/gt0/freq0/max_freq"})
+          if (std::ifstream(base + rel).good()) {
+            g.freq_max_path = base + rel;
+            break;
+          }
       }
-      if (std::ifstream(base + "/gt_busy_percent").good()) {
-        gpu_path = base + "/gt_busy_percent";
-        return;
-      }
+      if (!g.path.empty()) gpus.push_back(std::move(g));
     }
     if (const char* path = std::getenv("PATH")) {
       std::string p = path;
@@ -1171,44 +1274,81 @@ struct Bar {
         if (e == std::string::npos) e = p.size();
         const std::string cand = p.substr(pos, e - pos) + "/nvidia-smi";
         if (access(cand.c_str(), X_OK) == 0) {
-          gpu_nvidia = true;
+          has_nvidia_smi = true;
           break;
         }
         pos = e + 1;
       }
     }
-    if (!gpu_nvidia) gpu_text = "GPU N/A";
+    if (gpus.empty() && !has_nvidia_smi) gpu_text = "GPU N/A";
   }
 
+  // "GPU 12%" for one GPU; "GPU1 12%  GPU2 40%" for several.
+  std::string build_gpu_text() const {
+    struct Item {
+      int percent;
+    };
+    std::vector<int> values;
+    for (const Gpu& g : gpus) values.push_back(g.percent);
+    for (int i = 0; i < nvidia_cards; ++i) values.push_back(nvidia_percent.size() > static_cast<size_t>(i) ? nvidia_percent[static_cast<size_t>(i)] : -1);
+    if (values.empty()) return "GPU N/A";
+    auto one = [](int v) { return v < 0 ? std::string("--%") : std::to_string(v) + "%"; };
+    if (values.size() == 1) return "GPU " + one(values[0]);
+    std::string t;
+    for (size_t i = 0; i < values.size(); ++i) t += (i ? "  GPU" : "GPU") + std::to_string(i + 1) + " " + one(values[i]);
+    return t;
+  }
+  std::vector<int> nvidia_percent;
+
   bool update_gpu() {
-    if (!gpu_path.empty()) {
-      if (gpu_fd < 0) {
-        gpu_fd = open(gpu_path.c_str(), O_RDONLY | O_CLOEXEC);
-        if (gpu_fd < 0) return false;
+    bool changed = false;
+    for (Gpu& g : gpus) {
+      int pct = g.percent;
+      if (g.kind == Gpu::Kind::AmdBusy) {
+        if (g.fd < 0) g.fd = open(g.path.c_str(), O_RDONLY | O_CLOEXEC);
+        if (g.fd < 0) continue;
+        char buf[32];
+        const ssize_t got = pread(g.fd, buf, sizeof buf - 1, 0);
+        if (got <= 0) continue;
+        buf[got] = 0;
+        pct = std::clamp(std::atoi(buf), 0, 100);
+      } else {
+        const long long idle_ms = read_number(g.path);
+        if (idle_ms < 0) continue;
+        const auto now = std::chrono::steady_clock::now();
+        if (g.idle_prev_ms >= 0) {
+          const double wall_ms = std::chrono::duration<double, std::milli>(now - g.idle_prev_time).count();
+          if (wall_ms < 50) continue;
+          pct = static_cast<int>(100.0 * (1.0 - std::clamp((idle_ms - g.idle_prev_ms) / wall_ms, 0.0, 1.0)) + 0.5);
+        }
+        g.idle_prev_ms = idle_ms;
+        g.idle_prev_time = now;
       }
-      char buf[32];
-      const ssize_t got = pread(gpu_fd, buf, sizeof buf - 1, 0);
-      if (got <= 0) return false;
-      buf[got] = 0;
-      return set_if_changed(gpu_text, "GPU " + std::to_string(std::atoi(buf)) + "%");
+      if (pct != g.percent) {
+        g.percent = pct;
+        changed = true;
+      }
     }
-    if (gpu_nvidia && ++gpu_tick >= 3 && !gpu_query_running) {
+    if (has_nvidia_smi && ++gpu_tick >= 3 && !gpu_query_running) {
       gpu_tick = 0;
       gpu_query_running = true;
-      // nvidia-smi can take a while; keep it off the UI thread.
+      // nvidia-smi can take a while; keep it off the UI thread. It prints one line per card.
       std::thread([this] {
-        int pct = -1;
+        std::vector<int> pcts;
         if (FILE* p = popen("nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits 2>/dev/null", "r")) {
-          if (std::fscanf(p, "%d", &pct) != 1) pct = -1;
+          int v = 0;
+          while (std::fscanf(p, "%d", &v) == 1) pcts.push_back(std::clamp(v, 0, 100));
           pclose(p);
         }
-        app.post([this, pct] {
+        app.post([this, pcts] {
           gpu_query_running = false;
-          if (pct >= 0 && set_if_changed(gpu_text, "GPU " + std::to_string(pct) + "%")) redraw();
+          nvidia_percent = pcts;
+          nvidia_cards = static_cast<int>(pcts.size());
+          if (set_if_changed(gpu_text, build_gpu_text())) redraw();
         });
       }).detach();
     }
-    return false;
+    return (changed && set_if_changed(gpu_text, build_gpu_text()));
   }
 
   struct MemInfo {
@@ -1286,9 +1426,29 @@ struct Bar {
   }
 
   std::string gpu_tooltip_text() {
-    if (!gpu_path.empty()) return gpu_text + " busy\nSource: " + gpu_path;
-    if (gpu_nvidia) return gpu_text + " busy\nSource: nvidia-smi";
-    return "No GPU utilisation source found\n(software rendering or unsupported driver)";
+    std::string t;
+    int n = 0;
+    for (const Gpu& g : gpus) {
+      if (n++) t += "\n\n";
+      t += (gpus.size() + nvidia_cards > 1 ? "GPU" + std::to_string(n) + ": " : std::string()) + g.vendor + " (" + g.driver + ")  " +
+           (g.percent < 0 ? std::string("--") : std::to_string(g.percent)) + "%";
+      if (g.kind == Gpu::Kind::IntelIdle) {
+        t += " active";
+        const long long cur = g.freq_path.empty() ? -1 : read_number(g.freq_path);
+        const long long max = g.freq_max_path.empty() ? -1 : read_number(g.freq_max_path);
+        if (cur >= 0) t += "\nClock: " + std::to_string(cur) + (max > 0 ? " of " + std::to_string(max) : std::string()) + " MHz";
+      } else {
+        t += " busy";
+      }
+    }
+    for (int i = 0; i < nvidia_cards; ++i) {
+      if (n++) t += "\n\n";
+      const int v = nvidia_percent.size() > static_cast<size_t>(i) ? nvidia_percent[static_cast<size_t>(i)] : -1;
+      t += (gpus.size() + nvidia_cards > 1 ? "GPU" + std::to_string(n) + ": " : std::string()) + "NVIDIA  " +
+           (v < 0 ? std::string("--") : std::to_string(v)) + "% busy";
+    }
+    if (t.empty()) return "No GPU utilisation source found\n(software rendering or unsupported driver)";
+    return t;
   }
 
   std::string disk_tooltip_text() {
@@ -1610,6 +1770,7 @@ struct Bar {
     theme = load_theme_config();
     config = load_bar_config();
     pal = load_palette(theme);
+    refresh_glass();
     apply_layout();
     clock_tick();  // show a changed hour format / time zone right away
     redraw();
@@ -1626,6 +1787,7 @@ int main() {
   B.theme = load_theme_config();
   B.config = load_bar_config();
   B.pal = load_palette(B.theme);
+  B.refresh_glass();
   if (!B.app.connect()) return 1;
 
   Surface::Config cfg;

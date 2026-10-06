@@ -29,6 +29,7 @@ struct TitlebarState {
   bool maximized = false;
   bool pinned = false;
   int hover_button = geom::kBtnNone;
+  bool glass = false;  // theme.toml glass_effects: translucent, sheen, round glossy buttons
 };
 
 // Returns a new buffer (caller owns one reference: wlr_buffer_drop() it once
