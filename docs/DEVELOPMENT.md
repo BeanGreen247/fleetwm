@@ -270,3 +270,11 @@ compiles alone and fails there; 0.3.0 shipped with exactly that (`kPad` in the o
 3. Give file-scope helpers and constants in an anonymous namespace a per-file prefix (`kOvPad`,
    `ov_read_rss_mb`) or put what is shared in a header.
 
+## The power menu and polkit
+
+The menu has no password prompt (Fleetwm has no polkit agent), so what it runs must be allowed without one.
+`apps/powermenu/power_actions.hpp` lists the command and the polkit actions of each entry,
+`packaging/50-fleetwm-power.rules` allows them for an active local session, and `install.sh` copies every
+`packaging/*.rules` into `/etc/polkit-1/rules.d`. `scripts/test.sh power` checks all three, runs the rules in
+node (skipped when node is missing), and checks the icon drawing. Adding a power action means adding it to
+`power_actions.hpp`; the tests then fail until the rule allows it.

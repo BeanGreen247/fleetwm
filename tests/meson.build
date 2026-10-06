@@ -30,12 +30,16 @@ fleetwm_test_sources = files(
   'test_keyboard.cpp',
   'test_app_appearance.cpp',
   'test_settings_pages.cpp',
+  'test_power_menu.cpp',
 )
 
 fleetwm_unit_tests = executable(
   'fleetwm-unit-tests',
   fleetwm_test_sources,
   dependencies: [gtest_dep, libcommon_core_dep, libfleetkit_dep, libnetmgr_dep],
+  # the power menu's header-only parts, and the source tree for the tests that read the polkit rule and install.sh
+  include_directories: include_directories('../apps/powermenu'),
+  cpp_args: ['-DFLEETWM_SOURCE_DIR="' + meson.project_source_root() + '"'],
 )
 
 test('fleetwm-unit-tests', fleetwm_unit_tests, protocol: 'gtest')
@@ -54,6 +58,7 @@ test_areas = {
   'fleetkit': 'DesktopEntryExec.*:FleetkitColor.*:GlassCache.*',
   'network': 'NetworkParse.*:SystemDevices.*:WpaFixture.*',
   'keyboard': 'KeyboardConfigTest.*:KeyboardNames.*:XkbRules.*:Locales.*',
+  'power': 'PowerActions.*:PowerPolkitRule.*:PowerInstaller.*:PowerIcons.*:PolkitRules.*:PolkitRuleBehaviour.*',
 }
 foreach area, filter : test_areas
   test(area, fleetwm_unit_tests, args: ['--gtest_filter=' + filter], suite: 'areas', protocol: 'gtest')

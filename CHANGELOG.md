@@ -20,6 +20,13 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
   switcher); the overlay's file-scope names are prefixed, and a second latent clash (`focused_view` in
   `input.cpp` and `output.cpp`) is renamed.
 
+- Power menu: Sleep, Reboot and Shut down work without a password for whoever is at the keyboard. The installer
+  now ships `50-fleetwm-power.rules` (logind's own rules ask an administrator whenever another user is logged in,
+  and some distributions differ). New unit tests run the rules in node and read the installer to be sure every
+  shipped rule is installed (`scripts/test.sh power`).
+- Power menu icons redrawn as one outline set on a 24 px grid: the old set mixed a filled moon with thin outlines,
+  sat off centre and had a glitchy reboot arrow. Tests check size, weight and centring.
+
 ### Added (tooling)
 - `scripts/check-unity-collisions.py` (also runs with `scripts/test.sh` and `meson test --suite static`) and
   `scripts/check-unity.sh` (a real unity build that reports every error, then the unit tests) so a clash like
