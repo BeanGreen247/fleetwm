@@ -85,6 +85,12 @@ enum class TaskbarPosition {
 constexpr int kTaskbarThickness = 44;
 constexpr int kTaskbarWidth = 76;
 
+// The Tiling-layout bar: its height and, for the Capsules and Island styles, the gap above it and beside it.
+// Shared by the bar and by programs that open a popup next to it (the volume mixer).
+constexpr int kBarHeight = 30;
+constexpr int kCapsuleTopMargin = 6, kCapsuleSideMargin = 8;
+constexpr int kIslandTopMargin = 5, kIslandSideInset = 8;
+
 struct BarConfig {
   ClockFormat clock;
   WorkspaceColors workspace_colors;

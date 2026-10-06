@@ -33,6 +33,7 @@ extern "C" {
 #include "input.hpp"
 #include "ipc_server.hpp"
 #include "layer_surface.hpp"
+#include "popup_namespaces.hpp"
 #include "malloc_tuning.hpp"
 #include "output.hpp"
 #include "paths_config.h"
@@ -840,15 +841,14 @@ void server_cursor_button(wl_listener* listener, void* data) {
   const bool hit_something =
       scene_node_at(server, server->cursor()->x, server->cursor()->y, &sx, &sy, &hit);
 
-  // The start menu is only as big as its card, so a press anywhere else is what closes it. The press is
+  // The start menu and the volume mixer are only as big as their card, so a press anywhere else is what closes them. The press is
   // consumed (as when the menu covered the whole output): clicking the Start button again then just
   // closes the menu instead of opening it anew.
   for (const std::unique_ptr<LayerSurface>& ls : server->layer_surfaces) {
     wlr_layer_surface_v1* menu = ls->layer_surface;
-    if (!menu->surface->mapped || menu->namespace_ == nullptr || std::strcmp(menu->namespace_, "fleetwm-start-menu") != 0)
-      continue;
+    if (!menu->surface->mapped || !dismisses_on_outside_click(menu->namespace_)) continue;
     if (hit_something && hit.surface != nullptr && wlr_surface_get_root_surface(hit.surface) == menu->surface) break;
-    wlr_layer_surface_v1_destroy(menu);  // sends "closed"; the launcher quits
+    wlr_layer_surface_v1_destroy(menu);  // sends "closed"; the popup's program quits
     server->swallow_release = true;
     return;
   }

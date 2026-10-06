@@ -29,6 +29,7 @@
 #include "fleetkit.hpp"
 #include "icon_theme.hpp"
 #include "ipc_client.hpp"
+#include "popup_namespaces.hpp"
 #include "malloc_tuning.hpp"
 #include "mimeapps.hpp"
 #include "theme.hpp"
@@ -1035,7 +1036,7 @@ int main(int argc, char** argv) {
       cfg.margin_bottom = off;
       L.origin_y = L.out_h - off - sh;
     }
-    cfg.name = "fleetwm-start-menu";
+    cfg.name = fleetwm::kStartMenuNamespace;
   }
   cfg.exclusive_zone = -1;
   cfg.keyboard_mode = ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE;

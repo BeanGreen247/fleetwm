@@ -56,13 +56,10 @@ using namespace fleetwm::kit;
 using fleetwm::bar::Tray;
 using fleetwm::bar::VolumeSource;
 
-constexpr int kBarHeight = 30;
-constexpr int kCapsuleTopMargin = 6, kCapsuleSideMargin = 8;
+// kBarHeight, kCapsuleTopMargin, kCapsuleSideMargin, kIslandTopMargin and kIslandSideInset: common/bar_config.hpp
 constexpr double kWsH = 22;  // workspace button height
 constexpr int kReconnectMs = 2000;
 constexpr int kIslandMinMonitorWidth = 1366;
-constexpr int kIslandTopMargin = 5;
-constexpr int kIslandSideInset = 8;
 constexpr double kFont = 13.5;
 constexpr uint32_t kBtnMiddle = 0x112;
 constexpr uint32_t kBtnLeft = 0x110, kBtnRight = 0x111;
