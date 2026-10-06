@@ -210,6 +210,21 @@ void IpcServer::handle_line(Client& client, const std::string& line) {
     return;
   }
 
+  if (line == "IDLE_INHIBIT 1" || line == "IDLE_INHIBIT 0") {
+    const bool on = line.back() == '1';
+    if (on != client.idle_inhibiting) {
+      client.idle_inhibiting = on;
+      server_->ipc_idle_inhibit(on);
+    }
+    return;
+  }
+
+  if (line == "IDLE_INHIBITORS?") {
+    const std::string reply = server_->idle_inhibitor_report() + "END\n";
+    send(client.fd, reply.data(), reply.size(), MSG_NOSIGNAL);
+    return;
+  }
+
   if (line == "LOCK") {
     server_->request_lock();
     return;
@@ -293,6 +308,7 @@ void IpcServer::drop_client(int fd) {
   if (it == clients_.end()) {
     return;
   }
+  if (it->idle_inhibiting) server_->ipc_idle_inhibit(false);
   wl_event_source_remove(it->source);
   close(it->fd);
   clients_.erase(it);

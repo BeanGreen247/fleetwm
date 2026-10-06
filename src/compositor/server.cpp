@@ -1467,6 +1467,7 @@ bool Server::init() {
 
   spawn_autostart("fleetwm-bar", FLEETWM_BINDIR "/fleetwm-bar");
   spawn_autostart("fleetwm-wallpaper", FLEETWM_BINDIR "/fleetwm-wallpaper");
+  spawn_autostart("fleetwm-lockapplet", FLEETWM_BINDIR "/fleetwm-lockapplet");
 
   return true;
 }

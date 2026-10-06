@@ -54,6 +54,10 @@ struct Tray::Impl {
   Impl(kit::App& a, std::function<void()> cb) : app(a), on_change(std::move(cb)) {}
 
   ~Impl() {
+    for (TooltipRequest* r : tooltip_requests) {
+      if (r->slot) sd_bus_slot_unref(r->slot);
+      delete r;
+    }
     if (watch_id) app.unwatch(watch_id);
     for (auto& e : entries) free_entry(*e);
     entries.clear();
@@ -294,6 +298,57 @@ struct Tray::Impl {
                              kItemIface, method, nullptr, nullptr, "ii", x, y);
     sd_bus_flush(bus);
   }
+
+  struct TooltipRequest {
+    std::function<void(std::string)> done;
+    sd_bus_slot* slot = nullptr;
+    Impl* owner = nullptr;
+  };
+  std::vector<TooltipRequest*> tooltip_requests;
+
+  void tooltip(size_t index, std::function<void(std::string)> done) {
+    if (index >= entries.size() || !bus) return done("");
+    const Entry& e = *entries[index];
+    auto* req = new TooltipRequest{std::move(done), nullptr, this};
+    tooltip_requests.push_back(req);
+    const int r = sd_bus_call_method_async(
+        bus, &req->slot, e.pub.bus_name.c_str(), e.pub.object_path.c_str(),
+        "org.freedesktop.DBus.Properties", "Get",
+        [](sd_bus_message* m, void* ud, sd_bus_error*) -> int {
+          auto* rq = static_cast<TooltipRequest*>(ud);
+          std::string text;
+          // ToolTip is (sa(iiay)ss): icon name, icon pixmaps, title, description.
+          if (!sd_bus_message_is_method_error(m, nullptr) &&
+              sd_bus_message_enter_container(m, 'v', "(sa(iiay)ss)") >= 0 &&
+              sd_bus_message_enter_container(m, 'r', "sa(iiay)ss") >= 0) {
+            const char *icon = nullptr, *title = nullptr, *desc = nullptr;
+            sd_bus_message_read(m, "s", &icon);
+            sd_bus_message_skip(m, "a(iiay)");
+            if (sd_bus_message_read(m, "ss", &title, &desc) >= 0) {
+              text = title ? title : "";
+              if (desc && *desc) text += (text.empty() ? "" : "\n") + std::string(desc);
+            }
+          }
+          Impl* owner = rq->owner;
+          auto done = std::move(rq->done);
+          owner->tooltip_requests.erase(
+              std::remove(owner->tooltip_requests.begin(), owner->tooltip_requests.end(), rq),
+              owner->tooltip_requests.end());
+          sd_bus_slot_unref(rq->slot);
+          delete rq;
+          done(text);
+          return 0;
+        },
+        req, "ss", kItemIface, "ToolTip");
+    if (r < 0) {
+      tooltip_requests.pop_back();
+      auto d = std::move(req->done);
+      delete req;
+      d("");
+      return;
+    }
+    sd_bus_flush(bus);
+  }
 };
 
 // ---- extern "C" handlers referenced by tray_vtable.c ----
@@ -342,5 +397,6 @@ Tray::~Tray() = default;
 void Tray::start() { impl_->start(); }
 const std::vector<Tray::Item>& Tray::items() const { return impl_->view; }
 void Tray::click(size_t index, uint32_t button, int x, int y) { impl_->click(index, button, x, y); }
+void Tray::tooltip(size_t index, std::function<void(std::string)> done) { impl_->tooltip(index, std::move(done)); }
 
 }  // namespace fleetwm::bar

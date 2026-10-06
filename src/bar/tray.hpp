@@ -32,6 +32,10 @@ class Tray {
   const std::vector<Item>& items() const;
   // button: Linux evdev code (BTN_LEFT=0x110, BTN_RIGHT=0x111, BTN_MIDDLE=0x112)
   void click(size_t index, uint32_t button, int x, int y);
+  // Asks the item for its hover text (the ToolTip property: title, then description) and
+  // calls `done` with it; "" when the item has none. The text is fetched live, so items can
+  // build it at the moment you hover.
+  void tooltip(size_t index, std::function<void(std::string)> done);
 
  public:
   struct Impl;  // public only so the extern "C" sd-bus callbacks can name it

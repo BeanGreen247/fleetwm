@@ -5,7 +5,9 @@
 #include <unistd.h>
 
 #include <chrono>
+#include <cstdio>
 #include <cstdlib>
+#include <string>
 
 #include "battery_reading.hpp"
 #include "output.hpp"
@@ -23,8 +25,21 @@ int idle_timer_cb(void* data) {
 
 struct IdleInhibitor {
   Server* server;
+  wlr_idle_inhibitor_v1* inhibitor;
   wl_listener destroy;
 };
+
+// Name of the program behind `pid`, from /proc/<pid>/comm.
+std::string program_name(int pid) {
+  std::string name;
+  if (FILE* f = std::fopen(("/proc/" + std::to_string(pid) + "/comm").c_str(), "r")) {
+    char buf[64] = {};
+    if (std::fgets(buf, sizeof buf, f)) name = buf;
+    std::fclose(f);
+  }
+  while (!name.empty() && (name.back() == '\n' || name.back() == ' ')) name.pop_back();
+  return name.empty() ? "unknown" : name;
+}
 
 }  // namespace
 
@@ -38,20 +53,36 @@ void Server::init_idle() {
   new_idle_inhibitor_.notify = [](wl_listener* listener, void* data) {
     Server* server = wl_container_of(listener, server, new_idle_inhibitor_);
     auto* inhibitor = static_cast<wlr_idle_inhibitor_v1*>(data);
-    auto* state = new IdleInhibitor{server, {}};
+    auto* state = new IdleInhibitor{server, inhibitor, {}};
     state->destroy.notify = [](wl_listener* l, void*) {
       IdleInhibitor* s = wl_container_of(l, s, destroy);
       --s->server->idle_inhibitors_;
+      std::erase_if(s->server->wayland_inhibitors_, [s](const auto& e) { return e.first == s->inhibitor; });
       wl_list_remove(&s->destroy.link);
       delete s;
     };
     wl_signal_add(&inhibitor->events.destroy, &state->destroy);
     ++server->idle_inhibitors_;
+    pid_t pid = 0;
+    if (inhibitor->resource) wl_client_get_credentials(wl_resource_get_client(inhibitor->resource), &pid, nullptr, nullptr);
+    server->wayland_inhibitors_.emplace_back(inhibitor, static_cast<int>(pid));
     server->note_activity();  // the app asked for the screen: treat it as activity
   };
   wl_signal_add(&idle_inhibit_manager_->events.new_inhibitor, &new_idle_inhibitor_);
 
   reload_power_config();
+}
+
+void Server::ipc_idle_inhibit(bool on) {
+  idle_inhibitors_ += on ? 1 : -1;
+  if (on) note_activity();
+}
+
+std::string Server::idle_inhibitor_report() const {
+  std::string out;
+  for (const auto& [inhibitor, pid] : wayland_inhibitors_)
+    out += "INHIBITOR wayland " + std::to_string(pid) + " " + program_name(pid) + "\n";
+  return out;
 }
 
 void Server::reload_power_config() {

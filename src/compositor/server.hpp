@@ -190,6 +190,12 @@ class Server {
   void on_idle_timer();
   void set_displays_blanked(bool blanked);
   bool displays_blanked() const { return displays_blanked_; }
+  // Keep-awake requests from programs on the control socket (the lock applet). Each
+  // holder counts like one idle-inhibit client until it releases or disconnects.
+  void ipc_idle_inhibit(bool on);
+  // One "INHIBITOR wayland <pid> <program>" line per program holding an idle-inhibit
+  // request right now (no trailing "END").
+  std::string idle_inhibitor_report() const;
 
   // ---- keyboard window management (cycling, snapping, workspaces, screens) ----
   // Alt+Tab-style cycling in most-recently-used order. `hold_mask` is the modifier
@@ -505,6 +511,7 @@ class Server {
   wlr_idle_inhibit_manager_v1* idle_inhibit_manager_ = nullptr;
   wl_listener new_idle_inhibitor_{};
   int idle_inhibitors_ = 0;
+  std::vector<std::pair<wlr_idle_inhibitor_v1*, int>> wayland_inhibitors_;  // inhibitor, client pid
   void arm_idle_timer(long seconds_from_now);
   friend int idle_timer_cb(void* data);
   uint32_t next_view_id_ = 1;

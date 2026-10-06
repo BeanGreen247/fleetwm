@@ -104,6 +104,16 @@ repository). The shell setup keeps bash behaving normally and only adds a bigger
 case-insensitive completion, history search on Up/Down and fzf keys when fzf is installed. If you
 create your own `~/.config/foot/foot.ini`, foot uses that instead.
 
+## Keep awake padlock
+
+A padlock sits in the bar's tray (`fleetwm-lockapplet`, started with the session). Click it to
+keep the screen on and stop the computer from sleeping; the padlock is crossed out while that is
+on. Click again to go back to the timers from Settings -> Power. Hover it to see which timers are
+active or paused and which programs are keeping the computer awake (a video player, a browser
+playing video, or anything else that asks the compositor, systemd or `org.freedesktop.ScreenSaver`
+to stay awake). The setting is not saved: it is off after every login, and it switches itself off
+if the applet quits.
+
 ## Settings
 
 Open Settings from the launcher or the start menu. Changes apply right away, and they are saved
