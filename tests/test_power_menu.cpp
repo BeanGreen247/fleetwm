@@ -12,6 +12,7 @@
 #include <filesystem>
 #include <fstream>
 #include <set>
+#include <stdexcept>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -387,38 +388,177 @@ TEST(PolkitRules, LocaleRuleNamesOneProgramThatTheInstallerAndTheLanguagePickerU
       << "the picker must run exactly the program the rule allows";
 }
 
-// ---- what the rules actually decide, by running them in node (skipped when node is not installed) -----
+// ---- what the rules actually decide ------------------------------------------------------------------
+//
+// polkit evaluates rules with its own JavaScript engine, which is not available on a fresh install, so the
+// tests carry a tiny evaluator for the exact shape the shipped rules use: one `if` whose condition is built
+// from `action.id == "..."`, `action.lookup("program") == "..."`, `subject.local`, `subject.active`,
+// `subject.isInGroup("...")`, `&&`, `||` and parentheses. A rule that uses anything else makes the evaluator
+// throw, which fails the test and says what to add. Where node happens to be installed, one more test runs
+// the real JavaScript and checks the evaluator agrees with it.
 
 namespace {
 
-bool pm_have_node() { return std::system("command -v node >/dev/null 2>&1") == 0; }
+struct PmQuery {
+  std::string action_id, program;
+  bool local = false, active = false;
+  std::set<std::string> groups;
+};
 
-// Runs one rule file for an action and a subject; returns "yes" or "undecided" (polkit would go on to ask).
+class PmRuleEval {
+ public:
+  PmRuleEval(const std::string& rule_source, const PmQuery& q) : q_(q) {
+    const std::string code = pm_no_comments(rule_source);
+    const size_t open = code.find("if (");
+    if (open == std::string::npos) throw std::runtime_error("no if (...) in the rule");
+    size_t i = open + 4, depth = 1;
+    const size_t start = i;
+    for (; i < code.size() && depth > 0; ++i) {
+      if (code[i] == '"') {
+        for (++i; i < code.size() && code[i] != '"'; ++i) {
+        }
+      } else if (code[i] == '(') {
+        ++depth;
+      } else if (code[i] == ')') {
+        --depth;
+      }
+    }
+    if (depth != 0) throw std::runtime_error("unbalanced if condition");
+    cond_ = code.substr(start, i - 1 - start);
+    yes_ = code.find("return polkit.Result.YES;", i) != std::string::npos;
+  }
+
+  // "yes", or "undecided" when polkit would carry on to its defaults.
+  std::string decide() {
+    pos_ = 0;
+    const bool match = or_expr();
+    skip();
+    if (pos_ != cond_.size()) throw std::runtime_error("cannot evaluate: " + cond_.substr(pos_, 40));
+    return match && yes_ ? "yes" : "undecided";
+  }
+
+ private:
+  void skip() {
+    while (pos_ < cond_.size() && std::isspace(static_cast<unsigned char>(cond_[pos_]))) ++pos_;
+  }
+  bool eat(const std::string& tok) {
+    skip();
+    if (cond_.compare(pos_, tok.size(), tok) != 0) return false;
+    pos_ += tok.size();
+    return true;
+  }
+  std::string string_literal() {
+    skip();
+    if (pos_ >= cond_.size() || cond_[pos_] != '"') throw std::runtime_error("string expected near: " + cond_.substr(pos_, 30));
+    const size_t e = cond_.find('"', pos_ + 1);
+    const std::string v = cond_.substr(pos_ + 1, e - pos_ - 1);
+    pos_ = e + 1;
+    return v;
+  }
+  bool or_expr() {
+    bool v = and_expr();
+    while (eat("||")) v = and_expr() || v;  // both sides are parsed even when decided
+    return v;
+  }
+  bool and_expr() {
+    bool v = primary();
+    while (eat("&&")) v = primary() && v;
+    return v;
+  }
+  bool primary() {
+    if (eat("(")) {
+      const bool v = or_expr();
+      if (!eat(")")) throw std::runtime_error("missing )");
+      return v;
+    }
+    if (eat("subject.local")) return q_.local;
+    if (eat("subject.active")) return q_.active;
+    if (eat("subject.isInGroup(")) {
+      const std::string g = string_literal();
+      if (!eat(")")) throw std::runtime_error("missing ) after isInGroup");
+      return q_.groups.count(g) > 0;
+    }
+    std::string value;
+    if (eat("action.id")) {
+      value = q_.action_id;
+    } else if (eat("action.lookup(")) {
+      const std::string key = string_literal();
+      if (!eat(")")) throw std::runtime_error("missing ) after lookup");
+      value = key == "program" ? q_.program : "";
+    } else {
+      throw std::runtime_error("cannot evaluate: " + cond_.substr(pos_, 40));
+    }
+    if (!eat("==")) throw std::runtime_error("only == comparisons are supported near: " + cond_.substr(pos_, 30));
+    return value == string_literal();
+  }
+
+  PmQuery q_;
+  std::string cond_;
+  bool yes_ = false;
+  size_t pos_ = 0;
+};
+
+std::set<std::string> pm_split_groups(const std::string& csv) {
+  std::set<std::string> out;
+  std::stringstream ss(csv);
+  for (std::string g; std::getline(ss, g, ',');)
+    if (!g.empty()) out.insert(g);
+  return out;
+}
+
+// Runs one rule file for an action and a subject; returns "yes" or "undecided".
 std::string pm_decide(const std::string& rule_file, const std::string& action_id, bool local, bool active,
                       const std::string& groups, const std::string& program = "") {
+  PmQuery q;
+  q.action_id = action_id;
+  q.program = program;
+  q.local = local;
+  q.active = active;
+  q.groups = pm_split_groups(groups);
+  try {
+    return PmRuleEval(pm_read(pm_root() / "packaging" / rule_file), q).decide();
+  } catch (const std::exception& e) {
+    return std::string("evaluator error in ") + rule_file + ": " + e.what();
+  }
+}
+
+bool pm_have_node() { return std::system("command -v node >/dev/null 2>&1") == 0; }
+
+// The same questions put to real JavaScript in one node run: one line per query ("id|local|active|groups|program"),
+// one answer line each.
+std::vector<std::string> pm_decide_in_node(const std::string& rule_file, const std::vector<std::string>& queries) {
   static const char* const kHarness =
       "const fs=require('fs');const src=fs.readFileSync(process.argv[2],'utf8');let rule=null;\n"
       "const polkit={addRule:f=>{rule=f;},Result:{YES:'yes',NO:'no',AUTH_ADMIN:'auth_admin'}};\n"
       "new Function('polkit',src)(polkit);\n"
-      "const a=process.argv.slice(3);\n"
-      "const action={id:a[0],lookup:k=>k==='program'?a[4]:undefined};\n"
-      "const subject={local:a[1]==='1',active:a[2]==='1',isInGroup:g=>a[3].split(',').includes(g)};\n"
-      "const r=rule(action,subject);console.log(r===undefined?'undecided':r);\n";
-  static const std::string harness_path = [] {
-    const std::string path = (pm_fs::temp_directory_path() / ("fleetwm-rule-harness-" + std::to_string(getpid()) + ".js")).string();
-    std::ofstream(path) << kHarness;
-    return path;
-  }();
-  const std::string path = (pm_root() / "packaging" / rule_file).string();
-  const std::string cmd = "node '" + harness_path + "' '" + path + "' '" + action_id + "' '" + (local ? "1" : "0") + "' '" +
-                          (active ? "1" : "0") + "' '" + groups + "' '" + program + "' 2>&1";
-  std::string out;
+      "for(const line of fs.readFileSync(process.argv[3],'utf8').split('\\n')){\n"
+      "  if(line==='')continue;const a=line.split('|');\n"
+      "  const action={id:a[0],lookup:k=>k==='program'?a[4]:undefined};\n"
+      "  const subject={local:a[1]==='1',active:a[2]==='1',isInGroup:g=>a[3].split(',').includes(g)};\n"
+      "  const r=rule(action,subject);console.log(r===undefined?'undecided':r);}\n";
+  const pm_fs::path dir = pm_fs::temp_directory_path();
+  const std::string tag = std::to_string(getpid());
+  const std::string harness = (dir / ("fleetwm-rule-harness-" + tag + ".js")).string();
+  const std::string input = (dir / ("fleetwm-rule-queries-" + tag + ".txt")).string();
+  std::ofstream(harness) << kHarness;
+  {
+    std::ofstream in(input);
+    for (const std::string& q : queries) in << q << "\n";
+  }
+  const std::string cmd = "node '" + harness + "' '" + (pm_root() / "packaging" / rule_file).string() + "' '" + input + "' 2>&1";
+  std::vector<std::string> out;
   if (FILE* p = popen(cmd.c_str(), "r")) {
-    char buf[256];
-    while (std::fgets(buf, sizeof buf, p)) out += buf;
+    char buf[512];
+    while (std::fgets(buf, sizeof buf, p)) {
+      std::string line(buf);
+      while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) line.pop_back();
+      out.push_back(line);
+    }
     pclose(p);
   }
-  while (!out.empty() && (out.back() == '\n' || out.back() == '\r')) out.pop_back();
+  std::error_code ec;
+  pm_fs::remove(harness, ec);
+  pm_fs::remove(input, ec);
   return out;
 }
 
@@ -427,7 +567,6 @@ const char* const pm_power_rule = "50-fleetwm-power.rules";
 }  // namespace
 
 TEST(PolkitRuleBehaviour, PowerMenuActionsAreAllowedWithoutAPasswordAtTheKeyboard) {
-  if (!pm_have_node()) GTEST_SKIP() << "node is not installed";
   for (int a = 0; a < fleetwm::power::kCount; ++a)
     for (const std::string& id : fleetwm::power::polkit_actions_for(a)) {
       EXPECT_EQ(pm_decide(pm_power_rule, id, true, true, ""), "yes") << id << " (user in no special group)";
@@ -436,7 +575,6 @@ TEST(PolkitRuleBehaviour, PowerMenuActionsAreAllowedWithoutAPasswordAtTheKeyboar
 }
 
 TEST(PolkitRuleBehaviour, PowerActionsStayClosedToRemoteAndBackgroundSessions) {
-  if (!pm_have_node()) GTEST_SKIP() << "node is not installed";
   for (const char* id : {"org.freedesktop.login1.power-off", "org.freedesktop.login1.reboot",
                          "org.freedesktop.login1.suspend", "org.freedesktop.login1.power-off-multiple-sessions"}) {
     EXPECT_EQ(pm_decide(pm_power_rule, id, false, true, "sudo"), "undecided") << id << " over ssh";
@@ -446,7 +584,6 @@ TEST(PolkitRuleBehaviour, PowerActionsStayClosedToRemoteAndBackgroundSessions) {
 }
 
 TEST(PolkitRuleBehaviour, PowerRuleLeavesEverythingElseToPolkit) {
-  if (!pm_have_node()) GTEST_SKIP() << "node is not installed";
   for (const char* id : {"org.freedesktop.login1.power-off-ignore-inhibit", "org.freedesktop.login1.reboot-ignore-inhibit",
                          "org.freedesktop.login1.suspend-ignore-inhibit", "org.freedesktop.login1.halt",
                          "org.freedesktop.login1.set-wall-message", "org.freedesktop.login1.lock-sessions",
@@ -456,7 +593,6 @@ TEST(PolkitRuleBehaviour, PowerRuleLeavesEverythingElseToPolkit) {
 }
 
 TEST(PolkitRuleBehaviour, TimeRuleNeedsAnAdminGroupAndALocalActiveSession) {
-  if (!pm_have_node()) GTEST_SKIP() << "node is not installed";
   for (const char* id : {"org.freedesktop.timedate1.set-timezone", "org.freedesktop.timedate1.set-ntp"}) {
     EXPECT_EQ(pm_decide("50-fleetwm-time.rules", id, true, true, "sudo"), "yes") << id;
     EXPECT_EQ(pm_decide("50-fleetwm-time.rules", id, true, true, "wheel"), "yes") << id;
@@ -469,7 +605,6 @@ TEST(PolkitRuleBehaviour, TimeRuleNeedsAnAdminGroupAndALocalActiveSession) {
 }
 
 TEST(PolkitRuleBehaviour, LocaleRuleAllowsOnlyTheLocaleBuilder) {
-  if (!pm_have_node()) GTEST_SKIP() << "node is not installed";
   const std::string exec = "org.freedesktop.policykit.exec", good = "/usr/local/bin/fleetwm-locale-build";
   EXPECT_EQ(pm_decide("50-fleetwm-locale.rules", exec, true, true, "sudo", good), "yes");
   EXPECT_EQ(pm_decide("50-fleetwm-locale.rules", exec, true, true, "users", good), "undecided");
@@ -477,4 +612,25 @@ TEST(PolkitRuleBehaviour, LocaleRuleAllowsOnlyTheLocaleBuilder) {
   EXPECT_EQ(pm_decide("50-fleetwm-locale.rules", exec, true, true, "sudo", "/tmp/fleetwm-locale-build"), "undecided");
   EXPECT_EQ(pm_decide("50-fleetwm-locale.rules", exec, false, true, "sudo", good), "undecided");
   EXPECT_EQ(pm_decide("50-fleetwm-locale.rules", "org.freedesktop.login1.reboot", true, true, "sudo", good), "undecided");
+}
+
+TEST(PolkitRuleBehaviour, TheEvaluatorAgreesWithRealJavaScriptWhereNodeIsInstalled) {
+  if (!pm_have_node()) return;  // nothing to compare against here; the tests above need no node
+  const std::vector<std::string> actions = {"org.freedesktop.login1.power-off", "org.freedesktop.login1.reboot-multiple-sessions",
+                                            "org.freedesktop.login1.suspend-ignore-inhibit", "org.freedesktop.timedate1.set-ntp",
+                                            "org.freedesktop.timedate1.set-time", "org.freedesktop.policykit.exec", ""};
+  for (const char* file : {"50-fleetwm-power.rules", "50-fleetwm-time.rules", "50-fleetwm-locale.rules"}) {
+    std::vector<std::string> queries, ours;
+    for (const std::string& action : actions)
+      for (int local = 0; local < 2; ++local)
+        for (int active = 0; active < 2; ++active)
+          for (const char* groups : {"", "sudo", "users"})
+            for (const char* program : {"", "/usr/local/bin/fleetwm-locale-build", "/usr/bin/rm"}) {
+              queries.push_back(action + "|" + std::to_string(local) + "|" + std::to_string(active) + "|" + groups + "|" + program);
+              ours.push_back(pm_decide(file, action, local, active, groups, program));
+            }
+    const std::vector<std::string> theirs = pm_decide_in_node(file, queries);
+    ASSERT_EQ(theirs.size(), queries.size()) << file << ": node did not answer every query";
+    for (size_t i = 0; i < queries.size(); ++i) ASSERT_EQ(ours[i], theirs[i]) << file << " " << queries[i];
+  }
 }
