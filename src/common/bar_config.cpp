@@ -130,6 +130,7 @@ BarConfig load_bar_config() {
   if (auto v = table["taskbar_workspaces"].value<int64_t>()) {
     config.taskbar_workspaces = std::clamp(static_cast<int>(*v), 1, 10);
   }
+  if (auto v = table["taskbar_rounded"].value<bool>()) config.taskbar_rounded = *v;
   if (auto v = table["taskbar_position"].value<std::string>()) {
     config.taskbar_position = taskbar_position_from_string(*v);
   }
@@ -167,6 +168,7 @@ void save_bar_config(const BarConfig& config) {
   table.insert_or_assign("layout", bar_layout_to_string(config.layout));
   table.insert_or_assign("taskbar_position", taskbar_position_to_string(config.taskbar_position));
   table.insert_or_assign("taskbar_workspaces", static_cast<int64_t>(config.taskbar_workspaces));
+  table.insert_or_assign("taskbar_rounded", config.taskbar_rounded);
 
   std::ofstream out(path);
   if (!out) {

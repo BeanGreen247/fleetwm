@@ -393,10 +393,9 @@ void View::refit_snapped() {
 }
 
 void View::restore_from_snap() {
-  if (maximized) {
-    set_maximized(false);
-    return;
-  }
+  // A window maximized out of a half still remembers that half; restoring must go all the way
+  // back to the floating size, not just to the half.
+  if (maximized) set_maximized(false);
   if (snap_zone == geom::SnapZone::None || !is_window()) {
     return;
   }
@@ -449,8 +448,11 @@ void View::set_maximized(bool want) {
   const int th = titlebar_height();
   const int bt = border_thickness();
   if (want) {
-    const wlr_box geo = content_geometry();
-    restore_box = {container_tree->node.x, container_tree->node.y, geo.width, geo.height};
+    // Out of a half, restore_box already holds the floating size; keep it.
+    if (snap_zone == geom::SnapZone::None) {
+      const wlr_box geo = content_geometry();
+      restore_box = {container_tree->node.x, container_tree->node.y, geo.width, geo.height};
+    }
     maximized = true;
     const wlr_box area = output->usable_area;
     wlr_scene_node_set_position(&container_tree->node, area.x, area.y);

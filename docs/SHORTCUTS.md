@@ -53,8 +53,8 @@ Window keys, like Windows:
 | Keys | Action | Setting |
 | --- | --- | --- |
 | Super+Left / Right | Snap to the left / right half. Press again at the edge to move to the next screen; the opposite key undoes it | `desktop_snap_left`, `desktop_snap_right` |
-| Super+Up | Maximize (from a half: the top quarter) | `desktop_snap_up` |
-| Super+Down | Restore a maximized window, minimize a normal one (from a half: the bottom quarter) | `desktop_snap_down` |
+| Super+Up | Top half, then maximize (from a left/right half: its top quarter) | `desktop_snap_up` |
+| Super+Down | Restore from maximized, then bottom half (from a left/right half: its bottom quarter). Never minimizes; Up from the bottom half restores | `desktop_snap_down` |
 | Alt+F4 | Close the window | `desktop_close_window` |
 | Alt+F10 | Maximize or restore | `desktop_toggle_maximize` |
 | Super+D | Show the desktop (minimize everything); again brings it back | `desktop_show_desktop` |
