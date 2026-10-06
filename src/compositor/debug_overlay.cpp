@@ -25,12 +25,12 @@ namespace fleetwm {
 
 namespace {
 
-constexpr double kIdleGapMs = 250;
-constexpr int kPad = 8, kGraphH = 44, kLineH = 15, kBarW = 3, kBarGap = 0, kMargin = 8, kFont = 11;
+constexpr double kOvIdleGapMs = 250;
+constexpr int kOvPad = 8, kOvGraphH = 44, kOvLineH = 15, kOvBarW = 3, kOvBarGap = 0, kOvMargin = 8, kOvFont = 11;
 
-double ms_of(const timespec& t) { return t.tv_sec * 1000.0 + t.tv_nsec / 1e6; }
+double ov_ms_of(const timespec& t) { return t.tv_sec * 1000.0 + t.tv_nsec / 1e6; }
 
-const char* renderer_name(wlr_renderer* r) {
+const char* ov_renderer_name(wlr_renderer* r) {
   if (wlr_renderer_is_pixman(r)) return "PIXMAN";
   if (wlr_renderer_is_gles2(r)) return "GLES2";
   return "RENDER";
@@ -38,7 +38,7 @@ const char* renderer_name(wlr_renderer* r) {
 
 // Current (not peak) resident memory of this process, in MB, from statm: two numbers, no parsing of
 // the long status file.
-int read_rss_mb() {
+int ov_read_rss_mb() {
   std::FILE* f = std::fopen("/proc/self/statm", "r");
   if (!f) return -1;
   unsigned long size = 0, rss = 0;
@@ -48,13 +48,13 @@ int read_rss_mb() {
 }
 
 // CPU time this process has used so far, in microseconds: one syscall, nothing to parse.
-double cpu_used_us() {
+double ov_cpu_used_us() {
   rusage ru{};
   getrusage(RUSAGE_SELF, &ru);
   return (ru.ru_utime.tv_sec + ru.ru_stime.tv_sec) * 1e6 + ru.ru_utime.tv_usec + ru.ru_stime.tv_usec;
 }
 
-int read_cpu_mhz() {
+int ov_read_cpu_mhz() {
   std::ifstream freq("/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq");
   long khz = 0;
   return (freq >> khz) ? static_cast<int>(khz / 1000) : -1;
@@ -77,7 +77,7 @@ double DebugOverlay::budget_ms() const {
 }
 
 void DebugOverlay::frame_begin(const timespec& now) {
-  const double t = ms_of(now);
+  const double t = ov_ms_of(now);
   if (idle_shown_) {
     // The frame that showed "0 FPS" is ours; counting it would make an idle desktop look busy.
     idle_shown_ = false;
@@ -88,7 +88,7 @@ void DebugOverlay::frame_begin(const timespec& now) {
     const double delta = t - last_frame_ms_;
     deltas_[next_] = static_cast<float>(delta);
     next_ = (next_ + 1) % kSamples;
-    if (delta < kIdleGapMs) {  // a longer gap is the desktop waking up, not a slow frame
+    if (delta < kOvIdleGapMs) {  // a longer gap is the desktop waking up, not a slow frame
       ++win_.frames;
       win_.delta_sum += delta;
       win_.delta_max = std::max(win_.delta_max, delta);
@@ -113,7 +113,7 @@ int DebugOverlay::idle_fired(void* data) {
   clock_gettime(CLOCK_MONOTONIC, &now);
   self->win_ = Window{};  // nothing happened since the last repaint
   self->idle_shown_ = true;
-  self->repaint(ms_of(now));
+  self->repaint(ov_ms_of(now));
   return 0;
 }
 
@@ -133,22 +133,22 @@ void DebugOverlay::repaint(double now_ms) {
   if (w.frames >= 2 && w.last_ms > w.first_ms) fps = static_cast<int>((w.frames - 1) * 1000.0 / (w.last_ms - w.first_ms) + 0.5);
   const double avg_delta = w.frames ? w.delta_sum / w.frames : 0;
   const double avg_cost = w.frames ? w.cost_sum / w.frames : 0;
-  const double cpu_us = cpu_used_us();
+  const double cpu_us = ov_cpu_used_us();
   if (prev_cpu_us_ > 0 && now_ms > prev_cpu_ms_)
     cpu_pct_ = static_cast<int>(100.0 * (cpu_us - prev_cpu_us_) / 1000.0 / (now_ms - prev_cpu_ms_) + 0.5);
   prev_cpu_us_ = cpu_us;
   prev_cpu_ms_ = now_ms;
   if (slow_age_-- <= 0) {  // memory and clock speed move slowly: once a second is plenty
-    mem_mb_ = read_rss_mb();
-    mhz_ = read_cpu_mhz();
+    mem_mb_ = ov_read_rss_mb();
+    mhz_ = ov_read_cpu_mhz();
     slow_age_ = 1000 / kRefreshMs - 1;
   }
 
   // The picture. The panel behind everything never changes, so it is drawn once and copied in.
-  const int graph_w = kSamples * (kBarW + kBarGap);
-  const int W = graph_w + 2 * kPad, H = kPad + 4 * kLineH + 4 + kGraphH + kPad;
+  const int graph_w = kSamples * (kOvBarW + kOvBarGap);
+  const int W = graph_w + 2 * kOvPad, H = kOvPad + 4 * kOvLineH + 4 + kOvGraphH + kOvPad;
   const double budget = budget_ms();
-  const double gy = H - kPad - kGraphH;
+  const double gy = H - kOvPad - kOvGraphH;
   void* pixels = nullptr;
   size_t stride = 0;
   wlr_buffer* buf = create_pixel_buffer(W, H, &pixels, &stride);
@@ -160,7 +160,7 @@ void DebugOverlay::repaint(double now_ms) {
     kit::set_source(bc, {0.05, 0.05, 0.08, 0.72});
     cairo_fill(bc);
     kit::set_source(bc, {1, 1, 1, 0.25});  // one frame budget
-    cairo_rectangle(bc, kPad, gy + kGraphH - kGraphH / 3.0, graph_w, 1);
+    cairo_rectangle(bc, kOvPad, gy + kOvGraphH - kOvGraphH / 3.0, graph_w, 1);
     cairo_fill(bc);
     cairo_destroy(bc);
     cairo_surface_flush(bs);
@@ -179,21 +179,21 @@ void DebugOverlay::repaint(double now_ms) {
   const kit::Color text{0.88, 0.89, 0.95, 0.95}, dim{0.62, 0.64, 0.72, 0.95};
   const bool ok = avg_cost < budget * 0.6 && w.late == 0;
   char line[96];
-  double y = kPad + kLineH - 4;
+  double y = kOvPad + kOvLineH - 4;
   std::snprintf(line, sizeof line, "%d FPS  %.1f ms/frame", fps, avg_delta);
-  kit::draw_text(cr, line, kPad, y, kFont + 1, fps == 0 ? dim : text, true);
-  y += kLineH;
+  kit::draw_text(cr, line, kOvPad, y, kOvFont + 1, fps == 0 ? dim : text, true);
+  y += kOvLineH;
   std::snprintf(line, sizeof line, "compositor %.1f ms avg, %.1f max  (%.1f budget)", avg_cost, w.cost_max, budget);
-  kit::draw_text(cr, line, kPad, y, kFont, ok ? kit::Color{0.45, 0.9, 0.45, 1} : kit::Color{0.95, 0.75, 0.3, 1});
-  y += kLineH;
+  kit::draw_text(cr, line, kOvPad, y, kOvFont, ok ? kit::Color{0.45, 0.9, 0.45, 1} : kit::Color{0.95, 0.75, 0.3, 1});
+  y += kOvLineH;
   std::snprintf(line, sizeof line, "late %d   CPU %d%%   MEM %d MB", w.late, cpu_pct_, mem_mb_);
-  kit::draw_text(cr, line, kPad, y, kFont, text);
-  y += kLineH;
-  if (mhz_ >= 0) std::snprintf(line, sizeof line, "%s   %d MHz   %dx%d", renderer_name(server_->renderer()), mhz_,
+  kit::draw_text(cr, line, kOvPad, y, kOvFont, text);
+  y += kOvLineH;
+  if (mhz_ >= 0) std::snprintf(line, sizeof line, "%s   %d MHz   %dx%d", ov_renderer_name(server_->renderer()), mhz_,
                                output_->wlr_output_ptr->width, output_->wlr_output_ptr->height);
-  else std::snprintf(line, sizeof line, "%s   %dx%d", renderer_name(server_->renderer()), output_->wlr_output_ptr->width,
+  else std::snprintf(line, sizeof line, "%s   %dx%d", ov_renderer_name(server_->renderer()), output_->wlr_output_ptr->width,
                      output_->wlr_output_ptr->height);
-  kit::draw_text(cr, line, kPad, y, kFont, dim);
+  kit::draw_text(cr, line, kOvPad, y, kOvFont, dim);
 
   // Graph, written straight into the pixels (premultiplied ARGB, alpha 0.94): oldest on the left, full
   // height is three frame budgets. Bars are plain columns, so no path or fill is needed for them.
@@ -201,12 +201,12 @@ void DebugOverlay::repaint(double now_ms) {
                      kRed = 0xF0 << 24 | 0xD0 << 16 | 0x24 << 8 | 0x24;
   for (int i = 0; i < kSamples; ++i) {
     const float ms = deltas_[(next_ + i) % kSamples];
-    if (ms <= 0.0f || ms >= kIdleGapMs) continue;
-    const int h = std::max(1, static_cast<int>(std::clamp(ms / (3.0 * budget), 0.04, 1.0) * kGraphH));
+    if (ms <= 0.0f || ms >= kOvIdleGapMs) continue;
+    const int h = std::max(1, static_cast<int>(std::clamp(ms / (3.0 * budget), 0.04, 1.0) * kOvGraphH));
     const uint32_t c = ms <= 1.15 * budget ? kGreen : ms <= 2.05 * budget ? kYellow : kRed;
-    for (int row = static_cast<int>(gy) + kGraphH - h; row < static_cast<int>(gy) + kGraphH; ++row) {
-      auto* px = reinterpret_cast<uint32_t*>(static_cast<unsigned char*>(pixels) + static_cast<size_t>(row) * stride) + kPad + i * (kBarW + kBarGap);
-      for (int x = 0; x < kBarW; ++x) px[x] = c;
+    for (int row = static_cast<int>(gy) + kOvGraphH - h; row < static_cast<int>(gy) + kOvGraphH; ++row) {
+      auto* px = reinterpret_cast<uint32_t*>(static_cast<unsigned char*>(pixels) + static_cast<size_t>(row) * stride) + kOvPad + i * (kOvBarW + kOvBarGap);
+      for (int x = 0; x < kOvBarW; ++x) px[x] = c;
     }
   }
 
@@ -220,7 +220,7 @@ void DebugOverlay::repaint(double now_ms) {
   wlr_box box{};
   wlr_output_layout_get_box(server_->output_layout(), output_->wlr_output_ptr, &box);
   const wlr_box area = output_->usable_area.width > 0 ? output_->usable_area : box;
-  wlr_scene_node_set_position(&node_->node, area.x + area.width - kMargin - W, area.y + area.height - kMargin - H);
+  wlr_scene_node_set_position(&node_->node, area.x + area.width - kOvMargin - W, area.y + area.height - kOvMargin - H);
   arm_idle_timer();
 }
 
