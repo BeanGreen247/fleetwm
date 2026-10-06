@@ -18,6 +18,10 @@
 #include "audio_mixer.hpp"
 #include "fleetkit.hpp"
 #include "malloc_tuning.hpp"
+#include "bar_config.hpp"
+#include "popup_namespaces.hpp"
+#include "popup_spot.hpp"
+#include "single_instance.hpp"
 #include "theme.hpp"
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
 
@@ -26,7 +30,6 @@ namespace {
 using namespace fleetwm;
 using namespace fleetwm::kit;
 
-constexpr int kBarHeight = 24;  // must match src/bar/main.cpp
 constexpr int kCardWidth = 280;
 constexpr int kWindowWidth = kCardWidth + 24;
 constexpr double kFont = 14.67;
@@ -320,21 +323,34 @@ struct Mixer {
 int main() {
   fleetwm::tune_malloc_for_low_rss();
 
+  // A second launch (a second click on the volume readout) closes the open mixer instead of stacking another.
+  const std::string pid_file = fleetwm::single_instance_pid_file("fleetwm-audiomixer");
+  if (fleetwm::toggle_running_instance(pid_file, "fleetwm-audiomi")) return 0;
+  fleetwm::write_pid_file(pid_file);
+
   Mixer M;
   M.pal = load_palette(load_theme_config());
   if (!M.app.connect()) return 1;
 
   Surface::Config cfg;
   cfg.layer = ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY;
-  cfg.anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT;
+  // Next to the bar or taskbar that opened it (see popup_spot.hpp), not always the top right.
+  const fleetwm::PopupSpot spot = fleetwm::popup_spot_beside_bar(load_theme_config().window_layout, load_bar_config().layout,
+                                                                 load_bar_config().taskbar_position);
+  cfg.anchor = ((spot.anchor & fleetwm::kAnchorTop) ? ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP : 0) |
+               ((spot.anchor & fleetwm::kAnchorBottom) ? ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM : 0) |
+               ((spot.anchor & fleetwm::kAnchorLeft) ? ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT : 0) |
+               ((spot.anchor & fleetwm::kAnchorRight) ? ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT : 0);
   cfg.width = kWindowWidth;
   M.last_height = M.content_height();
   cfg.height = M.last_height;
-  cfg.margin_top = kBarHeight + 6;
-  cfg.margin_right = 8;
+  cfg.margin_top = spot.top;
+  cfg.margin_right = spot.right;
+  cfg.margin_bottom = spot.bottom;
+  cfg.margin_left = spot.left;
   cfg.exclusive_zone = -1;
   cfg.keyboard_mode = ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_ON_DEMAND;
-  cfg.name = "fleetwm-audiomixer";
+  cfg.name = fleetwm::kAudioMixerNamespace;  // the compositor closes it on a press outside (popup_namespaces.hpp)
   M.surface = std::make_unique<Surface>(M.app, cfg);
   M.surface->on_draw = [&M](cairo_t* cr, int w, int h) { M.draw(cr, w, h); };
   M.surface->on_key = [&M](const KeyEvent& e) { M.on_key(e); };
@@ -361,5 +377,6 @@ int main() {
   M.app.watch_fd(sfd, [&M] { M.app.quit(); });
 
   M.app.run();
+  fleetwm::remove_pid_file(pid_file);
   return 0;
 }
