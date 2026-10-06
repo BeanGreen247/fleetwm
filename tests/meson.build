@@ -33,6 +33,7 @@ fleetwm_test_sources = files(
   'test_power_menu.cpp',
   'test_pgo_training.cpp',
   'test_popups.cpp',
+  'test_caption_buttons.cpp',
 )
 
 fleetwm_unit_tests = executable(
@@ -52,7 +53,7 @@ test_areas = {
   'theme': 'ParseHexColor.*:ThemeName.*:ThemeTest.*:TitlebarNames.*:WindowLayoutNames.*:ThemeHome.*',
   'bar': 'PowerMode.*:BarLayout.*:TaskbarPosition.*:BarConfigTest.*:BatterySourceReadingTest.*',
   'keybinds': 'KeybindsConfigTest.*',
-  'geometry': 'ResizeEdges.*:ResizedBox.*:Cascade.*:TitlebarLayout.*:TitlebarHit.*:TitleX.*:TaskbarSlots.*:SnapZoneAt.*:SnapBox.*',
+  'geometry': 'ResizeEdges.*:ResizedBox.*:Cascade.*:TitlebarLayout.*:TitlebarStrip.*:TitlebarHit.*:TitleX.*:TaskbarSlots.*:SnapZoneAt.*:SnapBox.*:CaptionButtons.*',
   'windows': 'WindowList.*',
   'shortcuts': 'FormatAltCombo.*:FormatAltShiftCombo.*:ShortcutList.*',
   'ipc': 'ExtractJsonStringField.*:IpcSocketPathTest.*:IpcClient.*:IpcClientWithServerTest.*',

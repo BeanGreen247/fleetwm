@@ -70,7 +70,14 @@ struct TitlebarMetrics {
   bool show_pin = true;
   bool show_minimize = true;
   bool show_maximize = true;
+  // Joined caption strip (the Windows 7 look): the buttons touch each other, the top edge of the bar and the
+  // window's side edge, and the close button is kStripCloseScale times as wide as the others. Off keeps the
+  // separate, vertically centred buttons.
+  bool strip = false;
 };
+
+// How much wider the close button is than the others in a caption strip.
+constexpr double kStripCloseScale = 1.6;
 
 struct ButtonSlot {
   int id = kBtnNone;
