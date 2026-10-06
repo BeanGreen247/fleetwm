@@ -769,11 +769,22 @@ bool Ui::tabs(const std::vector<std::string>& names, int* current) {
   return mark(changed);
 }
 
-bool Ui::text_entry(std::string* text, double width, bool enabled, bool mask) {
+bool Ui::text_entry(std::string* text, double width, bool enabled, bool mask, bool* reveal) {
   const int id = next_id();
   register_focusable_if(id, enabled);
   const UiRect r = place(width, 30);
   bool changed = false;
+  const UiRect eye{r.x + r.w - 30, r.y, 30, r.h};
+  if (reveal && enabled && press_pending_ && input_ok() && clip_.hit(press_pos_.x, press_pos_.y) &&
+      eye.hit(press_pos_.x - ox_, press_pos_.y - oy_)) {
+    *reveal = !*reveal;
+    focus_id_ = id;
+    edit_id_ = id;
+    edit_cursor_ = text->size();
+    press_pending_ = false;
+    dirty_ = true;
+  }
+  if (reveal && *reveal) mask = false;
   if (enabled && press_pending_ && input_ok() && clip_.hit(press_pos_.x, press_pos_.y) &&
       r.hit(press_pos_.x - ox_, press_pos_.y - oy_)) {
     focus_id_ = id;
@@ -840,7 +851,7 @@ bool Ui::text_entry(std::string* text, double width, bool enabled, bool mask) {
     cairo_set_line_width(cr_, 1);
     cairo_stroke(cr_);
     cairo_save(cr_);
-    cairo_rectangle(cr_, r.x + 4, r.y, r.w - 8, r.h);
+    cairo_rectangle(cr_, r.x + 4, r.y, r.w - 8 - (reveal ? 26 : 0), r.h);
     cairo_clip(cr_);
     std::string shown_text = *text, shown_head = text->substr(0, std::min(edit_cursor_, text->size()));
     if (mask) {  // one bullet per character
@@ -864,6 +875,26 @@ bool Ui::text_entry(std::string* text, double width, bool enabled, bool mask) {
       cairo_fill(cr_);
     }
     cairo_restore(cr_);
+    if (reveal) {  // the eye: open when the text is shown, slashed when hidden
+      const double ex = eye.x + eye.w / 2, ey = eye.y + eye.h / 2;
+      const bool hot = hovered(eye);
+      Color c = hot ? pal_.fg_primary : pal_.fg_secondary;
+      cairo_save(cr_);
+      set_source(cr_, c);
+      cairo_set_line_width(cr_, 1.5);
+      cairo_move_to(cr_, ex - 8, ey);
+      cairo_curve_to(cr_, ex - 4, ey - 6, ex + 4, ey - 6, ex + 8, ey);
+      cairo_curve_to(cr_, ex + 4, ey + 6, ex - 4, ey + 6, ex - 8, ey);
+      cairo_stroke(cr_);
+      cairo_arc(cr_, ex, ey, 2.4, 0, 2 * M_PI);
+      cairo_fill(cr_);
+      if (!*reveal) {
+        cairo_move_to(cr_, ex - 8, ey + 7);
+        cairo_line_to(cr_, ex + 8, ey - 7);
+        cairo_stroke(cr_);
+      }
+      cairo_restore(cr_);
+    }
   }
   return mark(changed);
 }

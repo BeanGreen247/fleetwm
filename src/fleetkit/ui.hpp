@@ -116,7 +116,8 @@ class Ui {
   bool color_button(std::string* hex, bool enabled = true);
   bool tabs(const std::vector<std::string>& names, int* current);
   // `mask` shows bullets instead of the text (passwords).
-  bool text_entry(std::string* text, double width, bool enabled = true, bool mask = false);
+  // With `reveal` set, an eye button inside the field toggles *reveal: shown text while true.
+  bool text_entry(std::string* text, double width, bool enabled = true, bool mask = false, bool* reveal = nullptr);
   // True once after Enter was pressed in a focused text entry.
   bool entry_submitted() {
     const bool s = entry_submitted_;
