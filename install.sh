@@ -169,7 +169,7 @@ apt_install xdg-desktop-portal xdg-desktop-portal-gtk gnome-themes-extra \
   echo "warning: some theme packages could not be installed; GTK, Chromium and Qt apps may not follow dark/light mode"
 
 ui_step "Installing sound and power-control permissions" \
-  "What: PipeWire and WirePlumber (sound), polkit and the time-zone permission rule." \
+  "What: PipeWire, WirePlumber and the PulseAudio/ALSA bridges plus device profiles (sound), polkit and the permission rules." \
   "Why:  the bar's volume readout and the audio mixer talk to PipeWire; the power menu (suspend, reboot," \
   "      shut down) and Date & Time settings are refused by the system without polkit; the rules that let them" \
   "      work without a password prompt are installed here too."
@@ -177,6 +177,13 @@ ui_step "Installing sound and power-control permissions" \
 # to (PipeWire + the WirePlumber session manager; pipewire-bin ships
 # pw-cli/pw-cat, handy for testing without sound hardware)
 apt_install pipewire pipewire-bin wireplumber
+# The rest of what makes sound actually come out. pipewire-pulse is the PulseAudio-compatible server that
+# browsers, media players and most programs talk to (without it they find no sound server), pipewire-alsa
+# routes programs that use ALSA directly through PipeWire, and alsa-ucm-conf holds the per-device mixer
+# profiles: without it a laptop with a codec such as the Intel SOF/ES8336 gets the "stereo-fallback"
+# profile, speakers and headphones stay switched off or at 0% and nothing is audible. alsa-utils
+# provides amixer and alsactl for checking and restoring mixer state.
+apt_install pipewire-pulse pipewire-alsa alsa-ucm-conf alsa-utils
 
 # runtime dependency for the bar's power menu (fleetwm-powermenu):
 # systemd-logind refuses Sleep/Reboot/Shut down for a non-root caller
