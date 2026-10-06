@@ -118,6 +118,10 @@ class KeyboardTab {
     ui.newline();
     ui.label("Opens a checklist of all layouts and languages. Closing it builds the locales and the font cache.", true);
     ui.newline();
+    ui.space(4);
+    ui.row("Try it here");
+    ui.text_entry(&test_text_, 320);
+    ui.newline();
 
     // ---- switching ----
     ui.space(6);
@@ -158,9 +162,6 @@ class KeyboardTab {
     ui.newline();
     ui.row("Delay before repeating");
     if (ui.slider(&config_.repeat_delay, 150, 1000, 220)) save();
-    ui.newline();
-    ui.row("Try it here");
-    ui.text_entry(&test_text_, 320);
     ui.newline();
 
     // ---- languages ----
