@@ -50,6 +50,27 @@ The installer's build now trades security hardening for speed, on purpose.
 - Not used: `-ffast-math`, `-fno-exceptions`/`-fno-rtti` (toml++ and our code use
   exceptions), static libstdc++ (more memory per process).
 
+## Glass (Windows Aero) performance at a glance
+
+Everything done to make the glass look cheap, in one place. Laptop numbers are from the Celeron N4020 test
+laptop; microsecond numbers are from a build machine (a Celeron takes several times longer, the ratios hold).
+
+| what | before | after | how |
+|---|---|---|---|
+| Bar with a seconds clock, glass on | 0.72% CPU | 0.28% CPU (glass off: 0.27%) | clock tick repaints only its strip; glass rectangles drawn once and copied |
+| A glass rectangle (bar, taskbar, start menu, Alt+Tab panel) | clip, stretched backdrop copy, two gradients, two strokes per redraw | one copy | tile cache, 3 MB LRU, keyed by geometry, style and backdrop |
+| Blurred wallpaper for glass | PNG read and decoded at every Alt+Tab step | decoded once per program, re-checked every 2 s | shared surface in `load_backdrop()` |
+| Titlebar redraw on hover, glass on (800 px) | 342 us | 51 us | glass background and caption strip cached per state |
+| Titlebar glass background alone | 103 us (800 px), 242 us (1600 px) | 4 us, 9 us | `titlebar_draw.cpp` background cache, 2 MB LRU |
+| Titlebar caption strip | about 290 us | a copy | strip cache, 1 MB LRU, one picture per button state |
+| Island bar with a ticking clock | layout re-sent every second (and a hover tooltip dropped) | only when the width changes | `island_resize_if_needed()` |
+| Start menu with glass | full-output surface, +3.5 MB compositor RSS while open | card-sized surface, +0.9 MB | compositor closes it on an outside click |
+
+Tests that keep it this way: `GlassCache` (cached tile equals a direct paint, styles never share a tile),
+`TitlebarDraw` (cached background and strip equal the drawn ones in all 40 button states, caches stay within their
+budgets, warm is clearly cheaper than cold, glass and matte differ only in the background), `CaptionButtons`.
+Glass versus flat on the compositor: no measurable difference at idle (0.20% against 0.25% on the laptop).
+
 ## Overlay, glass, bar and start menu pass (2026-10-06)
 
 Measured on the real testing-bed laptop (Celeron N4020, Intel UHD 600, 1920x1080, Debian 13) unless

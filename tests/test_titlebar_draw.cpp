@@ -237,3 +237,20 @@ TEST(TitlebarDraw, TheCompositorUsesTheSharedDrawingAndTheSettingsRowNamesAero) 
   EXPECT_NE(settings.find("ui.row(\"Glass effects (Windows Aero)\")"), std::string::npos) << "the Settings row must say Windows Aero in brackets";
   EXPECT_NE(settings.find("Translucent frames and menus"), std::string::npos);
 }
+
+TEST(TitlebarDraw, TheDocsRecordTheGlassPerformanceWork) {
+  const std::string readme = td_read("README.md");
+  const size_t glass = readme.find("## Glass effects");
+  ASSERT_NE(glass, std::string::npos);
+  const std::string glass_section = readme.substr(glass, readme.find("\n## ", glass + 5) - glass);
+  EXPECT_NE(glass_section.find("Speed."), std::string::npos) << "the Glass effects section of the README must say how fast it is";
+  EXPECT_NE(glass_section.find("Windows Aero"), std::string::npos);
+  EXPECT_NE(glass_section.find("51 us"), std::string::npos);
+  EXPECT_NE(glass_section.find("0.28%"), std::string::npos);
+  const std::string opt = td_read("docs/OPTIMIZATIONS.md");
+  EXPECT_NE(opt.find("## Glass (Windows Aero) performance at a glance"), std::string::npos);
+  for (const char* item : {"tile cache", "load_backdrop()", "caption strip", "island_resize_if_needed()", "card-sized surface", "342 us"})
+    EXPECT_NE(opt.find(item), std::string::npos) << "OPTIMIZATIONS.md should list: " << item;
+  EXPECT_NE(readme.find("docs/OPTIMIZATIONS.md#glass-windows-aero-performance-at-a-glance"), std::string::npos) << "the README links to the table";
+  EXPECT_NE(td_read("CHANGELOG.md").find("Windows Aero (glass) performance"), std::string::npos);
+}

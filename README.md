@@ -132,6 +132,15 @@ made once when the wallpaper changes and kept in `~/.cache/fleetwm`; surfaces on
 Nothing is blurred while you work, so glass costs almost nothing. It does not blur windows that sit behind a
 surface, only the wallpaper.
 
+**Speed.** Glass (the Windows Aero look) costs about the same as the flat look. Everything that was slow about
+it is drawn once and reused: a glass rectangle (bar, taskbar, start menu, Alt+Tab) is painted once and kept in a
+small cache, so a redraw is a single copy (the bar with a seconds clock and glass on went from 0.72% to 0.28% CPU on
+the Celeron test laptop, the same as with glass off); the blurred wallpaper is decoded once per program instead of
+at every Alt+Tab step; window titlebars keep their glass background and the caption buttons as finished pictures per
+state, so moving the pointer across the buttons redraws the titlebar in 51 us instead of 342 us (800 px wide,
+measured on a build machine; a slow laptop takes several times that); and the start menu is only as big as its card.
+The numbers and the tests behind them are in [docs/OPTIMIZATIONS.md](docs/OPTIMIZATIONS.md#glass-windows-aero-performance-at-a-glance).
+
 ## Keyboard
 
 Settings -> Keyboard lists the layouts you switch between, in order, with the one in use marked.
