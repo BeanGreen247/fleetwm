@@ -50,6 +50,140 @@ The installer's build now trades security hardening for speed, on purpose.
 - Not used: `-ffast-math`, `-fno-exceptions`/`-fno-rtti` (toml++ and our code use
   exceptions), static libstdc++ (more memory per process).
 
+## Overlay, glass, bar and start menu pass (2026-10-06)
+
+Measured on the real testing-bed laptop (Celeron N4020, Intel UHD 600, 1920x1080, Debian 13) unless
+stated. CPU is a percentage of one core. "Nested" means a throwaway compositor started inside the live
+session, so the live desktop was never touched.
+
+| change | before | after |
+|---|---|---|
+| Bar with a seconds clock, glass on | 0.72% | 0.28% |
+| Bar with a seconds clock, glass off | 0.42% | 0.27% |
+| Performance overlay on, desktop idle (compositor) | 58% | 0.27% |
+| Performance overlay on, busy full-window terminal | 37.8% | 6.5% (6% with it off) |
+| One overlay repaint | 1.0-1.2 ms | 0.5-0.6 ms |
+| Start menu, compositor RSS while open (nested) | +3.5 MB | +0.9 MB |
+| Start menu, launcher RSS / PSS | 14.2 / 5.2 MB | 12.0 / 4.2 MB |
+
+What changed, in the order it was found:
+
+- **Clock ticks repaint a strip.** `Surface::queue_draw_rect` (fleetkit) redraws and damages only a
+  rectangle; the rest of the picture is copied from the last frame. The bar uses it for the seconds
+  clock when the text width did not change, and falls back to a full redraw otherwise. Before, every
+  second repainted the whole bar including the glass, and told the compositor the whole bar had changed.
+- **Island bar re-sends its layout only when the width changes.** It used to set size, margins and
+  anchor and drop any hover tooltip on every clock tick.
+- **Glass is painted once per rectangle.** `paint_glass` keeps a small LRU of finished tiles (3 MB cap,
+  keyed by geometry, style and backdrop). A redraw is one blit instead of a clip, a stretched backdrop
+  copy, two gradients and two strokes. Tests compare a cached tile with a direct paint.
+- **The blurred backdrop is decoded once per process** and re-checked against the wallpaper every two
+  seconds, instead of reading and decoding the PNG on every Alt+Tab step.
+- **The start menu surface is the card, not the whole output.** It needs far smaller buffers. The
+  compositor closes the menu on a press outside it (layer namespace `fleetwm-start-menu`) and swallows
+  that press, as the full-output surface did.
+- **The performance overlay is one picture.** It was about 665 scene rectangles (64 graph bars, five
+  text rows of 8 characters at 15 cells each, a panel). Every bar was resized every frame, and the
+  update ran after the commit, so the overlay damaged the screen, caused the next frame, and kept the
+  compositor rendering 60 frames a second by itself. Now: one cairo-drawn scene buffer, repainted at
+  most four times a second inside the frame being committed (no frame of its own), one extra repaint
+  when the desktop goes idle (to show 0 FPS), nothing allocated while it is off. A repaint copies a
+  cached panel, writes graph bars straight into the pixels, reads CPU with one `getrusage` call, and
+  reads memory and clock speed once a second. It shows FPS, frame interval, what the compositor itself
+  spent per frame (build + commit), late frames, CPU, current memory and a graph.
+- **dmabuf scanout feedback.** The compositor keeps the linux-dmabuf object and hands it to the scene
+  (`wlr_scene_set_linux_dmabuf_v1`), so GPU clients are told which buffer formats the display can scan
+  out. Without it a fullscreen video or game is always composited. wp_viewporter and
+  wp_single_pixel_buffer are enabled too (scaling and solid colours without client-side work). Checked
+  in a nested compositor: a Vulkan client negotiates dmabuf feedback with the new tranches. Not yet
+  checked: an actual direct scan-out on the laptop's display, which needs the new build in the live
+  session.
+
+### Where the time goes now
+
+A full-window terminal that scrolls constantly costs the compositor about 1.1 ms of CPU per frame on
+the Celeron (6.5% at 60 fps; the overlay shows 0.3 ms of that as build + commit). About a third of the
+profile is one `rep movsb`: Mesa copying the client's shm pixels into GPU memory. That is inherent to
+shm clients; only GPU-buffer clients or smaller damage avoid it. Typing and small updates cost far less
+because only the damaged area is uploaded. GPU time itself was not measured (it needs `intel_gpu_top`).
+
+### GPU time, IPC and threads (2026-10-06, same laptop)
+
+`intel_gpu_top` against a nested compositor with the new overlay on (the live session sat idle next to it):
+
+| workload | render engine busy | GPU asleep (RC6) |
+|---|---|---|
+| desktop idle, overlay on | 0.7% | 98.4% |
+| full-window terminal scrolling (`yes`) | 29.6% | 56.9% |
+| `vkcube` (a GPU client) | 30.9% | 60.8% |
+
+So a constantly scrolling full-window terminal needs about 5 ms of GPU per 16.7 ms frame, with the GPU
+clocked near its minimum (it averaged about 170 MHz while awake; the maximum is 650). That is about three
+times the headroom before frames could be missed, and the clock can still rise, so 60 fps is not at risk
+on this hardware. The CPU side is 1.1 ms per frame (see above).
+
+- **IPC** (`fleetwm.sock`, one text line per request): a `WORKSPACE?` round trip is 37 us median, 50 us
+  at p99, 168 us worst over 2000 requests. Nothing to gain; it was not changed.
+- **Threads.** The compositor loop is single-threaded because wlroots and the Wayland server library are
+  not thread-safe; offloading rendering would mean a redesign. The threads that do exist are Mesa's
+  (shader compile and the on-disk shader cache) and jemalloc's background purge (6 wakeups in 30 s).
+  The bar has a PipeWire thread for the volume and one short-lived thread for `nvidia-smi`.
+  `mesa_glthread=true` (GL driver work on its own thread) saved about 5% on a busy terminal and was left
+  off. On a 2-core Celeron more threads mostly add context switches.
+- **Wakeups at idle** (nested): compositor 1.0 context switches a second, wallpaper 0, bar 4.5 with a
+  seconds clock. The bar's extra wakeups are the protocol round trip after each repaint (frame callback,
+  buffer release), about three per repaint at 1.5 repaints a second.
+
+### More ideas from other compositors (not applied)
+
+- **niri**: after a redraw with no damage it waits for an estimated vblank before sending frame
+  callbacks, so a client that redraws without visible change cannot spin. wlroots already behaves like
+  this here (a commit with no visible damage schedules no frame, so no `frame_done` goes out), so this is
+  covered.
+- **gamescope**: nested micro-compositor with frame pacing and FSR upscaling for games; the lever
+  relevant here is direct scan-out, which is now enabled (see above).
+- **cosmic-comp (Smithay)** and **labwc/dwl/river**: the same damage-tracking and scan-out ideas; labwc
+  hands the pipeline to wlroots, as Fleetwm does.
+- **System level** (documented, not applied, because they change the machine and not the desktop):
+  zram or zswap instead of disk swap on small-RAM machines (the laptop has 1.7 GB of disk swap at
+  swappiness 60 and used 0 of it), the `performance` or EPP governor when latency matters more than
+  battery, the i915 `enable_fbc`/`enable_psr` options on newer GPUs (not exposed on this kernel).
+
+### What other compositors do, and where Fleetwm stands
+
+Sources: the KWin, Mutter, sway, Hyprland and wlroots documentation and blogs read while writing this.
+
+| technique | who | Fleetwm |
+|---|---|---|
+| Draw only damaged regions, render nothing when idle | all (Hyprland calls it vfr) | yes: scene damage tracking, 0 idle frames |
+| Direct scan-out of fullscreen GPU buffers | sway, KWin, Hyprland, Mutter | enabled, needs live check (see above) |
+| Hardware cursor plane | all | wlroots default |
+| Delay rendering until just before the deadline (sway `max_render_time`, KWin render-time prediction) | sway, KWin | not done: lowers latency, not CPU; would need frame-time prediction |
+| Dynamic triple buffering when a frame runs late (also lets the driver raise GPU clocks) | Mutter, KWin | not done: matters on slow Intel parts that miss 60 fps, which this laptop does not |
+| Real-time or raised priority for the compositor | Mutter (rtkit), KWin | nice -10 |
+| Fixed thread-free small clients | none do this as far as read | fleetkit clients, 5-15 MB each |
+| Overlay planes for video | KWin 6.x | wlroots decides; no code of ours |
+
+### wlroots version
+
+Debian 13 (the target) ships wlroots 0.18.2; Debian testing and unstable have 0.20.2, so `apt` on the
+target cannot pull a newer one without adding testing, which would drag in newer system libraries.
+Building 0.20 from source as a subproject is possible, but the code would need porting to the changed
+API, and the 0.19 and 0.20 release notes list protocols (colour management, workspaces, capture) and
+the Vulkan renderer, not anything for the GLES2 path this laptop uses. Rejected until a measurement
+says otherwise.
+
+### Tried and rejected
+
+- `MESA_NO_ERROR=1`: 5.93% against 5.93-6.00% on a busy terminal, no effect.
+- `mesa_glthread=true`: about 5% less total CPU on a busy terminal (nested only); not enabled.
+- Paging out Mesa's idle libLLVM mapping (36 MB of the compositor's 89 MB RSS): those are clean page
+  cache pages, `free` does not count them as used, and the kernel skipped them anyway.
+- Caching or prewarming app start-up: the start menu, launcher, Settings, shortcuts, audio mixer and
+  power menu each use 20-40 ms of CPU to start and 11-14 MB, so a resident copy would only cost memory.
+- Per-commit work in `View::resize_border`: one small vector allocation per client commit, well under
+  0.01% CPU; not worth touching.
+
 ## Build and memory (earlier work)
 
 - Release flags: `-Db_lto=true`, `-march=native`, `-ffunction-sections

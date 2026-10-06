@@ -193,6 +193,37 @@ It is skipped if a display manager (GDM, SDDM, LightDM) is already enabled, in w
 Fleetwm from that login screen's session list. Set `FLEETWM_NO_GREETER=1` when running the
 installer to skip it. To switch it off later, see [docs/GREETER.md](docs/GREETER.md).
 
+## Performance
+
+Fleetwm is built to stay light and quick on weak hardware; the testing bed is a Celeron N4020 laptop.
+Every item below was measured, and the numbers and the things that were tried and rejected are in
+[docs/OPTIMIZATIONS.md](docs/OPTIMIZATIONS.md).
+
+- **Idle costs nothing.** Nothing redraws unless something visible changed; the compositor, bar,
+  wallpaper and applets sit at 0.0-0.3% CPU on the laptop with a seconds clock showing.
+- **Small clients.** The bar, wallpaper, launcher, settings, locker and menus are plain Wayland clients
+  on a tiny toolkit (no GTK, GLib or Pango): 4-17 MB each, and the always-resident shell (bar and
+  wallpaper) went from about 260 MB to about 17 MB.
+- **Seconds clock repaints a strip.** The bar redraws and reports only the clock's rectangle when it
+  ticks: 0.72% to 0.28% CPU with glass on.
+- **Glass is cached.** Each glass rectangle is painted once and reused; the blurred wallpaper is decoded
+  once per process. Glass on costs the bar about the same as glass off.
+- **Cheap performance overlay.** One small picture repainted four times a second inside the frame being
+  committed, instead of hundreds of scene rectangles that kept the compositor rendering by themselves:
+  58% to 0.27% CPU idle on the laptop, 37.8% to 6.5% under a busy terminal.
+- **Start menu is only as big as its card.** About a quarter of the compositor memory it used before,
+  and the launcher's own memory is down about 15%.
+- **GPU buffers can go straight to the screen.** The compositor tells GPU clients which formats the
+  display can scan out, and offers viewporter and single-pixel buffers, so a fullscreen video or game
+  does not have to be composited.
+- **Build.** Release builds use LTO, `-march=native`, profile-guided optimization with automatic
+  training, unity builds and speed-first flags; the compositor runs at raised priority.
+- **Memory.** jemalloc with a background purge thread for the compositor, tuned glibc thresholds for
+  everything else, the login screen on the software renderer, and the pixman renderer on machines
+  without a GPU.
+- **Hot paths.** Window border colours are parsed once per theme load, the cursor name is cached, the
+  custom FPS cap never spins while idle, and the clock and the CPU/GPU stats run on separate timers.
+
 ## More documentation
 
 - [Shortcuts](docs/SHORTCUTS.md)
