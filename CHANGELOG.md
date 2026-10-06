@@ -30,7 +30,8 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
 ### Added (tooling)
 - `scripts/check-unity-collisions.py` (also runs with `scripts/test.sh` and `meson test --suite static`) and
   `scripts/check-unity.sh` (a real unity build that reports every error, then the unit tests) so a clash like
-  that is caught before a tag. Release checklist in `docs/DEVELOPMENT.md`.
+  that is caught before a tag. Release checklist in `docs/DEVELOPMENT.md`. `install.sh` runs the quick check right
+  before the slow build and stops with the clashing names instead of failing minutes into the compile.
 
 ### Changed
 - Higher contrast for bar icons and text.
