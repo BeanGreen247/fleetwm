@@ -149,6 +149,18 @@ on this hardware. The CPU side is 1.1 ms per frame (see above).
   swappiness 60 and used 0 of it), the `performance` or EPP governor when latency matters more than
   battery, the i915 `enable_fbc`/`enable_psr` options on newer GPUs (not exposed on this kernel).
 
+### Profile-guided build training (2026-10-06)
+
+The training run (`scripts/pgo-train-session.sh`, driven by `scripts/build-pgo-auto.sh`) used to start the
+desktop programs, switch workspaces four times and wait 20 s, so most of the code the final binaries are
+optimized for never ran. It now runs 150 s on the virtual screen: six rounds, each a different layout, glass
+and colour combination, each with every kind of work (workspace sweeps, four rotating Settings pages so all
+twelve are drawn, shortcuts and language windows, start menu and launcher search, power menu, Alt+Tab,
+snap keys, overlay, keyboard layout switching, idle inhibit, window queries, live layout flips with windows
+open, terminals scrolling output, screen capture, pointer sweeps). Steps that need wtype, wlrctl, foot or
+grim are skipped when they are missing. `tests/test_pgo_training.cpp` checks the length and the coverage.
+The extra install time is about two and a half minutes.
+
 ### What other compositors do, and where Fleetwm stands
 
 Sources: the KWin, Mutter, sway, Hyprland and wlroots documentation and blogs read while writing this.

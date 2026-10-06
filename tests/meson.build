@@ -31,6 +31,7 @@ fleetwm_test_sources = files(
   'test_app_appearance.cpp',
   'test_settings_pages.cpp',
   'test_power_menu.cpp',
+  'test_pgo_training.cpp',
 )
 
 fleetwm_unit_tests = executable(
@@ -58,6 +59,7 @@ test_areas = {
   'fleetkit': 'DesktopEntryExec.*:FleetkitColor.*:GlassCache.*',
   'network': 'NetworkParse.*:SystemDevices.*:WpaFixture.*',
   'keyboard': 'KeyboardConfigTest.*:KeyboardNames.*:XkbRules.*:Locales.*',
+  'build': 'PgoTraining.*',
   'power': 'PowerActions.*:PowerPolkitRule.*:PowerInstaller.*:PowerIcons.*:PolkitRules.*:PolkitRuleBehaviour.*',
 }
 foreach area, filter : test_areas
