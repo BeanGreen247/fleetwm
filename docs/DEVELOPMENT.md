@@ -151,6 +151,7 @@ libgl1-mesa-dri libegl-mesa0 libgbm1 libvulkan1 mesa-vulkan-drivers mesa-va-driv
 intel-media-va-driver i965-va-driver   (Intel GPUs only; picked from /sys/class/drm)
 libcairo2-dev libpng-dev libjpeg-dev libwebp-dev fonts-dejavu-core
 libpipewire-0.3-dev pipewire pipewire-bin wireplumber
+pipewire-pulse pipewire-alsa alsa-ucm-conf alsa-utils
 libpam0g-dev
 libjemalloc2
 libsystemd-dev
