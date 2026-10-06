@@ -35,6 +35,7 @@ extern "C" {
 
 #include "output_config.hpp"
 #include "keyboard_config.hpp"
+#include "switcher.hpp"
 #include "power_config.hpp"
 #include <memory>
 #include <vector>
@@ -116,6 +117,8 @@ class Server {
   // toggle_debug_overlay()) so it's never hidden behind a real
   // layer-shell overlay client. Nothing else should parent nodes here.
   wlr_scene_tree* layer_debug() const { return layer_debug_; }
+  // Above the layer-shell clients: the Alt+Tab switcher panel.
+  wlr_scene_tree* layer_overlay() const { return layer_overlay_; }
 
   bool debug_overlay_enabled() const { return debug_overlay_enabled_; }
   // Alt+Shift+<keybinds.toggle_debug_overlay> (default "I") -- flips a
@@ -203,7 +206,11 @@ class Server {
   // Alt+Tab-style cycling in most-recently-used order. `hold_mask` is the modifier
   // bits whose release ends the cycle (the Alt in Alt+Tab).
   void cycle_windows(bool backward, unsigned hold_mask);
-  void end_window_cycle() { cycle_order_.clear(); cycle_hold_mask_ = 0; }
+  void end_window_cycle() {
+    cycle_order_.clear();
+    cycle_hold_mask_ = 0;
+    switcher_.hide();
+  }
   bool cycling() const { return !cycle_order_.empty(); }
   unsigned cycle_hold_mask() const { return cycle_hold_mask_; }
   // Windows-style whole-desktop actions on the workspace being looked at.
@@ -536,6 +543,7 @@ class Server {
   friend int idle_timer_cb(void* data);
   uint32_t next_view_id_ = 1;
   std::vector<View*> hidden_by_show_desktop_;
+  WindowSwitcher switcher_{this};  // the Alt+Tab preview panel
   std::vector<View*> cycle_order_;  // snapshot taken when an Alt+Tab cycle starts
   size_t cycle_index_ = 0;
   unsigned cycle_hold_mask_ = 0;

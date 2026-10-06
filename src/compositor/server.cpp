@@ -172,7 +172,10 @@ void view_mapped(View* view) {
                        std::strcmp(view->xdg_toplevel->app_id, "dev.fleetwm.LangPicker") == 0);
   if (is_settings) {
     view->set_floating(true);
-    view->always_on_top = true;
+    view->fleetwm_panel = true;
+    // Always on top only in the Tiling layout, where there is no other way to keep it reachable; in
+    // the Desktop layout it stacks like any other window (and can be pinned from its titlebar).
+    view->always_on_top = !view->server->desktop_layout();
     view->update_stacking_layer();
   }
 
@@ -2127,6 +2130,14 @@ void Server::reload_theme_config() {
   refresh_border_colors();
   titlebar_reload_palette(theme_config_);
   update_app_appearance();
+  for (const std::unique_ptr<View>& view : views) {  // panels follow the layout's stacking rule
+    if (!view->fleetwm_panel) continue;
+    const bool want_top = !desktop_layout();
+    if (view->always_on_top != want_top) {
+      view->always_on_top = want_top;
+      view->update_stacking_layer();
+    }
+  }
   if (was_desktop && !desktop_layout()) {
     end_grab();
     for (const std::unique_ptr<View>& view : views) {

@@ -65,6 +65,7 @@ void Server::cycle_windows(bool backward, unsigned hold_mask) {
   const size_t n = cycle_order_.size();
   cycle_index_ = (cycle_index_ + (backward ? n - 1 : 1)) % n;
   activate_view(cycle_order_[cycle_index_]);
+  switcher_.show(cycle_order_, cycle_index_);
 }
 
 // ---- Super+arrows (Windows-style snapping) -----------------------------------
