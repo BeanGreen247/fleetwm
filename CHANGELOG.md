@@ -81,6 +81,13 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
 - Settings, Shortcuts and the language checklist stack like normal windows in the Desktop layout.
 
 ### Performance
+- Measured on the Celeron test laptop and recorded in `docs/OPTIMIZATIONS.md`: a scrolling full-window terminal
+  keeps the GPU about 30% busy and costs the compositor about 1.1 ms of CPU per frame (a third of it the copy of
+  the client's pixels to the GPU); a compositor IPC round trip is 37 us; idle wakeups are about 1 a second for
+  the compositor and 4.5 for a bar with a seconds clock. Tried and rejected, with numbers: `MESA_NO_ERROR`,
+  `mesa_glthread`, paging out Mesa's idle LLVM library, prewarming apps, a newer wlroots.
+- The performance overlay repaints in 0.5-0.6 ms (it was 1.0-1.2 ms): the panel is copied from a cached picture,
+  graph bars are written straight into the pixels, and CPU use is one `getrusage` call.
 - The performance overlay (Alt+Shift+I, Ctrl+Alt+I in Desktop) is one small cairo-drawn picture instead of
   ~665 scene rectangles, is repainted at most four times a second inside the frame being committed, and no
   longer keeps the compositor rendering 60 frames a second by itself. On the Celeron laptop the compositor
