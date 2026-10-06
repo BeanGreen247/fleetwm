@@ -226,12 +226,14 @@ Every item below was measured, and the numbers and the things that were tried an
   on a tiny toolkit (no GTK, GLib or Pango): 4-17 MB each, and the always-resident shell (bar and
   wallpaper) went from about 260 MB to about 17 MB.
 - **Seconds clock repaints a strip.** The bar redraws and reports only the clock's rectangle when it
-  ticks: 0.72% to 0.28% CPU with glass on.
+  ticks (`Surface::queue_draw_rect`): 0.72% to 0.28% CPU with glass on. The Island bar re-sends its layout
+  only when its width really changes, not on every tick.
 - **Glass (Windows Aero) titlebars are cached.** The glass background and the caption buttons are drawn once per
   state and copied, so moving the pointer across the buttons costs about a seventh of what it did and glass costs
   the same as the flat look.
-- **Glass is cached.** Each glass rectangle is painted once and reused; the blurred wallpaper is decoded
-  once per process. Glass on costs the bar about the same as glass off.
+- **Glass is cached.** Each glass rectangle is painted once and kept in a small tile cache (3 MB, least
+  recently used), so a redraw is one copy; the blurred wallpaper is decoded once per process, not at every
+  Alt+Tab step. Glass on costs the bar about the same as glass off.
 - **Cheap performance overlay.** One small picture repainted four times a second inside the frame being
   committed, instead of hundreds of scene rectangles that kept the compositor rendering by themselves:
   58% to 0.27% CPU idle on the laptop, 37.8% to 6.5% under a busy terminal.
@@ -240,13 +242,28 @@ Every item below was measured, and the numbers and the things that were tried an
 - **GPU buffers can go straight to the screen.** The compositor tells GPU clients which formats the
   display can scan out, and offers viewporter and single-pixel buffers, so a fullscreen video or game
   does not have to be composited.
-- **Build.** Release builds use LTO, `-march=native`, profile-guided optimization with automatic
-  training, unity builds and speed-first flags; the compositor runs at raised priority.
+- **Build.** Release builds use LTO, `-march=native`, profile-guided optimization, unity builds and
+  speed-first flags; the compositor runs at raised priority. The profile comes from a 150 second training run
+  on a virtual screen that cycles Tiling and Desktop, glass on and off, dark and light, with every Settings
+  page, the start menu, launcher search, power menu, Alt+Tab, snapping, the overlay, terminals and IPC
+  queries; the freshly built programs are put first on `PATH` so the ones the desktop starts by name are the
+  instrumented ones. A quick static check for name clashes between source files runs before the long compile.
+- **Volume mixer.** It opens next to the bar or taskbar it came from, closes on a click anywhere outside it,
+  and a second launch closes it instead of starting another process (dozens used to pile up).
 - **Memory.** jemalloc with a background purge thread for the compositor, tuned glibc thresholds for
   everything else, the login screen on the software renderer, and the pixman renderer on machines
   without a GPU.
+- **Headroom, measured on the laptop.** A constantly scrolling full-window terminal keeps the Intel GPU about
+  30% busy (`intel_gpu_top`) and costs the compositor about 1.1 ms of CPU per frame (about a third of it is the
+  copy of the client's pixels to the GPU), so 60 fps has roughly three times the room. A compositor IPC round
+  trip takes 37 us.
+- **Tried and rejected, with numbers** (in the notes so nobody repeats them): `MESA_NO_ERROR`, `mesa_glthread`
+  (about 5% on a busy terminal, left off on two cores), paging out Mesa's idle LLVM library, prewarming the
+  apps (they start in 20-40 ms of CPU), and a newer wlroots (Debian 13 has 0.18.2; 0.19 and 0.20 add protocols
+  and a Vulkan renderer, nothing for this GLES2 path).
 - **Hot paths.** Window border colours are parsed once per theme load, the cursor name is cached, the
-  custom FPS cap never spins while idle, and the clock and the CPU/GPU stats run on separate timers.
+  custom FPS cap never spins while idle, leftover debug logging that ran on every pointer motion and key press
+  is gone, and the clock and the CPU/GPU stats run on separate timers.
 
 ## More documentation
 

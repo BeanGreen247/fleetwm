@@ -204,6 +204,32 @@ menus start the launcher, Settings and the power menu) resolve through a `PATH` 
 (`scripts/pgo-path-shim.sh`) to the instrumented copies, so they are profiled even on a machine that has an
 older Fleetwm installed, and nothing runs twice. The extra install time is about two and a half minutes.
 
+### Other speed-ups, by commit (so none is lost)
+
+Performance work that is not in a table above, from the git history and this session:
+
+- **Window border colours parsed once per theme load** (`1776b66`): they used to be parsed again on every client
+  commit (60 or more times a second for a busy window).
+- **Cursor name cached** (`9ea090b`) instead of looked up on every pointer motion.
+- **Leftover debug logging removed** (`aea23d5`): `wlr_log_init(WLR_DEBUG)` logged every cursor motion and every
+  scene commit, and a raw `fprintf` logged every key press.
+- **FPS cap loop** (`c6b03c8`): Custom render mode committed empty frames about 150 times a second on an idle
+  desktop; the loop now ends when nothing is damaged (see the section on the cap above).
+- **Bar timers** (`c6b03c8`): the clock and the CPU/GPU stats run on separate timers, and stats redraw only when
+  the text changed.
+- **Pixman renderer without a GPU render node** (`3486a5a`), **jemalloc kept to the compositor** (`3486a5a`),
+  **zombie children reaped, allocator tuned, the login screen without a GPU stack** (`34f6316`).
+- **Release flags, LTO, `-march=native`, unity builds, PGO** (`a06525c`, `686e9fc`, `3a5eac8`; see the build
+  sections), now with the wider 150 s training run and the `PATH` shim (`scripts/pgo-path-shim.sh`) that makes
+  the programs the desktop starts by name the instrumented ones.
+- **Static check for source-file name clashes before the build** (`scripts/check-unity-collisions.py`, run by
+  `install.sh` and `scripts/test.sh`; `scripts/check-unity.sh` is the full unity build): the installer's unity
+  build merges files, and a clash used to cost minutes of compiling before it failed.
+- **Volume mixer: single instance and closing on an outside click** (`src/common/single_instance.hpp`,
+  `src/common/popup_namespaces.hpp`): a second launch closes the open mixer instead of starting another
+  process; dozens of idle mixer processes (each a PipeWire client) used to pile up on the test laptop. It also
+  opens next to the bar or taskbar it came from (`src/common/popup_spot.hpp`).
+
 ### What other compositors do, and where Fleetwm stands
 
 Sources: the KWin, Mutter, sway, Hyprland and wlroots documentation and blogs read while writing this.

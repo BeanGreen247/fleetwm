@@ -254,3 +254,50 @@ TEST(TitlebarDraw, TheDocsRecordTheGlassPerformanceWork) {
   EXPECT_NE(readme.find("docs/OPTIMIZATIONS.md#glass-windows-aero-performance-at-a-glance"), std::string::npos) << "the README links to the table";
   EXPECT_NE(td_read("CHANGELOG.md").find("Windows Aero (glass) performance"), std::string::npos);
 }
+
+// The performance work is documented in several places and nobody wants to lose any of it: every item below
+// has to stay mentioned in the README's Performance section (the user-facing list) and in OPTIMIZATIONS.md
+// (numbers and method). Add to these lists when something new is made faster.
+TEST(TitlebarDraw, EveryPerformanceItemStaysDocumented) {
+  auto lower = [](std::string s) {
+    for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return s;
+  };
+  const std::string readme = td_read("README.md");
+  const size_t at = readme.find("## Performance");
+  ASSERT_NE(at, std::string::npos);
+  const std::string perf = lower(readme.substr(at, readme.find("\n## ", at + 5) - at));
+  const std::string opt = lower(td_read("docs/OPTIMIZATIONS.md"));
+  struct Item {
+    const char* name;
+    const char* readme_key;
+    const char* optim_key;
+  };
+  const Item items[] = {
+      {"idle costs nothing", "idle costs nothing", "idle"},
+      {"small GTK-free clients", "small clients", "fleetkit"},
+      {"clock strip repaint", "queue_draw_rect", "queue_draw_rect"},
+      {"island bar layout", "island bar", "island_resize_if_needed"},
+      {"glass tile cache", "tile cache", "tile cache"},
+      {"backdrop decoded once", "decoded once", "load_backdrop()"},
+      {"titlebar caches", "glass (windows aero) titlebars are cached", "342 us"},
+      {"cheap overlay", "58% to 0.27%", "0.27%"},
+      {"start menu card", "only as big as its card", "card-sized"},
+      {"dmabuf scan-out feedback", "scan out", "wlr_scene_set_linux_dmabuf_v1"},
+      {"PGO training and PATH shim", "150 second training run", "pgo-path-shim"},
+      {"unity clash check", "name clashes", "check-unity"},
+      {"volume mixer single instance", "second launch closes it", "single instance"},
+      {"every performance commit is listed", "tried and rejected", "other speed-ups, by commit"},
+      {"GPU headroom and IPC", "intel_gpu_top", "intel_gpu_top"},
+      {"rejected ideas", "mesa_no_error", "mesa_no_error"},
+      {"wlroots version", "0.18.2", "0.20"},
+      {"memory work (jemalloc, pixman, greeter)", "jemalloc", "jemalloc"},
+      {"hot paths (border colours, cursor name, fps cap)", "border colours", "border colours"},
+      {"debug logging removed", "debug logging", "debug logging"},
+      {"other compositors' techniques", "vulkan renderer", "niri"},
+  };
+  for (const Item& it : items) {
+    EXPECT_NE(perf.find(it.readme_key), std::string::npos) << "README Performance section lost: " << it.name << " (" << it.readme_key << ")";
+    EXPECT_NE(opt.find(it.optim_key), std::string::npos) << "OPTIMIZATIONS.md lost: " << it.name << " (" << it.optim_key << ")";
+  }
+}
