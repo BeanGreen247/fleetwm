@@ -103,7 +103,10 @@ Plain `foot` opens with a larger font and a short prompt (`~>`, plus the git bra
 repository). It applies to every terminal you start in the session, from the shortcut, the launcher or
 the start menu. The shell setup keeps bash behaving normally and only adds a bigger history,
 case-insensitive completion, history search on Up/Down and fzf keys when fzf is installed. If you
-create your own `~/.config/foot/foot.ini`, foot uses that instead.
+create your own `~/.config/foot/foot.ini`, foot uses that instead, and nothing of Fleetwm's is mixed in.
+If a dotfile tool (Ansible, stow, chezmoi) puts a `foot.ini` there, that is what you get. To keep Fleetwm's
+defaults and only change a few things, start your file with `include=/usr/local/etc/fleetwm/foot.ini`
+(foot 1.12 or newer) and put your changes below it.
 
 ## Keep awake padlock
 
