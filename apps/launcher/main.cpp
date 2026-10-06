@@ -22,6 +22,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "backdrop.hpp"
 #include "bar_config.hpp"
 #include "default_apps.hpp"
 #include "desktop_entry.hpp"
@@ -181,6 +182,8 @@ struct Launcher {
   };
   std::vector<Place> places;          // Documents, Pictures, ... Settings
   std::string user_name = "user";
+  bool glass = false;                 // theme.toml glass_effects
+  cairo_surface_t* backdrop = nullptr;  // the frosted wallpaper, only loaded when glass is on
   std::string query;
   size_t cursor = 0;           // byte offset into query
   std::vector<const Entry*> results;  // nullptr = run-as-command sentinel
@@ -379,7 +382,7 @@ struct Launcher {
   void draw(cairo_t* cr, int W, int H) {
     if (start_menu) {
       place_card(W, H);
-      draw_start_menu(cr);
+      draw_start_menu(cr, W, H);
       return;
     }
     const double r = pal.rounded ? 16 : 4;
@@ -507,52 +510,58 @@ struct Launcher {
     return {a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t, 1.0};
   }
 
-  void glass_item(cairo_t* cr, double x, double y, double w, double h, bool strong, bool light_bg) {
-    rounded_rect(cr, x + 0.5, y + 0.5, w - 1, h - 1, 3);
-    if (light_bg) {
-      set_source(cr, strong ? Color{0.62, 0.78, 0.96, 0.55} : Color{0.70, 0.83, 0.97, 0.38});
-    } else {
-      set_source(cr, strong ? Color{1, 1, 1, 0.26} : Color{1, 1, 1, 0.14});
-    }
+  // A highlighted row or button in the theme's accent.
+  void accent_item(cairo_t* cr, double x, double y, double w, double h, bool strong) {
+    const double rad = pal.rounded ? 8 : 2;
+    rounded_rect(cr, x + 0.5, y + 0.5, w - 1, h - 1, rad);
+    set_source(cr, alpha(pal.accent, strong ? 0.26 : 0.12));
     cairo_fill_preserve(cr);
-    set_source(cr, light_bg ? Color{0.45, 0.64, 0.90, strong ? 0.95 : 0.65} : Color{1, 1, 1, strong ? 0.55 : 0.35});
+    set_source(cr, alpha(pal.accent, strong ? 0.75 : 0.35));
     cairo_set_line_width(cr, 1);
     cairo_stroke(cr);
   }
 
-  void draw_start_menu(cairo_t* cr) {
+  void draw_start_menu(cairo_t* cr, int out_w, int out_h) {
     hits.clear();
     const double x0 = card_x, y0 = card_y;
-    draw_shadow(cr, x0, y0, card_w, card_h, 8);
+    const double frame_r = pal.rounded ? 14 : 3, panel_r = pal.rounded ? 10 : 2;
+    draw_shadow(cr, x0, y0, card_w, card_h, frame_r);
 
-    // The frame, matte for now: one solid blue-tinted theme colour with a thin rim. Everything
-    // that gives the Windows 7 look (the two panels, the rows, the buttons) is drawn on top of it,
-    // so a glass or Aero frame can replace just this block later.
-    {
-      const Color frame = mix(pal.bg_primary, Color{0.20, 0.34, 0.58, 1}, 0.60);
-      rounded_rect(cr, x0, y0, card_w, card_h, 8);
-      set_source(cr, frame);
+    // The frame. Matte: one flat theme colour with a thin rim. Glass: the frosted wallpaper behind it,
+    // a tint, a sheen and a light rim. Everything on top of it is the same in both looks, so this block
+    // is the only part that differs.
+    if (glass) {
+      GlassStyle st;
+      st.tint = mix(pal.bg_primary, pal.accent, 0.18);
+      st.tint_alpha = 0.60;
+      st.radius = frame_r;
+      paint_glass(cr, backdrop, out_w, out_h, x0, y0, x0, y0, card_w, card_h, st);
+    } else {
+      rounded_rect(cr, x0, y0, card_w, card_h, frame_r);
+      set_source(cr, mix(pal.bg_primary, pal.accent, 0.12));
       cairo_fill_preserve(cr);
-      set_source(cr, {1, 1, 1, 0.30});
+      set_source(cr, alpha(pal.fg_secondary, 0.25));
       cairo_set_line_width(cr, 1);
       cairo_stroke(cr);
     }
 
-    // ---- left panel: light, like Windows 7 ----
+    // ---- left panel: programs and search ----
     const double px = x0 + kFrame, py = y0 + kFrame, pw = kLeftW, ph = card_h - 2 * kFrame;
-    rounded_rect(cr, px, py, pw, ph, 4);
-    set_source(cr, {0.965, 0.972, 0.985, 1});
+    rounded_rect(cr, px, py, pw, ph, panel_r);
+    Color panel = pal.bg_secondary;
+    panel.a = glass ? 0.72 : 1.0;
+    set_source(cr, panel);
     cairo_fill(cr);
-    const Color ink{0.10, 0.13, 0.19, 1}, ink2{0.42, 0.46, 0.54, 1};
+    const Color ink = pal.fg_primary, ink2 = pal.fg_secondary;
 
-    const double lx = px + 3, ly = py + kListTop, lw = pw - 6;
+    const double lx = px + 4, ly = py + kListTop, lw = pw - 8;
     cairo_save(cr);
     cairo_rectangle(cr, lx, ly, lw, max_rows * row_h);
     cairo_clip(cr);
     for (int i = scroll; i < static_cast<int>(results.size()) && i < scroll + max_rows; ++i) {
       const double ry = ly + (i - scroll) * row_h;
       const bool sel = i == selected, hot = i == hover_row;
-      if (sel || hot) glass_item(cr, lx, ry + 1, lw - 6, row_h - 2, sel, true);
+      if (sel || hot) accent_item(cr, lx, ry + 1, lw - 6, row_h - 2, sel);
       Entry* e = const_cast<Entry*>(results[static_cast<size_t>(i)]);
       const std::string primary = e ? e->de.name : query;
       const double isz = 30, ix = lx + 8, iy = ry + (row_h - isz) / 2;
@@ -566,156 +575,141 @@ struct Launcher {
         cairo_paint(cr);
         cairo_restore(cr);
       } else {
-        rounded_rect(cr, ix, iy, isz, isz, 6);
-        set_source(cr, alpha(pal.accent, 0.35));
+        cairo_arc(cr, ix + isz / 2, iy + isz / 2, isz / 2, 0, 2 * M_PI);
+        set_source(cr, alpha(pal.accent, 0.20));
         cairo_fill(cr);
         const std::string letter = e ? (primary.empty() ? "?" : primary.substr(0, next_char_len(primary, 0))) : ">";
         const TextExtents le = measure_text(cr, letter, 14, true);
-        draw_text(cr, letter, ix + (isz - le.width) / 2, iy + (isz - le.height) / 2 + le.ascent, 14, ink, true);
+        draw_text(cr, letter, ix + (isz - le.width) / 2, iy + (isz - le.height) / 2 + le.ascent, 14, pal.accent, true);
       }
-      const double nx = ix + isz + 10;
-      std::string label = e ? primary : "Run: " + primary;
-      while (label.size() > 4 && measure_text(cr, label, 13.5).width > lw - (nx - lx) - 14) label.resize(label.size() - 1);
-      if (label.size() < (e ? primary : "Run: " + primary).size()) label += "...";
-      const TextExtents te = measure_text(cr, label, 13.5);
-      draw_text(cr, label, nx, ry + (row_h - te.height) / 2 + te.ascent, 13.5, ink);
+      const double nx = ix + isz + 12;
+      const std::string full = e ? primary : "Run: " + primary;
+      std::string label = full;
+      while (label.size() > 4 && measure_text(cr, label, kFont, true).width > lw - (nx - lx) - 14) label.resize(label.size() - 1);
+      if (label.size() < full.size()) label += "...";
+      const TextExtents te = measure_text(cr, label, kFont, true);
+      draw_text(cr, label, nx, ry + (row_h - te.height) / 2 + te.ascent, kFont, ink, true);
     }
     cairo_restore(cr);
-    if (results.empty() && !query.empty()) draw_text(cr, "No matches", lx + 14, ly + 26, 13.5, ink2);
+    if (results.empty() && !query.empty()) draw_text(cr, "No matches", lx + 14, ly + 26, kFont, ink2);
     const int total = static_cast<int>(results.size());
     if (total > max_rows) {  // thin scroll thumb
       const double track = max_rows * row_h, th = std::max(24.0, track * max_rows / total);
       const double ty = ly + (track - th) * scroll / (total - max_rows);
       rounded_rect(cr, lx + lw - 4, ty, 3, th, 1.5);
-      set_source(cr, {0.3, 0.4, 0.55, 0.45});
+      set_source(cr, alpha(pal.fg_secondary, 0.5));
       cairo_fill(cr);
     }
 
-    // "All Programs" / "Back" row under the list, with a separator above it.
+    // "All Programs" / "Back" under the list, with a separator above it.
     const double ay = ly + max_rows * row_h + 2;
-    set_source(cr, {0.78, 0.82, 0.88, 1});
+    set_source(cr, alpha(pal.fg_secondary, 0.25));
     cairo_rectangle(cr, lx + 8, ay - 1, lw - 16, 1);
     cairo_fill(cr);
     if (query.empty()) {
-      const bool hot = hover_hit == kHitAllPrograms;
-      if (hot) glass_item(cr, lx, ay + 2, lw - 6, kAllRowH - 4, false, true);
+      if (hover_hit == kHitAllPrograms) accent_item(cr, lx, ay + 2, lw - 6, kAllRowH - 4, false);
       hits.push_back({lx, ay, lw, kAllRowH, kHitAllPrograms});
       const std::string label = all_programs ? "Back" : "All Programs";
       const double ax = lx + 14, acy = ay + kAllRowH / 2;
       set_source(cr, ink);
-      cairo_set_line_width(cr, 2);
-      cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
-      cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND);
-      if (all_programs) {  // left-pointing triangle
+      if (all_programs) {
         cairo_move_to(cr, ax + 7, acy - 5);
         cairo_line_to(cr, ax + 1, acy);
         cairo_line_to(cr, ax + 7, acy + 5);
-        cairo_close_path(cr);
-      } else {             // right-pointing triangle
+      } else {
         cairo_move_to(cr, ax + 1, acy - 5);
         cairo_line_to(cr, ax + 7, acy);
         cairo_line_to(cr, ax + 1, acy + 5);
-        cairo_close_path(cr);
       }
+      cairo_close_path(cr);
       cairo_fill(cr);
-      const TextExtents te = measure_text(cr, label, 13.5, true);
-      draw_text(cr, label, ax + 18, acy - te.height / 2 + te.ascent, 13.5, ink, true);
+      const TextExtents te = measure_text(cr, label, kFont, true);
+      draw_text(cr, label, ax + 18, acy - te.height / 2 + te.ascent, kFont, ink, true);
     }
 
-    // Search box at the bottom of the left panel.
+    // The search box.
     const double sy = ay + kAllRowH + 4, sx = lx + 4, sw = lw - 14, sh = kSearchH - 16;
-    rounded_rect(cr, sx + 0.5, sy + 0.5, sw - 1, sh - 1, 3);
-    set_source(cr, {1, 1, 1, 1});
+    rounded_rect(cr, sx + 0.5, sy + 0.5, sw - 1, sh - 1, pal.rounded ? sh / 2 : 3);
+    set_source(cr, pal.bg_primary);
     cairo_fill_preserve(cr);
-    set_source(cr, {0.62, 0.68, 0.78, 1});
+    set_source(cr, alpha(pal.fg_secondary, 0.35));
     cairo_set_line_width(cr, 1);
     cairo_stroke(cr);
     hits.push_back({sx, sy, sw, sh, kHitSearch});
     {
-      const TextExtents te = measure_text(cr, "Ag", 13.5);
+      const TextExtents te = measure_text(cr, "Ag", kFont);
       const double base = sy + (sh - te.height) / 2 + te.ascent;
       if (query.empty()) {
-        draw_text(cr, "Search programs and files", sx + 10, base, 13.5, {0.55, 0.59, 0.66, 1});
+        draw_text(cr, "Search programs and files", sx + 14, base, kFont, alpha(pal.fg_secondary, 0.75));
       } else {
         std::string shown = query;
-        while (shown.size() > 1 && measure_text(cr, shown, 13.5).width > sw - 44) shown.erase(0, next_char_len(shown, 0));
-        draw_text(cr, shown, sx + 10, base, 13.5, ink);
+        while (shown.size() > 1 && measure_text(cr, shown, kFont).width > sw - 52) shown.erase(0, next_char_len(shown, 0));
+        draw_text(cr, shown, sx + 14, base, kFont, ink);
       }
-      const double caret = sx + 10 + (query.empty() ? 0 : measure_text(cr, query.size() ? query.substr(0, cursor) : "", 13.5).width);
-      if (!query.empty() && measure_text(cr, query, 13.5).width <= sw - 44) {
-        set_source(cr, ink);
-        cairo_rectangle(cr, caret + 0.5, sy + 6, 1.4, sh - 12);
-        cairo_fill(cr);
-      } else if (query.empty()) {
-        set_source(cr, ink);
-        cairo_rectangle(cr, sx + 9, sy + 6, 1.4, sh - 12);
+      const bool fits = measure_text(cr, query, kFont).width <= sw - 52;
+      const double caret = sx + 14 + (query.empty() || !fits ? 0 : measure_text(cr, query.substr(0, cursor), kFont).width);
+      if (query.empty() || fits) {
+        set_source(cr, pal.accent);
+        cairo_rectangle(cr, caret + 0.5, sy + 6, 1.5, sh - 12);
         cairo_fill(cr);
       }
-      // magnifier
-      set_source(cr, {0.35, 0.42, 0.55, 1});
+      set_source(cr, alpha(pal.fg_secondary, 0.9));  // magnifier
       cairo_set_line_width(cr, 1.7);
-      cairo_arc(cr, sx + sw - 20, sy + sh / 2 - 1, 5, 0, 2 * M_PI);
+      cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
+      cairo_arc(cr, sx + sw - 22, sy + sh / 2 - 1, 5, 0, 2 * M_PI);
       cairo_stroke(cr);
-      cairo_move_to(cr, sx + sw - 16.5, sy + sh / 2 + 2.5);
-      cairo_line_to(cr, sx + sw - 12, sy + sh / 2 + 7);
+      cairo_move_to(cr, sx + sw - 18.5, sy + sh / 2 + 2.5);
+      cairo_line_to(cr, sx + sw - 14, sy + sh / 2 + 7);
       cairo_stroke(cr);
     }
 
-    // ---- right panel: user, places, Shut down, on the glass ----
-    const double rx = px + pw + 6, rw = kRightW - 12;
+    // ---- right column: user, places, Shut down ----
+    const double rx = px + pw + 8, rw = kRightW - 14;
     double ry = py + 8;
-    {  // the user: a tile with the first letter, then the name
+    {
       const double ts = 40;
-      rounded_rect(cr, rx + 2, ry, ts, ts, 5);
+      rounded_rect(cr, rx + 2, ry, ts, ts, pal.rounded ? ts / 2 : 4);
       set_source(cr, pal.accent);
-      cairo_fill_preserve(cr);
-      set_source(cr, {1, 1, 1, 0.7});
-      cairo_set_line_width(cr, 1);
-      cairo_stroke(cr);
+      cairo_fill(cr);
       const std::string letter = user_name.empty() ? "?" : user_name.substr(0, next_char_len(user_name, 0));
       const TextExtents le = measure_text(cr, letter, 20, true);
-      draw_text(cr, letter, rx + 2 + (ts - le.width) / 2, ry + (ts - le.height) / 2 + le.ascent, 20, {1, 1, 1, 1}, true);
+      draw_text(cr, letter, rx + 2 + (ts - le.width) / 2, ry + (ts - le.height) / 2 + le.ascent, 20, pal.bg_primary, true);
       std::string name = user_name;
-      while (name.size() > 3 && measure_text(cr, name, 13.5, true).width > rw - ts - 16) name.resize(name.size() - 1);
-      draw_text(cr, name, rx + ts + 12, ry + ts / 2 + 5, 13.5, {1, 1, 1, 1}, true);
+      while (name.size() > 3 && measure_text(cr, name, kFont, true).width > rw - ts - 16) name.resize(name.size() - 1);
+      draw_text(cr, name, rx + ts + 12, ry + ts / 2 + 5, kFont, pal.fg_primary, true);
       ry += ts + 14;
     }
     for (size_t i = 0; i < places.size(); ++i) {
       const double ih = 30;
-      const bool hot = hover_hit == static_cast<int>(i);
-      if (hot) glass_item(cr, rx, ry, rw, ih, false, false);
+      if (hover_hit == static_cast<int>(i)) accent_item(cr, rx, ry, rw, ih, false);
       hits.push_back({rx, ry, rw, ih, static_cast<int>(i)});
-      const TextExtents te = measure_text(cr, places[i].label, 13.5);
-      draw_text(cr, places[i].label, rx + 12, ry + (ih - te.height) / 2 + te.ascent, 13.5, {1, 1, 1, 1});
+      const TextExtents te = measure_text(cr, places[i].label, kFont);
+      draw_text(cr, places[i].label, rx + 12, ry + (ih - te.height) / 2 + te.ascent, kFont, pal.fg_primary);
       ry += ih + 2;
     }
-    // Bottom row: Shut down and a lock button.
-    const double bh = 32, by = py + ph - bh - 4;
-    const double lock_w = 34, sd_w = rw - lock_w - 6;
-    {
-      const bool hot = hover_hit == kHitShutdown;
-      rounded_rect(cr, rx + 0.5, by + 0.5, sd_w - 1, bh - 1, 4);
-      set_source(cr, hot ? Color{0.30, 0.38, 0.52, 1} : Color{0.15, 0.21, 0.33, 1});
+    const double bh = 32, by = py + ph - bh - 4, lock_w = 34, sd_w = rw - lock_w - 6;
+    auto button = [&](double bx, double bw, bool hot) {
+      rounded_rect(cr, bx + 0.5, by + 0.5, bw - 1, bh - 1, pal.rounded ? 9 : 3);
+      set_source(cr, hot ? alpha(pal.accent, 0.30) : pal.bg_secondary);
       cairo_fill_preserve(cr);
-      set_source(cr, {1, 1, 1, hot ? 0.6 : 0.4});
+      set_source(cr, alpha(hot ? pal.accent : pal.fg_secondary, hot ? 0.8 : 0.35));
       cairo_set_line_width(cr, 1);
       cairo_stroke(cr);
+    };
+    {
+      const bool hot = hover_hit == kHitShutdown;
+      button(rx, sd_w, hot);
       const TextExtents te = measure_text(cr, "Shut down", 13, true);
-      draw_text(cr, "Shut down", rx + (sd_w - te.width) / 2, by + (bh - te.height) / 2 + te.ascent, 13, {1, 1, 1, 1}, true);
+      draw_text(cr, "Shut down", rx + (sd_w - te.width) / 2, by + (bh - te.height) / 2 + te.ascent, 13,
+                hot ? pal.fg_primary : pal.fg_secondary, true);
       hits.push_back({rx, by, sd_w, bh, kHitShutdown});
     }
     {
       const bool hot = hover_hit == kHitLock;
       const double lx2 = rx + sd_w + 6;
-      rounded_rect(cr, lx2 + 0.5, by + 0.5, lock_w - 1, bh - 1, 4);
-      set_source(cr, hot ? Color{0.30, 0.38, 0.52, 1} : Color{0.15, 0.21, 0.33, 1});
-      cairo_fill_preserve(cr);
-      set_source(cr, {1, 1, 1, hot ? 0.6 : 0.4});
-      cairo_set_line_width(cr, 1);
-      cairo_stroke(cr);
-      // a padlock: shackle and body
+      button(lx2, lock_w, hot);
       const double cx = lx2 + lock_w / 2, cy = by + bh / 2 + 2;
-      set_source(cr, {1, 1, 1, 1});
+      set_source(cr, hot ? pal.fg_primary : pal.fg_secondary);
       cairo_set_line_width(cr, 1.8);
       cairo_arc(cr, cx, cy - 3, 4.2, M_PI, 2 * M_PI);
       cairo_stroke(cr);
@@ -979,7 +973,9 @@ int main(int argc, char** argv) {
   if (want_start_menu && toggle_existing_start_menu()) return 0;
 
   Launcher L;
-  L.pal = load_palette(load_theme_config());
+  const ThemeConfig theme_cfg = load_theme_config();
+  L.pal = load_palette(theme_cfg);
+  L.glass = theme_cfg.glass;
   if (!L.app.connect()) return 1;
   for (int i = 1; i < argc; ++i) {
     const std::string arg = argv[i];
@@ -1002,6 +998,7 @@ int main(int argc, char** argv) {
     L.card_h = static_cast<int>(2 * Launcher::kFrame + 474);
   }
   L.load();
+  if (L.start_menu && L.glass) L.backdrop = load_backdrop();
   L.refresh();
 
   Surface::Config cfg;

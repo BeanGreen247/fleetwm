@@ -124,6 +124,9 @@ struct ThemeConfig {
   // a startup default, Server::toggle_debug_overlay() still flips it live
   // exactly as before either way.
   bool show_debug_overlay_on_startup = false;
+  // Glass effects (Desktop layout): translucent window frames, taskbar, start menu and window
+  // switcher with a soft sheen and a frosted backdrop. Off = matte, flat surfaces.
+  bool glass = false;
 };
 
 // Path helpers. Resolution order: $XDG_CONFIG_HOME/fleetwm/theme.toml (or

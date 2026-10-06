@@ -72,13 +72,48 @@ wlr_buffer* render_titlebar(int width, const TitlebarState& st, const TitlebarCo
   const kit::Color bg = st.focused ? mix(pal.bg_secondary, pal.accent, 0.12) : pal.bg_secondary;
   const kit::Color fg = st.focused ? pal.fg_primary : pal.fg_secondary;
 
-  kit::set_source(cr, bg);
-  cairo_paint(cr);
+  if (st.glass) {
+    // Glass: the theme colour, see-through, with a sheen fading down from the top and one soft
+    // diagonal band; a light line along the top edge and a darker one under the bar.
+    cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
+    cairo_set_source_rgba(cr, bg.r, bg.g, bg.b, st.focused ? 0.74 : 0.56);
+    cairo_paint(cr);
+    cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
+    cairo_pattern_t* sheen = cairo_pattern_create_linear(0, 0, 0, height);
+    cairo_pattern_add_color_stop_rgba(sheen, 0, 1, 1, 1, st.focused ? 0.26 : 0.14);
+    cairo_pattern_add_color_stop_rgba(sheen, 0.55, 1, 1, 1, 0.04);
+    cairo_pattern_add_color_stop_rgba(sheen, 1, 1, 1, 1, 0.0);
+    cairo_set_source(cr, sheen);
+    cairo_paint(cr);
+    cairo_pattern_destroy(sheen);
+    const double bx = width * 0.22, bw = std::max(30.0, width * 0.10), slant = height * 0.6;
+    cairo_pattern_t* band = cairo_pattern_create_linear(bx, 0, bx + bw, 0);
+    cairo_pattern_add_color_stop_rgba(band, 0, 1, 1, 1, 0.0);
+    cairo_pattern_add_color_stop_rgba(band, 0.5, 1, 1, 1, st.focused ? 0.09 : 0.05);
+    cairo_pattern_add_color_stop_rgba(band, 1, 1, 1, 1, 0.0);
+    cairo_set_source(cr, band);
+    cairo_move_to(cr, bx + slant, 0);
+    cairo_line_to(cr, bx + bw + slant, 0);
+    cairo_line_to(cr, bx + bw, height);
+    cairo_line_to(cr, bx, height);
+    cairo_close_path(cr);
+    cairo_fill(cr);
+    cairo_pattern_destroy(band);
+    cairo_set_source_rgba(cr, 1, 1, 1, 0.30);
+    cairo_rectangle(cr, 0, 0, width, 1);
+    cairo_fill(cr);
+    cairo_set_source_rgba(cr, 0, 0, 0, 0.30);
+    cairo_rectangle(cr, 0, height - 1, width, 1);
+    cairo_fill(cr);
+  } else {
+    kit::set_source(cr, bg);
+    cairo_paint(cr);
 
-  // Hairline under the bar separates it from the window content.
-  kit::set_source(cr, mix(bg, pal.fg_primary, 0.12));
-  cairo_rectangle(cr, 0, height - 1, width, 1);
-  cairo_fill(cr);
+    // Hairline under the bar separates it from the window content.
+    kit::set_source(cr, mix(bg, pal.fg_primary, 0.12));
+    cairo_rectangle(cr, 0, height - 1, width, 1);
+    cairo_fill(cr);
+  }
 
   // Title, ellipsized to the span the buttons leave free.
   const double font = std::clamp(height * 0.4, 11.0, 16.0);
@@ -108,7 +143,29 @@ wlr_buffer* render_titlebar(int width, const TitlebarState& st, const TitlebarCo
     const double glyph_r = std::clamp(std::min(slot.w, slot.h) * 0.17, 3.0, 7.0);
     kit::Color glyph = fg;
     const bool hot = st.hover_button == which;
-    if (hot) {
+    if (st.glass) {
+      // Round glossy buttons (our own shape: separate orbs, not a joined strip). A faint disc at rest, a
+      // lit one on hover, coral for close.
+      const double rr = std::min(slot.w, slot.h) * 0.36;
+      const bool close = which == geom::kBtnClose;
+      const kit::Color base = close ? kit::Color{0.90, 0.35, 0.33, 1.0} : pal.accent;
+      cairo_pattern_t* orb = cairo_pattern_create_linear(0, cy - rr, 0, cy + rr);
+      const double top_a = hot ? 0.95 : 0.30, bot_a = hot ? 0.70 : 0.12;
+      cairo_pattern_add_color_stop_rgba(orb, 0, std::min(1.0, base.r + 0.25), std::min(1.0, base.g + 0.25), std::min(1.0, base.b + 0.25), top_a);
+      cairo_pattern_add_color_stop_rgba(orb, 1, base.r * 0.8, base.g * 0.8, base.b * 0.8, bot_a);
+      cairo_arc(cr, cx, cy, rr, 0, 2 * M_PI);
+      cairo_set_source(cr, orb);
+      cairo_fill_preserve(cr);
+      cairo_pattern_destroy(orb);
+      cairo_set_source_rgba(cr, 1, 1, 1, hot ? 0.75 : 0.35);
+      cairo_set_line_width(cr, 1);
+      cairo_stroke(cr);
+      // a small highlight on the upper half of the orb
+      cairo_arc(cr, cx, cy - rr * 0.35, rr * 0.55, M_PI, 2 * M_PI);
+      cairo_set_source_rgba(cr, 1, 1, 1, hot ? 0.28 : 0.14);
+      cairo_fill(cr);
+      if (hot && close) glyph = {1, 1, 1, 1};
+    } else if (hot) {
       const kit::Color fill = which == geom::kBtnClose ? kit::Color{0.90, 0.28, 0.30, 1.0}
                                                        : mix(bg, pal.fg_primary, 0.18);
       kit::set_source(cr, fill);

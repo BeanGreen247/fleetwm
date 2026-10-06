@@ -794,6 +794,11 @@ struct Settings {
       save_theme();
     }
     ui.newline();
+    ui.row("Glass effects");
+    if (ui.checkbox("Translucent frames and menus", &config.glass)) save_theme();
+    ui.newline();
+    ui.label("The bar, the taskbar, titlebars, the start menu and the Alt+Tab panel get a see-through, frosted look. Off is flat and matte.", true);
+    ui.newline();
     const bool tiling = config.window_layout == WindowLayout::Tiling;
     const bool desktop = !tiling;
     ui.label(tiling ? "Tiling: windows tile automatically; keyboard shortcuts drive everything (Alt+Shift+/ lists them)."
