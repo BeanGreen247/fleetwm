@@ -32,6 +32,7 @@ executable(
     'window_actions.cpp',
     'cursor.cpp',
     'xwayland.cpp',
+    'switcher.cpp',
   ),
   include_directories: include_directories('.'),
   cpp_args: wlroots_cpp_args,

@@ -112,6 +112,9 @@ class View {
   // by app_id) -- explicit user request for the settings panel to always
   // be reachable on top without following you across workspaces.
   bool always_on_top = false;
+  // Fleetwm's own panels (Settings, Shortcuts, the language checklist): on top in the Tiling layout,
+  // ordinary windows in the Desktop layout (pin one to keep it above).
+  bool fleetwm_panel = false;
 
   // Per-edge "step forward" amount (px) set by Output::relayout() for
   // whichever tiled view is currently focused -- resize_border() bleeds
