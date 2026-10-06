@@ -56,7 +56,9 @@ edges and next to the bar can be changed in Settings.
 
 ## Desktop layout
 
-- Every window has a titlebar with pin, minimize, maximize and close buttons. You can change their
+- Every window has a titlebar with pin, minimize, maximize and close buttons, drawn as one joined,
+  glossy strip in the Windows 7 style (a wider red close button, a blue glow behind the button under the
+  pointer and an orange one behind close), the same with glass effects on or off. You can change their
   size, which side they are on, and where the title sits.
 - Drag a titlebar to move a window. Drag an edge or corner to resize. Double-click a titlebar to
   maximize.
@@ -125,8 +127,7 @@ if the applet quits.
 ## Glass effects
 
 Settings -> Theme -> Glass effects switches between a flat, matte look and a see-through, frosted one. Glass
-applies to the bar (capsules, island and strip), the taskbar and its window buttons, window titlebars (with round
-glossy buttons), the start menu and the Alt+Tab panel. The frost is a small blurred copy of your wallpaper that is
+applies to the bar (capsules, island and strip), the taskbar and its window buttons, window titlebars, the start menu and the Alt+Tab panel. The frost is a small blurred copy of your wallpaper that is
 made once when the wallpaper changes and kept in `~/.cache/fleetwm`; surfaces only show the part of it behind them.
 Nothing is blurred while you work, so glass costs almost nothing. It does not blur windows that sit behind a
 surface, only the wallpaper.
