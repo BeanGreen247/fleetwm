@@ -57,8 +57,9 @@ edges and next to the bar can be changed in Settings.
 ## Desktop layout
 
 - Every window has a titlebar with pin, minimize, maximize and close buttons, drawn as one joined,
-  glossy strip in the Windows 7 style (a wider red close button, a blue glow behind the button under the
-  pointer and an orange one behind close), the same with glass effects on or off. You can change their
+  glossy strip in the Windows 7 style (a wider red close button, a glow in your accent colour behind the button
+  under the pointer and an orange one behind close) whose colours come from the theme, so it fits dark, OLED and
+  light themes, with glass effects on or off (translucent with glass). You can change their
   size, which side they are on, and where the title sits.
 - Drag a titlebar to move a window. Drag an edge or corner to resize. Double-click a titlebar to
   maximize.

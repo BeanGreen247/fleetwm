@@ -105,6 +105,20 @@ void cb_glass(const CbImage& img, int id, double* r, double* g, double* b, doubl
   cb_average(img, btn.x + 3, btn.y + btn.h * 0.58, btn.w * 0.22, btn.h * 0.30, r, g, b, a);
 }
 
+double cb_luma(double r, double g, double b) { return 0.2126 * r + 0.7152 * g + 0.0722 * b; }
+double cb_dist(double r1, double g1, double b1, double r2, double g2, double b2) {
+  return std::sqrt((r1 - r2) * (r1 - r2) + (g1 - g2) * (g1 - g2) + (b1 - b2) * (b1 - b2));
+}
+
+// The theme colours of a light theme (dark ones are the defaults of CaptionColors).
+fleetwm::kit::CaptionColors cb_light_colors() {
+  fleetwm::kit::CaptionColors c;
+  c.bg = {0.90, 0.91, 0.94, 1};
+  c.fg = {0.14, 0.15, 0.20, 1};
+  c.accent = {0.17, 0.42, 0.85, 1};
+  return c;
+}
+
 std::string cb_read(const char* rel) {
   std::ifstream in(std::string(FLEETWM_SOURCE_DIR) + "/" + rel);
   std::stringstream ss;
@@ -122,16 +136,23 @@ TEST(CaptionButtons, IdsMatchTheGeometryModule) {
   EXPECT_EQ(cb_geom::kBtnPin, 3);
 }
 
-TEST(CaptionButtons, CloseIsRedAndTheOthersAreLightGreyBlue) {
-  const CbImage img = cb_render({});
-  double r, g, b, a;
-  cb_glass(img, cb_geom::kBtnClose, &r, &g, &b, &a);
-  EXPECT_GT(r, g + 0.25) << "close must be red";
-  EXPECT_GT(r, b + 0.25);
-  for (int id : {cb_geom::kBtnPin, cb_geom::kBtnMinimize, cb_geom::kBtnMaximize}) {
-    cb_glass(img, id, &r, &g, &b, &a);
-    EXPECT_GT(b, r) << "button " << id << " is cool grey-blue glass";
-    EXPECT_GT(r + g + b, 1.9) << "button " << id << " is light";
+TEST(CaptionButtons, CloseIsRedAndTheOthersFollowTheThemeColour) {
+  for (int light = 0; light < 2; ++light) {
+    CaptionState st;
+    if (light) st.colors = cb_light_colors();
+    const CbImage img = cb_render(st);
+    double r, g, b, a;
+    cb_glass(img, cb_geom::kBtnClose, &r, &g, &b, &a);
+    EXPECT_GT(r, g + 0.2) << "close is red in every theme (light " << light << ")";
+    EXPECT_GT(r, b + 0.2);
+    const double bg_luma = cb_luma(st.colors.bg.r, st.colors.bg.g, st.colors.bg.b);
+    for (int id : {cb_geom::kBtnPin, cb_geom::kBtnMinimize, cb_geom::kBtnMaximize}) {
+      cb_glass(img, id, &r, &g, &b, &a);
+      const double l = cb_luma(r, g, b);
+      EXPECT_LT(std::fabs(l - bg_luma), 0.40) << "button " << id << " must sit close to the titlebar's own brightness, light=" << light;
+      if (light) EXPECT_GT(l, 0.6) << "on a light theme the buttons are light";
+      else EXPECT_LT(l, 0.45) << "on a dark theme the buttons are dark glass, not bright slabs";
+    }
   }
 }
 
@@ -190,23 +211,61 @@ TEST(CaptionButtons, GlyphsAreWhiteWithADarkOutline) {
   EXPECT_LT(std::min({r, g, b}), 0.85) << "between the arms it is red glass";
 }
 
-TEST(CaptionButtons, HoveredMinimizeAndMaximizeTurnBlueAndGlow) {
+TEST(CaptionButtons, HoveredMinimizeAndMaximizeTakeTheAccentColourAndGlow) {
   CaptionState hover;
   hover.hover_id = cb_geom::kBtnMinimize;
   const CbImage normal = cb_render({}), lit = cb_render(hover);
   double r0, g0, b0, a0, r1, g1, b1, a1;
   cb_glass(normal, cb_geom::kBtnMinimize, &r0, &g0, &b0, &a0);
   cb_glass(lit, cb_geom::kBtnMinimize, &r1, &g1, &b1, &a1);
-  EXPECT_GT(b1 - r1, b0 - r0 + 0.25) << "a hovered button is bluer";
-  EXPECT_LT(r1, r0) << "and less grey";
-  // The glow: just below the strip it is transparent at rest and cyan-blue on hover.
+  const fleetwm::kit::Color acc = CaptionState{}.colors.accent;
+  EXPECT_GT(cb_luma(r1, g1, b1), cb_luma(r0, g0, b0) + 0.12) << "a hovered button is lit";
+  EXPECT_LT(cb_dist(r1, g1, b1, acc.r, acc.g, acc.b), cb_dist(r0, g0, b0, acc.r, acc.g, acc.b) - 0.1) << "and moves towards the accent colour";
+  // The glow: just below the strip it is transparent at rest and the accent colour on hover.
   const CaptionButton btn = cb_button(cb_geom::kBtnMinimize);
   double rg, gg, bg, ag, rn, gn, bn, an;
   cb_average(lit, btn.x + btn.w / 2 - 4, kY0 + kBtnH + 1, 8, 5, &rg, &gg, &bg, &ag);
   cb_average(normal, btn.x + btn.w / 2 - 4, kY0 + kBtnH + 1, 8, 5, &rn, &gn, &bn, &an);
   EXPECT_LT(an, 0.02) << "nothing below the strip when idle";
   EXPECT_GT(ag, 0.15) << "a glow below the hovered button";
-  EXPECT_GT(bg, rg + 0.3) << "the glow is blue";
+  EXPECT_GT(bg, rg + 0.2) << "the glow is blue for a blue accent";
+}
+
+TEST(CaptionButtons, TheAccentColourOfTheThemeDrivesTheHoverAndTheGlow) {
+  CaptionState green;
+  green.colors.accent = {0.30, 0.78, 0.45, 1};
+  green.hover_id = cb_geom::kBtnMaximize;
+  const CbImage img = cb_render(green);
+  double r, g, b, a;
+  cb_glass(img, cb_geom::kBtnMaximize, &r, &g, &b, &a);
+  EXPECT_GT(g, r + 0.15) << "a green accent gives a green hovered button";
+  EXPECT_GT(g, b + 0.05);
+  const CaptionButton btn = cb_button(cb_geom::kBtnMaximize);
+  double rg, gg, bg, ag;
+  cb_average(img, btn.x + btn.w / 2 - 4, kY0 + kBtnH + 1, 8, 5, &rg, &gg, &bg, &ag);
+  EXPECT_GT(gg, rg + 0.15) << "and a green glow";
+  EXPECT_GT(gg, bg);
+}
+
+TEST(CaptionButtons, GlassModeMakesTheButtonsTranslucentAndMatteKeepsThemSolid) {
+  CaptionState glass;
+  glass.glass = true;
+  const CbImage matte = cb_render({}), see_through = cb_render(glass);
+  double r, g, b, a_matte, a_glass, a_close_matte, a_close_glass;
+  cb_glass(matte, cb_geom::kBtnMinimize, &r, &g, &b, &a_matte);
+  cb_glass(see_through, cb_geom::kBtnMinimize, &r, &g, &b, &a_glass);
+  cb_glass(matte, cb_geom::kBtnClose, &r, &g, &b, &a_close_matte);
+  cb_glass(see_through, cb_geom::kBtnClose, &r, &g, &b, &a_close_glass);
+  EXPECT_GT(a_matte, 0.98);
+  EXPECT_LT(a_glass, 0.9) << "glass buttons let the wallpaper tint through like the bar behind them";
+  EXPECT_GT(a_glass, 0.6) << "but stay readable";
+  EXPECT_GT(a_close_matte, 0.98);
+  EXPECT_GT(a_close_glass, a_glass) << "close is the most solid button";
+  // the strip is still one piece in glass mode: no gaps between the buttons
+  const std::vector<CaptionButton> strip = cb_strip();
+  const double x1 = strip.back().x + strip.back().w;
+  for (int x = static_cast<int>(kX0) + 3; x < static_cast<int>(x1) - 3; ++x)
+    EXPECT_GT(see_through.alpha(x + 30, static_cast<int>(kY0 + kBtnH / 2) + 4), 0.55) << "gap at x=" << x;
 }
 
 TEST(CaptionButtons, HoveredCloseTurnsOrangeAndGlowsOrange) {
@@ -217,7 +276,8 @@ TEST(CaptionButtons, HoveredCloseTurnsOrangeAndGlowsOrange) {
   cb_glass(normal, cb_geom::kBtnClose, &r0, &g0, &b0, &a0);
   cb_glass(lit, cb_geom::kBtnClose, &r1, &g1, &b1, &a1);
   EXPECT_GT(g1, g0 + 0.05) << "brighter, more orange";
-  EXPECT_GT(r1, 0.85);
+  EXPECT_GT(r1, 0.75);
+  EXPECT_GT(r1, b1 + 0.3);
   const CaptionButton btn = cb_button(cb_geom::kBtnClose);
   double rg, gg, bg, ag;
   cb_average(lit, btn.x + btn.w / 2 - 4, kY0 + kBtnH + 1, 8, 5, &rg, &gg, &bg, &ag);
@@ -242,7 +302,7 @@ TEST(CaptionButtons, PinnedLooksPushedInAndRestoreIsNotTheMaximizeGlyph) {
   double r0, g0, b0, a0, r1, g1, b1, a1;
   cb_glass(rest, cb_geom::kBtnPin, &r0, &g0, &b0, &a0);
   cb_glass(pin, cb_geom::kBtnPin, &r1, &g1, &b1, &a1);
-  EXPECT_LT(r1 + g1 + b1, r0 + g0 + b0 - 0.5) << "a pinned window's pin button is toggled on (darker blue)";
+  EXPECT_GT(cb_dist(r0, g0, b0, r1, g1, b1), 0.12) << "a pinned window's pin button is toggled on (pushed in, in the accent colour)";
   // restore draws two windows: more white ink than the single maximize square
   auto ink = [](const CbImage& img, int id) {
     const CaptionButton btn = cb_button(id);
@@ -251,7 +311,7 @@ TEST(CaptionButtons, PinnedLooksPushedInAndRestoreIsNotTheMaximizeGlyph) {
       for (int x = static_cast<int>(btn.x); x < static_cast<int>(btn.x + btn.w); ++x) {
         double r, g, b, a;
         img.pixel(x + 30, y + 4, &r, &g, &b, &a);
-        if (a > 0.9 && std::min({r, g, b}) > 0.95) ++white;
+        if (a > 0.9 && std::min({r, g, b}) > 0.72) ++white;
       }
     return white;
   };
@@ -347,15 +407,16 @@ TEST(CaptionButtons, TheStripIsDrawnTheSameWayWhetherGlassIsOnOrOff) {
   EXPECT_NE(view.find("if (!desktop_mode() || fullscreen || !is_window())"), std::string::npos);
 }
 
-TEST(CaptionButtons, TheDrawingTakesNoThemeColoursSoMatteAndGlassAreIdentical) {
-  // The strip uses its own fixed glass colours; the signature has no palette or glass argument.
+TEST(CaptionButtons, TheStateCarriesTheThemeColoursAndTheGlassFlag) {
   const std::string header = cb_read("src/fleetkit/caption_buttons.hpp");
-  EXPECT_EQ(header.find("Palette"), std::string::npos);
   const size_t at = header.find("struct CaptionState");
   ASSERT_NE(at, std::string::npos);
   const std::string state = header.substr(at, header.find("};", at) - at);
-  EXPECT_EQ(state.find("glass"), std::string::npos) << "the state has no glass flag: one look for both modes";
-  EXPECT_EQ(state.find("theme"), std::string::npos);
+  EXPECT_NE(state.find("CaptionColors colors"), std::string::npos) << "the strip is made from the theme, not from fixed blues";
+  EXPECT_NE(state.find("bool glass"), std::string::npos) << "and it knows whether the bar is glass";
+  const std::string draw = cb_read("src/fleetkit/titlebar_draw.cpp");
+  EXPECT_NE(draw.find("caption.colors = {bg, fg, pal.accent}"), std::string::npos);
+  EXPECT_NE(draw.find("caption.glass = p.glass"), std::string::npos);
   const CbImage a = cb_render({}), b = cb_render({});
   for (int y = 0; y < kH + 20; y += 3)
     for (int x = 0; x < kW + 100; x += 3) ASSERT_EQ(a.alpha(x, y), b.alpha(x, y));

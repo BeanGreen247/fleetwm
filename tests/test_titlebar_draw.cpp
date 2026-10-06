@@ -130,6 +130,7 @@ TEST(TitlebarDraw, CachedStripMatchesDirectDrawingInEveryState) {
             cairo_rectangle(cr, 0, 31, W, 1);
             cairo_fill(cr);
             td::CaptionState st;
+            st.colors = {bg, focused ? pal.fg_primary : pal.fg_secondary, pal.accent};  // what draw_titlebar derives from the palette
             st.focused = focused;
             st.maximized = maximized;
             st.pinned = pinned;
@@ -199,10 +200,18 @@ TEST(TitlebarDraw, GlassAndMatteDifferOnlyInTheBackground) {
   EXPECT_EQ(m[10 * matte.stride() + 20 * 4 + 3], 255);
   EXPECT_LT(g[10 * glass.stride() + 20 * 4 + 3], 230) << "the Aero background lets the desktop show through";
   EXPECT_GT(g[10 * glass.stride() + 20 * 4 + 3], 100);
-  // the caption strip (solid glass buttons) is the same in both
+  // The caption strip follows the mode: solid in matte, translucent glass in glass mode, the same layout and
+  // the same red close button in both.
   const geom::TitlebarLayout layout = geom::layout_titlebar(800, td_metrics());
-  const int x0 = static_cast<int>(layout.buttons[0].x) + 4, x1 = static_cast<int>(layout.buttons[3].x + layout.buttons[3].w) - 4;
-  EXPECT_LE(td_max_diff(matte, glass, x0, x1, 1, 22), 2) << "the strip must look the same with glass on and off";
+  const int mid_y = 16;
+  const int pin_x = static_cast<int>(layout.buttons[0].x + 6), close_x = static_cast<int>(layout.buttons[3].x + 8);
+  EXPECT_EQ(m[mid_y * matte.stride() + pin_x * 4 + 3], 255);
+  EXPECT_LT(g[mid_y * glass.stride() + pin_x * 4 + 3], 252) << "glass buttons are not fully solid (they sit on a translucent bar, so the total stays high)";
+  EXPECT_GT(g[mid_y * glass.stride() + pin_x * 4 + 3], 150);
+  for (const unsigned char* d : {m + mid_y * matte.stride() + close_x * 4, g + mid_y * glass.stride() + close_x * 4}) {
+    const double a = d[3] / 255.0, r = d[2] / 255.0 / a, gr = d[1] / 255.0 / a;
+    EXPECT_GT(r, gr + 0.2) << "close is red in both modes";
+  }
 }
 
 TEST(TitlebarDraw, RedrawingWithTheCachesWarmIsMuchCheaperThanDrawingFromScratch) {

@@ -1,12 +1,16 @@
 #pragma once
 
 // The window caption buttons (pin, minimize, maximize/restore, close) drawn as a joined, glossy strip in
-// the style of Windows 7: a light two-tone glass button for pin/minimize/maximize, a red one for close, a
-// dark outline with a white inner edge, white glyphs with a dark outline, a blue glow behind a hovered
-// button and an orange one behind close. Everything is drawn with cairo paths and gradients (no images).
-// The compositor draws its titlebars with it and the unit tests render it to check the result.
+// the style of Windows 7: two-tone glass buttons for pin/minimize/maximize, a red one for close, a dark
+// outline with a light inner edge, outlined glyphs, a glow behind a hovered button. The glass takes its
+// colour from the theme (the titlebar background, the text colour and the accent), so the strip fits a dark,
+// an OLED black or a light theme, and in glass mode the buttons are translucent like the bar they sit on.
+// Everything is drawn with cairo paths and gradients (no images). The compositor draws its titlebars with it
+// and the unit tests render it to check the result.
 
 #include <cairo.h>
+
+#include "fleetkit.hpp"
 
 namespace fleetwm::kit {
 
@@ -15,7 +19,16 @@ struct CaptionButton {
   double x = 0, y = 0, w = 0, h = 0;
 };
 
+// The theme colours the strip is made from (defaults: the dark theme).
+struct CaptionColors {
+  Color bg{0.094, 0.094, 0.145, 1};      // the titlebar's background
+  Color fg{0.804, 0.839, 0.957, 1};      // the text colour: glyphs are drawn in it, so they suit the theme
+  Color accent{0.537, 0.706, 0.980, 1};  // the glow and the lit colour of a hovered or pinned button
+};
+
 struct CaptionState {
+  CaptionColors colors;
+  bool glass = false;      // translucent buttons that let the wallpaper tint through, like the glass bar
   bool focused = true;     // an inactive window's buttons are fainter
   bool maximized = false;  // the maximize button shows "restore"
   bool pinned = false;     // the pin button shows the pushed-in, upright pin

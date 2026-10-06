@@ -130,8 +130,9 @@ struct StripEntry {
   int count = 0, bar_h = 0, margin = 0;
   int ids[4] = {0, 0, 0, 0};
   int geom_[4][4] = {};  // x, y, w, h of each button in 1/4 px
-  bool focused = false, maximized = false, pinned = false;
+  bool focused = false, maximized = false, pinned = false, glass = false;
   int hover = -1, pressed = -1;
+  int colors[9] = {};  // bg, fg and accent as 8-bit channels
   double origin_x = 0;
   cairo_surface_t* image = nullptr;
   unsigned long used = 0;
@@ -142,10 +143,23 @@ constexpr size_t kStripBudget = 1u << 20;
 
 int quarter(double v) { return static_cast<int>(std::lround(v * 4)); }
 
+void colors_of(const CaptionState& st, int out[9]) {
+  const Color cs[3] = {st.colors.bg, st.colors.fg, st.colors.accent};
+  for (int i = 0; i < 3; ++i) {
+    out[i * 3] = static_cast<int>(std::lround(cs[i].r * 255));
+    out[i * 3 + 1] = static_cast<int>(std::lround(cs[i].g * 255));
+    out[i * 3 + 2] = static_cast<int>(std::lround(cs[i].b * 255));
+  }
+}
+
 bool same_strip(const StripEntry& e, const CaptionButton* b, int count, const CaptionState& st, int bar_h) {
   if (e.count != count || e.bar_h != bar_h || e.focused != st.focused || e.maximized != st.maximized || e.pinned != st.pinned ||
-      e.hover != st.hover_id || e.pressed != st.pressed_id)
+      e.glass != st.glass || e.hover != st.hover_id || e.pressed != st.pressed_id)
     return false;
+  int c[9];
+  colors_of(st, c);
+  for (int i = 0; i < 9; ++i)
+    if (e.colors[i] != c[i]) return false;
   for (int i = 0; i < count; ++i)
     if (e.ids[i] != b[i].id || e.geom_[i][0] != quarter(b[i].x) || e.geom_[i][1] != quarter(b[i].y) || e.geom_[i][2] != quarter(b[i].w) ||
         e.geom_[i][3] != quarter(b[i].h))
@@ -182,6 +196,8 @@ void draw_strip_cached(cairo_t* cr, const CaptionButton* b, int count, const Cap
   e.focused = st.focused;
   e.maximized = st.maximized;
   e.pinned = st.pinned;
+  e.glass = st.glass;
+  colors_of(st, e.colors);
   e.hover = st.hover_id;
   e.pressed = st.pressed_id;
   for (int i = 0; i < count; ++i) {
@@ -271,6 +287,8 @@ void draw_titlebar(cairo_t* cr, int width, int height, const TitlebarPaint& p, c
     strip[i] = {slot.id, slot.x, slot.y, slot.w, slot.h};
   }
   CaptionState caption;
+  caption.colors = {bg, fg, pal.accent};  // the strip is made from the titlebar's own theme colours
+  caption.glass = p.glass;
   caption.focused = p.focused;
   caption.maximized = p.maximized;
   caption.pinned = p.pinned;
