@@ -65,6 +65,10 @@ edges and next to the bar can be changed in Settings.
 - The bar turns into a taskbar with a start button, one button per window, and the clock and system
   info on the right. It can sit on the bottom, top, left or right.
 - Tap the Super (Windows) key, or click the start button, to open the start menu.
+  It is laid out like Windows 7's: your default apps and Settings on the left ("All Programs" lists everything,
+  and typing searches), your folders, Settings, a lock button and Shut down on the right.
+- Alt+Tab shows a panel with a thumbnail of every window and frames the one you are switching to. Settings,
+  Shortcuts and the language checklist are ordinary windows here; in the Tiling layout they stay on top.
 - There are several workspaces here too: numbered buttons on the taskbar (Settings sets how many are shown), plus the keys below. The taskbar lists the windows of the current workspace.
 - Switching from Tiling to Desktop keeps your windows where they were.
 - X11 programs (through XWayland) are normal windows too: they tile, float, snap, get titlebars in this layout and show up on the taskbar.
