@@ -114,6 +114,8 @@ enum class SnapZone {
   TopRight,
   BottomLeft,
   BottomRight,
+  Top,     // the top half, full width (Super+Up from a normal window)
+  Bottom,  // the bottom half, full width (Super+Down from a normal window)
 };
 
 // The zone a pointer at (px, py) is in, for an output whose full box is

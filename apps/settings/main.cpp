@@ -1031,6 +1031,9 @@ struct Settings {
       save_bar();
     }
     ui.newline();
+    ui.row("Window buttons");
+    if (ui.checkbox("Rounded corners", &bar.taskbar_rounded, desktop)) save_bar();
+    ui.newline();
     ui.label("Start menu, one button per window, and the clock and status widgets on the right.", true);
     ui.newline();
   }

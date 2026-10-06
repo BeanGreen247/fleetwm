@@ -90,6 +90,8 @@ Box snap_box(SnapZone zone, const Box& a) {
     case SnapZone::TopRight: return {a.x + half_w, a.y, a.w - half_w, half_h};
     case SnapZone::BottomLeft: return {a.x, a.y + half_h, half_w, a.h - half_h};
     case SnapZone::BottomRight: return {a.x + half_w, a.y + half_h, a.w - half_w, a.h - half_h};
+    case SnapZone::Top: return {a.x, a.y, a.w, half_h};
+    case SnapZone::Bottom: return {a.x, a.y + half_h, a.w, a.h - half_h};
   }
   return {};
 }
@@ -145,6 +147,8 @@ SnapStep snap_step(SnapZone cur, Direction dir) {
         case SnapZone::Right: return restore;
         case SnapZone::TopRight: return zone(SnapZone::TopLeft);
         case SnapZone::BottomRight: return zone(SnapZone::BottomLeft);
+        case SnapZone::Top: return zone(SnapZone::TopLeft);
+        case SnapZone::Bottom: return zone(SnapZone::BottomLeft);
       }
       break;
     case Direction::Right:
@@ -157,13 +161,17 @@ SnapStep snap_step(SnapZone cur, Direction dir) {
         case SnapZone::Left: return restore;
         case SnapZone::TopLeft: return zone(SnapZone::TopRight);
         case SnapZone::BottomLeft: return zone(SnapZone::BottomRight);
+        case SnapZone::Top: return zone(SnapZone::TopRight);
+        case SnapZone::Bottom: return zone(SnapZone::BottomRight);
       }
       break;
     case Direction::Up:
       switch (cur) {
-        case SnapZone::None:
+        case SnapZone::None: return zone(SnapZone::Top);
+        case SnapZone::Top:
         case SnapZone::TopLeft:
         case SnapZone::TopRight: return zone(SnapZone::Maximize);
+        case SnapZone::Bottom: return restore;
         case SnapZone::Left: return zone(SnapZone::TopLeft);
         case SnapZone::Right: return zone(SnapZone::TopRight);
         case SnapZone::BottomLeft: return zone(SnapZone::Left);
@@ -173,7 +181,9 @@ SnapStep snap_step(SnapZone cur, Direction dir) {
       break;
     case Direction::Down:
       switch (cur) {
-        case SnapZone::None: return {K::Minimize, SnapZone::None};
+        case SnapZone::None: return zone(SnapZone::Bottom);
+        case SnapZone::Bottom: return nothing;
+        case SnapZone::Top:
         case SnapZone::Maximize:
         case SnapZone::BottomLeft:
         case SnapZone::BottomRight: return restore;

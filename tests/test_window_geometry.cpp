@@ -577,7 +577,8 @@ TEST(SnapStep, SameKeyAgainMovesToTheNeighbouringScreen) {
 }
 
 TEST(SnapStep, UpMaximizesOrMakesATopQuarter) {
-  EXPECT_EQ(snap_step(SnapZone::None, Direction::Up), to(SnapZone::Maximize));
+  EXPECT_EQ(snap_step(SnapZone::None, Direction::Up), to(SnapZone::Top));
+  EXPECT_EQ(snap_step(SnapZone::Top, Direction::Up), to(SnapZone::Maximize));
   EXPECT_EQ(snap_step(SnapZone::Left, Direction::Up), to(SnapZone::TopLeft));
   EXPECT_EQ(snap_step(SnapZone::Right, Direction::Up), to(SnapZone::TopRight));
   EXPECT_EQ(snap_step(SnapZone::TopLeft, Direction::Up), to(SnapZone::Maximize));
@@ -592,13 +593,38 @@ TEST(SnapStep, UpFromABottomQuarterGoesBackToTheHalf) {
 
 TEST(SnapStep, DownRestoresMinimizesOrMakesABottomQuarter) {
   EXPECT_EQ(snap_step(SnapZone::Maximize, Direction::Down).kind, K::Restore);
-  EXPECT_EQ(snap_step(SnapZone::None, Direction::Down).kind, K::Minimize);
+  EXPECT_EQ(snap_step(SnapZone::None, Direction::Down), to(SnapZone::Bottom));
   EXPECT_EQ(snap_step(SnapZone::Left, Direction::Down), to(SnapZone::BottomLeft));
   EXPECT_EQ(snap_step(SnapZone::Right, Direction::Down), to(SnapZone::BottomRight));
   EXPECT_EQ(snap_step(SnapZone::TopLeft, Direction::Down), to(SnapZone::Left));
   EXPECT_EQ(snap_step(SnapZone::TopRight, Direction::Down), to(SnapZone::Right));
   EXPECT_EQ(snap_step(SnapZone::BottomLeft, Direction::Down).kind, K::Restore);
   EXPECT_EQ(snap_step(SnapZone::BottomRight, Direction::Down).kind, K::Restore);
+}
+
+TEST(SnapStep, DownNeverMinimizes) {
+  for (SnapZone z : {SnapZone::None, SnapZone::Maximize, SnapZone::Left, SnapZone::Right, SnapZone::TopLeft,
+                     SnapZone::TopRight, SnapZone::BottomLeft, SnapZone::BottomRight, SnapZone::Top, SnapZone::Bottom})
+    EXPECT_NE(snap_step(z, Direction::Down).kind, K::Minimize);
+}
+
+TEST(SnapStep, DownFromMaximizedGoesFloatingThenBottomHalfAndStops) {
+  EXPECT_EQ(snap_step(SnapZone::Maximize, Direction::Down).kind, K::Restore);
+  EXPECT_EQ(snap_step(SnapZone::None, Direction::Down), to(SnapZone::Bottom));
+  EXPECT_EQ(snap_step(SnapZone::Bottom, Direction::Down).kind, K::Nothing);
+}
+
+TEST(SnapStep, UpGoesFloatingToTopHalfToMaximizedAndBackFromTheBottom) {
+  EXPECT_EQ(snap_step(SnapZone::None, Direction::Up), to(SnapZone::Top));
+  EXPECT_EQ(snap_step(SnapZone::Top, Direction::Up), to(SnapZone::Maximize));
+  EXPECT_EQ(snap_step(SnapZone::Bottom, Direction::Up).kind, K::Restore);
+  EXPECT_EQ(snap_step(SnapZone::Top, Direction::Down).kind, K::Restore);
+}
+
+TEST(SnapBox, TopAndBottomAreFullWidthHalves) {
+  const Box a{0, 0, 1000, 800};
+  EXPECT_EQ(snap_box(SnapZone::Top, a), (Box{0, 0, 1000, 400}));
+  EXPECT_EQ(snap_box(SnapZone::Bottom, a), (Box{0, 400, 1000, 400}));
 }
 
 TEST(SnapStep, SideKeysMoveBetweenQuarters) {
@@ -612,7 +638,7 @@ TEST(SnapStep, SideKeysMoveBetweenQuarters) {
 
 TEST(SnapStep, EveryStateAndKeyGivesADefinedAnswer) {
   for (SnapZone z : {SnapZone::None, SnapZone::Maximize, SnapZone::Left, SnapZone::Right, SnapZone::TopLeft,
-                     SnapZone::TopRight, SnapZone::BottomLeft, SnapZone::BottomRight})
+                     SnapZone::TopRight, SnapZone::BottomLeft, SnapZone::BottomRight, SnapZone::Top, SnapZone::Bottom})
     for (Direction d : {Direction::Left, Direction::Right, Direction::Up, Direction::Down}) {
       const SnapStep s = snap_step(z, d);
       if (s.kind == K::Zone) EXPECT_NE(s.zone, SnapZone::None);  // a snap always names a target

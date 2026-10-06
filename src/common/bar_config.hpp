@@ -94,6 +94,8 @@ struct BarConfig {
   // The workspaces always shown (1-10, default 4). More appear while they hold windows or
   // while you are on them, in numerical order, and go away when empty.
   int taskbar_workspaces = 4;
+  // Desktop taskbar: rounded window buttons. Sharp corners in theme.toml still win.
+  bool taskbar_rounded = true;
 };
 
 std::string power_mode_to_string(PowerMode mode);

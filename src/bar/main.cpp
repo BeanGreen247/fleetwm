@@ -800,8 +800,9 @@ struct Bar {
 
   void draw_window_button(cairo_t* cr, const Rect& r, const WindowEntry& w, bool hover, bool with_title) {
     const bool active = w.focused && !w.minimized;
+    const double radius = config.taskbar_rounded && pal.rounded ? 8 : 0;
     if (active || hover) {
-      rounded_rect(cr, r.x, r.y, r.w, r.h, pal.rounded ? 8 : 2);
+      rounded_rect(cr, r.x, r.y, r.w, r.h, radius);
       set_source(cr, with_alpha(pal.accent, active ? 0.22 : 0.12));
       cairo_fill(cr);
     }
@@ -818,8 +819,18 @@ struct Bar {
     }
     // Indicator on the edge facing the desktop-side of the button.
     set_source(cr, active ? pal.accent : with_alpha(pal.fg_secondary, w.minimized ? 0.25 : 0.45));
-    if (!vertical()) {
-      const double iw = active ? r.w - 18 : std::min(r.w - 18, 14.0);
+    if (!vertical() && active) {
+      // The active button's line runs the full width of the bottom edge and follows the corner
+      // curve, instead of stopping short of it or poking out past it.
+      cairo_save(cr);
+      rounded_rect(cr, r.x, r.y, r.w, r.h, radius);
+      cairo_clip(cr);
+      cairo_rectangle(cr, r.x, r.y + r.h - 3, r.w, 3);
+      cairo_fill(cr);
+      cairo_restore(cr);
+      return;
+    } else if (!vertical()) {
+      const double iw = std::min(r.w - 18, 14.0);
       rounded_rect(cr, r.x + (r.w - iw) / 2, r.y + r.h - 3, iw, 2, 1);
     } else {
       const double ih = active ? r.h - 16 : std::min(r.h - 16, 14.0);

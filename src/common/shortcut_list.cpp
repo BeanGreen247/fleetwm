@@ -111,8 +111,8 @@ std::vector<ShortcutEntry> build_shortcut_list(const KeybindsConfig& b, WindowLa
     add("Windows", format_key_combo(b.desktop_restore_all), "Restore all windows", true);
     add("Snapping", format_key_combo(b.desktop_snap_left), "Snap left; again moves to the screen on the left", true);
     add("Snapping", format_key_combo(b.desktop_snap_right), "Snap right; again moves to the screen on the right", true);
-    add("Snapping", format_key_combo(b.desktop_snap_up), "Maximize (from a half: the top quarter)", true);
-    add("Snapping", format_key_combo(b.desktop_snap_down), "Restore, or minimize (from a half: the bottom quarter)", true);
+    add("Snapping", format_key_combo(b.desktop_snap_up), "Top half, then maximize (from a left/right half: its top quarter)", true);
+    add("Snapping", format_key_combo(b.desktop_snap_down), "Restore from maximized, then bottom half (from a left/right half: its bottom quarter). Never minimizes", true);
   }
 
   add("Focus", format_alt_combo(b.focus_left), "Focus the window to the left (Alt+Arrow keys work too)");

@@ -425,4 +425,12 @@ TEST_F(BarConfigTest, LegacyWorkspaceDefaultsBecomeThemeFollowing) {
 }
 
 }  // namespace
+TEST_F(BarConfigTest, TaskbarRoundedDefaultsOnAndRoundTrips) {
+  EXPECT_TRUE(BarConfig{}.taskbar_rounded);
+  BarConfig config;
+  config.taskbar_rounded = false;
+  save_bar_config(config);
+  EXPECT_FALSE(load_bar_config().taskbar_rounded);
+}
+
 }  // namespace fleetwm
