@@ -1468,6 +1468,15 @@ bool Server::init() {
   }
 #endif
 
+  // Fleetwm's default foot config lives in <sysconf>/xdg/foot/foot.ini; putting that folder first in
+  // XDG_CONFIG_DIRS makes every terminal started from this session use it unless the user has their
+  // own ~/.config/foot/foot.ini (foot reads the user's file first).
+  {
+    const char* current = std::getenv("XDG_CONFIG_DIRS");
+    const std::string dirs = std::string(FLEETWM_SYSCONF_DIR) + "/xdg:" + (current && *current ? current : "/etc/xdg");
+    setenv("XDG_CONFIG_DIRS", dirs.c_str(), 1);
+  }
+
   spawn_autostart("fleetwm-bar", FLEETWM_BINDIR "/fleetwm-bar");
   spawn_autostart("fleetwm-wallpaper", FLEETWM_BINDIR "/fleetwm-wallpaper");
   spawn_autostart("fleetwm-lockapplet", FLEETWM_BINDIR "/fleetwm-lockapplet");

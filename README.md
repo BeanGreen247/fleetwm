@@ -100,7 +100,8 @@ its button goes away again. The buttons are always in numerical order, so 1 2 3 
 ## Terminal
 
 Plain `foot` opens with a larger font and a short prompt (`~>`, plus the git branch inside a
-repository). The shell setup keeps bash behaving normally and only adds a bigger history,
+repository). It applies to every terminal you start in the session, from the shortcut, the launcher or
+the start menu. The shell setup keeps bash behaving normally and only adds a bigger history,
 case-insensitive completion, history search on Up/Down and fzf keys when fzf is installed. If you
 create your own `~/.config/foot/foot.ini`, foot uses that instead.
 
