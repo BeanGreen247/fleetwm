@@ -10,13 +10,13 @@
 
 namespace fleetwm {
 
-// "0.1.0" -- the project version from meson.build.
+// "0.2.0" -- the project version from meson.build.
 inline std::string version_number() { return FLEETWM_VERSION; }
 
 // "89ac1fc" -- the git revision this build came from.
 inline std::string version_revision() { return FLEETWM_GIT_REVISION; }
 
-// "0.1.0 (89ac1fc)" -- what Settings -> About and `fleetwm --version` show.
+// "0.2.0 (89ac1fc)" -- what Settings -> About and `fleetwm --version` show.
 inline std::string version_string() {
   const std::string rev = version_revision();
   return version_number() + (rev.empty() || rev == "unknown" ? "" : " (" + rev + ")");
