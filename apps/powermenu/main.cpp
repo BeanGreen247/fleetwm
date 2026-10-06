@@ -20,6 +20,8 @@
 #include "ipc_client.hpp"
 #include "fleetkit.hpp"
 #include "malloc_tuning.hpp"
+#include "power_actions.hpp"
+#include "power_icons.hpp"
 #include "theme.hpp"
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
 
@@ -32,66 +34,7 @@ using namespace fleetwm::kit;
 
 constexpr uint32_t kBtnLeft = 0x110;
 
-enum Action { kLock, kLogout, kSleep, kReboot, kShutdown, kCount };
-const char* const kLabels[kCount] = {"Lock", "Log out", "Sleep", "Reboot", "Shut down"};
-
-// 20x20 pictograms drawn around (cx, cy) in the current source color.
-void draw_icon(cairo_t* cr, int a, double cx, double cy) {
-  cairo_save(cr);
-  cairo_new_path(cr);
-  cairo_set_line_width(cr, 1.8);
-  cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
-  cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND);
-  switch (a) {
-    case kLock:
-      rounded_rect(cr, cx - 6.5, cy - 1, 13, 9.5, 2);
-      cairo_stroke(cr);
-      cairo_arc(cr, cx, cy - 2.5, 4, M_PI, 2 * M_PI);
-      cairo_move_to(cr, cx - 4, cy - 2.5);
-      cairo_line_to(cr, cx - 4, cy - 1);
-      cairo_move_to(cr, cx + 4, cy - 2.5);
-      cairo_line_to(cr, cx + 4, cy - 1);
-      cairo_stroke(cr);
-      break;
-    case kLogout:
-      cairo_move_to(cr, cx - 1, cy - 8);
-      cairo_line_to(cr, cx - 8, cy - 8);
-      cairo_line_to(cr, cx - 8, cy + 8);
-      cairo_line_to(cr, cx - 1, cy + 8);
-      cairo_move_to(cr, cx - 2, cy);
-      cairo_line_to(cr, cx + 8, cy);
-      cairo_move_to(cr, cx + 4, cy - 4);
-      cairo_line_to(cr, cx + 8, cy);
-      cairo_line_to(cr, cx + 4, cy + 4);
-      cairo_stroke(cr);
-      break;
-    case kSleep:  // crescent: disc minus an offset disc
-      cairo_rectangle(cr, cx - 20, cy - 20, 40, 40);
-      cairo_arc(cr, cx + 5, cy - 3, 7, 0, 2 * M_PI);
-      cairo_set_fill_rule(cr, CAIRO_FILL_RULE_EVEN_ODD);
-      cairo_clip(cr);
-      cairo_new_path(cr);
-      cairo_arc(cr, cx, cy, 8, 0, 2 * M_PI);
-      cairo_fill(cr);
-      break;
-    case kReboot:
-      cairo_arc(cr, cx, cy, 7, -M_PI / 3, 4 * M_PI / 3 + M_PI / 6);
-      cairo_stroke(cr);
-      cairo_move_to(cr, cx + 3.5, cy - 9.5);
-      cairo_line_to(cr, cx + 4, cy - 5.2);
-      cairo_line_to(cr, cx + 8.2, cy - 5.8);
-      cairo_stroke(cr);
-      break;
-    case kShutdown:
-      cairo_arc(cr, cx, cy + 0.5, 7.5, -M_PI / 2 + 0.6, -M_PI / 2 - 0.6 + 2 * M_PI);
-      cairo_stroke(cr);
-      cairo_move_to(cr, cx, cy - 9);
-      cairo_line_to(cr, cx, cy - 1);
-      cairo_stroke(cr);
-      break;
-  }
-  cairo_restore(cr);
-}
+using namespace fleetwm::power;
 
 struct Rect {
   double x = 0, y = 0, w = 0, h = 0;
@@ -110,7 +53,7 @@ struct PowerMenu {
     set_source(cr, pal.bg_primary);
     cairo_paint(cr);
 
-    const double pad = 24, gap = 8, item_h = 44, content_w = 260;
+    const double pad = 24, gap = 8, item_h = 46, content_w = 268;
     const double card_w = content_w + 2 * pad;
     const double card_h = 2 * pad + kCount * item_h + (kCount - 1) * gap;
     card = {(w - card_w) / 2, (h - card_h) / 2, card_w, card_h};
@@ -128,10 +71,10 @@ struct PowerMenu {
       }
       const Color fg = on ? pal.bg_primary : pal.fg_primary;
       set_source(cr, fg);
-      draw_icon(cr, i, items[i].x + 14 + 10, items[i].y + item_h / 2);
-      TextExtents te = measure_text(cr, kLabels[i], 15);
-      draw_text(cr, kLabels[i], items[i].x + 14 + 20 + 10, items[i].y + item_h / 2 + te.ascent / 2 - 1,
-                15, fg);
+      const double cy = items[i].y + item_h / 2;
+      draw_icon(cr, i, items[i].x + 16 + kIconCell / 2, cy);
+      const TextExtents te = measure_text(cr, label(i), 16);
+      draw_text(cr, label(i), items[i].x + 16 + kIconCell + 12, cy - te.height / 2 + te.ascent, 16, fg);
     }
   }
 
@@ -145,24 +88,20 @@ struct PowerMenu {
   }
 
   void run_action(int a) {
-    switch (a) {
-      case kLock:
-        if (ipc.is_connected()) ipc.send_command("LOCK");
-        else std::fprintf(stderr, "fleetwm-powermenu: not connected to compositor IPC; cannot lock\n");
-        break;
-      case kLogout: {
+    if (a == kLock) {
+      if (ipc.is_connected()) ipc.send_command("LOCK");
+      else std::fprintf(stderr, "fleetwm-powermenu: not connected to compositor IPC; cannot lock\n");
+    } else {
+      std::string session;
+      if (a == kLogout) {
         char* sid = nullptr;
-        if (sd_pid_get_session(getpid(), &sid) < 0 || !sid) {
+        if (sd_pid_get_session(getpid(), &sid) < 0 || !sid)
           std::fprintf(stderr, "fleetwm-powermenu: logout failed: could not determine session id\n");
-        } else {
-          spawn({"loginctl", "terminate-session", sid});
-          std::free(sid);
-        }
-        break;
+        else session = sid;
+        std::free(sid);
       }
-      case kSleep: spawn({"systemctl", "suspend"}); break;
-      case kReboot: spawn({"systemctl", "reboot"}); break;
-      case kShutdown: spawn({"systemctl", "poweroff"}); break;
+      std::vector<std::string> cmd = command_for(a, session);  // power_actions.hpp, covered by the unit tests
+      if (!cmd.empty()) spawn(std::move(cmd));
     }
     app.quit();
   }

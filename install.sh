@@ -171,7 +171,8 @@ apt_install xdg-desktop-portal xdg-desktop-portal-gtk gnome-themes-extra \
 ui_step "Installing sound and power-control permissions" \
   "What: PipeWire and WirePlumber (sound), polkit and the time-zone permission rule." \
   "Why:  the bar's volume readout and the audio mixer talk to PipeWire; the power menu (suspend, reboot," \
-  "      shut down) and Date & Time settings are refused by the system without polkit."
+  "      shut down) and Date & Time settings are refused by the system without polkit; the rules that let them" \
+  "      work without a password prompt are installed here too."
 # runtime audio stack the bar's volume readout and fleetwm-audiomixer talk
 # to (PipeWire + the WirePlumber session manager; pipewire-bin ships
 # pw-cli/pw-cat, handy for testing without sound hardware)
@@ -199,6 +200,9 @@ apt_install polkitd pkexec
 sudo install -m 644 "${SCRIPT_DIR}/packaging/50-fleetwm-time.rules" /etc/polkit-1/rules.d/50-fleetwm-time.rules
 # The same for the locale and font-cache builder that Languages and keyboard layouts runs.
 sudo install -m 644 "${SCRIPT_DIR}/packaging/50-fleetwm-locale.rules" /etc/polkit-1/rules.d/50-fleetwm-locale.rules
+# And for the power menu: Sleep, Reboot and Shut down for whoever is at the keyboard, also when another user is
+# logged in (logind would otherwise ask an administrator for a password, and fleetwm has no agent to ask).
+sudo install -m 644 "${SCRIPT_DIR}/packaging/50-fleetwm-power.rules" /etc/polkit-1/rules.d/50-fleetwm-power.rules
 
 ui_step "Installing network support (Wi-Fi drivers, firmware and a network manager if needed)" \
   "What: the Wi-Fi tools (wpa_supplicant, iw, rfkill, the regulatory database), firmware for Realtek, Intel," \

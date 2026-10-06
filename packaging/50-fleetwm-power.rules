@@ -1,0 +1,18 @@
+// Lets whoever is at the keyboard (an active session on a local seat) suspend, reboot and shut down from
+// the power menu without a password prompt: Fleetwm has no polkit authentication agent, so a request
+// that polkit answers with "authentication required" simply fails. logind's own defaults allow the plain
+// actions for an active session, but ask for an administrator whenever another user is logged in (the
+// "-multiple-sessions" actions), and some distributions' defaults differ; this makes it the same
+// everywhere. The "-ignore-inhibit" actions are not listed, so a program that asked the system to stay
+// awake (the keep-awake padlock) is still respected. Remove this file to require authentication again.
+polkit.addRule(function(action, subject) {
+  if ((action.id == "org.freedesktop.login1.power-off" ||
+       action.id == "org.freedesktop.login1.power-off-multiple-sessions" ||
+       action.id == "org.freedesktop.login1.reboot" ||
+       action.id == "org.freedesktop.login1.reboot-multiple-sessions" ||
+       action.id == "org.freedesktop.login1.suspend" ||
+       action.id == "org.freedesktop.login1.suspend-multiple-sessions") &&
+      subject.local && subject.active) {
+    return polkit.Result.YES;
+  }
+});
