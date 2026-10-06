@@ -316,6 +316,15 @@ ui_step "Building Fleetwm (optimized, in three stages)" \
 # meson's single-line wrapper; `set -euo pipefail` propagates any
 # failure) -- a failing test aborts here, before any installed binary is
 # touched, same "tests gate the install" contract as before.
+# A source file pair that defines the same file-scope name compiles alone and fails in the unity build below,
+# only after minutes of compiling. This static check takes a second and says which names clash.
+if command -v python3 >/dev/null 2>&1; then
+  if ! UNITY_CHECK_OUT=$(python3 "${SCRIPT_DIR}/scripts/check-unity-collisions.py" "${SCRIPT_DIR}" 2>&1); then
+    echo "${UNITY_CHECK_OUT}" >&2
+    echo "install stopped: the sources would not build (see above). Nothing was installed." >&2
+    exit 1
+  fi
+fi
 STATS_BUILD_CPU0=$(stats_cpu_seconds)
 bash "${SCRIPT_DIR}/scripts/build-pgo-auto.sh"
 STATS_BUILD_CPU=$(awk -v a="${STATS_BUILD_CPU0}" -v b="$(stats_cpu_seconds)" 'BEGIN { printf "%.0f", b - a }')

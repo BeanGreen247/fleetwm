@@ -235,6 +235,19 @@ TEST(PowerInstaller, RuleInstallsAreWorldReadableAndAfterPolkit) {
   EXPECT_NE(install.find("50-fleetwm-power.rules"), std::string::npos);
 }
 
+TEST(PowerInstaller, RunsTheUnityClashCheckBeforeTheBuild) {
+  const std::string install = pm_read(pm_root() / "install.sh");
+  const size_t check = install.find("scripts/check-unity-collisions.py");
+  const size_t build = install.find("scripts/build-pgo-auto.sh\"");
+  ASSERT_NE(check, std::string::npos) << "install.sh does not run the quick unity clash check";
+  ASSERT_NE(build, std::string::npos);
+  EXPECT_LT(check, build) << "the check has to run before the slow build, not after it";
+  EXPECT_TRUE(pm_fs::exists(pm_root() / "scripts/check-unity-collisions.py"));
+  const auto perms = pm_fs::status(pm_root() / "scripts/check-unity-collisions.py").permissions();
+  EXPECT_NE(perms & pm_fs::perms::owner_exec, pm_fs::perms::none);
+  EXPECT_NE(install.find("exit 1", check), std::string::npos) << "a clash must stop the install";
+}
+
 TEST(PowerInstaller, TheDocsNameThePowerRule) {
   const std::string readme = pm_read(pm_root() / "README.md");
   EXPECT_NE(readme.find("polkit"), std::string::npos);
