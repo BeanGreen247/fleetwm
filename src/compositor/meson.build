@@ -33,6 +33,7 @@ executable(
     'cursor.cpp',
     'xwayland.cpp',
     'switcher.cpp',
+    'debug_overlay.cpp',
   ),
   include_directories: include_directories('.'),
   cpp_args: wlroots_cpp_args,

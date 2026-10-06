@@ -11,6 +11,10 @@
 extern "C" {
 #include <wlr/interfaces/wlr_keyboard.h>
 #include <wlr/render/pixman.h>
+#include <wlr/types/wlr_drm.h>
+#include <wlr/types/wlr_linux_dmabuf_v1.h>
+#include <wlr/types/wlr_single_pixel_buffer_v1.h>
+#include <wlr/types/wlr_viewporter.h>
 #include <wlr/util/log.h>
 }
 
@@ -836,6 +840,19 @@ void server_cursor_button(wl_listener* listener, void* data) {
   const bool hit_something =
       scene_node_at(server, server->cursor()->x, server->cursor()->y, &sx, &sy, &hit);
 
+  // The start menu is only as big as its card, so a press anywhere else is what closes it. The press is
+  // consumed (as when the menu covered the whole output): clicking the Start button again then just
+  // closes the menu instead of opening it anew.
+  for (const std::unique_ptr<LayerSurface>& ls : server->layer_surfaces) {
+    wlr_layer_surface_v1* menu = ls->layer_surface;
+    if (!menu->surface->mapped || menu->namespace_ == nullptr || std::strcmp(menu->namespace_, "fleetwm-start-menu") != 0)
+      continue;
+    if (hit_something && hit.surface != nullptr && wlr_surface_get_root_surface(hit.surface) == menu->surface) break;
+    wlr_layer_surface_v1_destroy(menu);  // sends "closed"; the launcher quits
+    server->swallow_release = true;
+    return;
+  }
+
   // Titlebar / resize ring of a Desktop-layout window: handled here and not
   // forwarded to the client.
   if (hit_something && hit.owner == SceneNodeOwner::Decoration && server->desktop_layout()) {
@@ -1302,7 +1319,15 @@ bool Server::init() {
   if (!renderer_) {
     return false;
   }
-  wlr_renderer_init_wl_display(renderer_, display_);
+  // What wlr_renderer_init_wl_display() does (shm, drm, linux-dmabuf), spelled out so the dmabuf object
+  // is kept: the scene needs it to tell each client which buffer formats the display hardware can scan
+  // out directly, and without that a fullscreen video or game is always composited instead of shown
+  // straight from its own buffer.
+  wlr_renderer_init_wl_shm(renderer_, display_);
+  if (wlr_renderer_get_texture_formats(renderer_, WLR_BUFFER_CAP_DMABUF) != nullptr) {
+    wlr_drm_create(display_, renderer_);
+    linux_dmabuf_ = wlr_linux_dmabuf_v1_create_with_renderer(display_, 4, renderer_);
+  }
 
   allocator_ = wlr_allocator_autocreate(backend_, renderer_);
   if (!allocator_) {
@@ -1317,6 +1342,11 @@ bool Server::init() {
 
   scene_ = wlr_scene_create();
   scene_layout_ = wlr_scene_attach_output_layout(scene_, output_layout_);
+  if (linux_dmabuf_) wlr_scene_set_linux_dmabuf_v1(scene_, linux_dmabuf_);
+  // Let clients scale and crop in the compositor (video players, toolkits) and hand over solid colours
+  // without allocating a buffer: both are cheaper than a client resizing its own pixels.
+  wlr_viewporter_create(display_);
+  wlr_single_pixel_buffer_manager_v1_create(display_);
 
   // Always-enabled z-order layers, bottom to top -- see server.hpp for the
   // full rationale. Creation order alone establishes correct paint order
@@ -1918,6 +1948,8 @@ void Server::broadcast_windows_now() {
 void Server::toggle_debug_overlay() {
   debug_overlay_enabled_ = !debug_overlay_enabled_;
   wlr_scene_node_set_enabled(&layer_debug_->node, debug_overlay_enabled_);
+  // Turning it on from an idle desktop would show nothing until something else drew a frame.
+  for (const std::unique_ptr<Output>& output : outputs) wlr_output_schedule_frame(output->wlr_output_ptr);
 }
 
 namespace {

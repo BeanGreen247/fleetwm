@@ -290,23 +290,18 @@ struct Launcher {
     scroll = std::max(0, std::min(scroll, std::max(0, static_cast<int>(results.size()) - max_rows)));
   }
 
-  // Start menu: puts the card beside the taskbar, on the side the taskbar is on.
-  void place_card(int W, int H) {
+  // Start menu: the surface is just the card plus room for its shadow (see main()), placed beside the
+  // taskbar by the compositor, so the card sits at a fixed spot inside it.
+  static constexpr int kStartPad = 16;
+  // Where the surface's top-left corner is on the output, and the output's size: the glass backdrop is
+  // lined up with the wallpaper by these. Zero size means unknown (the surface size is used instead).
+  double origin_x = 0, origin_y = 0;
+  int out_w = 0, out_h = 0;
+
+  void place_card(int, int) {
     if (!start_menu) return;
-    constexpr double kGap = 10;
-    if (edge == "top") {
-      card_x = kGap;
-      card_y = inset + kGap;
-    } else if (edge == "left") {
-      card_x = inset + kGap;
-      card_y = kGap;
-    } else if (edge == "right") {
-      card_x = W - inset - kGap - card_w;
-      card_y = kGap;
-    } else {  // bottom
-      card_x = kGap;
-      card_y = H - inset - kGap - card_h;
-    }
+    card_x = kStartPad;
+    card_y = kStartPad;
   }
 
   int hover_footer = -1;
@@ -535,7 +530,8 @@ struct Launcher {
       st.tint = mix(pal.bg_primary, pal.accent, 0.18);
       st.tint_alpha = 0.60;
       st.radius = frame_r;
-      paint_glass(cr, backdrop, out_w, out_h, x0, y0, x0, y0, card_w, card_h, st);
+      paint_glass(cr, backdrop, this->out_w > 0 ? this->out_w : out_w, this->out_h > 0 ? this->out_h : out_h,
+                  origin_x + x0, origin_y + y0, x0, y0, card_w, card_h, st);
     } else {
       rounded_rect(cr, x0, y0, card_w, card_h, frame_r);
       set_source(cr, mix(pal.bg_primary, pal.accent, 0.12));
@@ -912,8 +908,8 @@ struct Launcher {
   void on_button(double x, double y, uint32_t b, bool pressed) {
     if (!pressed || b != kBtnLeft) return;
     if (start_menu) {
-      // The surface covers the whole output so that a click anywhere else
-      // (including on the taskbar's start button) closes the menu.
+      // The compositor closes the menu on a click anywhere outside the surface; this is the margin
+      // around the card inside it.
       if (x < card_x || x >= card_x + card_w || y < card_y || y >= card_y + card_h) {
         app.quit();
         return;
@@ -1007,15 +1003,43 @@ int main(int argc, char** argv) {
   cfg.width = kWindowWidth;
   cfg.height = kWindowHeight;
   if (L.start_menu) {
-    // Full-output transparent surface; the card is drawn beside the taskbar.
-    cfg.anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP | ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM |
-                 ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT;
-    cfg.width = 0;
-    cfg.height = 0;
+    // Just the card and its shadow, next to the taskbar. A full-output surface cost two output-sized
+    // buffers here and a texture in the compositor; the compositor now closes the menu on a click
+    // outside it (namespace "fleetwm-start-menu"), which is what the big surface used to catch.
+    constexpr uint32_t T = ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP, B = ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM,
+                       Lf = ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT, R = ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT;
+    const int sw = L.card_w + 2 * Launcher::kStartPad, sh = L.card_h + 2 * Launcher::kStartPad;
+    const int off = std::max(0, L.inset - 6);  // leaves the card the same 10 px from the taskbar as before
+    if (!L.app.outputs().empty()) {
+      const auto& o = L.app.outputs()[0];
+      const int sc = std::max(1, o.scale);
+      L.out_w = o.width / sc;
+      L.out_h = o.height / sc;
+    }
+    cfg.width = sw;
+    cfg.height = sh;
+    if (L.edge == "top") {
+      cfg.anchor = T | Lf;
+      cfg.margin_top = off;
+      L.origin_y = off;
+    } else if (L.edge == "left") {
+      cfg.anchor = Lf | T;
+      cfg.margin_left = off;
+      L.origin_x = off;
+    } else if (L.edge == "right") {
+      cfg.anchor = R | T;
+      cfg.margin_right = off;
+      L.origin_x = L.out_w - off - sw;
+    } else {  // bottom
+      cfg.anchor = B | Lf;
+      cfg.margin_bottom = off;
+      L.origin_y = L.out_h - off - sh;
+    }
+    cfg.name = "fleetwm-start-menu";
   }
   cfg.exclusive_zone = -1;
   cfg.keyboard_mode = ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE;
-  cfg.name = "fleetwm-launcher";
+  if (!L.start_menu) cfg.name = "fleetwm-launcher";
   L.surface = std::make_unique<Surface>(L.app, cfg);
   L.surface->on_draw = [&L](cairo_t* cr, int w, int h) { L.draw(cr, w, h); };
   L.surface->on_key = [&L](const KeyEvent& e) { L.on_key(e); };

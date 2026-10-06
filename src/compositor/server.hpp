@@ -14,6 +14,7 @@ extern "C" {
 #include <wlr/types/wlr_layer_shell_v1.h>
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_scene.h>
+#include <wlr/types/wlr_linux_dmabuf_v1.h>
 #include <wlr/types/wlr_screencopy_v1.h>
 #include <wlr/types/wlr_seat.h>
 #include <wlr/types/wlr_subcompositor.h>
@@ -414,6 +415,7 @@ class Server {
   wlr_allocator* allocator_ = nullptr;
   wlr_compositor* compositor_ = nullptr;
   wlr_scene* scene_ = nullptr;
+  wlr_linux_dmabuf_v1* linux_dmabuf_ = nullptr;  // kept so the scene can send scanout feedback
   wlr_scene_output_layout* scene_layout_ = nullptr;
   wlr_output_layout* output_layout_ = nullptr;
 
