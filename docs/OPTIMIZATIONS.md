@@ -149,6 +149,25 @@ on this hardware. The CPU side is 1.1 ms per frame (see above).
   swappiness 60 and used 0 of it), the `performance` or EPP governor when latency matters more than
   battery, the i915 `enable_fbc`/`enable_psr` options on newer GPUs (not exposed on this kernel).
 
+### Glass (Windows Aero) titlebars (2026-10-06)
+
+Microbenchmark of `kit::draw_titlebar` (800 px wide, 32 px high, glass on, the pointer moving across the
+buttons so every redraw is a hover change; build machine, so a Celeron takes several times longer):
+
+| | before | after |
+|---|---|---|
+| whole redraw | 342 us | 51 us |
+| glass background alone, 800 px | 103 us | 4 us |
+| glass background alone, 1600 px | 242 us | 9 us |
+| caption strip | about 290 us | a copy |
+
+The strip (gradients, bevels, outlined glyphs, the hover glow) was most of a redraw and the glass background
+the rest of the gap to matte. Both are drawn once per state (size, focus, colour; which button is lit,
+maximized, pinned) into small byte-capped LRU caches and copied, so glass costs the same as matte. What
+remains is the title text (about 30 us). `tests/test_titlebar_draw.cpp` checks the cached picture equals the
+drawn one in all 40 button states, the caches stay within their budgets, and a warm redraw is under 60% of
+a cold one.
+
 ### Profile-guided build training (2026-10-06)
 
 The training run (`scripts/pgo-train-session.sh`, driven by `scripts/build-pgo-auto.sh`) used to start the

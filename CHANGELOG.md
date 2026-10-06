@@ -33,6 +33,12 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
   Alt+Tab, snap keys, the performance overlay, layout switching, terminals scrolling output, screen capture,
   pointer sweeps and the compositor's IPC queries (key, pointer, terminal and capture steps run when
   wtype, wlrctl, foot and grim are installed, which the installer does). `PgoTraining` tests keep it that way.
+- Windows Aero (glass) performance: the glass titlebar background and the caption strip are drawn once and
+  copied (`src/fleetkit/titlebar_draw.cpp`), because a titlebar is redrawn every time the pointer enters or
+  leaves a button. A redraw with hover moving across the buttons went from 342 us to 51 us (glass, 800 px wide;
+  the glass background alone from 103 us to 4 us, and from 242 us to 9 us at 1600 px, so glass now costs the
+  same as matte). Both caches are byte-capped LRUs (2 MB and 1 MB). Settings: the glass row is now named
+  "Glass effects (Windows Aero)".
 - Window caption buttons restyled as a joined Windows 7 style strip (pin, minimize, maximize/restore, close),
   the same in glass and matte mode in the Desktop layout: light two-tone glass buttons and a red close button
   that is 1.6 times as wide, hanging from the top-right corner of the window with rounded bottom corners, a dark
@@ -46,6 +52,12 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
   placed with a wrong bar height (24 where the bar is 30). Clicking anywhere outside it closes it (the compositor
   does that, like the start menu), and launching it again closes the open one instead of stacking another (dozens
   piled up). Tests: `PopupSpot`, `SingleInstance`, `PopupDismissal`.
+- Sound without a reboot: after installing the device profiles the installer runs `alsactl init` (applies the
+  profile's BootSequence: output mixers on, volumes), saves it (`alsactl store`) and restarts the user's sound
+  services. Found on the test laptop (Intel SOF/ES8336): PipeWire showed Speakers but nothing played until the
+  boot sequence ran, then a tone through the speakers was picked up by the built-in microphone at 100 times the
+  noise level, and the owner heard it. New `docs/AUDIO.md` covers the layers, how other desktops divide the work
+  and how to check sound.
 - No sound on some laptops: the installer now also installs `pipewire-pulse` (the PulseAudio-compatible server
   browsers and players use), `pipewire-alsa`, `alsa-ucm-conf` (device profiles: an Intel SOF/ES8336 laptop got
   the silent "stereo-fallback" profile without it and showed only a generic stereo sink) and `alsa-utils`. On the
