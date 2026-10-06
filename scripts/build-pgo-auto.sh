@@ -21,7 +21,7 @@
 # real, repeatable improvement over training only the compositor, which
 # is what every PGO build before this one did.
 #
-# Usage: scripts/build-pgo-auto.sh [training-seconds, default 20]
+# Usage: scripts/build-pgo-auto.sh [training-seconds, default 150]
 #
 # Training runs the freshly built binaries straight out of build-pgo/,
 # not an installed copy, so no sudo is needed until the very end, when
@@ -30,7 +30,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="${SCRIPT_DIR}/build-pgo"
-TRAIN_SECONDS="${1:-20}"
+TRAIN_SECONDS="${1:-150}"
 
 for tool in dbus-run-session python3; do
   if ! command -v "$tool" >/dev/null 2>&1; then
