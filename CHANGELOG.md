@@ -15,6 +15,16 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
 - Per-GPU readout in the bar (AMD busy percent, Intel RC6 idle time, NVIDIA through `nvidia-smi`).
 - `CHANGELOG.md`.
 
+### Fixed
+- The installer's unity build failed on the first 0.3.0 tag (`kPad` defined in both the overlay and the Alt+Tab
+  switcher); the overlay's file-scope names are prefixed, and a second latent clash (`focused_view` in
+  `input.cpp` and `output.cpp`) is renamed.
+
+### Added (tooling)
+- `scripts/check-unity-collisions.py` (also runs with `scripts/test.sh` and `meson test --suite static`) and
+  `scripts/check-unity.sh` (a real unity build that reports every error, then the unit tests) so a clash like
+  that is caught before a tag. Release checklist in `docs/DEVELOPMENT.md`.
+
 ### Changed
 - Higher contrast for bar icons and text.
 - Settings, Shortcuts and the language checklist stack like normal windows in the Desktop layout.

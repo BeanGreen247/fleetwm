@@ -262,7 +262,7 @@ void tile_view(View* view, int x, int y, int w, int h) {
 // one lives in an anonymous namespace and isn't shared across
 // translation units. Same "seat only tracks a wlr_surface*, scan views
 // for the owner" approach.
-View* focused_view(Server* server) {
+View* output_focused_view(Server* server) {
   wlr_surface* focused_surface = server->seat()->keyboard_state.focused_surface;
   if (!focused_surface) {
     return nullptr;
@@ -449,7 +449,7 @@ void Output::relayout() {
   // Capped well below the full gap so there's always some residual gap
   // left even around a grown, focused window (and gap_px == 0 means
   // grow == 0: nothing to step into).
-  View* focused = focused_view(server);
+  View* focused = output_focused_view(server);
   int grow = std::min(6, std::max(0, edge - 1));
 
   if (tiled.size() == 1) {
