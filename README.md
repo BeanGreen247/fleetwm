@@ -165,6 +165,17 @@ With neither, it shows what the system reports and nothing more. The installer a
 and firmware for common chips, and installs NetworkManager only when there is Wi-Fi hardware and
 nothing manages it yet.
 
+## Power menu
+
+The power menu (Start menu -> Shut down, or the power icon in the bar) has Lock, Log out, Sleep, Reboot and
+Shut down. Sleep, Reboot and Shut down need no password: the installer adds a polkit rule
+(`/etc/polkit-1/rules.d/50-fleetwm-power.rules`) that allows them for whoever is at the keyboard (an active
+session on a local seat), also when another user is logged in. Remote logins and background sessions are
+not covered, and neither are the "ignore inhibitors" variants, so a program that asked the system to stay
+awake (the keep-awake padlock) is still respected. Delete the file to get password prompts back; Date &
+Time and the language builder have their own rules (`50-fleetwm-time.rules`, `50-fleetwm-locale.rules`)
+for administrators. All of it is covered by `scripts/test.sh power`.
+
 ## Settings
 
 Open Settings from the launcher or the start menu. Changes apply right away, and they are saved

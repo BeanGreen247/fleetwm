@@ -30,6 +30,7 @@ declare -A AREAS=(
   [ipc]='ExtractJsonStringField.*:IpcSocketPathTest.*:IpcClient.*:IpcClientWithServerTest.*'
   [config]='WallpaperConfigTest.*:DefaultAppsTest.*:OutputConfigTest.*'
   [fleetkit]='DesktopEntryExec.*:FleetkitColor.*:GlassCache.*'
+  [power]='PowerActions.*:PowerPolkitRule.*:PowerInstaller.*:PowerIcons.*:PolkitRules.*:PolkitRuleBehaviour.*'
 )
 declare -A AREA_HELP=(
   [theme]='theme.toml: colors, layout, gaps, titlebar settings'
@@ -41,6 +42,7 @@ declare -A AREA_HELP=(
   [ipc]='compositor socket client'
   [config]='wallpaper, default apps, outputs'
   [fleetkit]='toolkit helpers: colors, desktop entries'
+  [power]='power menu: commands, the polkit rule and its installer step, icon drawing'
 )
 
 usage() { sed -n '2,17p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
