@@ -33,6 +33,13 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
   Alt+Tab, snap keys, the performance overlay, layout switching, terminals scrolling output, screen capture,
   pointer sweeps and the compositor's IPC queries (key, pointer, terminal and capture steps run when
   wtype, wlrctl, foot and grim are installed, which the installer does). `PgoTraining` tests keep it that way.
+- Caption buttons now take their colours from the theme, so they fit a dark, an OLED black and a light theme, with
+  glass on and off (the first version was fixed light grey-blue and looked like bright slabs on a dark glass bar).
+  Same shape, size and placement. The glass is made from the titlebar's own colour raised a little towards the text
+  colour and tinted by the accent; glyphs use the theme's text colour with a contrasting outline (white on the red
+  close button, which is a deeper red on a dark bar); the hover and the glow use the accent colour (orange behind
+  close); in glass mode the buttons are translucent like the bar. Tests for dark and light themes, accent-driven
+  hover, glass versus matte, and a mutation check that ignoring the theme fails.
 - Windows Aero (glass) performance: the glass titlebar background and the caption strip are drawn once and
   copied (`src/fleetkit/titlebar_draw.cpp`), because a titlebar is redrawn every time the pointer enters or
   leaves a button. A redraw with hover moving across the buttons went from 342 us to 51 us (glass, 800 px wide;
