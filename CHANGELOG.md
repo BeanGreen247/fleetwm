@@ -9,7 +9,7 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
   compositors do, rejected ideas).
 - Glass effects setting (Settings -> Theme, `glass_effects` in `theme.toml`): a frosted copy of the
   wallpaper behind translucent surfaces, with a tint, a soft sheen and a light rim. Used by the bar in
-  every layout, the taskbar, window titlebars (round glossy buttons), the start menu and Alt+Tab.
+  every layout, the taskbar, window titlebars, the start menu and Alt+Tab.
 - Windows 7 style start menu: program list and search on the left, places and Shut down on the right.
 - Windows 7 style Alt+Tab switcher with window thumbnails.
 - Per-GPU readout in the bar (AMD busy percent, Intel RC6 idle time, NVIDIA through `nvidia-smi`).
@@ -33,6 +33,14 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
   Alt+Tab, snap keys, the performance overlay, layout switching, terminals scrolling output, screen capture,
   pointer sweeps and the compositor's IPC queries (key, pointer, terminal and capture steps run when
   wtype, wlrctl, foot and grim are installed, which the installer does). `PgoTraining` tests keep it that way.
+- Window caption buttons restyled as a joined Windows 7 style strip (pin, minimize, maximize/restore, close),
+  the same in glass and matte mode in the Desktop layout: light two-tone glass buttons and a red close button
+  that is 1.6 times as wide, hanging from the top-right corner of the window with rounded bottom corners, a dark
+  outline with a white inner edge, white glyphs with a dark outline, a blue glow behind a hovered button and an
+  orange one behind close, a pushed-in blue pin when the window is pinned, and faded buttons on an inactive window.
+  Drawn with cairo paths and gradients (`src/fleetkit/caption_buttons.cpp`), no images. The layout has a strip mode
+  (`TitlebarMetrics::strip`) for the touching, top-flush buttons and the wider close button; hit testing follows it.
+  Tests: `TitlebarStrip` (geometry) and `CaptionButtons` (rendered pixels, both modes).
 - Volume mixer: it opens next to the bar or taskbar it came from (bottom right above a bottom taskbar, and so on)
   instead of always at the top right, which in the Desktop layout was the other side of the screen; it was also
   placed with a wrong bar height (24 where the bar is 30). Clicking anywhere outside it closes it (the compositor
