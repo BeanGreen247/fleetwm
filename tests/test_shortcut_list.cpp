@@ -223,8 +223,8 @@ TEST(ShortcutList, SnapKeysAreListedOnlyInTheDesktopLayout) {
   const auto desktop = build_shortcut_list(KeybindsConfig{}, WindowLayout::Desktop);
   EXPECT_EQ(find(desktop, "Snap left")->keys, "Super+Left");
   EXPECT_EQ(find(desktop, "Snap right")->keys, "Super+Right");
-  EXPECT_EQ(find(desktop, "Maximize (from")->keys, "Super+Up");
-  EXPECT_EQ(find(desktop, "Restore, or minimize")->keys, "Super+Down");
+  EXPECT_EQ(find(desktop, "Top half, then maximize")->keys, "Super+Up");
+  EXPECT_EQ(find(desktop, "Restore from maximized")->keys, "Super+Down");
   EXPECT_EQ(find(build_shortcut_list(KeybindsConfig{}, WindowLayout::Tiling), "Snap left"), nullptr);
 }
 
