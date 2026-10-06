@@ -4,9 +4,12 @@
 // entry; if nothing matches the typed text can be run as a shell command.
 // Escape quits. Up/Down (or Ctrl+N/Ctrl+P) move the selection.
 
+#include <pwd.h>
 #include <signal.h>
 #include <sys/signalfd.h>
 #include <unistd.h>
+
+#include <filesystem>
 
 #include <algorithm>
 #include <cctype>
@@ -161,6 +164,23 @@ struct Launcher {
   Palette pal;
   std::unique_ptr<Surface> surface;
   std::vector<Entry> entries;  // sorted by name
+  // ---- Windows 7 style start menu (Desktop layout) ----
+  struct Hit {
+    double x = 0, y = 0, w = 0, h = 0;
+    int id = -1;  // right-column item index, or a kHit* code
+    bool contains(double px, double py) const { return px >= x && px < x + w && py >= y && py < y + h; }
+  };
+  enum { kHitAllPrograms = -2, kHitShutdown = -3, kHitLock = -4, kHitSearch = -5 };
+  std::vector<const Entry*> pinned;   // the default apps, shown before "All Programs" is opened
+  bool all_programs = false;
+  std::vector<Hit> hits;              // clickable things outside the program list, set while drawing
+  int hover_hit = -9999;
+  struct Place {
+    std::string label;
+    std::vector<std::string> argv;
+  };
+  std::vector<Place> places;          // Documents, Pictures, ... Settings
+  std::string user_name = "user";
   std::string query;
   size_t cursor = 0;           // byte offset into query
   std::vector<const Entry*> results;  // nullptr = run-as-command sentinel
@@ -180,12 +200,65 @@ struct Launcher {
     }
     std::sort(entries.begin(), entries.end(),
               [](const Entry& a, const Entry& b) { return a.de.name < b.de.name; });
+    if (start_menu) load_start_menu_extras();
+  }
+
+  // What the Windows 7 style start menu needs besides the program list: the pinned programs (the
+  // default apps from Settings, a terminal, Settings itself), the places on the right, the user.
+  void load_start_menu_extras() {
+    auto add_pinned = [&](const Entry* e) {
+      if (e && std::find(pinned.begin(), pinned.end(), e) == pinned.end()) pinned.push_back(e);
+    };
+    auto by_id = [&](const std::string& id) -> const Entry* {
+      for (const Entry& e : entries)
+        if (e.de.id == id) return &e;
+      return nullptr;
+    };
+    for (const char* mime : {"x-scheme-handler/https", "inode/directory", "text/plain"}) {
+      std::string id = mime_default_for(mime);
+      if (id.empty()) {
+        const std::vector<std::string> any = mime_apps_for(mime);
+        if (!any.empty()) id = any.front();
+      }
+      add_pinned(by_id(id));
+    }
+    const std::string term = to_lower(load_default_apps_config().terminal_command.substr(0, load_default_apps_config().terminal_command.find(' ')));
+    const Entry* terminal = by_id(term + ".desktop");  // "foot.desktop", not "Foot Server"
+    if (!terminal)
+      for (const Entry& e : entries)
+        if (exec_basename(e.de) == term) {
+          terminal = &e;
+          break;
+        }
+    add_pinned(terminal);
+    add_pinned(by_id("fleetwm-settings.desktop"));
+
+    const char* home = std::getenv("HOME");
+    if (home) {
+      for (const char* dir : {"Documents", "Pictures", "Music", "Downloads"}) {
+        std::error_code ec;
+        const std::string path = std::string(home) + "/" + dir;
+        if (std::filesystem::is_directory(path, ec)) places.push_back({dir, {"xdg-open", path}});
+      }
+      places.push_back({"Home folder", {"xdg-open", std::string(home)}});
+    }
+    places.push_back({"Settings", {"fleetwm-settings"}});
+    places.push_back({"Keyboard shortcuts", {"fleetwm-shortcuts"}});
+    if (const passwd* pw = getpwuid(getuid())) {
+      std::string n = pw->pw_gecos ? pw->pw_gecos : "";
+      n = n.substr(0, n.find(','));
+      user_name = !n.empty() ? n : pw->pw_name ? pw->pw_name : "user";
+    }
   }
 
   void refresh() {
     results.clear();
     if (query.empty()) {
-      for (const auto& e : entries) results.push_back(&e);
+      if (start_menu && !all_programs) {
+        for (const Entry* e : pinned) results.push_back(e);
+      } else {
+        for (const auto& e : entries) results.push_back(&e);
+      }
     } else {
       const std::string needle = to_lower(query);
       std::vector<std::pair<size_t, const Entry*>> scored;
@@ -304,6 +377,11 @@ struct Launcher {
   }
 
   void draw(cairo_t* cr, int W, int H) {
+    if (start_menu) {
+      place_card(W, H);
+      draw_start_menu(cr);
+      return;
+    }
     const double r = pal.rounded ? 16 : 4;
     place_card(W, H);
     const double cx0 = card_x, cy0 = card_y;
@@ -415,6 +493,235 @@ struct Launcher {
       const TextExtents he = measure_text(cr, h.what, 12);
       draw_text(cr, h.what, fx + kw + 7, fy + (18 - he.height) / 2 + he.ascent, 12, alpha(pal.fg_secondary, 0.85));
       fx += kw + 7 + he.width + 20;
+    }
+  }
+
+  // ------------------------------------------------- Windows 7 style start menu --
+  // Geometry shared by drawing and clicking. The card has a glass frame; inside it a light
+  // program list with the search box under it on the left, and the user, places and Shut down
+  // on the right.
+  static constexpr double kFrame = 7, kLeftW = 252, kRightW = 160;
+  static constexpr double kListTop = 6, kAllRowH = 34, kSearchH = 44;
+
+  static Color mix(Color a, Color b, double t) {
+    return {a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t, 1.0};
+  }
+
+  void glass_item(cairo_t* cr, double x, double y, double w, double h, bool strong, bool light_bg) {
+    rounded_rect(cr, x + 0.5, y + 0.5, w - 1, h - 1, 3);
+    if (light_bg) {
+      set_source(cr, strong ? Color{0.62, 0.78, 0.96, 0.55} : Color{0.70, 0.83, 0.97, 0.38});
+    } else {
+      set_source(cr, strong ? Color{1, 1, 1, 0.26} : Color{1, 1, 1, 0.14});
+    }
+    cairo_fill_preserve(cr);
+    set_source(cr, light_bg ? Color{0.45, 0.64, 0.90, strong ? 0.95 : 0.65} : Color{1, 1, 1, strong ? 0.55 : 0.35});
+    cairo_set_line_width(cr, 1);
+    cairo_stroke(cr);
+  }
+
+  void draw_start_menu(cairo_t* cr) {
+    hits.clear();
+    const double x0 = card_x, y0 = card_y;
+    draw_shadow(cr, x0, y0, card_w, card_h, 8);
+
+    // The frame, matte for now: one solid blue-tinted theme colour with a thin rim. Everything
+    // that gives the Windows 7 look (the two panels, the rows, the buttons) is drawn on top of it,
+    // so a glass or Aero frame can replace just this block later.
+    {
+      const Color frame = mix(pal.bg_primary, Color{0.20, 0.34, 0.58, 1}, 0.60);
+      rounded_rect(cr, x0, y0, card_w, card_h, 8);
+      set_source(cr, frame);
+      cairo_fill_preserve(cr);
+      set_source(cr, {1, 1, 1, 0.30});
+      cairo_set_line_width(cr, 1);
+      cairo_stroke(cr);
+    }
+
+    // ---- left panel: light, like Windows 7 ----
+    const double px = x0 + kFrame, py = y0 + kFrame, pw = kLeftW, ph = card_h - 2 * kFrame;
+    rounded_rect(cr, px, py, pw, ph, 4);
+    set_source(cr, {0.965, 0.972, 0.985, 1});
+    cairo_fill(cr);
+    const Color ink{0.10, 0.13, 0.19, 1}, ink2{0.42, 0.46, 0.54, 1};
+
+    const double lx = px + 3, ly = py + kListTop, lw = pw - 6;
+    cairo_save(cr);
+    cairo_rectangle(cr, lx, ly, lw, max_rows * row_h);
+    cairo_clip(cr);
+    for (int i = scroll; i < static_cast<int>(results.size()) && i < scroll + max_rows; ++i) {
+      const double ry = ly + (i - scroll) * row_h;
+      const bool sel = i == selected, hot = i == hover_row;
+      if (sel || hot) glass_item(cr, lx, ry + 1, lw - 6, row_h - 2, sel, true);
+      Entry* e = const_cast<Entry*>(results[static_cast<size_t>(i)]);
+      const std::string primary = e ? e->de.name : query;
+      const double isz = 30, ix = lx + 8, iy = ry + (row_h - isz) / 2;
+      cairo_surface_t* icon = e ? icon_for(*e) : nullptr;
+      if (icon) {
+        cairo_save(cr);
+        cairo_translate(cr, ix, iy);
+        cairo_scale(cr, isz / cairo_image_surface_get_width(icon), isz / cairo_image_surface_get_height(icon));
+        cairo_set_source_surface(cr, icon, 0, 0);
+        cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_BEST);
+        cairo_paint(cr);
+        cairo_restore(cr);
+      } else {
+        rounded_rect(cr, ix, iy, isz, isz, 6);
+        set_source(cr, alpha(pal.accent, 0.35));
+        cairo_fill(cr);
+        const std::string letter = e ? (primary.empty() ? "?" : primary.substr(0, next_char_len(primary, 0))) : ">";
+        const TextExtents le = measure_text(cr, letter, 14, true);
+        draw_text(cr, letter, ix + (isz - le.width) / 2, iy + (isz - le.height) / 2 + le.ascent, 14, ink, true);
+      }
+      const double nx = ix + isz + 10;
+      std::string label = e ? primary : "Run: " + primary;
+      while (label.size() > 4 && measure_text(cr, label, 13.5).width > lw - (nx - lx) - 14) label.resize(label.size() - 1);
+      if (label.size() < (e ? primary : "Run: " + primary).size()) label += "...";
+      const TextExtents te = measure_text(cr, label, 13.5);
+      draw_text(cr, label, nx, ry + (row_h - te.height) / 2 + te.ascent, 13.5, ink);
+    }
+    cairo_restore(cr);
+    if (results.empty() && !query.empty()) draw_text(cr, "No matches", lx + 14, ly + 26, 13.5, ink2);
+    const int total = static_cast<int>(results.size());
+    if (total > max_rows) {  // thin scroll thumb
+      const double track = max_rows * row_h, th = std::max(24.0, track * max_rows / total);
+      const double ty = ly + (track - th) * scroll / (total - max_rows);
+      rounded_rect(cr, lx + lw - 4, ty, 3, th, 1.5);
+      set_source(cr, {0.3, 0.4, 0.55, 0.45});
+      cairo_fill(cr);
+    }
+
+    // "All Programs" / "Back" row under the list, with a separator above it.
+    const double ay = ly + max_rows * row_h + 2;
+    set_source(cr, {0.78, 0.82, 0.88, 1});
+    cairo_rectangle(cr, lx + 8, ay - 1, lw - 16, 1);
+    cairo_fill(cr);
+    if (query.empty()) {
+      const bool hot = hover_hit == kHitAllPrograms;
+      if (hot) glass_item(cr, lx, ay + 2, lw - 6, kAllRowH - 4, false, true);
+      hits.push_back({lx, ay, lw, kAllRowH, kHitAllPrograms});
+      const std::string label = all_programs ? "Back" : "All Programs";
+      const double ax = lx + 14, acy = ay + kAllRowH / 2;
+      set_source(cr, ink);
+      cairo_set_line_width(cr, 2);
+      cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
+      cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND);
+      if (all_programs) {  // left-pointing triangle
+        cairo_move_to(cr, ax + 7, acy - 5);
+        cairo_line_to(cr, ax + 1, acy);
+        cairo_line_to(cr, ax + 7, acy + 5);
+        cairo_close_path(cr);
+      } else {             // right-pointing triangle
+        cairo_move_to(cr, ax + 1, acy - 5);
+        cairo_line_to(cr, ax + 7, acy);
+        cairo_line_to(cr, ax + 1, acy + 5);
+        cairo_close_path(cr);
+      }
+      cairo_fill(cr);
+      const TextExtents te = measure_text(cr, label, 13.5, true);
+      draw_text(cr, label, ax + 18, acy - te.height / 2 + te.ascent, 13.5, ink, true);
+    }
+
+    // Search box at the bottom of the left panel.
+    const double sy = ay + kAllRowH + 4, sx = lx + 4, sw = lw - 14, sh = kSearchH - 16;
+    rounded_rect(cr, sx + 0.5, sy + 0.5, sw - 1, sh - 1, 3);
+    set_source(cr, {1, 1, 1, 1});
+    cairo_fill_preserve(cr);
+    set_source(cr, {0.62, 0.68, 0.78, 1});
+    cairo_set_line_width(cr, 1);
+    cairo_stroke(cr);
+    hits.push_back({sx, sy, sw, sh, kHitSearch});
+    {
+      const TextExtents te = measure_text(cr, "Ag", 13.5);
+      const double base = sy + (sh - te.height) / 2 + te.ascent;
+      if (query.empty()) {
+        draw_text(cr, "Search programs and files", sx + 10, base, 13.5, {0.55, 0.59, 0.66, 1});
+      } else {
+        std::string shown = query;
+        while (shown.size() > 1 && measure_text(cr, shown, 13.5).width > sw - 44) shown.erase(0, next_char_len(shown, 0));
+        draw_text(cr, shown, sx + 10, base, 13.5, ink);
+      }
+      const double caret = sx + 10 + (query.empty() ? 0 : measure_text(cr, query.size() ? query.substr(0, cursor) : "", 13.5).width);
+      if (!query.empty() && measure_text(cr, query, 13.5).width <= sw - 44) {
+        set_source(cr, ink);
+        cairo_rectangle(cr, caret + 0.5, sy + 6, 1.4, sh - 12);
+        cairo_fill(cr);
+      } else if (query.empty()) {
+        set_source(cr, ink);
+        cairo_rectangle(cr, sx + 9, sy + 6, 1.4, sh - 12);
+        cairo_fill(cr);
+      }
+      // magnifier
+      set_source(cr, {0.35, 0.42, 0.55, 1});
+      cairo_set_line_width(cr, 1.7);
+      cairo_arc(cr, sx + sw - 20, sy + sh / 2 - 1, 5, 0, 2 * M_PI);
+      cairo_stroke(cr);
+      cairo_move_to(cr, sx + sw - 16.5, sy + sh / 2 + 2.5);
+      cairo_line_to(cr, sx + sw - 12, sy + sh / 2 + 7);
+      cairo_stroke(cr);
+    }
+
+    // ---- right panel: user, places, Shut down, on the glass ----
+    const double rx = px + pw + 6, rw = kRightW - 12;
+    double ry = py + 8;
+    {  // the user: a tile with the first letter, then the name
+      const double ts = 40;
+      rounded_rect(cr, rx + 2, ry, ts, ts, 5);
+      set_source(cr, pal.accent);
+      cairo_fill_preserve(cr);
+      set_source(cr, {1, 1, 1, 0.7});
+      cairo_set_line_width(cr, 1);
+      cairo_stroke(cr);
+      const std::string letter = user_name.empty() ? "?" : user_name.substr(0, next_char_len(user_name, 0));
+      const TextExtents le = measure_text(cr, letter, 20, true);
+      draw_text(cr, letter, rx + 2 + (ts - le.width) / 2, ry + (ts - le.height) / 2 + le.ascent, 20, {1, 1, 1, 1}, true);
+      std::string name = user_name;
+      while (name.size() > 3 && measure_text(cr, name, 13.5, true).width > rw - ts - 16) name.resize(name.size() - 1);
+      draw_text(cr, name, rx + ts + 12, ry + ts / 2 + 5, 13.5, {1, 1, 1, 1}, true);
+      ry += ts + 14;
+    }
+    for (size_t i = 0; i < places.size(); ++i) {
+      const double ih = 30;
+      const bool hot = hover_hit == static_cast<int>(i);
+      if (hot) glass_item(cr, rx, ry, rw, ih, false, false);
+      hits.push_back({rx, ry, rw, ih, static_cast<int>(i)});
+      const TextExtents te = measure_text(cr, places[i].label, 13.5);
+      draw_text(cr, places[i].label, rx + 12, ry + (ih - te.height) / 2 + te.ascent, 13.5, {1, 1, 1, 1});
+      ry += ih + 2;
+    }
+    // Bottom row: Shut down and a lock button.
+    const double bh = 32, by = py + ph - bh - 4;
+    const double lock_w = 34, sd_w = rw - lock_w - 6;
+    {
+      const bool hot = hover_hit == kHitShutdown;
+      rounded_rect(cr, rx + 0.5, by + 0.5, sd_w - 1, bh - 1, 4);
+      set_source(cr, hot ? Color{0.30, 0.38, 0.52, 1} : Color{0.15, 0.21, 0.33, 1});
+      cairo_fill_preserve(cr);
+      set_source(cr, {1, 1, 1, hot ? 0.6 : 0.4});
+      cairo_set_line_width(cr, 1);
+      cairo_stroke(cr);
+      const TextExtents te = measure_text(cr, "Shut down", 13, true);
+      draw_text(cr, "Shut down", rx + (sd_w - te.width) / 2, by + (bh - te.height) / 2 + te.ascent, 13, {1, 1, 1, 1}, true);
+      hits.push_back({rx, by, sd_w, bh, kHitShutdown});
+    }
+    {
+      const bool hot = hover_hit == kHitLock;
+      const double lx2 = rx + sd_w + 6;
+      rounded_rect(cr, lx2 + 0.5, by + 0.5, lock_w - 1, bh - 1, 4);
+      set_source(cr, hot ? Color{0.30, 0.38, 0.52, 1} : Color{0.15, 0.21, 0.33, 1});
+      cairo_fill_preserve(cr);
+      set_source(cr, {1, 1, 1, hot ? 0.6 : 0.4});
+      cairo_set_line_width(cr, 1);
+      cairo_stroke(cr);
+      // a padlock: shackle and body
+      const double cx = lx2 + lock_w / 2, cy = by + bh / 2 + 2;
+      set_source(cr, {1, 1, 1, 1});
+      cairo_set_line_width(cr, 1.8);
+      cairo_arc(cr, cx, cy - 3, 4.2, M_PI, 2 * M_PI);
+      cairo_stroke(cr);
+      cairo_rectangle(cr, cx - 6, cy - 3, 12, 9);
+      cairo_fill(cr);
+      hits.push_back({lx2, by, lock_w, bh, kHitLock});
     }
   }
 
@@ -579,6 +886,12 @@ struct Launcher {
   }
 
   int row_at(double x, double y) const {
+    if (start_menu) {
+      const double lx = card_x + kFrame + 3, ly = card_y + kFrame + kListTop, lw = kLeftW - 6;
+      if (x < lx || x >= lx + lw || y < ly || y >= ly + max_rows * row_h) return -1;
+      const int i = scroll + static_cast<int>((y - ly) / row_h);
+      return i < static_cast<int>(results.size()) ? i : -1;
+    }
     const double ly = card_y + kInner + kEntryH + 8, lx = card_x + kInner;
     if (x < lx || x >= lx + card_w - 2 * kInner || y < ly || y >= ly + max_rows * row_h) return -1;
     const int i = scroll + static_cast<int>((y - ly) / row_h);
@@ -587,9 +900,11 @@ struct Launcher {
 
   void on_motion(double x, double y) {
     if (start_menu) {
-      const int f = footer_at(x, y);
-      if (f != hover_footer) {
-        hover_footer = f;
+      int h = -9999;
+      for (const Hit& hit : hits)
+        if (hit.contains(x, y)) h = hit.id;
+      if (h != hover_hit) {
+        hover_hit = h;
         surface->queue_draw();
       }
     }
@@ -609,9 +924,22 @@ struct Launcher {
         app.quit();
         return;
       }
-      const int f = footer_at(x, y);
-      if (f >= 0) {
-        run_footer(f);
+      for (const Hit& hit : hits) {
+        if (!hit.contains(x, y)) continue;
+        if (hit.id == kHitAllPrograms) {
+          all_programs = !all_programs;
+          refresh();
+          surface->queue_draw();
+        } else if (hit.id == kHitShutdown) {
+          spawn_detached({"fleetwm-powermenu"});
+          app.quit();
+        } else if (hit.id == kHitLock) {
+          if (ipc.connect()) ipc.send_command("LOCK");
+          app.quit();
+        } else if (hit.id >= 0 && static_cast<size_t>(hit.id) < places.size()) {
+          spawn_detached(places[static_cast<size_t>(hit.id)].argv);
+          app.quit();
+        }
         return;
       }
     }
@@ -667,11 +995,11 @@ int main(int argc, char** argv) {
   }
   if (L.start_menu) {
     { std::ofstream(pid_path()) << getpid() << "\n"; }
-    L.card_w = 400;
+    // The Windows 7 style layout: glass frame, program list + search on the left, places on the right.
     L.max_rows = 9;
-    L.row_h = 48;
-    L.footer_h = 52;
-    L.card_h = kInner + kEntryH + 8 + L.max_rows * L.row_h + L.footer_h;
+    L.row_h = 42;
+    L.card_w = static_cast<int>(2 * Launcher::kFrame + Launcher::kLeftW + Launcher::kRightW);
+    L.card_h = static_cast<int>(2 * Launcher::kFrame + 474);
   }
   L.load();
   L.refresh();
