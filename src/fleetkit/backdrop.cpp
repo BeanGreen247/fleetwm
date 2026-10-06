@@ -3,6 +3,8 @@
 #include <sys/stat.h>
 
 #include <algorithm>
+#include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -93,7 +95,7 @@ cairo_surface_t* solid_surface(const std::string& hex) {
 
 }  // namespace
 
-cairo_surface_t* load_backdrop() {
+cairo_surface_t* load_backdrop_uncached() {
   const WallpaperConfig wc = load_wallpaper_config();
   const std::string key = source_key(wc);
   if (key.empty()) return nullptr;
@@ -153,8 +155,108 @@ void paint_backdrop(cairo_t* cr, cairo_surface_t* bd, int out_w, int out_h, doub
   cairo_restore(cr);
 }
 
+cairo_surface_t* load_backdrop() {
+  // One decoded copy per process, re-checked against the wallpaper at most every two seconds: a
+  // caller that asks on every Alt+Tab step no longer reads and decodes the PNG each time.
+  static cairo_surface_t* shared = nullptr;
+  static std::string shared_key;
+  static std::chrono::steady_clock::time_point checked;
+  const auto now = std::chrono::steady_clock::now();
+  if (shared && now - checked < std::chrono::seconds(2)) return cairo_surface_reference(shared);
+  const std::string key = source_key(load_wallpaper_config());
+  checked = now;
+  if (shared && key == shared_key) return cairo_surface_reference(shared);
+  cairo_surface_t* fresh = load_backdrop_uncached();
+  if (shared) cairo_surface_destroy(shared);
+  shared = fresh;
+  shared_key = key;
+  return shared ? cairo_surface_reference(shared) : nullptr;
+}
+
+namespace {
+
+// Glass rectangles are painted once and kept: a clip, a stretched blit, two gradients and two
+// strokes become one blit of a ready picture. Small least-recently-used set, capped in bytes.
+struct GlassTile {
+  cairo_surface_t* image = nullptr;
+  cairo_surface_t* backdrop = nullptr;  // referenced, so its address cannot be reused while cached
+  int out_w = 0, out_h = 0;
+  double sx = 0, sy = 0, w = 0, h = 0, scale = 1;
+  GlassStyle st;
+  uint64_t used = 0;
+  size_t bytes = 0;
+};
+std::vector<GlassTile> g_tiles;
+uint64_t g_tile_clock = 0;
+constexpr size_t kTileBudget = 3u << 20;
+
+bool whole(double v) { return std::fabs(v - std::round(v)) < 1e-6; }
+
+bool same_style(const GlassStyle& a, const GlassStyle& b) {
+  return a.tint.r == b.tint.r && a.tint.g == b.tint.g && a.tint.b == b.tint.b && a.tint_alpha == b.tint_alpha &&
+         a.radius == b.radius && a.rim == b.rim;
+}
+
+void paint_glass_direct(cairo_t* cr, cairo_surface_t* bd, int out_w, int out_h, double sx, double sy, double x, double y,
+                        double w, double h, const GlassStyle& st);
+
+}  // namespace
+
 void paint_glass(cairo_t* cr, cairo_surface_t* bd, int out_w, int out_h, double sx, double sy, double x, double y, double w,
                  double h, const GlassStyle& st) {
+  if (w < 2 || h < 2) return;
+  double scale = 1, scale_y = 1;
+  cairo_surface_get_device_scale(cairo_get_target(cr), &scale, &scale_y);
+  if (!whole(x) || !whole(y) || !whole(w) || !whole(h) || !whole(sx) || !whole(sy) || scale != scale_y ||
+      w * h * scale * scale * 4 > kTileBudget / 2) {
+    paint_glass_direct(cr, bd, out_w, out_h, sx, sy, x, y, w, h, st);
+    return;
+  }
+  GlassTile* hit = nullptr;
+  for (GlassTile& t : g_tiles)
+    if (t.backdrop == bd && t.out_w == out_w && t.out_h == out_h && t.sx == sx && t.sy == sy && t.w == w && t.h == h &&
+        t.scale == scale && same_style(t.st, st)) {
+      hit = &t;
+      break;
+    }
+  if (!hit) {
+    GlassTile t;
+    t.bytes = static_cast<size_t>(w * scale) * static_cast<size_t>(h * scale) * 4;
+    t.image = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, static_cast<int>(w * scale), static_cast<int>(h * scale));
+    cairo_surface_set_device_scale(t.image, scale, scale);
+    cairo_t* tcr = cairo_create(t.image);
+    paint_glass_direct(tcr, bd, out_w, out_h, sx, sy, 0, 0, w, h, st);
+    cairo_destroy(tcr);
+    t.backdrop = bd ? cairo_surface_reference(bd) : nullptr;
+    t.out_w = out_w;
+    t.out_h = out_h;
+    t.sx = sx;
+    t.sy = sy;
+    t.w = w;
+    t.h = h;
+    t.scale = scale;
+    t.st = st;
+    size_t total = t.bytes;
+    for (const GlassTile& o : g_tiles) total += o.bytes;
+    while (total > kTileBudget && !g_tiles.empty()) {  // drop the least recently used
+      auto lru = std::min_element(g_tiles.begin(), g_tiles.end(), [](const GlassTile& a, const GlassTile& b) { return a.used < b.used; });
+      total -= lru->bytes;
+      cairo_surface_destroy(lru->image);
+      if (lru->backdrop) cairo_surface_destroy(lru->backdrop);
+      g_tiles.erase(lru);
+    }
+    g_tiles.push_back(t);
+    hit = &g_tiles.back();
+  }
+  hit->used = ++g_tile_clock;
+  cairo_set_source_surface(cr, hit->image, x, y);
+  cairo_paint(cr);
+}
+
+namespace {
+
+void paint_glass_direct(cairo_t* cr, cairo_surface_t* bd, int out_w, int out_h, double sx, double sy, double x, double y,
+                        double w, double h, const GlassStyle& st) {
   if (w < 2 || h < 2) return;
   cairo_save(cr);
   rounded_rect(cr, x, y, w, h, st.radius);
@@ -197,5 +299,7 @@ void paint_glass(cairo_t* cr, cairo_surface_t* bd, int out_w, int out_h, double 
     }
   }
 }
+
+}  // namespace
 
 }  // namespace fleetwm::kit

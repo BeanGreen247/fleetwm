@@ -20,8 +20,12 @@ void box_blur_rgba(uint8_t* rgba, int w, int h, int radius, int passes);
 void downscale_rgba(const uint8_t* src, int sw, int sh, int max_w, uint8_t** dst, int* dw, int* dh);
 
 // The blurred wallpaper as a cairo surface (caller owns it), or nullptr when there is none (no
-// wallpaper and nothing to fall back to). A solid-colour wallpaper gives a flat surface.
+// wallpaper and nothing to fall back to). The caller owns one reference; the picture itself is shared
+// within the process and re-checked against the wallpaper every couple of seconds. A solid-colour wallpaper gives a flat surface.
 cairo_surface_t* load_backdrop();
+
+// Same, without the per-process copy (reads the cached PNG, or makes it). load_backdrop() wraps this.
+cairo_surface_t* load_backdrop_uncached();
 
 // Paints the part of the backdrop that lies behind the rectangle (x, y, w, h) of an output of
 // out_w x out_h px, using the same cover-fit the wallpaper uses, then lets the caller tint it.
