@@ -15,6 +15,13 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
   and along the bottom. It follows Glass effects: translucent glass with a light outer rim, or flat and opaque. Maximized
   and fullscreen windows have no frame, the frame is part of the resize handle, and snapping, maximizing and the
   cascade take its width into account.
+- Volume is a speaker icon (more waves as it gets louder, a red slash when no volume can be read) with no percentage
+  text; hover it for the percentage.
+- Desktop taskbar order on the right: tray, keyboard layout, volume, network, power mode, battery, then the clock last.
+  The power button is gone from the taskbar (Shut down is in the start menu).
+- The bar's custom icons (battery, plug, network, volume, power mode) are drawn once per state and copied afterwards
+  (`src/fleetkit/glyph_cache.hpp`): bar CPU with a charging battery animating on the Celeron N4020 fell about 11-13%
+  (best of 3: 288 ms to 251 ms per 40 s).
 - Power mode icon is a tachometer: needle low for power saver, in the middle for balanced, pegged in the red zone for
   performance.
 

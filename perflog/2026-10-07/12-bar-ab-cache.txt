@@ -1,0 +1,10 @@
+round 1 B bar_pid=12531 task-clock-ms=294 (gov schedutil)
+round 1 C bar_pid=12637 task-clock-ms=251 (gov schedutil)
+round 2 B bar_pid=12741 task-clock-ms=288 (gov schedutil)
+round 2 C bar_pid=12852 task-clock-ms=269 (gov schedutil)
+round 3 B bar_pid=12953 task-clock-ms=303 (gov schedutil)
+round 3 C bar_pid=13063 task-clock-ms=262 (gov schedutil)
+730 /usr/local/bin/fleetwm
+768 fleetwm-bar
+772 fleetwm-wallpaper
+784 fleetwm-lockapplet
