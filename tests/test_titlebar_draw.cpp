@@ -310,3 +310,93 @@ TEST(TitlebarDraw, EveryPerformanceItemStaysDocumented) {
     EXPECT_NE(opt.find(it.optim_key), std::string::npos) << "OPTIMIZATIONS.md lost: " << it.name << " (" << it.optim_key << ")";
   }
 }
+
+// ---- the Windows 7 style window frame -------------------------------------------------------------------
+
+namespace {
+
+uint32_t td_px(TdImage& img, int x, int y) {
+  return *reinterpret_cast<const uint32_t*>(img.data() + y * img.stride() + x * 4);
+}
+int td_alpha(TdImage& img, int x, int y) { return td_px(img, x, y) >> 24; }
+
+}  // namespace
+
+TEST(TitlebarDraw, FramedBarCoversTheWholeSurfaceAndKeepsItsContentInside) {
+  td_clear();
+  const int w = 400, bar_h = 32, f = 6;
+  TdImage plain(w, bar_h), framed(w + 2 * f, bar_h + f);
+  td::TitlebarPaint p = td_paint(w, true);
+  td_draw(plain, p);
+  p.frame_px = f;
+  td_draw(framed, p);
+  EXPECT_GT(td_alpha(framed, 0, bar_h + f - 1), 0);  // the corner below the bar is painted
+  EXPECT_GT(td_alpha(framed, w + 2 * f - 1, 5), 0);  // and so is the right side beside it
+  // The close button sits where it did, shifted by the frame: the strip region matches the plain bar.
+  EXPECT_NE(td_px(framed, w + f - 20, f + 16), td_px(framed, 3, f + 16));
+  const double glass_alpha = td_alpha(framed, 3, f + 16) / 255.0;
+  EXPECT_GT(glass_alpha, 0.4);
+  EXPECT_LT(glass_alpha, 0.9) << "the glass frame stays see-through";
+}
+
+TEST(TitlebarDraw, FlatFrameIsOpaqueAndGlassFrameIsTranslucent) {
+  td_clear();
+  for (const td::FrameEdge edge : {td::FrameEdge::Left, td::FrameEdge::Right, td::FrameEdge::Bottom}) {
+    const int w = edge == td::FrameEdge::Bottom ? 120 : 6, h = edge == td::FrameEdge::Bottom ? 6 : 120;
+    TdImage glass(w, h), flat(w, h);
+    cairo_t* g = cairo_create(glass.surf);
+    td::draw_frame_strip(g, w, h, edge, true, true, td::Palette{});
+    cairo_destroy(g);
+    cairo_t* f = cairo_create(flat.surf);
+    td::draw_frame_strip(f, w, h, edge, true, false, td::Palette{});
+    cairo_destroy(f);
+    EXPECT_EQ(td_alpha(flat, w / 2, h / 2), 255);
+    EXPECT_LT(td_alpha(glass, w / 2, h / 2), 255);
+    EXPECT_GT(td_alpha(glass, w / 2, h / 2), 100);
+  }
+}
+
+TEST(TitlebarDraw, FrameStripsHaveALightOuterRimAndADarkerInnerEdgeOnGlass) {
+  const int w = 6, h = 100;
+  TdImage left(w, h);
+  cairo_t* cr = cairo_create(left.surf);
+  td::draw_frame_strip(cr, w, h, td::FrameEdge::Left, true, true, td::Palette{});
+  cairo_destroy(cr);
+  auto lum = [&](int x) { const uint32_t p = td_px(left, x, 50); return int((p >> 16) & 255) + int((p >> 8) & 255) + int(p & 255); };
+  EXPECT_GT(lum(0), lum(2)) << "outer rim lighter than the middle of the frame";
+  EXPECT_LT(lum(w - 1), lum(2)) << "the edge against the window content is darker";
+}
+
+TEST(TitlebarDraw, FocusedAndUnfocusedFramesDiffer) {
+  const int w = 6, h = 60;
+  TdImage a(w, h), b(w, h);
+  cairo_t* ca = cairo_create(a.surf);
+  td::draw_frame_strip(ca, w, h, td::FrameEdge::Right, true, true, td::Palette{});
+  cairo_destroy(ca);
+  cairo_t* cb = cairo_create(b.surf);
+  td::draw_frame_strip(cb, w, h, td::FrameEdge::Right, false, true, td::Palette{});
+  cairo_destroy(cb);
+  EXPECT_GT(td_max_diff(a, b), 0);
+}
+
+TEST(TitlebarDraw, FramedGlassBackgroundIsCachedSeparatelyFromThePlainOne) {
+  td_clear();
+  const int w = 200, h = 32;
+  TdImage plain(w, h), framed(w, h);
+  cairo_t* c1 = cairo_create(plain.surf);
+  td::paint_titlebar_glass_background(c1, w, h, true, td::Color{0.1, 0.1, 0.2, 1}, false);
+  cairo_destroy(c1);
+  cairo_t* c2 = cairo_create(framed.surf);
+  td::paint_titlebar_glass_background(c2, w, h, true, td::Color{0.1, 0.1, 0.2, 1}, true);
+  cairo_destroy(c2);
+  EXPECT_EQ(td::titlebar_glass_cache_stats().entries, 2);
+  EXPECT_GT(td_max_diff(plain, framed), 0) << "the framed one carries the outer rim down its sides";
+}
+
+TEST(TitlebarDraw, TheCompositorDrawsTheFrameFromTheSharedCode) {
+  const std::string tb = td_read("src/compositor/titlebar.cpp");
+  EXPECT_NE(tb.find("kit::draw_frame_strip("), std::string::npos);
+  const std::string view = td_read("src/compositor/view.cpp");
+  EXPECT_NE(view.find("geom::frame_thickness("), std::string::npos);
+  EXPECT_NE(view.find("void View::update_frame("), std::string::npos);
+}

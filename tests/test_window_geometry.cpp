@@ -734,3 +734,20 @@ TEST(TitlebarStrip, OffKeepsTheSeparateCentredButtons) {
   EXPECT_DOUBLE_EQ(l.buttons[3].w, m.button_w);
   EXPECT_DOUBLE_EQ(l.buttons[0].y, (m.height - m.button_h) / 2.0);
 }
+
+namespace fleetwm::geom {
+namespace {
+
+TEST(WindowFrame, OnlyATitledDesktopWindowThatIsNotFullscreenOrMaximizedHasOne) {
+  EXPECT_EQ(frame_thickness(6, true, true, false, false), 6);
+  EXPECT_EQ(frame_thickness(6, false, true, false, false), 0);  // tiling layouts keep their own borders
+  EXPECT_EQ(frame_thickness(6, true, false, false, false), 0);  // a window without a titlebar (popup, bar)
+  EXPECT_EQ(frame_thickness(6, true, true, true, false), 0);
+  EXPECT_EQ(frame_thickness(6, true, true, false, true), 0);
+  EXPECT_EQ(frame_thickness(0, true, true, false, false), 0);   // switched off in theme.toml
+  EXPECT_EQ(frame_thickness(40, true, true, false, false), 16);
+  EXPECT_EQ(frame_thickness(-3, true, true, false, false), 0);
+}
+
+}  // namespace
+}  // namespace fleetwm::geom

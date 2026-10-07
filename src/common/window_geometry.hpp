@@ -34,6 +34,13 @@ enum Edge : uint32_t {
 uint32_t resize_edges_at(double lx, double ly, int outer_w, int outer_h, int inner = 4,
                          int corner = 12);
 
+// Width of the frame drawn around a Desktop-layout window (the Windows 7 style sides and bottom). Only a
+// window that has a titlebar gets one, and not while fullscreen or maximized (it then fills the work area).
+inline int frame_thickness(int configured_px, bool desktop, bool has_titlebar, bool fullscreen, bool maximized) {
+  if (!desktop || !has_titlebar || fullscreen || maximized) return 0;
+  return configured_px < 0 ? 0 : configured_px > 16 ? 16 : configured_px;
+}
+
 // New container position and content size for a resize drag that started with
 // `start` (container x, y and content w, h) and has moved by (dx, dy). Dragging
 // the left/top edges keeps the opposite edge fixed. Never smaller than

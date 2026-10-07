@@ -36,7 +36,9 @@ int View::border_thickness() const {
                // view.hpp), and no one wants a focus ring around a game.
   }
   if (desktop_mode()) {
-    return 0;  // Desktop layout: no focus/pin highlight ring (the titlebar shows both)
+    // Desktop layout: no focus/pin highlight ring (the titlebar shows both); a window with a titlebar
+    // gets the glass or flat frame instead.
+    return geom::frame_thickness(server->theme_config().titlebar.frame_px, true, wants_titlebar(), fullscreen, maximized);
   }
   if (pinned) {
     return server->theme_config().pinned_border_thickness_px;
@@ -173,7 +175,8 @@ void View::set_fullscreen(bool fullscreen_) {
 void View::resize_border() {
   int thickness = border_thickness();
   const Server::BorderColors& colors = server->border_colors();
-  const float* color = pinned && focused ? colors.pinned_focused
+  const float* color = desktop_mode()      ? kNoBorderColor  // the frame is drawn by update_frame()
+                       : pinned && focused ? colors.pinned_focused
                        : pinned          ? colors.pinned
                        : focused         ? colors.focus
                                          : kNoBorderColor;
@@ -258,6 +261,7 @@ void View::resize_border() {
     }
   }
   update_titlebar();
+  update_frame(height);
 }
 
 bool View::desktop_mode() const {
@@ -299,7 +303,7 @@ void View::update_titlebar() {
     titlebar->node.data = &tag;
   }
   wlr_scene_node_set_enabled(&titlebar->node, true);
-  wlr_scene_node_set_position(&titlebar->node, thickness, thickness);
+  wlr_scene_node_set_position(&titlebar->node, 0, 0);  // the bar's buffer includes the frame's top and sides
 
   // resize_border() runs on every client commit, so compare without
   // allocating: only build a std::string when something actually changed.
@@ -309,15 +313,55 @@ void View::update_titlebar() {
   if (content_w == titlebar_w_ && height == titlebar_h_ && focused == rendered_.focused &&
       maximized == rendered_.maximized && pinned == rendered_.pinned &&
       hover_button == rendered_.hover_button && rendered_.title == title &&
-      server->theme_config().glass == rendered_.glass) {
+      server->theme_config().glass == rendered_.glass && thickness == rendered_.frame_px) {
     return;
   }
   titlebar_w_ = content_w;
   titlebar_h_ = height;
-  rendered_ = {title, focused, maximized, pinned, hover_button, server->theme_config().glass};
+  rendered_ = {title, focused, maximized, pinned, hover_button, server->theme_config().glass, thickness};
   if (wlr_buffer* buffer = render_titlebar(content_w, rendered_, server->theme_config().titlebar)) {
     wlr_scene_buffer_set_buffer(titlebar, buffer);
     wlr_buffer_drop(buffer);
+  }
+}
+
+void View::update_frame(int content_h) {
+  const int bt = border_thickness();
+  const bool on = bt > 0 && wants_titlebar() && content_w > 0 && content_h > 0;
+  wlr_scene_buffer* strips[3] = {frame_left_, frame_right_, frame_bottom_};
+  if (!on) {
+    for (wlr_scene_buffer* s : strips)
+      if (s) wlr_scene_node_set_enabled(&s->node, false);
+    frame_key_ = {};
+    return;
+  }
+  wlr_scene_buffer** slots[3] = {&frame_left_, &frame_right_, &frame_bottom_};
+  for (wlr_scene_buffer** slot : slots) {
+    if (!*slot) {
+      *slot = wlr_scene_buffer_create(container_tree, nullptr);
+      (*slot)->node.data = &tag;  // part of the window's decoration: clicks on it resize
+    }
+    wlr_scene_node_set_enabled(&(*slot)->node, true);
+  }
+  const int th = titlebar_height();
+  const int y = bt + th;
+  wlr_scene_node_set_position(&frame_left_->node, 0, y);
+  wlr_scene_node_set_position(&frame_right_->node, bt + content_w, y);
+  wlr_scene_node_set_position(&frame_bottom_->node, 0, y + content_h);
+
+  const bool glass = server->theme_config().glass;
+  const FrameKey key{content_w, content_h, th, bt, focused, glass};
+  if (key == frame_key_) {
+    return;
+  }
+  frame_key_ = key;
+  const int w = content_w + 2 * bt;
+  const int dims[3][2] = {{bt, content_h}, {bt, content_h}, {w, bt}};
+  for (int i = 0; i < 3; ++i) {
+    if (wlr_buffer* buffer = render_frame_strip(dims[i][0], dims[i][1], i, focused, glass)) {
+      wlr_scene_buffer_set_buffer(*slots[i], buffer);
+      wlr_buffer_drop(buffer);
+    }
   }
 }
 
@@ -447,7 +491,6 @@ void View::set_maximized(bool want) {
     return;
   }
   const int th = titlebar_height();
-  const int bt = border_thickness();
   if (want) {
     // Out of a half, restore_box already holds the floating size; keep it.
     if (snap_zone == geom::SnapZone::None) {
@@ -455,6 +498,7 @@ void View::set_maximized(bool want) {
       restore_box = {container_tree->node.x, container_tree->node.y, geo.width, geo.height};
     }
     maximized = true;
+    const int bt = border_thickness();  // 0 once maximized: the window fills the work area
     const wlr_box area = output->usable_area;
     wlr_scene_node_set_position(&container_tree->node, area.x, area.y);
     request_size(std::max(1, area.width - 2 * bt), std::max(1, area.height - th - 2 * bt));

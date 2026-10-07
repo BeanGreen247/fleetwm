@@ -150,6 +150,18 @@ TEST_F(ThemeTest, TitlebarRoundTripsEveryField) {
   EXPECT_TRUE(tb.show_maximize);
 }
 
+TEST_F(ThemeTest, WindowFrameWidthDefaultsRoundTripsAndIsClamped) {
+  EXPECT_EQ(load_theme_config().titlebar.frame_px, 6);
+  ThemeConfig c;
+  c.titlebar.frame_px = 9;
+  save_theme_config(c);
+  EXPECT_EQ(load_theme_config().titlebar.frame_px, 9);
+  write_config("theme.toml", "[titlebar]\nframe_px = 99\n");
+  EXPECT_EQ(load_theme_config().titlebar.frame_px, 16);
+  write_config("theme.toml", "[titlebar]\nframe_px = -4\n");
+  EXPECT_EQ(load_theme_config().titlebar.frame_px, 0);
+}
+
 TEST_F(ThemeTest, TitlebarValuesAreClamped) {
   write_config("theme.toml", "[titlebar]\nheight = 500\nbutton_width = 2\nbutton_height = 900\n");
   const TitlebarConfig tb = load_theme_config().titlebar;

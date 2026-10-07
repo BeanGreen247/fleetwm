@@ -58,6 +58,7 @@ struct TitlebarConfig {
   bool show_pin = true;
   bool show_minimize = true;
   bool show_maximize = true;
+  int frame_px = 6;        // 0..16, the Windows 7 style frame around a window with a titlebar (0 = none)
 };
 
 std::string button_side_to_string(ButtonSide side);
