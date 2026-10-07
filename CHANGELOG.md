@@ -10,6 +10,11 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
 - Network icons in the Windows 7 style: Wi-Fi as five rising signal bars (white when lit), wired as a small computer
   with a cable, and a new mobile data icon (bars with an antenna mast). Mobile data modems (wwan devices and
   NetworkManager modems) are listed in the bar tooltip and in Settings -> Network.
+- Windows 7 style window frame in the Desktop layout: windows with a titlebar get a frame (6 px by default, `frame_px`
+  under `[titlebar]` in `theme.toml`, 0 turns it off) whose glass runs unbroken from the titlebar down both sides
+  and along the bottom. It follows Glass effects: translucent glass with a light outer rim, or flat and opaque. Maximized
+  and fullscreen windows have no frame, the frame is part of the resize handle, and snapping, maximizing and the
+  cascade take its width into account.
 - Power mode icon is a tachometer: needle low for power saver, in the middle for balanced, pegged in the red zone for
   performance.
 

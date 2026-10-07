@@ -130,6 +130,7 @@ ThemeConfig load_theme_config() {
     if (auto v = (*t)["show_pin"].value<bool>()) tb.show_pin = *v;
     if (auto v = (*t)["show_minimize"].value<bool>()) tb.show_minimize = *v;
     if (auto v = (*t)["show_maximize"].value<bool>()) tb.show_maximize = *v;
+    if (auto v = (*t)["frame_px"].value<int64_t>()) tb.frame_px = std::clamp(static_cast<int>(*v), 0, 16);
   }
   if (auto v = table["window_layout"].value<std::string>()) {
     config.window_layout = window_layout_from_string(*v);
@@ -204,6 +205,7 @@ void save_theme_config(const ThemeConfig& config) {
   titlebar.insert_or_assign("show_pin", tb.show_pin);
   titlebar.insert_or_assign("show_minimize", tb.show_minimize);
   titlebar.insert_or_assign("show_maximize", tb.show_maximize);
+  titlebar.insert_or_assign("frame_px", static_cast<int64_t>(tb.frame_px));
   table.insert_or_assign("titlebar", std::move(titlebar));
 
   std::ofstream out(path);

@@ -228,7 +228,10 @@ class View {
   void update_titlebar();
   void set_hover_button(int button);
   // Forces the next update_titlebar() to re-render (palette/theme changed).
-  void invalidate_titlebar() { titlebar_w_ = -1; }
+  void invalidate_titlebar() {
+    titlebar_w_ = -1;
+    frame_key_ = {};
+  }
   void set_maximized(bool maximized);
   // Re-applies the maximized geometry after the output's work area changed.
   void refit_maximized();
@@ -287,6 +290,19 @@ class View {
   int titlebar_w_ = -1;
   int titlebar_h_ = -1;
   TitlebarState rendered_;
+  // The sides and bottom of the Windows 7 style frame (the top is part of the titlebar buffer).
+  wlr_scene_buffer* frame_left_ = nullptr;
+  wlr_scene_buffer* frame_right_ = nullptr;
+  wlr_scene_buffer* frame_bottom_ = nullptr;
+  struct FrameKey {
+    int w = -1, h = -1, th = 0, px = 0;
+    bool focused = false, glass = false;
+    bool operator==(const FrameKey& o) const {
+      return w == o.w && h == o.h && th == o.th && px == o.px && focused == o.focused && glass == o.glass;
+    }
+  };
+  FrameKey frame_key_;
+  void update_frame(int content_h);
  public:
   void focus();
   void close();
