@@ -146,6 +146,9 @@ class Server {
   // motion calls this on every event, and re-loading the image each time was
   // measurable work. A client-provided cursor (request_set_cursor) resets it.
   void set_cursor_name(const char* name);
+  // Redraws the pointer from scratch (glass setting or screen scale changed).
+  void refresh_cursor();
+  int cursor_scale() const;
   // A client asked (wp_cursor_shape_v1) for a named cursor shape: show it from our theme.
   void apply_cursor_shape(wlr_seat_client* client, const char* name);
 
@@ -531,6 +534,7 @@ class Server {
   wlr_buffer* fallback_cursor_ = nullptr;  // built-in arrow, used when no cursor theme is installed
   int fallback_hotspot_x_ = 0, fallback_hotspot_y_ = 0;
   const char* cursor_name_ = nullptr;  // last xcursor name set by set_cursor_name()
+  std::string cursor_name_storage_;    // keeps the name alive across refresh_cursor()
   BorderColors border_colors_{{0.9f, 0.9f, 0.95f, 1.0f}, {0.9f, 0.9f, 0.95f, 1.0f}, {0.9f, 0.9f, 0.95f, 1.0f}};
   bool appearance_applied_ = false, appearance_dark_ = true;
   PowerConfig power_config_;

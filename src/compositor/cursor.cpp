@@ -5,6 +5,12 @@
 #include <filesystem>
 #include <vector>
 
+#include <cairo.h>
+
+extern "C" {
+#include <wlr/types/wlr_buffer.h>
+}
+
 #include "pixel_buffer.hpp"
 
 namespace fleetwm {
@@ -66,6 +72,33 @@ wlr_buffer* create_fallback_cursor(int* hotspot_x, int* hotspot_y) {
   *hotspot_x = 0;
   *hotspot_y = 0;
   return buffer;
+}
+
+kit::CursorCache<wlr_buffer*>& cursor_picture_cache() {
+  static kit::CursorCache<wlr_buffer*> cache;
+  return cache;
+}
+
+wlr_buffer* cursor_picture(kit::CursorShape shape, bool glass, int scale) {
+  scale = scale < 1 ? 1 : scale > 4 ? 4 : scale;
+  return cursor_picture_cache().get({shape, glass, scale}, [&]() -> wlr_buffer* {
+    const int size = kit::kCursorGrid * scale;
+    void* mem = nullptr;
+    size_t stride = 0;
+    wlr_buffer* buffer = create_pixel_buffer(size, size, &mem, &stride);
+    if (!buffer) return nullptr;
+    cairo_surface_t* surf = cairo_image_surface_create_for_data(static_cast<unsigned char*>(mem), CAIRO_FORMAT_ARGB32, size, size,
+                                                                static_cast<int>(stride));
+    cairo_t* cr = cairo_create(surf);
+    kit::draw_cursor(cr, shape, glass, scale);
+    cairo_destroy(cr);
+    cairo_surface_destroy(surf);
+    return buffer;  // the cache owns this reference
+  });
+}
+
+void cursor_pictures_clear() {
+  cursor_picture_cache().clear([](wlr_buffer* b) { wlr_buffer_drop(b); });
 }
 
 }  // namespace fleetwm

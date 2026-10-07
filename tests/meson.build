@@ -29,6 +29,7 @@ fleetwm_test_sources = files(
   'test_network.cpp',
   'test_network_glyphs.cpp',
   'test_gauge_glyph.cpp',
+  'test_cursor_draw.cpp',
   'test_glyph_cache.cpp',
   'test_speaker_glyph.cpp',
   'test_keyboard.cpp',

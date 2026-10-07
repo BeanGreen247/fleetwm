@@ -1665,9 +1665,34 @@ wlr_scene_tree* Server::layer_tree_for(zwlr_layer_shell_v1_layer layer) {
   return layer_overlay_;
 }
 
+int Server::cursor_scale() const {
+  int scale = 1;
+  for (const std::unique_ptr<Output>& output : outputs)
+    scale = std::max(scale, static_cast<int>(std::ceil(output->wlr_output_ptr->scale)));
+  return std::min(scale, 4);
+}
+
+void Server::refresh_cursor() {
+  // The look (glass or flat) or the screen scale changed: drop the kept pictures and show the current shape again.
+  cursor_pictures_clear();
+  cursor_name_storage_ = cursor_name_ ? cursor_name_ : "left_ptr";
+  cursor_name_ = nullptr;
+  set_cursor_name(cursor_name_storage_.c_str());
+}
+
 void Server::set_cursor_name(const char* name) {
   if (cursor_name_ && std::strcmp(cursor_name_, name) == 0) return;
   cursor_name_ = name;  // callers pass string literals
+  // The Windows 7 style pointer (glass: Aero, otherwise the flat version); names it does not draw go to the theme.
+  kit::CursorShape shape;
+  if (kit::cursor_shape_for_name(name, &shape)) {
+    const int scale = cursor_scale();
+    if (wlr_buffer* picture = cursor_picture(shape, theme_config_.glass, scale)) {
+      const kit::CursorHotspot hot = kit::cursor_hotspot(shape);
+      wlr_cursor_set_buffer(cursor_, picture, hot.x, hot.y, static_cast<float>(scale));  // the hotspot is in logical pixels
+      return;
+    }
+  }
   if (fallback_cursor_) {
     wlr_cursor_set_buffer(cursor_, fallback_cursor_, fallback_hotspot_x_, fallback_hotspot_y_, 1.0f);
     return;
@@ -2161,6 +2186,7 @@ void Server::reload_theme_config() {
   theme_config_ = load_theme_config();
   refresh_border_colors();
   titlebar_reload_palette(theme_config_);
+  refresh_cursor();  // glass on or off changes the pointer
   update_app_appearance();
   for (const std::unique_ptr<View>& view : views) {  // panels follow the layout's stacking rule
     if (!view->fleetwm_panel) continue;
