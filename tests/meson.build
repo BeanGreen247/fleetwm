@@ -33,6 +33,7 @@ fleetwm_test_sources = files(
   'test_glyph_cache.cpp',
   'test_speaker_glyph.cpp',
   'test_keyboard.cpp',
+  'test_mouse.cpp',
   'test_app_appearance.cpp',
   'test_settings_pages.cpp',
   'test_power_menu.cpp',

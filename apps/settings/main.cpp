@@ -34,7 +34,9 @@
 #include "desktop_entry.hpp"
 #include "fleetkit.hpp"
 #include "malloc_tuning.hpp"
+#include "cursor_draw.hpp"
 #include "keyboard_tab.hpp"
+#include "mouse_config.hpp"
 #include "network_tab.hpp"
 #include "mimeapps.hpp"
 #include "theme.hpp"
@@ -177,8 +179,8 @@ struct Settings {
   DefaultAppsConfig default_apps;
 
   int tab = 0;
-  double scroll[12] = {};
-  std::vector<std::string> tab_names{"Theme", "Bar", "Wallpaper", "Display", "Network", "Keyboard", "Power", "Date & Time", "Default Apps", "Audio", "Performance", "About"};
+  double scroll[13] = {};
+  std::vector<std::string> tab_names{"Theme", "Bar", "Wallpaper", "Display", "Network", "Keyboard", "Mouse", "Power", "Date & Time", "Default Apps", "Audio", "Performance", "About"};
 
   // network
   std::unique_ptr<NetworkTab> net_tab;
@@ -189,6 +191,7 @@ struct Settings {
   std::string battery_dir;
   BatteryReading battery;
   PowerConfig power;
+  MouseConfig mouse;
 
   // default apps
   std::vector<DesktopEntry> entries;
@@ -244,6 +247,7 @@ struct Settings {
     wallpaper = load_wallpaper_config();
     default_apps = load_default_apps_config();
     power = load_power_config();
+    mouse = load_mouse_config();
     if (kb_tab) kb_tab->reload();
     apply_theme();
     redraw();
@@ -1101,6 +1105,58 @@ struct Settings {
     ui.newline();
   }
 
+  void save_mouse() {
+    try {
+      save_mouse_config(mouse);  // the compositor watches the file and applies it to every mouse at once
+    } catch (const std::exception&) {
+    }
+  }
+
+  // The pointer shapes, drawn by the same code the compositor uses, in the style the Glass effects setting picks.
+  // Each finished picture is kept (the same cache the compositor has), so the tab does not redraw 14 pointers per frame.
+  kit::CursorCache<cairo_surface_t*> cursor_previews;
+
+  void tab_mouse(cairo_t* cr) {
+    ui.section("Pointer");
+    ui.row("Pointer speed");
+    int speed = mouse.speed;
+    if (ui.slider(&speed, kMouseSpeedMin, kMouseSpeedMax)) {
+      mouse.speed = speed;
+      save_mouse();
+    }
+    ui.newline();
+    ui.label("Slow to fast in eleven steps, like Windows. The middle step is the default.", true);
+    ui.newline();
+    ui.row("Enhance pointer precision");
+    if (ui.toggle(&mouse.enhanced_precision)) save_mouse();
+    ui.newline();
+    ui.label("On: the pointer speeds up with the mouse, so small moves stay precise and big ones cross the screen.", true);
+    ui.newline();
+    ui.label("Off: the pointer follows the mouse one to one at any speed.", true);
+    ui.newline();
+    ui.space(6);
+    ui.section("Pointer shapes");
+    UiRect r;
+    ui.canvas(48, &r);
+    const bool glass = config.glass;
+    constexpr int kCount = static_cast<int>(kit::CursorShape::Count);
+    const double step = std::min(46.0, r.w / kCount);
+    for (int i = 0; i < kCount; ++i) {
+      cairo_surface_t* picture = cursor_previews.get({static_cast<kit::CursorShape>(i), glass, 1}, [&] {
+        cairo_surface_t* s = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, kit::kCursorGrid, kit::kCursorGrid);
+        cairo_t* c = cairo_create(s);
+        kit::draw_cursor(c, static_cast<kit::CursorShape>(i), glass, 1);
+        cairo_destroy(c);
+        return s;
+      });
+      cairo_set_source_surface(cr, picture, r.x + i * step + (step - kit::kCursorGrid) / 2, r.y + (r.h - kit::kCursorGrid) / 2);
+      cairo_paint(cr);
+    }
+    ui.label(glass ? "Windows Aero style, with a shadow (Glass effects is on)."
+                   : "The same pointers, flat (Glass effects is off).", true);
+    ui.newline();
+  }
+
   void tab_audio(cairo_t*) {
     ui.section("Master volume");
     if (!master_available) {
@@ -1202,11 +1258,12 @@ struct Settings {
       case 3: tab_display(cr); break;
       case 4: net_tab->draw(ui, cr); break;
       case 5: kb_tab->draw(ui, cr); break;
-      case 6: tab_power(cr); break;
-      case 7: tab_datetime(cr); break;
-      case 8: tab_default_apps(cr); break;
-      case 9: tab_audio(cr); break;
-      case 10: tab_performance(cr); break;
+      case 6: tab_mouse(cr); break;
+      case 7: tab_power(cr); break;
+      case 8: tab_datetime(cr); break;
+      case 9: tab_default_apps(cr); break;
+      case 10: tab_audio(cr); break;
+      case 11: tab_performance(cr); break;
       default: tab_about(cr); break;
     }
     ui.space(24);
@@ -1229,6 +1286,7 @@ int main(int argc, char** argv) {
   S.wallpaper = load_wallpaper_config();
   S.default_apps = load_default_apps_config();
   S.power = load_power_config();
+  S.mouse = load_mouse_config();
   S.apply_theme();
   S.net_tab = std::make_unique<NetworkTab>(S.app, [&S] { S.redraw(); });
   // `fleetwm-settings --page power` opens on that page (the bar's battery icon uses it).

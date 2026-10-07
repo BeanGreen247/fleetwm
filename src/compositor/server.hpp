@@ -36,6 +36,7 @@ extern "C" {
 
 #include "output_config.hpp"
 #include "keyboard_config.hpp"
+#include "mouse_config.hpp"
 #include "switcher.hpp"
 #include "power_config.hpp"
 #include <memory>
@@ -361,6 +362,10 @@ class Server {
 
   // ---- keyboard layouts (Settings -> Keyboard, keyboard.toml) ----
   void reload_keyboard_config();            // rebuilds the keymap of every keyboard
+  // Mouse speed and pointer precision (mouse.toml) for every libinput pointer, now and as they are plugged in.
+  void apply_mouse_config(wlr_input_device* device);
+  void reload_mouse_config();
+  void forget_mouse_device(wlr_input_device* device);
   void apply_keyboard_config(Keyboard* kb);  // keymap, repeat and current layout for one keyboard
   void set_layout(int index);               // switch every keyboard to layout `index` (wraps)
   void step_layout(int delta) { set_layout(layout_index_ + delta); }
@@ -522,6 +527,8 @@ class Server {
   int keyboard_count_ = 0;
   std::vector<Keyboard*> keyboards_;
   KeyboardConfig keyboard_config_;
+  MouseConfig mouse_config_;
+  std::vector<wlr_input_device*> mouse_devices_;
   int layout_index_ = 0;
 
   ThemeConfig theme_config_;
