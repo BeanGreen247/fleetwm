@@ -33,6 +33,16 @@ struct BatteryText {
 };
 BatteryText describe_battery(const BatteryReading& reading, bool on_ac);
 
+// What the bar's battery icon fills: `fraction` of the body (0..1) and its colour. Red under 10%,
+// green when full, the icon colour otherwise. While charging (and not full) the fill sweeps from the
+// real level to the right edge as `phase` goes 0..steps; phase 0 shows the real level.
+enum class BatteryFillColor { Normal, Green, Red };
+struct BatteryFill {
+  double fraction = 0.0;
+  BatteryFillColor color = BatteryFillColor::Normal;
+};
+BatteryFill battery_fill(const BatteryReading& reading, int phase, int steps);
+
 namespace battery_internal {
 BatteryReading read_battery_reading(const std::string& battery_dir);
 }  // namespace battery_internal

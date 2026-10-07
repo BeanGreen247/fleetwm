@@ -1,3 +1,4 @@
+#include <algorithm>
 #include "battery_reading.hpp"
 
 #include <dirent.h>
@@ -66,6 +67,19 @@ bool ac_online(const std::string& supply_dir) {
   }
   closedir(dir);
   return any_mains ? online : true;
+}
+
+BatteryFill battery_fill(const BatteryReading& r, int phase, int steps) {
+  BatteryFill f;
+  const bool full = r.percent >= 100;
+  const double pct = std::max(0, std::min(100, r.percent)) / 100.0;
+  f.fraction = pct;
+  if (r.charging && !full && steps > 0) {
+    const int p = std::max(0, std::min(steps, phase));
+    f.fraction = pct + (1.0 - pct) * p / steps;
+  }
+  f.color = r.percent < 10 ? BatteryFillColor::Red : full ? BatteryFillColor::Green : BatteryFillColor::Normal;
+  return f;
 }
 
 BatteryText describe_battery(const BatteryReading& r, bool on_ac) {

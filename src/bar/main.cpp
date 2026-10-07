@@ -278,7 +278,7 @@ struct Bar {
   static constexpr double kBoxGap = 8;       // bar_box child spacing
   static constexpr double kMargin = 8;
   static constexpr double kTrayIcon = 16, kTraySpacing = 6;
-  static constexpr double kBoltW = 8, kBatteryW = 26 + kStatPad + kBoltW, kModeW = 12 + kStatPad, kPowerW = 30, kNetW = 18 + kStatPad;
+  static constexpr double kPlugW = 11, kBatteryW = 26 + kStatPad + kPlugW, kModeW = 12 + kStatPad, kPowerW = 30, kNetW = 18 + kStatPad;
 
   // The workspace buttons shown right now (see visible_workspaces()).
   std::vector<int> ws_visible() const {
@@ -499,22 +499,6 @@ struct Bar {
     cairo_restore(cr);
   }
 
-  // Charging bolt, green like the battery fill.
-  void draw_bolt(cairo_t* cr, double cx, double cy) {
-    cairo_save(cr);
-    cairo_new_path(cr);
-    cairo_set_source_rgba(cr, 0.30, 0.85, 0.39, 1.0);
-    cairo_move_to(cr, cx + 1.8, cy - 6);
-    cairo_line_to(cr, cx - 2.8, cy + 0.8);
-    cairo_line_to(cr, cx - 0.2, cy + 0.8);
-    cairo_line_to(cr, cx - 1.8, cy + 6);
-    cairo_line_to(cr, cx + 2.8, cy - 0.8);
-    cairo_line_to(cr, cx + 0.2, cy - 0.8);
-    cairo_close_path(cr);
-    cairo_fill(cr);
-    cairo_restore(cr);
-  }
-
   // Mains plug: body, two prongs, cord.
   void draw_plug(cairo_t* cr, double cx, double cy, const Color& c) {
     cairo_save(cr);
@@ -534,6 +518,10 @@ struct Bar {
     cairo_stroke(cr);
     cairo_restore(cr);
   }
+
+  static constexpr int kChargeSteps = 6;
+  int charge_phase = 0;
+  int charge_timer = 0;
 
   void draw_battery(cairo_t* cr, double ox, double oy, const Color& fg) {
     const BatteryReading& r = battery;
@@ -555,24 +543,18 @@ struct Bar {
     const double nub_h = body_h * 0.4;
     cairo_rectangle(cr, body_w, (body_h - nub_h) / 2.0, nub_w, nub_h);
     cairo_fill(cr);
-    const double pct = std::max(0, std::min(100, r.percent)) / 100.0;
+    // Fill: red under 10%, green when full, otherwise the icon colour. While charging the
+    // fill sweeps from the current level to the right edge in kChargeSteps steps.
+    const BatteryFill fill = battery_fill(r, charge_phase, kChargeSteps);
     const double inset = stroke_w + 1.5;
-    const double fill_w = std::max(0.0, (body_w - 2 * inset) * pct), fill_h = body_h - 2 * inset;
-    if (r.charging || r.percent > 20) cairo_set_source_rgba(cr, 0.30, 0.85, 0.39, 1.0);
-    else if (r.percent > 10) cairo_set_source_rgba(cr, 1.0, 0.62, 0.04, 1.0);
-    else cairo_set_source_rgba(cr, 1.0, 0.23, 0.19, 1.0);
+    const double fill_w = std::max(0.0, (body_w - 2 * inset) * fill.fraction), fill_h = body_h - 2 * inset;
+    if (fill.color == BatteryFillColor::Red) cairo_set_source_rgba(cr, 1.0, 0.23, 0.19, 1.0);
+    else if (fill.color == BatteryFillColor::Green) cairo_set_source_rgba(cr, 0.30, 0.85, 0.39, 1.0);
+    else set_source(cr, fg);
     if (fill_w > 0.0) {
       cairo_rectangle(cr, inset, inset, fill_w, fill_h);
       cairo_fill(cr);
     }
-    set_source(cr, fg);
-    cairo_select_font_face(cr, "sans-serif", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
-    cairo_set_font_size(cr, 8.5);
-    const std::string text = std::to_string(r.percent);
-    cairo_text_extents_t e{};
-    cairo_text_extents(cr, text.c_str(), &e);
-    cairo_move_to(cr, x + w / 2.0 - e.width / 2.0 - e.x_bearing, y + h / 2.0 - e.height / 2.0 - e.y_bearing);
-    cairo_show_text(cr, text.c_str());
     cairo_new_path(cr);
     cairo_restore(cr);
   }
@@ -747,8 +729,8 @@ struct Bar {
     const double bw_total = battery_w(m);
     battery_rect = {rx, 0, bw_total, static_cast<double>(H)};
     if (battery.available) {
-      if (battery.charging) draw_bolt(cr, rx + kStatPad / 2 + kBoltW / 2.0, H / 2.0);
-      draw_battery(cr, rx + kStatPad / 2 + kBoltW, (H - 14) / 2.0, icon_fg());
+      if (battery.charging || on_ac) draw_plug(cr, rx + kStatPad / 2 + kPlugW / 2.0, H / 2.0, icon_fg());
+      draw_battery(cr, rx + kStatPad / 2 + kPlugW, (H - 14) / 2.0, icon_fg());
       // The percentage as readable text beside the icon.
       draw_text(cr, battery_percent_text(), rx + kBatteryW + 2, base, kFont, pal.fg_primary);
     } else {
@@ -1134,7 +1116,7 @@ struct Bar {
     battery_rect = {W / 2.0 - 4, y, W / 2.0 - 2, kBat};
     const double bcx = W / 2.0 + 12;
     if (battery.available) {
-      if (battery.charging) draw_bolt(cr, bcx - 15, y + kBat / 2);
+      if (battery.charging || on_ac) draw_plug(cr, bcx - 15, y + kBat / 2, icon_fg());
       draw_battery(cr, bcx - 13, y + (kBat - 14) / 2.0, icon_fg());
     } else {
       draw_plug(cr, bcx, y + kBat / 2, icon_fg());
@@ -1529,7 +1511,28 @@ struct Bar {
     battery = r;
     on_ac = ac;
     if (changed) apply_layout_if_island();
+    update_charge_animation();
     return changed;
+  }
+
+  // The sweep timer exists only while the battery is charging and not full: 500 ms steps, and each
+  // step repaints just the battery rectangle.
+  void update_charge_animation() {
+    const bool want = battery.available && battery.charging && battery.percent < 100;
+    if (want && !charge_timer) {
+      charge_timer = app.add_timer(500, [this] {
+        charge_phase = (charge_phase + 1) % (kChargeSteps + 1);
+        if (surface && battery_rect.w > 0)
+          surface->queue_draw_rect(static_cast<int>(battery_rect.x), static_cast<int>(battery_rect.y),
+                                   static_cast<int>(battery_rect.w) + 1, static_cast<int>(battery_rect.h) + 1);
+        else
+          redraw();
+      });
+    } else if (!want && charge_timer) {
+      app.unwatch(charge_timer);
+      charge_timer = 0;
+      charge_phase = 0;
+    }
   }
 
   void apply_layout_if_island() {
