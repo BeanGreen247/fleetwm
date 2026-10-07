@@ -1,0 +1,17 @@
+== laptop N4020, governor schedutil
+glyph (16 px unless noted)            ns/call
+gauge (tachometer)                      42223
+speaker, 3 waves                        35281
+speaker, crossed                        16317
+wifi, 5 bars                            14847
+mobile, 5 bars                          16210
+wired, connected                        24503
+wifi, 34 px (Settings)                  16347
+glyph (16 px unless noted)            ns/call
+gauge (tachometer)                      42181
+speaker, 3 waves                        34900
+speaker, crossed                        16099
+wifi, 5 bars                            14665
+mobile, 5 bars                          16262
+wired, connected                        24365
+wifi, 34 px (Settings)                  16221

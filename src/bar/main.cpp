@@ -35,6 +35,8 @@
 #include "ipc_client.hpp"
 #include "fleetkit.hpp"
 #include "gauge_glyph.hpp"
+#include "glyph_cache.hpp"
+#include "speaker_glyph.hpp"
 #include "malloc_tuning.hpp"
 #include "theme.hpp"
 #include "backdrop.hpp"
@@ -101,6 +103,7 @@ struct Bar {
   // Display text.
   std::string clock_text = "--:--:--", cpu_text = "CPU --%", ram_text = "RAM --%", gpu_text = "GPU --%",
               disk_text = "Disk --%", vol_text = "Vol --%";
+  int vol_percent = -1;  // -1: no volume could be read
   int active_workspace = 0;
   BatteryReading battery;
   bool on_ac = true;
@@ -323,6 +326,11 @@ struct Bar {
 
   // The battery widget is the icon plus, when there is a battery, its percentage as text.
   std::string battery_percent_text() const { return std::to_string(battery.percent) + "%"; }
+  // The volume widget is the speaker icon alone; the percentage is in the tooltip.
+  static constexpr double kSpeakerW = 18;
+  double vol_w(Metrics&) { return kSpeakerW; }
+  void draw_vol(cairo_t* cr, double x, double cy) { draw_speaker(cr, x + kSpeakerW / 2, cy, icon_fg()); }
+
   double battery_w(Metrics& m) {
     return kBatteryW + (battery.available ? m.text_w(battery_percent_text()) + 6 : 0.0);
   }
@@ -335,10 +343,12 @@ struct Bar {
       grid_columns(m, &a, &b);
       t += a + b + kGridGap + kStatPad;
       ++children;
-      t += m.text_w(vol_text) + kStatPad;
+      t += vol_w(m) + kStatPad;
       ++children;
     } else {
-      for (const std::string* s : {&cpu_text, &ram_text, &gpu_text, &disk_text, &vol_text}) {
+      t += vol_w(m) + kStatPad;
+      ++children;
+      for (const std::string* s : {&cpu_text, &ram_text, &gpu_text, &disk_text}) {
         t += m.text_w(*s) + kStatPad;
         ++children;
       }
@@ -355,8 +365,10 @@ struct Bar {
     }
     t += kModeW + battery_w(m);  // power-mode glyph + battery/plug, shown on every machine
     children += 2;
-    t += kPowerW;
-    ++children;
+    if (!taskbar) {  // the desktop taskbar has no power button: Shut down is in the start menu
+      t += kPowerW;
+      ++children;
+    }
     return t + kRightGap * (children - 1);
   }
   double natural_width(Metrics& m) {
@@ -465,11 +477,25 @@ struct Bar {
   // Power mode as a tachometer: needle low for power saver, in the middle for balanced, pegged in the
   // red zone for performance.
   void draw_mode_glyph(cairo_t* cr, double cx, double cy, const Color& c) {
-    draw_gauge_glyph(cr, cx, cy, 16, power_mode_gauge(config.power_mode), c.r, c.g, c.b);
+    const double f = power_mode_gauge(config.power_mode);
+    draw_cached_glyph(cr, cx - 12, cy - 12, {1, static_cast<int>(f * 100), glyph_rgb(c.r, c.g, c.b), 24, 24},
+                      [&](cairo_t* g, double x, double y) { draw_gauge_glyph(g, x, y, 16, f, c.r, c.g, c.b); });
+  }
+
+  // The volume speaker: kind 2, state = waves and whether the volume is unknown.
+  void draw_speaker(cairo_t* cr, double cx, double cy, const Color& c) {
+    const int waves = speaker_waves(std::max(0, vol_percent));
+    const bool na = vol_percent < 0;
+    draw_cached_glyph(cr, cx - 12, cy - 12, {2, waves * 2 + (na ? 1 : 0), glyph_rgb(c.r, c.g, c.b), 24, 24},
+                      [&](cairo_t* g, double x, double y) { draw_speaker_glyph(g, x, y, 16, waves, c.r, c.g, c.b, na); });
   }
 
   // Mains plug: body, two prongs, cord.
   void draw_plug(cairo_t* cr, double cx, double cy, const Color& c) {
+    draw_cached_glyph(cr, cx - 10, cy - 10, {7, 0, glyph_rgb(c.r, c.g, c.b), 20, 20},
+                      [&](cairo_t* g, double x, double y) { paint_plug(g, x, y, c); });
+  }
+  void paint_plug(cairo_t* cr, double cx, double cy, const Color& c) {
     cairo_save(cr);
     cairo_new_path(cr);
     set_source(cr, c);
@@ -493,6 +519,12 @@ struct Bar {
   int charge_timer = 0;
 
   void draw_battery(cairo_t* cr, double ox, double oy, const Color& fg) {
+    const BatteryFill fill = battery_fill(battery, charge_phase, kChargeSteps);
+    const int state = static_cast<int>(fill.fraction * 1000.0 + 0.5) * 4 + static_cast<int>(fill.color);
+    draw_cached_glyph(cr, ox - 2, oy - 2, {6, state, glyph_rgb(fg.r, fg.g, fg.b), 32, 18},
+                      [&](cairo_t* g, double, double) { paint_battery(g, 2, 2, fg); });
+  }
+  void paint_battery(cairo_t* cr, double ox, double oy, const Color& fg) {
     const BatteryReading& r = battery;
     const double width = 26, height = 14;
     const double nub_w = 2.0, body_w = width - nub_w - 1.0, body_h = height, radius = 3.0, stroke_w = 1.3;
@@ -632,6 +664,12 @@ struct Bar {
       draw_stat(cr, m, s, rx + kStatPad / 2, base);
       rx += tw + kStatPad + kRightGap;
     };
+    auto volume = [&] {
+      const double w = vol_w(m);
+      vol_rect = {rx, 0, w + kStatPad, static_cast<double>(H)};
+      draw_vol(cr, rx + kStatPad / 2, H / 2.0);
+      rx += w + kStatPad + kRightGap;
+    };
     if (compact_stats()) {
       double col_a, col_b;
       grid_columns(m, &col_a, &col_b);
@@ -648,13 +686,11 @@ struct Bar {
       draw_stat(cr, m, ram_text, x1, r0, kSmallFont);
       draw_stat(cr, m, disk_text, x1, r1, kSmallFont);
       rx += col_a + col_b + kGridGap + kStatPad + kRightGap;
-      stat(vol_text, &vol_rect);
     } else {
       stat(cpu_text, &cpu_rect);
       stat(ram_text, &ram_rect);
       stat(gpu_text, &gpu_rect);
       stat(disk_text, &disk_rect);
-      stat(vol_text, &vol_rect);
     }
 
     // Tray icons.
@@ -686,6 +722,7 @@ struct Bar {
     } else {
       layout_rect = {};
     }
+    volume();  // after the keyboard layout, before the network icon
     if (net_have) {
       net_rect = {rx, 0, kNetW, static_cast<double>(H)};
       draw_net_glyph(cr, rx + kNetW / 2, H / 2.0, 16);
@@ -707,6 +744,10 @@ struct Bar {
     }
     rx += bw_total + kRightGap;
 
+    if (taskbar) {
+      power_rect = {};
+      return rx - kRightGap;
+    }
     // Power button: a bare glyph that lights up on hover (no filled box).
     const double pbh = kWsH, pby = (H - pbh) / 2.0;
     power_rect = {rx, pby, kPowerW, pbh};
@@ -768,10 +809,15 @@ struct Bar {
     const Color ic = icon_fg();
     const net::GlyphColor fg{ic.r, ic.g, ic.b, 1.0};
     const int bars = up ? net::wifi_bars_lit(net_dev.signal > 0 ? net_dev.signal : 100) : 0;
-    if (net_dev.kind == net::Kind::Wifi) net::draw_wifi_glyph(cr, cx, cy, size, bars, fg, off);
-    else if (net_dev.kind == net::Kind::Mobile) net::draw_mobile_glyph(cr, cx, cy, size, bars, fg, off);
-    else
-      net::draw_ethernet_glyph(cr, cx, cy, size, up, fg, off);
+    const int kind = net_dev.kind == net::Kind::Wifi ? 3 : net_dev.kind == net::Kind::Mobile ? 4 : 5;
+    const int pad = static_cast<int>(size) + 8;
+    draw_cached_glyph(cr, cx - pad / 2.0, cy - pad / 2.0,
+                      {kind, bars * 4 + (up ? 2 : 0) + (off ? 1 : 0), glyph_rgb(ic.r, ic.g, ic.b), pad, pad},
+                      [&](cairo_t* g, double x, double y) {
+                        if (kind == 3) net::draw_wifi_glyph(g, x, y, size, bars, fg, off);
+                        else if (kind == 4) net::draw_mobile_glyph(g, x, y, size, bars, fg, off);
+                        else net::draw_ethernet_glyph(g, x, y, size, up, fg, off);
+                      });
   }
 
   bool update_network() {
@@ -985,7 +1031,7 @@ struct Bar {
     const double date_w = date_line.empty() ? 0 : measure_text(cr, date_line, kSmallFont).width;
     const double clock_w = std::max(time_w, date_w);
     const double right_w = right_total(m);
-    const double right_x = W - kMargin - right_w, clock_x = right_x - 18 - clock_w;
+    const double clock_x = W - kMargin - clock_w, right_x = clock_x - 18 - right_w;  // the clock is the last item
     clock_rect = {clock_x - kClockPad, 0, clock_w + 2 * kClockPad, static_cast<double>(H)};
     clock_w_drawn = clock_w;
     if (date_line.empty()) {
@@ -1004,7 +1050,7 @@ struct Bar {
 
     // Workspace buttons right after the start button, then the window list.
     const double pager_end = draw_pager(cr, start_rect.x + start_rect.w + 10, (H - 26) / 2.0, 26, 26, false);
-    const double x0 = pager_end + 12, avail = clock_x - 16 - x0;
+    const double x0 = pager_end + 12, avail = right_x - 16 - x0;
     win_rects.assign(shown.size(), Rect{});
     if (shown.empty() || avail < 44) return;
     const geom::TaskbarSlots slots = geom::taskbar_slots(avail, shown.size());
@@ -1030,10 +1076,10 @@ struct Bar {
 
   void draw_taskbar_vertical(cairo_t* cr, Metrics& m, int W, int H) {
     const double bx = 6, bw = W - 12;
-    constexpr double kBtn = 44, kStat = 38, kClock = 46, kBat = 30, kTrayRow = 28, kNetRow = 28, kLayoutRow = 28;
+    constexpr double kBtn = 44, kStat = 38, kClock = 46, kBat = 30, kTrayRow = 28, kNetRow = 28, kLayoutRow = 28, kVolRow = 28;
     const size_t tray_n = tray->items().size();
-    const double cluster_h = kBtn + kClock + kBat + kStat * 3 + tray_n * kTrayRow + (net_have ? kNetRow : 0) +
-                             (kb_layouts.empty() ? 0 : kLayoutRow);  // metrics: 2x2 grid + volume
+    const double cluster_h = kClock + kBat + kStat * 2 + kVolRow + tray_n * kTrayRow + (net_have ? kNetRow : 0) +
+                             (kb_layouts.empty() ? 0 : kLayoutRow);  // metrics: 2x2 grid, then tray, layout, volume, network, mode and battery, clock
     double y = H - 6 - cluster_h;
 
     // Status cluster, top-down from `y`.
@@ -1041,13 +1087,11 @@ struct Bar {
     ram_rect = {bx + bw / 2, y, bw / 2, kStat};
     gpu_rect = {bx, y + kStat, bw / 2, kStat};
     disk_rect = {bx + bw / 2, y + kStat, bw / 2, kStat};
-    vol_rect = {bx, y + 2 * kStat, bw, kStat};
     draw_stat_vertical(cr, m, cpu_text, cpu_rect);
     draw_stat_vertical(cr, m, ram_text, ram_rect);
     draw_stat_vertical(cr, m, gpu_text, gpu_rect);
     draw_stat_vertical(cr, m, disk_text, disk_rect);
-    draw_stat_vertical(cr, m, vol_text, vol_rect);
-    y += 3 * kStat;
+    y += 2 * kStat;
     const auto& items = tray->items();
     tray_rects.assign(items.size(), Rect{});
     for (size_t i = 0; i < items.size(); ++i) {
@@ -1074,6 +1118,9 @@ struct Bar {
     } else {
       layout_rect = {};
     }
+    vol_rect = {bx, y, bw, kVolRow};  // speaker icon alone, after the keyboard layout
+    draw_speaker(cr, W / 2.0, y + kVolRow / 2, icon_fg());
+    y += kVolRow;
     if (net_have) {
       net_rect = {bx, y, bw, kNetRow};
       draw_net_glyph(cr, W / 2.0, y + kNetRow / 2, 16);
@@ -1103,14 +1150,7 @@ struct Bar {
       draw_text(cr, date_line, (W - dw) / 2, y + 10 + te.height + 8, 10.5, with_alpha(icon_fg(), 0.95));
     }
     y += kClock;
-    // Power button.
-    power_rect = {bx, y + 2, bw, kBtn - 4};
-    if (hover_power) {
-      rounded_rect(cr, power_rect.x, power_rect.y, power_rect.w, power_rect.h, pal.rounded ? 8 : 2);
-      set_source(cr, with_alpha(pal.accent, 0.18));
-      cairo_fill(cr);
-    }
-    draw_power_glyph(cr, W / 2.0, y + kBtn / 2, hover_power ? pal.accent : icon_fg());
+    power_rect = {};  // no power button on the taskbar: Shut down is in the start menu
 
     // Start button and window buttons.
     start_rect = {bx, 6, bw, kBtn};
@@ -1836,6 +1876,7 @@ int main() {
 
   B.volume = std::make_unique<VolumeSource>(B.app);
   B.volume->start([&B](int percent, bool available) {
+    B.vol_percent = available ? percent : -1;
     if (B.set_if_changed(B.vol_text, available ? "Vol " + std::to_string(percent) + "%" : "Vol N/A")) {
       if (B.island) B.apply_layout();
       B.redraw();
