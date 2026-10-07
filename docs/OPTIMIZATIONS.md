@@ -5,6 +5,8 @@ the way. Numbers come from the `fleetwm-dev` VM (Debian 13, 2 cores, 1280x800
 virtio display) unless stated; "idle ticks" are CPU ticks (100 = 1 s) of a
 standalone process over the stated window.
 
+Findings from the Lestrix speed round (method, hardware limits, governor, kernel pty and pipe tests, closed doors, and the checklist for the next Fleetwm round) are merged in `PERFORMANCE_FINDINGS.md`.
+
 ## How we decide: non-pessimization first
 
 This is the rule for all code and performance work here. Premature optimization
