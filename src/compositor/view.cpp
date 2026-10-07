@@ -49,6 +49,10 @@ int View::border_thickness() const {
   return 0;
 }
 
+// The top edge of the border: none in the Desktop layout (the titlebar stands on its own, the frame is the sides and the
+// bottom), the same as the sides in the Tiling layout's focus ring.
+int View::top_border() const { return desktop_mode() ? 0 : border_thickness(); }
+
 View::View(Server* server_, Kind kind_) : server(server_), kind(kind_) { tag.view = this; }
 
 // Listener cleanup lives in xdg_toplevel_destroy() (server.cpp), called
@@ -198,9 +202,10 @@ void View::resize_border() {
   // bleed outward into that extra space.
   content_w = width;
   const int th = titlebar_height();
-  wlr_scene_node_set_position(&scene_tree->node, thickness, thickness + th);
+  const int top = top_border();  // 0 in the Desktop layout: the titlebar is not framed, only the sides and the bottom are
+  wlr_scene_node_set_position(&scene_tree->node, thickness, top + th);
 
-  int top_h = thickness + grow_top;
+  int top_h = top + grow_top;
   int bottom_h = thickness + grow_bottom;
   int left_w = thickness + grow_left;
   int right_w = thickness + grow_right;
@@ -209,7 +214,7 @@ void View::resize_border() {
   wlr_scene_node_set_position(&border_top->node, -grow_left, -grow_top);
 
   wlr_scene_rect_set_size(border_bottom, width + left_w + right_w, bottom_h);
-  wlr_scene_node_set_position(&border_bottom->node, -grow_left, thickness + th + height);
+  wlr_scene_node_set_position(&border_bottom->node, -grow_left, top + th + height);
 
   wlr_scene_rect_set_size(border_left, left_w, height + th + top_h + bottom_h);
   wlr_scene_node_set_position(&border_left->node, -grow_left, -grow_top);
@@ -256,7 +261,7 @@ void View::resize_border() {
     wlr_scene_node_set_enabled(&grab_rect->node, on);
     if (on) {
       wlr_scene_rect_set_size(grab_rect, width + 2 * thickness + 2 * kRing,
-                              height + th + 2 * thickness + 2 * kRing);
+                              height + th + top + thickness + 2 * kRing);
       wlr_scene_node_set_position(&grab_rect->node, -kRing, -kRing);
     }
   }
@@ -303,23 +308,24 @@ void View::update_titlebar() {
     titlebar->node.data = &tag;
   }
   wlr_scene_node_set_enabled(&titlebar->node, true);
-  wlr_scene_node_set_position(&titlebar->node, 0, 0);  // the bar's buffer includes the frame's top and sides
+  wlr_scene_node_set_position(&titlebar->node, 0, 0);  // the bar spans the whole window width; the frame starts below it
 
   // resize_border() runs on every client commit, so compare without
   // allocating: only build a std::string when something actually changed.
   const char* title = window_title() ? window_title() : window_app_id();
   if (!title) title = "";
   const int height = titlebar_height();
-  if (content_w == titlebar_w_ && height == titlebar_h_ && focused == rendered_.focused &&
+  const int bar_w = content_w + 2 * thickness;  // as wide as the window, over the frame's sides
+  if (bar_w == titlebar_w_ && height == titlebar_h_ && focused == rendered_.focused &&
       maximized == rendered_.maximized && pinned == rendered_.pinned &&
       hover_button == rendered_.hover_button && rendered_.title == title &&
-      server->theme_config().glass == rendered_.glass && thickness == rendered_.frame_px) {
+      server->theme_config().glass == rendered_.glass) {
     return;
   }
-  titlebar_w_ = content_w;
+  titlebar_w_ = bar_w;
   titlebar_h_ = height;
-  rendered_ = {title, focused, maximized, pinned, hover_button, server->theme_config().glass, thickness};
-  if (wlr_buffer* buffer = render_titlebar(content_w, rendered_, server->theme_config().titlebar)) {
+  rendered_ = {title, focused, maximized, pinned, hover_button, server->theme_config().glass};
+  if (wlr_buffer* buffer = render_titlebar(bar_w, rendered_, server->theme_config().titlebar)) {
     wlr_scene_buffer_set_buffer(titlebar, buffer);
     wlr_buffer_drop(buffer);
   }
@@ -344,7 +350,7 @@ void View::update_frame(int content_h) {
     wlr_scene_node_set_enabled(&(*slot)->node, true);
   }
   const int th = titlebar_height();
-  const int y = bt + th;
+  const int y = top_border() + th;  // the sides and the bottom start under the titlebar
   wlr_scene_node_set_position(&frame_left_->node, 0, y);
   wlr_scene_node_set_position(&frame_right_->node, bt + content_w, y);
   wlr_scene_node_set_position(&frame_bottom_->node, 0, y + content_h);
@@ -415,7 +421,7 @@ void View::refit_placed() {
   const geom::Box& outer = boxes[placed_index];
   const int bt = border_thickness();
   wlr_scene_node_set_position(&container_tree->node, outer.x, outer.y);
-  const int w = std::max(1, outer.w - 2 * bt), h = std::max(1, outer.h - titlebar_height() - 2 * bt);
+  const int w = std::max(1, outer.w - 2 * bt), h = std::max(1, outer.h - titlebar_height() - bt - top_border());
   request_size(w, h);
   last_requested_content_w = w;
   last_requested_content_h = h;
@@ -430,7 +436,7 @@ void View::refit_snapped() {
   const geom::Box outer = geom::snap_box(snap_zone, {a.x, a.y, a.width, a.height});
   const int bt = border_thickness();
   wlr_scene_node_set_position(&container_tree->node, outer.x, outer.y);
-  const int w = std::max(1, outer.w - 2 * bt), h = std::max(1, outer.h - titlebar_height() - 2 * bt);
+  const int w = std::max(1, outer.w - 2 * bt), h = std::max(1, outer.h - titlebar_height() - bt - top_border());
   request_size(w, h);
   last_requested_content_w = w;
   last_requested_content_h = h;
@@ -460,7 +466,7 @@ void View::refit_maximized() {
   const int bt = border_thickness();
   const wlr_box area = output->usable_area;
   wlr_scene_node_set_position(&container_tree->node, area.x, area.y);
-  request_size(std::max(1, area.width - 2 * bt), std::max(1, area.height - titlebar_height() - 2 * bt));
+  request_size(std::max(1, area.width - 2 * bt), std::max(1, area.height - titlebar_height() - bt - top_border()));
 }
 
 void View::set_minimized(bool want) {
@@ -501,7 +507,7 @@ void View::set_maximized(bool want) {
     const int bt = border_thickness();  // 0 once maximized: the window fills the work area
     const wlr_box area = output->usable_area;
     wlr_scene_node_set_position(&container_tree->node, area.x, area.y);
-    request_size(std::max(1, area.width - 2 * bt), std::max(1, area.height - th - 2 * bt));
+    request_size(std::max(1, area.width - 2 * bt), std::max(1, area.height - th - bt - top_border()));
   } else {
     maximized = false;
     wlr_scene_node_set_position(&container_tree->node, restore_box.x, restore_box.y);
@@ -592,7 +598,7 @@ void View::request_size(int w, int h) {
     wlr_scene_node_coords(&container_tree->node, &cx, &cy);
     const int bt = border_thickness();
     x_sent_x = cx + bt;
-    x_sent_y = cy + bt + titlebar_height();
+    x_sent_y = cy + top_border() + titlebar_height();
     x_sent_w = std::max(1, w);
     x_sent_h = std::max(1, h);
     wlr_xwayland_surface_configure(xwayland_surface, static_cast<int16_t>(x_sent_x), static_cast<int16_t>(x_sent_y),
@@ -610,7 +616,7 @@ void View::sync_x11_position() {
   int cx = 0, cy = 0;
   wlr_scene_node_coords(&container_tree->node, &cx, &cy);
   const int bt = border_thickness();
-  const int x = cx + bt, y = cy + bt + titlebar_height();
+  const int x = cx + bt, y = cy + top_border() + titlebar_height();
   if (x == x_sent_x && y == x_sent_y) return;
   const wlr_box geo = content_geometry();
   x_sent_x = x;

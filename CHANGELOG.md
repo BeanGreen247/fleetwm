@@ -2,7 +2,7 @@
 
 All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags are on GitHub.
 
-## Unreleased
+## 0.4.0 - 2026-10-07
 
 ### Fixed
 - A plain `kill` ended Settings, the bar and the mixer without a clean exit when PipeWire was running (PipeWire's thread
@@ -24,9 +24,10 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
 - Network icons in the Windows 7 style: Wi-Fi as five rising signal bars (white when lit), wired as a small computer
   with a cable, and a new mobile data icon (bars with an antenna mast). Mobile data modems (wwan devices and
   NetworkManager modems) are listed in the bar tooltip and in Settings -> Network.
-- Windows 7 style window frame in the Desktop layout: windows with a titlebar get a frame (6 px by default, `frame_px`
-  under `[titlebar]` in `theme.toml`, 0 turns it off) whose glass runs unbroken from the titlebar down both sides
-  and along the bottom. It follows Glass effects: translucent glass with a light outer rim, or flat and opaque. Maximized
+- Windows 7 style window frame in the Desktop layout: windows with a titlebar get a frame down both sides and along the
+  bottom (6 px by default, `frame_px` under `[titlebar]` in `theme.toml`, 0 turns it off). The titlebar (drag area
+  with the pin, minimize and maximize buttons) is as wide as the window and has no border of its own: the frame
+  starts under it. It follows Glass effects: translucent glass with a light outer rim, or flat and opaque. Maximized
   and fullscreen windows have no frame, the frame is part of the resize handle, and snapping, maximizing and the
   cascade take its width into account.
 - Volume is a speaker icon (more waves as it gets louder, a red slash when no volume can be read) with no percentage

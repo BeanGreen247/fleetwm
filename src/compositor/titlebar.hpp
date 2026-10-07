@@ -30,7 +30,6 @@ struct TitlebarState {
   bool pinned = false;
   int hover_button = geom::kBtnNone;
   bool glass = false;  // theme.toml glass_effects: translucent, sheen, round glossy buttons
-  int frame_px = 0;    // width of the window frame the bar is joined to (0 = none), see TitlebarPaint
 };
 
 // Returns a new buffer (caller owns one reference: wlr_buffer_drop() it once

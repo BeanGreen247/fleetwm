@@ -1,0 +1,14 @@
+fleetwm
+fleetwm-bar
+fleetwm-wallpaper
+/usr/bin/bc
+round 1 glass=true cpu_ms=591 wall_s=4.169 gov=schedutil
+round 1 glass=false cpu_ms=605 wall_s=4.177 gov=schedutil
+round 2 glass=true cpu_ms=611 wall_s=4.174 gov=schedutil
+round 2 glass=false cpu_ms=601 wall_s=4.169 gov=schedutil
+round 3 glass=true cpu_ms=619 wall_s=4.183 gov=schedutil
+round 3 glass=false cpu_ms=621 wall_s=4.166 gov=schedutil
+730 /usr/local/bin/fleetwm
+768 fleetwm-bar
+772 fleetwm-wallpaper
+784 fleetwm-lockapplet

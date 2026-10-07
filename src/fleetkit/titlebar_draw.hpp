@@ -22,20 +22,15 @@ struct TitlebarPaint {
   int hover_id = geom::kBtnNone;
   geom::TitlebarLayout layout;  // where the caption buttons are and the span the title may use
   geom::TitleAlignment align = geom::TitleAlignment::Center;
-  // Width of the window frame (Windows 7 style) the bar is joined to: the surface is then
-  // (width + 2 * frame_px) x (height + frame_px) and the background covers all of it, so the glass runs
-  // unbroken from the top of the window down the sides. 0: the plain bar.
-  int frame_px = 0;
 };
 
-// Paints the whole bar into `cr` (an ARGB surface of width x height, initially transparent; larger by the
-// frame, see TitlebarPaint::frame_px).
+// Paints the whole bar into `cr` (an ARGB surface of width x height, initially transparent). In the Desktop layout the
+// bar is as wide as the window and carries no frame of its own: the frame (draw_frame_strip) starts under it.
 void draw_titlebar(cairo_t* cr, int width, int height, const TitlebarPaint& paint, const Palette& palette);
 
 // The glass background on its own (translucent colour, sheen, diagonal band, edge lines), kept as a finished
 // picture per (size, focus, colour): painting it again is one blit. Exposed for the tests.
-void paint_titlebar_glass_background(cairo_t* cr, int width, int height, bool focused, const Color& base,
-                                      bool framed = false);
+void paint_titlebar_glass_background(cairo_t* cr, int width, int height, bool focused, const Color& base);
 
 // The left, right and bottom parts of a window frame, in the same glass (or flat) as the titlebar they hang
 // from: translucent colour with a light line on the outer edge and a darker one against the content.

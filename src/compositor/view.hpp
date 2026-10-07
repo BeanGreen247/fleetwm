@@ -187,6 +187,7 @@ class View {
   // than the outer box, since wlr_xdg_toplevel_set_size sets the client's
   // surface size, not container_tree's.
   int border_thickness() const;
+  int top_border() const;
 
   wl_listener map{};
   wl_listener unmap{};

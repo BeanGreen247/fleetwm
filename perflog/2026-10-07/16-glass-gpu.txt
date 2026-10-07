@@ -1,0 +1,10 @@
+gpu glass=true: render busy mean 44.6% max 68.5%, freq 69 MHz, rc6 47.5% over 8 samples
+gpu glass=false: render busy mean 45.1% max 67.8%, freq 68 MHz, rc6 46.9% over 8 samples
+gpu glass=true: render busy mean 45.1% max 68.7%, freq 68 MHz, rc6 46.8% over 8 samples
+gpu glass=false: render busy mean 45.2% max 67.9%, freq 68 MHz, rc6 46.6% over 8 samples
+gpu glass=true: render busy mean 44.8% max 67.7%, freq 67 MHz, rc6 47.4% over 8 samples
+gpu glass=false: render busy mean 45.1% max 68.6%, freq 68 MHz, rc6 46.5% over 8 samples
+730 /usr/local/bin/fleetwm
+768 fleetwm-bar
+772 fleetwm-wallpaper
+784 fleetwm-lockapplet

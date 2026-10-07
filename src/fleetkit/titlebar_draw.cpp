@@ -16,7 +16,7 @@ Color tb_mix(const Color& a, const Color& b, double t) {
 
 // The glass background, drawn from scratch: the theme colour see-through, a sheen fading down from the top
 // and one soft diagonal band; a light line along the top edge and a darker one under the bar.
-void draw_glass_background(cairo_t* cr, int width, int height, bool focused, const Color& bg, bool framed) {
+void draw_glass_background(cairo_t* cr, int width, int height, bool focused, const Color& bg) {
   cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
   cairo_set_source_rgba(cr, bg.r, bg.g, bg.b, focused ? 0.74 : 0.56);
   cairo_paint(cr);
@@ -47,12 +47,6 @@ void draw_glass_background(cairo_t* cr, int width, int height, bool focused, con
   cairo_set_source_rgba(cr, 0, 0, 0, 0.30);
   cairo_rectangle(cr, 0, height - 1, width, 1);
   cairo_fill(cr);
-  if (framed) {  // the outer rim continues down both sides, into the frame strips
-    cairo_set_source_rgba(cr, 1, 1, 1, 0.30);
-    cairo_rectangle(cr, 0, 0, 1, height);
-    cairo_rectangle(cr, width - 1, 0, 1, height);
-    cairo_fill(cr);
-  }
 }
 
 // Finished glass backgrounds. A window's titlebar is redrawn whenever the pointer enters or leaves a
@@ -60,7 +54,7 @@ void draw_glass_background(cairo_t* cr, int width, int height, bool focused, con
 // size, the focus and the colour, so it is drawn once and copied. Small, byte-capped, least recently used.
 struct GlassEntry {
   int w = 0, h = 0;
-  bool focused = false, framed = false;
+  bool focused = false;
   double r = 0, g = 0, b = 0;
   cairo_surface_t* image = nullptr;
   unsigned long used = 0;
@@ -73,9 +67,9 @@ size_t entry_bytes(const GlassEntry& e) { return static_cast<size_t>(e.w) * e.h 
 
 }  // namespace
 
-void paint_titlebar_glass_background(cairo_t* cr, int width, int height, bool focused, const Color& base, bool framed) {
+void paint_titlebar_glass_background(cairo_t* cr, int width, int height, bool focused, const Color& base) {
   for (GlassEntry& e : g_glass)
-    if (e.w == width && e.h == height && e.focused == focused && e.framed == framed && e.r == base.r && e.g == base.g && e.b == base.b) {
+    if (e.w == width && e.h == height && e.focused == focused && e.r == base.r && e.g == base.g && e.b == base.b) {
       e.used = ++g_glass_clock;
       cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
       cairo_set_source_surface(cr, e.image, 0, 0);
@@ -87,14 +81,13 @@ void paint_titlebar_glass_background(cairo_t* cr, int width, int height, bool fo
   made.w = width;
   made.h = height;
   made.focused = focused;
-  made.framed = framed;
   made.r = base.r;
   made.g = base.g;
   made.b = base.b;
   if (entry_bytes(made) <= kGlassBudget / 2) {  // an unreasonably wide bar is just drawn, not kept
     made.image = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, width, height);
     cairo_t* ic = cairo_create(made.image);
-    draw_glass_background(ic, width, height, focused, base, framed);
+    draw_glass_background(ic, width, height, focused, base);
     cairo_destroy(ic);
     size_t total = entry_bytes(made);
     for (const GlassEntry& e : g_glass) total += entry_bytes(e);
@@ -112,7 +105,7 @@ void paint_titlebar_glass_background(cairo_t* cr, int width, int height, bool fo
     cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
     return;
   }
-  draw_glass_background(cr, width, height, focused, base, framed);
+  draw_glass_background(cr, width, height, focused, base);
 }
 
 TitlebarCacheStats titlebar_glass_cache_stats() {
@@ -281,27 +274,17 @@ void draw_frame_strip(cairo_t* cr, int width, int height, FrameEdge edge, bool f
 void draw_titlebar(cairo_t* cr, int width, int height, const TitlebarPaint& p, const Palette& pal) {
   const Color bg = p.focused ? tb_mix(pal.bg_secondary, pal.accent, 0.12) : pal.bg_secondary;
   const Color fg = p.focused ? pal.fg_primary : pal.fg_secondary;
-  const int f = std::max(0, p.frame_px);
-  // With a frame the background covers the whole surface and everything else is drawn inside it.
-  const int full_w = width + 2 * f, full_h = height + f;
 
   if (p.glass) {
-    paint_titlebar_glass_background(cr, full_w, full_h, p.focused, bg, f > 0);
+    paint_titlebar_glass_background(cr, width, height, p.focused, bg);
   } else {
     set_source(cr, bg);
     cairo_paint(cr);
-    // Hairline under the bar separates it from the window content (and, framed, outlines the frame).
+    // Hairline under the bar separates it from the window content.
     set_source(cr, tb_mix(bg, pal.fg_primary, 0.12));
-    cairo_rectangle(cr, 0, full_h - 1, full_w, 1);
-    if (f > 0) {
-      cairo_rectangle(cr, 0, 0, full_w, 1);
-      cairo_rectangle(cr, 0, 0, 1, full_h);
-      cairo_rectangle(cr, full_w - 1, 0, 1, full_h);
-    }
+    cairo_rectangle(cr, 0, height - 1, width, 1);
     cairo_fill(cr);
   }
-  cairo_save(cr);
-  cairo_translate(cr, f, f);
 
   // Title, ellipsized to the span the buttons leave free.
   const double font = std::clamp(height * 0.4, 11.0, 16.0);
@@ -336,7 +319,6 @@ void draw_titlebar(cairo_t* cr, int width, int height, const TitlebarPaint& p, c
   caption.pinned = p.pinned;
   caption.hover_id = p.hover_id;
   if (p.layout.count > 0) draw_strip_cached(cr, strip, p.layout.count, caption, height, width);
-  cairo_restore(cr);
 }
 
 }  // namespace fleetwm::kit
