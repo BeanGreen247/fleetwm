@@ -7,7 +7,7 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
 ### Changed
 - Battery icon: a plug replaces the charging bolt on AC power, the fill sweeps from left to right while charging, is
   green when full, red under 10% and the icon colour otherwise (the percentage is shown beside the icon).
-- Network icons in the Windows 7 style: Wi-Fi as five rising signal bars (green when lit), wired as a small computer
+- Network icons in the Windows 7 style: Wi-Fi as five rising signal bars (white when lit), wired as a small computer
   with a cable, and a new mobile data icon (bars with an antenna mast). Mobile data modems (wwan devices and
   NetworkManager modems) are listed in the bar tooltip and in Settings -> Network.
 - Power mode icon is a tachometer: needle low for power saver, in the middle for balanced, pegged in the red zone for

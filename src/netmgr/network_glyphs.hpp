@@ -25,8 +25,7 @@ inline int wifi_bars_lit(int strength) {
 // How many of four signal bars are lit.
 inline int signal_bars_lit(int strength) { return strength >= 75 ? 4 : strength >= 50 ? 3 : strength >= 25 ? 2 : strength > 0 ? 1 : 0; }
 
-// The Windows 7 look: lit bars are green, the rest and the outlines follow the theme colour.
-inline constexpr GlyphColor kWin7Green{0.36, 0.80, 0.30, 1.0};
+// The Windows 7 look: lit bars are solid in the theme icon colour (white on the dark themes), the rest faint.
 inline constexpr GlyphColor kWin7Screen{0.40, 0.66, 0.96, 1.0};
 
 inline void glyph_slash(cairo_t* cr, double cx, double cy, double size) {
@@ -37,8 +36,8 @@ inline void glyph_slash(cairo_t* cr, double cx, double cy, double size) {
   cairo_stroke(cr);
 }
 
-// Wi-Fi as Windows 7 draws it: five rising bars with slanted tops, `lit` (0..5) of them green and
-// the rest faint. Centred on (cx, cy) in a box of `size`. `crossed` adds a red slash.
+// Wi-Fi as Windows 7 draws it: five rising bars with slanted tops, `lit` (0..5) of them solid white (the
+// icon colour) and the rest faint. Centred on (cx, cy) in a box of `size`. `crossed` adds a red slash.
 inline void draw_wifi_glyph(cairo_t* cr, double cx, double cy, double size, int lit, const GlyphColor& color,
                             bool crossed = false) {
   cairo_save(cr);
@@ -47,8 +46,7 @@ inline void draw_wifi_glyph(cairo_t* cr, double cx, double cy, double size, int 
   for (int i = 0; i < 5; ++i) {
     const double bh = size * (0.22 + 0.17 * i);
     const double x = x0 + i * (bw + gap);
-    if (i < lit) glyph_source(cr, kWin7Green);
-    else glyph_source(cr, color, 0.28);
+    glyph_source(cr, color, i < lit ? 1.0 : 0.28);
     cairo_new_path(cr);
     cairo_move_to(cr, x, base);
     cairo_line_to(cr, x, base - bh + slant);
@@ -80,8 +78,7 @@ inline void draw_mobile_glyph(cairo_t* cr, double cx, double cy, double size, in
   for (int i = 0; i < 5; ++i) {
     const double bh = size * (0.20 + 0.16 * i);
     const double x = x0 + mast + size * 0.06 + i * (bw + gap);
-    if (i < lit) glyph_source(cr, kWin7Green);
-    else glyph_source(cr, color, 0.28);
+    glyph_source(cr, color, i < lit ? 1.0 : 0.28);
     cairo_rectangle(cr, x, base - bh, bw, bh);
     cairo_fill(cr);
   }
