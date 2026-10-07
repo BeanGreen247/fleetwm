@@ -1,0 +1,58 @@
+== window 1 19:48:42
+window 60.0 s, clk_tck 100, governor schedutil
+system: busy 0.46% (user 30 nice 0 sys 21 idle 11880 iowait 19 irq 0 softirq 4 ticks)
+   pid    tid comm              ticks   cpu%   sw/s
+   730    730 fleetwm              15   0.25    4.4
+   730    731 jemalloc_bg_thd       0   0.00    0.0
+   730    738 fleetwm:disk$0        0   0.00    0.0
+   730    739 jemalloc_bg_thd       0   0.00    0.0
+   730    740 fleetwm:sh0           0   0.00    0.0
+   730    741 fleetw:traceq0        0   0.00    0.0
+   730    742 fleetwm:gdrv0         0   0.00    0.0
+   730    751 fleetwm:disk$0        0   0.00    0.0
+   730    752 fleetwm:sh0           0   0.00    0.0
+   730  TOTAL fleetwm              15   0.25    4.4   threads 9  RSS 89.6 MB  PSS 78.1 MB
+   768    768 fleetwm-bar          21   0.35    6.6
+   768    785 fleetwm-bar-pip       0   0.00    0.0
+   768    786 module-rt             0   0.00    0.0
+   768  TOTAL fleetwm-bar          21   0.35    6.6   threads 3  RSS 16.4 MB  PSS 7.2 MB
+   772    772 fleetwm-wallpap       0   0.00    0.0
+   772  TOTAL fleetwm-wallpap       0   0.00    0.0   threads 1  RSS 4.2 MB  PSS 0.9 MB
+   784    784 fleetwm-lockapp       0   0.00    0.0
+   784  TOTAL fleetwm-lockapp       0   0.00    0.0   threads 1  RSS 7.5 MB  PSS 2.0 MB
+   792    792 foot                  0   0.00    0.0
+   792    798 foot:render:1         0   0.00    0.0
+   792    799 foot:render:2         0   0.00    0.0
+   792  TOTAL foot                  0   0.00    0.0   threads 3  RSS 12.2 MB  PSS 6.1 MB
+== window 2 19:49:42
+window 60.0 s, clk_tck 100, governor schedutil
+system: busy 0.49% (user 33 nice 0 sys 23 idle 11883 iowait 18 irq 0 softirq 3 ticks)
+   pid    tid comm              ticks   cpu%   sw/s
+   730    730 fleetwm              15   0.25    4.0
+   730    731 jemalloc_bg_thd       0   0.00    0.0
+   730    738 fleetwm:disk$0        0   0.00    0.0
+   730    739 jemalloc_bg_thd       0   0.00    0.0
+   730    740 fleetwm:sh0           0   0.00    0.0
+   730    741 fleetw:traceq0        0   0.00    0.0
+   730    742 fleetwm:gdrv0         0   0.00    0.0
+   730    751 fleetwm:disk$0        0   0.00    0.0
+   730    752 fleetwm:sh0           0   0.00    0.0
+   730  TOTAL fleetwm              15   0.25    4.0   threads 9  RSS 89.6 MB  PSS 78.1 MB
+   768    768 fleetwm-bar          19   0.32    7.1
+   768    785 fleetwm-bar-pip       0   0.00    0.0
+   768    786 module-rt             0   0.00    0.0
+   768  TOTAL fleetwm-bar          19   0.32    7.1   threads 3  RSS 16.4 MB  PSS 7.2 MB
+   772    772 fleetwm-wallpap       0   0.00    0.0
+   772  TOTAL fleetwm-wallpap       0   0.00    0.0   threads 1  RSS 4.2 MB  PSS 0.9 MB
+   784    784 fleetwm-lockapp       0   0.00    0.0
+   784  TOTAL fleetwm-lockapp       0   0.00    0.0   threads 1  RSS 7.5 MB  PSS 2.0 MB
+   792    792 foot                  0   0.00    0.0
+   792    798 foot:render:1         0   0.00    0.0
+   792    799 foot:render:2         0   0.00    0.0
+   792  TOTAL foot                  0   0.00    0.0   threads 3  RSS 12.2 MB  PSS 6.1 MB
+    PID NLWP  NI COMMAND
+    730    9 -10 /usr/local/bin/fleetwm
+    768    3   0 fleetwm-bar
+    772    1   0 fleetwm-wallpaper
+    784    1   0 fleetwm-lockapplet
+    792    3   0 foot -c /usr/local/etc/fleetwm/foot.ini

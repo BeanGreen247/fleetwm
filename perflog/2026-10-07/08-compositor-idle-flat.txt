@@ -1,0 +1,52 @@
+--- by dso
+    41.45%  [kernel.kallsyms]             
+    20.16%  libgallium-25.0.7-2+deb13u1.so
+    11.08%  [i915]                        
+     7.64%  libc.so.6                     
+     6.76%  libwlroots-0.18.so            
+     5.18%  libwayland-server.so.0.23.1   
+     2.77%  libjemalloc.so.2              
+     1.56%  libEGL_mesa.so.0.0.0          
+     1.50%  libEGL.so.1.1.0               
+     1.39%  libffi.so.8.1.4               
+--- by sym
+     3.28%  libc.so.6                       [.] 0x00000000000adf1b
+     2.78%  [kernel.kallsyms]               [k] clear_page_erms
+     2.18%  [kernel.kallsyms]               [k] drm_clflush_page
+     1.95%  [kernel.kallsyms]               [k] drm_ioctl
+     1.85%  libjemalloc.so.2                [.] free
+     1.76%  [kernel.kallsyms]               [k] rep_movs_alternative
+     1.53%  libwayland-server.so.0.23.1     [.] wl_list_insert
+     1.51%  libc.so.6                       [.] 0x000000000008f3e0
+     1.39%  [kernel.kallsyms]               [k] __x64_sys_ioctl
+     1.27%  [kernel.kallsyms]               [k] x64_sys_call
+     1.15%  [i915]                          [k] __intel_context_do_pin_ww
+     1.15%  [i915]                          [k] i915_gem_do_execbuffer
+     1.14%  [kernel.kallsyms]               [k] xhci_irq
+     1.14%  libgallium-25.0.7-2+deb13u1.so  [.] 0x00000000011db360
+     1.11%  [i915]                          [k] intel_format_info_is_yuv_semiplanar
+     1.11%  [kernel.kallsyms]               [k] ep_done_scan
+     1.11%  libEGL_mesa.so.0.0.0            [.] 0x000000000001eaa4
+     1.11%  libgallium-25.0.7-2+deb13u1.so  [.] 0x0000000000148110
+     1.11%  libgallium-25.0.7-2+deb13u1.so  [.] 0x00000000003d9eb3
+     1.08%  libwlroots-0.18.so              [.] 0x0000000000077680
+     1.06%  [kernel.kallsyms]               [k] __kmalloc_cache_noprof
+     1.04%  [kernel.kallsyms]               [k] __calc_delta.constprop.0
+     1.04%  [kernel.kallsyms]               [k] drm_file_update_pid
+     1.04%  [kernel.kallsyms]               [k] sock_wfree
+     1.04%  libgallium-25.0.7-2+deb13u1.so  [.] 0x00000000003e6f61
+     1.03%  [kernel.kallsyms]               [k] drm_property_change_valid_get
+     0.99%  libc.so.6                       [.] 0x000000000008f353
+     0.99%  libgallium-25.0.7-2+deb13u1.so  [.] 0x0000000000183f10
+     0.99%  libgallium-25.0.7-2+deb13u1.so  [.] 0x00000000017d5dd0
+     0.99%  libEGL.so.1.1.0                 [.] 0x0000000000003e70
+     0.98%  libwlroots-0.18.so              [.] wlr_output_transformed_resolution@plt
+     0.93%  [kernel.kallsyms]               [k] kmem_cache_free
+     0.93%  libwlroots-0.18.so              [.] 0x0000000000073278
+     0.92%  libjemalloc.so.2                [.] calloc
+     0.92%  libwlroots-0.18.so              [.] 0x0000000000077110
+     0.91%  libgallium-25.0.7-2+deb13u1.so  [.] 0x00000000011d6f00
+     0.90%  libwayland-server.so.0.23.1     [.] 0x000000000000d2eb
+     0.90%  [kernel.kallsyms]               [k] __get_user_8
+     0.90%  libgallium-25.0.7-2+deb13u1.so  [.] 0x000000000017a8f7
+     0.90%  libwlroots-0.18.so              [.] 0x000000000007711f

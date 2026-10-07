@@ -1,0 +1,9 @@
+window 30.0 s, clk_tck 100, governor schedutil
+system: busy 1.27% (user 41 nice 0 sys 32 idle 5896 iowait 9 irq 0 softirq 3 ticks)
+  5645  TOTAL fleetwm               7   0.23    6.0   threads 8  RSS 82.0 MB  PSS 49.1 MB
+  5669  TOTAL fleetwm-bar           8   0.27    7.1   threads 1  RSS 13.3 MB  PSS 4.8 MB
+  5675  TOTAL fleetwm-wallpap       0   0.00    0.0   threads 1  RSS 4.2 MB  PSS 0.8 MB
+/usr/bin/grim
+/usr/bin/wlrctl
+/usr/bin/wtype
+(1280, 720)
