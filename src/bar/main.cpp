@@ -34,6 +34,7 @@
 #include "battery_reading.hpp"
 #include "ipc_client.hpp"
 #include "fleetkit.hpp"
+#include "gauge_glyph.hpp"
 #include "malloc_tuning.hpp"
 #include "theme.hpp"
 #include "backdrop.hpp"
@@ -278,7 +279,7 @@ struct Bar {
   static constexpr double kBoxGap = 8;       // bar_box child spacing
   static constexpr double kMargin = 8;
   static constexpr double kTrayIcon = 16, kTraySpacing = 6;
-  static constexpr double kPlugW = 11, kBatteryW = 26 + kStatPad + kPlugW, kModeW = 12 + kStatPad, kPowerW = 30, kNetW = 18 + kStatPad;
+  static constexpr double kPlugW = 11, kBatteryW = 26 + kStatPad + kPlugW, kModeW = 16 + kStatPad, kPowerW = 30, kNetW = 18 + kStatPad;
 
   // The workspace buttons shown right now (see visible_workspaces()).
   std::vector<int> ws_visible() const {
@@ -461,42 +462,10 @@ struct Bar {
     cairo_restore(cr);
   }
 
+  // Power mode as a tachometer: needle low for power saver, in the middle for balanced, pegged in the
+  // red zone for performance.
   void draw_mode_glyph(cairo_t* cr, double cx, double cy, const Color& c) {
-    cairo_save(cr);
-    cairo_new_path(cr);
-    set_source(cr, c);
-    cairo_set_line_width(cr, 1.3);
-    cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND);
-    switch (config.power_mode) {
-      case PowerMode::Performance:  // lightning bolt
-        cairo_move_to(cr, cx + 1.5, cy - 6);
-        cairo_line_to(cr, cx - 3, cy + 0.5);
-        cairo_line_to(cr, cx, cy + 0.5);
-        cairo_line_to(cr, cx - 1.5, cy + 6);
-        cairo_line_to(cr, cx + 3, cy - 0.5);
-        cairo_line_to(cr, cx, cy - 0.5);
-        cairo_close_path(cr);
-        cairo_fill(cr);
-        break;
-      case PowerMode::BatterySaver:  // leaf
-        cairo_move_to(cr, cx - 5, cy + 5);
-        cairo_curve_to(cr, cx - 6, cy - 3, cx, cy - 6, cx + 5, cy - 5);
-        cairo_curve_to(cr, cx + 6, cy + 1, cx + 1, cy + 6, cx - 5, cy + 5);
-        cairo_close_path(cr);
-        cairo_stroke(cr);
-        cairo_move_to(cr, cx - 5, cy + 5);
-        cairo_line_to(cr, cx + 1, cy - 1);
-        cairo_stroke(cr);
-        break;
-      case PowerMode::Normal:  // half-filled circle (balanced)
-        cairo_arc(cr, cx, cy, 5, 0, 2 * M_PI);
-        cairo_stroke(cr);
-        cairo_arc(cr, cx, cy, 5, M_PI / 2, 3 * M_PI / 2);
-        cairo_close_path(cr);
-        cairo_fill(cr);
-        break;
-    }
-    cairo_restore(cr);
+    draw_gauge_glyph(cr, cx, cy, 16, power_mode_gauge(config.power_mode), c.r, c.g, c.b);
   }
 
   // Mains plug: body, two prongs, cord.
@@ -792,14 +761,15 @@ struct Bar {
     return changed;
   }
 
-  // The network icon: a Wi-Fi fan lit to the signal strength, or an Ethernet port, by what is in use.
+  // The network icon, Windows 7 style: Wi-Fi or mobile signal bars lit to the strength, or a computer with a cable.
   void draw_net_glyph(cairo_t* cr, double cx, double cy, double size) {
     const bool up = net_dev.state == net::State::Connected;
     const bool off = net_dev.state == net::State::Unavailable;
     const Color ic = icon_fg();
     const net::GlyphColor fg{ic.r, ic.g, ic.b, 1.0};
-    if (net_dev.kind == net::Kind::Wifi)
-      net::draw_wifi_glyph(cr, cx, cy, size, up ? net::wifi_arcs_lit(net_dev.signal > 0 ? net_dev.signal : 100) : 0, fg, off);
+    const int bars = up ? net::wifi_bars_lit(net_dev.signal > 0 ? net_dev.signal : 100) : 0;
+    if (net_dev.kind == net::Kind::Wifi) net::draw_wifi_glyph(cr, cx, cy, size, bars, fg, off);
+    else if (net_dev.kind == net::Kind::Mobile) net::draw_mobile_glyph(cr, cx, cy, size, bars, fg, off);
     else
       net::draw_ethernet_glyph(cr, cx, cy, size, up, fg, off);
   }
@@ -825,7 +795,7 @@ struct Bar {
     for (const net::Device& d : snap.devices) {
       if (&d != primary && d.state != net::State::Connected) continue;
       if (!t.empty()) t += "\n\n";
-      t += std::string(d.kind == net::Kind::Wifi ? "Wi-Fi: " : "Ethernet: ") + net::describe_device(d) + "\n" + d.name;
+      t += std::string(d.kind == net::Kind::Wifi ? "Wi-Fi: " : d.kind == net::Kind::Mobile ? "Mobile data: " : "Ethernet: ") + net::describe_device(d) + "\n" + d.name;
       for (const std::string& a : d.addresses) t += "  " + a;
       if (!d.gateway.empty()) t += "\nGateway " + d.gateway;
     }

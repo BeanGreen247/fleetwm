@@ -54,6 +54,11 @@ enum class PowerMode {
   BatterySaver,  // power-profiles-daemon "power-saver"
 };
 
+// Where the bar's power-mode gauge needle sits (0 = idle .. 1 = pegged in the red zone).
+inline double power_mode_gauge(PowerMode m) {
+  return m == PowerMode::Performance ? 1.0 : m == PowerMode::BatterySaver ? 0.12 : 0.5;
+}
+
 // Full: the existing edge-to-edge bar, anchored to both the left and
 // right screen edges (default, unchanged behavior).
 // Island: a smaller floating pill detached from the screen edges with a

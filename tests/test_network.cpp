@@ -97,6 +97,26 @@ TEST(NetworkParse, HexAndSpeedAndDescriptions) {
   EXPECT_EQ(describe_device(wifi), "Connected to Home (82%)");
 }
 
+TEST(NetworkParse, MobileDataIsDescribedAndRankedAfterWifi) {
+  Device mob;
+  mob.kind = Kind::Mobile;
+  mob.state = State::Unavailable;
+  EXPECT_EQ(describe_device(mob), "Mobile data is off or the modem is not ready");
+  mob.state = State::Connected;
+  EXPECT_EQ(describe_device(mob), "Connected");
+  mob.connection = "Carrier";
+  EXPECT_EQ(describe_device(mob), "Connected to Carrier");
+  Device wifi;
+  wifi.kind = Kind::Wifi;  // a Wi-Fi card that is not connected loses to a connected modem
+  std::vector<Device> v{wifi, mob};
+  EXPECT_EQ(primary_device(v)->kind, Kind::Mobile);
+  v[0].state = State::Connected;
+  EXPECT_EQ(primary_device(v)->kind, Kind::Wifi);
+  v[1].state = State::Disconnected;
+  v[0].state = State::Disconnected;
+  EXPECT_EQ(primary_device(v)->kind, Kind::Wifi);
+}
+
 TEST(NetworkParse, PrimaryDevicePrefersConnectedEthernetThenWifi) {
   Device eth, wifi;
   eth.kind = Kind::Ethernet;
@@ -155,6 +175,31 @@ TEST(SystemDevices, ListsOnlyRealCardsEthernetFirst) {
   EXPECT_EQ(devs[1].kind, Kind::Wifi);
   EXPECT_EQ(devs[1].state, State::Disconnected);
   EXPECT_EQ(devs[1].driver, "rtl8xxxu");
+}
+
+TEST(SystemDevices, ModemsAreMobileDataSortedLast) {
+  FakeSys sys;
+  auto put = [&](const std::string& rel, const std::string& v) {
+    fs::create_directories((sys.root / rel).parent_path());
+    std::ofstream(sys.root / rel) << v << "\n";
+  };
+  put("wwp0s20u4/type", "519");  // wwan names start with ww and are not Ethernet-typed
+  put("wwp0s20u4/operstate", "up");
+  fs::create_directories(sys.root / "wwp0s20u4/device");
+  put("usb0/type", "1");  // a modem exposed as usb0: only the uevent says wwan
+  put("usb0/uevent", "DEVTYPE=wwan");
+  put("usb0/operstate", "down");
+  fs::create_directories(sys.root / "usb0/device");
+  const auto devs = read_system_devices(sys.root.string());
+  ASSERT_EQ(devs.size(), 4u);
+  EXPECT_EQ(devs[0].kind, Kind::Ethernet);
+  EXPECT_EQ(devs[1].kind, Kind::Wifi);
+  EXPECT_EQ(devs[2].kind, Kind::Mobile);
+  EXPECT_EQ(devs[3].kind, Kind::Mobile);
+  EXPECT_EQ(devs[2].name, "usb0");
+  EXPECT_EQ(devs[2].state, State::Disconnected);  // no carrier file, but a modem is not "cable unplugged"
+  EXPECT_EQ(devs[3].name, "wwp0s20u4");
+  EXPECT_EQ(devs[3].state, State::Connected);
 }
 
 TEST(SystemDevices, UnpluggedCableIsUnavailable) {

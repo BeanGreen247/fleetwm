@@ -9,7 +9,7 @@
 
 namespace fleetwm::net {
 
-enum class Kind { Ethernet, Wifi, Other };
+enum class Kind { Ethernet, Wifi, Mobile, Other };
 enum class State {
   Unavailable,   // no cable, radio switched off, or not usable
   Disconnected,  // usable but not connected

@@ -23,7 +23,7 @@ constexpr const char* kSettingsIface = "org.freedesktop.NetworkManager.Settings"
 constexpr const char* kConnIface = "org.freedesktop.NetworkManager.Settings.Connection";
 
 // NM device types and states (NMDeviceType, NMDeviceState).
-constexpr unsigned kTypeEthernet = 1, kTypeWifi = 2;
+constexpr unsigned kTypeEthernet = 1, kTypeWifi = 2, kTypeModem = 8;
 constexpr unsigned kApFlagPrivacy = 1, kKeySae = 0x400;
 
 struct Bus {
@@ -208,9 +208,9 @@ class NmBackend : public Backend {
     const auto saved = saved_wifi();
     for (const std::string& dev : path_list(kNmPath, kNm, "AllDevices")) {
       const unsigned type = u_prop(dev.c_str(), kDeviceIface, "DeviceType");
-      if (type != kTypeEthernet && type != kTypeWifi) continue;
+      if (type != kTypeEthernet && type != kTypeWifi && type != kTypeModem) continue;
       Device d;
-      d.kind = type == kTypeWifi ? Kind::Wifi : Kind::Ethernet;
+      d.kind = type == kTypeWifi ? Kind::Wifi : type == kTypeModem ? Kind::Mobile : Kind::Ethernet;
       d.name = str_prop(dev.c_str(), kDeviceIface, "Interface");
       d.driver = str_prop(dev.c_str(), kDeviceIface, "Driver");
       const unsigned st = u_prop(dev.c_str(), kDeviceIface, "State");
@@ -224,7 +224,7 @@ class NmBackend : public Backend {
         d.hw_addr = str_prop(dev.c_str(), kWiredIface, "HwAddress");
         d.speed_mbps = static_cast<int>(u_prop(dev.c_str(), kWiredIface, "Speed"));
         if (d.state == State::Unavailable && u_prop(dev.c_str(), kWiredIface, "Carrier", 'b') == 0) d.state = State::Unavailable;
-      } else {
+      } else if (d.kind == Kind::Wifi) {
         d.hw_addr = str_prop(dev.c_str(), kWirelessIface, "HwAddress");
         const std::string active_ap = path_prop(dev.c_str(), kWirelessIface, "ActiveAccessPoint");
         for (const std::string& ap_path : path_list(dev, kWirelessIface, "AccessPoints")) {
@@ -273,7 +273,7 @@ class NmBackend : public Backend {
       s.devices.push_back(std::move(o));
     }
     std::sort(s.devices.begin(), s.devices.end(), [](const Device& a, const Device& c) {
-      if (a.kind != c.kind) return a.kind == Kind::Ethernet;
+      if (a.kind != c.kind) return a.kind < c.kind;
       return a.name < c.name;
     });
     return s;
