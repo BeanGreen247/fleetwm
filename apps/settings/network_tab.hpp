@@ -54,7 +54,7 @@ class NetworkTab {
 
     for (const net::Device& d : snap_.devices) {
       ui.space(4);
-      ui.section(std::string(d.kind == net::Kind::Wifi ? "Wi-Fi" : "Ethernet") + "  -  " + d.name);
+      ui.section(std::string(d.kind == net::Kind::Wifi ? "Wi-Fi" : d.kind == net::Kind::Mobile ? "Mobile data" : "Ethernet") + "  -  " + d.name);
       status_card(ui, cr, p, d);
       if (d.kind == net::Kind::Wifi) wifi_block(ui, cr, p, d);
     }
@@ -86,8 +86,10 @@ class NetworkTab {
     const bool up = d.state == net::State::Connected;
     const double cy = r.y + 29;
     if (d.kind == net::Kind::Wifi)
-      net::draw_wifi_glyph(cr, r.x + 28, cy, 34, up ? net::wifi_arcs_lit(d.signal > 0 ? d.signal : 100) : 0,
-                           up ? accent : fg, d.state == net::State::Unavailable);
+      net::draw_wifi_glyph(cr, r.x + 28, cy, 34, up ? net::wifi_bars_lit(d.signal > 0 ? d.signal : 100) : 0, fg,
+                           d.state == net::State::Unavailable);
+    else if (d.kind == net::Kind::Mobile)
+      net::draw_mobile_glyph(cr, r.x + 28, cy, 34, up ? 5 : 0, fg, d.state == net::State::Unavailable);
     else
       net::draw_ethernet_glyph(cr, r.x + 28, cy, 32, up, up ? accent : fg, d.state == net::State::Unavailable);
 

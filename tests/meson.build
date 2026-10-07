@@ -27,6 +27,8 @@ fleetwm_test_sources = files(
   'test_power_config.cpp',
   'test_lock_tooltip.cpp',
   'test_network.cpp',
+  'test_network_glyphs.cpp',
+  'test_gauge_glyph.cpp',
   'test_keyboard.cpp',
   'test_app_appearance.cpp',
   'test_settings_pages.cpp',

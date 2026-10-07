@@ -43,10 +43,13 @@ std::vector<Device> read_system_devices(const std::string& sys_net_arg) {
     const fs::path dir = entry.path();
     if (!fs::exists(dir / "device", ec)) continue;  // virtual: loopback, tunnels, bridges, containers
     const bool wifi = fs::exists(dir / "wireless", ec) || fs::exists(dir / "phy80211", ec);
-    if (!wifi && trim(read_text_file((dir / "type").string())) != "1") continue;  // not Ethernet-like
+    // Mobile data modems show up as wwan devices (ww* names, DEVTYPE=wwan) and are not Ethernet-typed.
+    const bool mobile = !wifi && (name.rfind("ww", 0) == 0 ||
+                                  read_text_file((dir / "uevent").string()).find("DEVTYPE=wwan") != std::string::npos);
+    if (!wifi && !mobile && trim(read_text_file((dir / "type").string())) != "1") continue;  // not Ethernet-like
     Device d;
     d.name = name;
-    d.kind = wifi ? Kind::Wifi : Kind::Ethernet;
+    d.kind = wifi ? Kind::Wifi : mobile ? Kind::Mobile : Kind::Ethernet;
     d.hw_addr = trim(read_text_file((dir / "address").string()));
     const fs::path drv = fs::read_symlink(dir / "device" / "driver", ec);
     if (!ec) d.driver = drv.filename().string();
@@ -54,9 +57,9 @@ std::vector<Device> read_system_devices(const std::string& sys_net_arg) {
     const std::string carrier = trim(read_text_file((dir / "carrier").string()));
     if (oper == "up") d.state = State::Connected;
     else if (oper == "dormant") d.state = State::Connecting;
-    else if (!wifi && carrier != "1") d.state = State::Unavailable;  // cable unplugged
+    else if (!wifi && !mobile && carrier != "1") d.state = State::Unavailable;  // cable unplugged
     else d.state = State::Disconnected;
-    if (!wifi) {
+    if (!wifi && !mobile) {
       const int speed = std::atoi(trim(read_text_file((dir / "speed").string())).c_str());
       d.speed_mbps = speed > 0 ? speed : 0;
     } else if (auto q = quality.find(name); q != quality.end()) {
@@ -65,7 +68,7 @@ std::vector<Device> read_system_devices(const std::string& sys_net_arg) {
     out.push_back(std::move(d));
   }
   std::sort(out.begin(), out.end(), [](const Device& a, const Device& b) {
-    if (a.kind != b.kind) return a.kind == Kind::Ethernet;  // Ethernet first
+    if (a.kind != b.kind) return a.kind < b.kind;  // Ethernet, Wi-Fi, mobile
     return a.name < b.name;
   });
   return out;

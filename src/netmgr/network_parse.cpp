@@ -166,6 +166,12 @@ std::string describe_device(const Device& d) {
     if (d.state == State::Connected && !format_speed(d.speed_mbps).empty()) out += ", " + format_speed(d.speed_mbps);
     return out;
   }
+  if (d.kind == Kind::Mobile) {
+    if (d.state == State::Unavailable) return "Mobile data is off or the modem is not ready";
+    if (d.state == State::Connecting) return "Connecting...";
+    return d.state == State::Connected ? "Connected" + (d.connection.empty() ? std::string() : " to " + d.connection)
+                                      : "Not connected";
+  }
   if (d.state == State::Connected) {
     out = "Connected";
     if (!d.connection.empty()) out += " to " + d.connection;
@@ -185,6 +191,8 @@ const Device* primary_device(const std::vector<Device>& devices) {
     if (d.state == State::Connected && d.kind == Kind::Wifi && !wifi) wifi = &d;
   }
   if (wifi) return wifi;
+  for (const Device& d : devices)
+    if (d.state == State::Connected && d.kind == Kind::Mobile) return &d;
   for (const Device& d : devices)
     if (d.state == State::Connecting) return &d;
   for (const Device& d : devices)
