@@ -1,0 +1,77 @@
+/usr/local/bin/fleetwm: ELF 64-bit LSB executable, x86-64, version 1 (SYSV), dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2, BuildID[sha1]=bb467554238abcd7b6f8e54fc94d5e3d40d5587f, for GNU/Linux 3.2.0, stripped
+	libwlroots-0.18.so => /lib/x86_64-linux-gnu/libwlroots-0.18.so (0x000078c8607c5000)
+	libdrm.so.2 => /lib/x86_64-linux-gnu/libdrm.so.2 (0x000078c8602d5000)
+	libEGL.so.1 => /lib/x86_64-linux-gnu/libEGL.so.1 (0x000078c8602bf000)
+	libGLESv2.so.2 => /lib/x86_64-linux-gnu/libGLESv2.so.2 (0x000078c8602a5000)
+[ perf record: Woken up 10 times to write data ]
+[ perf record: Captured and wrote 2.541 MB /tmp/idle.data (154 samples) ]
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 0
+#
+# Samples: 154  of event 'cycles:P'
+# Event count (approx.): 67606941
+#
+# Overhead  Shared Object                   Symbol                                   
+# ........  ..............................  .........................................
+#
+     3.28%  libc.so.6                       [.] 0x00000000000adf1b
+            |
+            ---0x7ec6b599cf1b
+               0x7ec6b1d85241
+               0x7ec6b246b83f
+               0x7ec6b1792bff
+               0x7ec6b17641fc
+               0x7ec6b176788c
+               0x7ec6b176e21b
+               0x7ec6b627f7b6
+               0x7ec6b62c4b8c
+               0x7ec6b5e866cd
+               0x7ec6b5e8597d
+               ffi_call
+               0x7ec6b6375ff0
+               0x7ec6b6370cd1
+               wl_event_loop_dispatch
+               wl_display_run
+               0x4500d0
+               0x7ec6b5918ca7
+               __libc_start_main
+               0x44e5a0
+     2.78%  [kernel.kallsyms]               [k] clear_page_erms
+            |
+            ---clear_page_erms
+               get_page_from_freelist
+               __alloc_frozen_pages_noprof
+               alloc_pages_mpol
+               |          
+               |--2.27%--folio_alloc_mpol_noprof
+               |          shmem_alloc_folio
+               |          shmem_alloc_and_add_folio
+               |          shmem_get_folio_gfp
+               |          shmem_read_folio_gfp
+               |          shmem_sg_alloc_table
+               |          shmem_get_pages
+               |          ____i915_gem_object_get_pages
+               |          __i915_gem_object_get_pages
+               |          i915_gem_set_domain_ioctl
+               |          drm_ioctl_kernel
+               |          drm_ioctl
+               |          __x64_sys_ioctl
+               |          x64_sys_call
+               |          do_syscall_64
+               |          entry_SYSCALL_64_after_hwframe
+               |          ioctl
+               |          0x7ec6b2778670
+               |          0x7ec6b275e247
+               |          0x7ec6b2760756
+               |          0x7ec6b2774eb7
+               |          0x7ec6b27755be
+               |          0x7ec6b246b7fb
+               |          0x7ec6b1792bff
+               |          0x7ec6b17641fc
+               |          0x7ec6b176788c
+               |          0x7ec6b176e21b
+               |          0x7ec6b627f7b6
+               |          0x7ec6b62c4b8c
+               |          0x7ec6b5e866cd

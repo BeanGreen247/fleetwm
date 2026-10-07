@@ -1,0 +1,96 @@
+[ perf record: Captured and wrote 0.627 MB /tmp/scroll.data (6573 samples) ]
+--- by dso
+    58.18%  libc.so.6                     
+    13.61%  [kernel.kallsyms]             
+    13.09%  libgallium-25.0.7-2+deb13u1.so
+     4.71%  libwlroots-0.18.so            
+     4.39%  [i915]                        
+     1.68%  libwayland-server.so.0.23.1   
+     0.90%  libwayland-client.so.0.23.1   
+     0.70%  libEGL_mesa.so.0.0.0          
+     0.66%  libEGL.so.1.1.0               
+     0.46%  libpixman-1.so.0.44.0         
+     0.43%  libffi.so.8.1.4               
+     0.43%  libGLdispatch.so.0.0.0        
+--- by sym
+    53.25%  libc.so.6                       [.] 0x00000000000adf1b
+     2.65%  libc.so.6                       [.] 0x00000000000add09
+     1.29%  [i915]                          [k] i915_gem_do_execbuffer
+     0.38%  [kernel.kallsyms]               [k] x64_sys_call
+     0.37%  [kernel.kallsyms]               [k] __kmalloc_noprof
+     0.36%  [kernel.kallsyms]               [k] drm_ioctl
+     0.36%  libc.so.6                       [.] __libc_calloc
+     0.33%  [kernel.kallsyms]               [k] kfree
+     0.28%  [kernel.kallsyms]               [k] fdget
+     0.27%  [i915]                          [k] __intel_context_do_pin_ww
+     0.26%  [i915]                          [k] i915_gem_madvise_ioctl
+     0.25%  [kernel.kallsyms]               [k] dma_resv_reserve_fences
+     0.24%  [kernel.kallsyms]               [k] _raw_spin_lock_irqsave
+     0.23%  [kernel.kallsyms]               [k] clear_bhb_loop
+     0.21%  libc.so.6                       [.] malloc
+     0.20%  libwayland-server.so.0.23.1     [.] wl_event_loop_dispatch
+     0.20%  fleetwm                         [.] fleetwm::(anonymous namespace)::output_frame(wl_listener*, void*) [clone .lto_priv.0]
+     0.18%  [i915]                          [k] execlists_submission_tasklet
+     0.18%  [i915]                          [k] i915_active_add_request
+     0.17%  [kernel.kallsyms]               [k] __kvmalloc_node_noprof
+     0.17%  [kernel.kallsyms]               [k] __schedule
+     0.16%  [kernel.kallsyms]               [k] __radix_tree_lookup
+     0.16%  [i915]                          [k] eb_validate_vmas
+     0.16%  [kernel.kallsyms]               [k] hook_file_ioctl_common
+     0.15%  [kernel.kallsyms]               [k] do_syscall_64
+     0.15%  libgallium-25.0.7-2+deb13u1.so  [.] 0x000000000117a5fa
+     0.15%  [kernel.kallsyms]               [k] update_curr
+     0.14%  libc.so.6                       [.] pthread_mutex_lock
+     0.14%  [kernel.kallsyms]               [k] perf_ctx_disable
+     0.13%  [kernel.kallsyms]               [k] __memcg_slab_post_alloc_hook
+     0.13%  libwlroots-0.18.so              [.] wlr_addon_find
+     0.13%  [i915]                          [k] process_csb
+     0.13%  libc.so.6                       [.] cfree
+     0.13%  [kernel.kallsyms]               [k] fpregs_assert_state_consistent
+     0.13%  libgallium-25.0.7-2+deb13u1.so  [.] 0x0000000001179610
+     0.12%  [kernel.kallsyms]               [k] __check_object_size
+     0.12%  [kernel.kallsyms]               [k] entry_SYSCALL_64
+     0.12%  [kernel.kallsyms]               [k] rep_movs_alternative
+     0.12%  libwlroots-0.18.so              [.] 0x0000000000077680
+     0.11%  libEGL.so.1.1.0                 [.] getpid@plt
+--- children, fleetwm symbols
+    53.25%    53.25%  [.] 0x00000000000adf1b
+    52.64%     0.00%  [.] 0x000073156e2b9f1d
+    16.69%     0.00%  [k] 0000000000000000
+    16.11%     0.02%  [k] entry_SYSCALL_64_after_hwframe
+    15.84%     0.15%  [k] do_syscall_64
+    15.15%     0.38%  [k] x64_sys_call
+    10.30%     0.05%  [.] ioctl
+     9.66%     0.06%  [k] __x64_sys_ioctl
+     9.10%     0.36%  [k] drm_ioctl
+     8.43%     0.05%  [k] drm_ioctl_kernel
+     6.39%     0.03%  [k] i915_gem_execbuffer2_ioctl
+     5.77%     1.29%  [k] i915_gem_do_execbuffer
+     5.62%     0.00%  [.] 0x000073156e2a672e
+     2.68%     0.00%  [.] 0x000073156e2b9d0c
+     2.65%     2.65%  [.] 0x00000000000add09
+     2.19%     0.00%  [.] 0x000002d000000500
+     1.88%     0.00%  [.] 0x000073156bd5ea9a
+     1.86%     0.01%  [k] __x64_sys_sendmsg
+     1.83%     0.00%  [k] __sys_sendmsg
+     1.74%     0.00%  [k] ___sys_sendmsg
+     1.70%     0.10%  [k] ____sys_sendmsg
+     1.58%     0.17%  [k] __schedule
+     1.56%     0.03%  [k] schedule
+     1.55%     0.08%  [k] do_epoll_wait
+     1.54%     0.02%  [k] __x64_sys_epoll_wait
+     1.46%     0.03%  [k] unix_stream_sendmsg
+     1.30%     0.00%  [k] 0x000080bf834808ec
+     1.28%     0.06%  [k] __sys_recvmsg
+     1.27%     0.00%  [k] __x64_sys_recvmsg
+     1.19%     0.01%  [k] ___sys_recvmsg
+     1.15%     0.03%  [k] eb_pin_engine
+     1.12%     0.00%  [.] 0x000073156e2b9f1b
+     1.07%     0.06%  [k] __i915_request_queue
+     1.06%     0.03%  [k] ____sys_recvmsg
+     1.05%     0.02%  [k] schedule_hrtimeout_range
+     1.03%     0.02%  [k] schedule_hrtimeout_range_clock
+     1.02%     0.02%  [k] sock_recvmsg
+     1.02%     0.27%  [k] __intel_context_do_pin_ww
+     0.98%     0.00%  [k] __wake_up_sync_key
+     0.98%     0.04%  [k] unix_stream_recvmsg
