@@ -244,7 +244,7 @@ Every item below was measured, and the numbers and the things that were tried an
   display can scan out, and offers viewporter and single-pixel buffers, so a fullscreen video or game
   does not have to be composited.
 - **Build.** Release builds use LTO, `-march=native`, profile-guided optimization, unity builds and
-  speed-first flags; the compositor runs at raised priority. The profile comes from a 150 second training run
+  speed-first flags; the compositor runs at raised priority. The profile comes from a 85 second training run
   on a virtual screen that cycles Tiling and Desktop, glass on and off, dark and light, with every Settings
   page, the start menu, launcher search, power menu, Alt+Tab, snapping, the overlay, terminals and IPC
   queries; the freshly built programs are put first on `PATH` so the ones the desktop starts by name are the

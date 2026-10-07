@@ -22,6 +22,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "quit_signals.hpp"
 #include "backdrop.hpp"
 #include "bar_config.hpp"
 #include "default_apps.hpp"
@@ -956,6 +957,7 @@ struct Launcher {
 }  // namespace
 
 int main(int argc, char** argv) {
+  fleetwm::block_quit_signals();  // before any thread exists, see quit_signals.hpp
   fleetwm::tune_malloc_for_low_rss();
   signal(SIGCHLD, SIG_IGN);
 

@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 
+#include "quit_signals.hpp"
 #include "audio_mixer.hpp"
 #include "fleetkit.hpp"
 #include "malloc_tuning.hpp"
@@ -321,6 +322,7 @@ struct Mixer {
 }  // namespace
 
 int main() {
+  fleetwm::block_quit_signals();  // before any thread exists, see quit_signals.hpp
   fleetwm::tune_malloc_for_low_rss();
 
   // A second launch (a second click on the volume readout) closes the open mixer instead of stacking another.

@@ -195,7 +195,7 @@ a cold one.
 
 The training run (`scripts/pgo-train-session.sh`, driven by `scripts/build-pgo-auto.sh`) used to start the
 desktop programs, switch workspaces four times and wait 20 s, so most of the code the final binaries are
-optimized for never ran. It now runs 150 s on the virtual screen: six rounds, each a different layout, glass
+optimized for never ran. (Later widened and shortened again, see the 2026-10-07 section below.) It then ran 150 s on the virtual screen: six rounds, each a different layout, glass
 and colour combination, each with every kind of work (workspace sweeps, four rotating Settings pages so all
 twelve are drawn, shortcuts and language windows, start menu and launcher search, power menu, Alt+Tab,
 snap keys, overlay, keyboard layout switching, idle inhibit, window queries, live layout flips with windows
@@ -205,6 +205,44 @@ Programs the desktop starts by name (the compositor autostarts the bar, wallpape
 menus start the launcher, Settings and the power menu) resolve through a `PATH` shim
 (`scripts/pgo-path-shim.sh`) to the instrumented copies, so they are profiled even on a machine that has an
 older Fleetwm installed, and nothing runs twice. The extra install time is about two and a half minutes.
+
+### Training run: wider and shorter (2026-10-07)
+
+Measured with the instrumented binaries built in a Debian 13 container and `gcov-dump` on the `.gcda` files
+(functions with a non-zero arc count, and arcs with a non-zero count, over the whole build):
+
+| | before (150 s, 5 rounds) | after (85 s, 6 rounds) |
+|---|---|---|
+| wall time of the training stage | 152 s | 87 s |
+| functions run / arcs run, all programs | 33.5% / 23.4% | 40.1% / 29.1% |
+| compositor `fleetwm` | 46.7% / 30.9% | 60.5% / 43.1% |
+| `fleetwm-bar` | 67.6% / 37.3% | 80.7% / 49.9% |
+| `fleetwm-settings` | 64.9% / 37.1% | 71.4% / 40.1% |
+| shortcuts, mixer, launcher | 78.0, 73.7, 74.4% of functions | 87.0, 82.0, 67.9% (launcher: one run less) |
+| kit (drawing toolkit), image decoders | 53.0% and 2.0% of functions | 64.3% and 56.8% |
+| network code (`netmgr`) | 6.3% | 13.4% (the rest needs NetworkManager or wpa_supplicant) |
+
+What was found and changed:
+
+- **The keyboard chords never worked.** `wtype -P Super_L` presses the key but leaves the modifier state empty, so
+  Super+Left, Alt+Tab, Alt+F10, the overlay keys and the workspace keys did nothing in every earlier training run.
+  They now use `-M` and `-m`; snapping, maximizing and the workspace keys really run.
+- **A plain `kill` killed Settings and the bar without a clean exit when PipeWire was running** (exit status 143,
+  no profile written, no clean shutdown). The signals were blocked after PipeWire's thread had started, so the kernel
+  could hand SIGTERM to that thread. `block_quit_signals()` (`src/common/quit_signals.hpp`) is now the first call of
+  `main()` in every program that reads SIGTERM from a signalfd (ten programs), with a unit test for the mask and one
+  that checks every `main()`.
+- **New coverage**: every icon in every state (extra bars with fake battery and network trees, several at once; volume
+  from a PipeWire null sink; the power-mode gauge through `power_mode` in `bar.toml`), all five themes, square and
+  rounded corners, frame widths 0, 6, 8, 10 and 12 px, the three bar layouts, the taskbar on all four edges, window
+  drags, resizes by every edge and corner, snaps by key and by dragging to the screen edges, maximize and minimize by
+  button and double click (a small virtual pointer, `scripts/pgo-pointer.c`, built on the fly), tooltips and clicks on
+  the taskbar, windows on several workspaces with send, next and previous, the Tiling layout's focus, pinned and
+  floating borders, and a switch to 1024x768 and back.
+- **Faster**: fixed sleeps replaced by waiting for the windows to exist, short settles, the look-independent phases
+  (workspaces, menus, IPC queries) run in the first rounds only, Settings pages are spread over three visits, and the
+  pointer phases run where the geometry is known. Coverage was the same at 60 s as at 120 s (28.9% against 29.1% of
+  arcs), so the default fell from 150 s to 85 s, the time six rounds need.
 
 ### Other speed-ups, by commit (so none is lost)
 

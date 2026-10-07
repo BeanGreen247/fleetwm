@@ -17,11 +17,14 @@
 #
 # Coverage is narrower than a real human session: locker (needs real
 # PAM auth to reach its own clean-unlock exit) and the greeter binaries
-# (TTY/PAM-driven, not Wayland clients like the rest) aren't trained here. Still a
+# (TTY/PAM-driven, not Wayland clients like the rest) aren't trained here
+# (the training script's own header lists everything it does drive). Still a
 # real, repeatable improvement over training only the compositor, which
 # is what every PGO build before this one did.
 #
-# Usage: scripts/build-pgo-auto.sh [training-seconds, default 150]
+# Usage: scripts/build-pgo-auto.sh [training-seconds, default 85]
+# (Measured in 2026-10: the training covers 99% of what a 120 second run covers by 60 seconds, because the
+# workload is dense, with no idle waits; 85 seconds lets all six look rounds run once.)
 #
 # Training runs the freshly built binaries straight out of build-pgo/,
 # not an installed copy, so no sudo is needed until the very end, when
@@ -30,7 +33,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="${SCRIPT_DIR}/build-pgo"
-TRAIN_SECONDS="${1:-150}"
+TRAIN_SECONDS="${1:-85}"
 
 for tool in dbus-run-session python3; do
   if ! command -v "$tool" >/dev/null 2>&1; then

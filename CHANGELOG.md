@@ -4,6 +4,10 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
 
 ## Unreleased
 
+### Fixed
+- A plain `kill` ended Settings, the bar and the mixer without a clean exit when PipeWire was running (PipeWire's thread
+  started before SIGTERM was blocked). Every program now blocks it first thing in `main()`.
+
 ### Changed
 - Battery icon: a plug replaces the charging bolt on AC power, the fill sweeps from left to right while charging, is
   green when full, red under 10% and the icon colour otherwise (the percentage is shown beside the icon).
@@ -22,6 +26,10 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
 - The bar's custom icons (battery, plug, network, volume, power mode) are drawn once per state and copied afterwards
   (`src/fleetkit/glyph_cache.hpp`): bar CPU with a charging battery animating on the Celeron N4020 fell about 11-13%
   (best of 3: 288 ms to 251 ms per 40 s).
+- The profile-guided build's training run is wider and shorter: 85 s instead of 150 s, covering every icon state, all
+  themes, frame widths, bar layouts, taskbar edges, window drags, resizes and snaps, caption buttons, every virtual
+  desktop and the Tiling borders (functions run 33.5% to 40.1%, compositor 46.7% to 60.5%, bar 67.6% to 80.7%).
+  Its keyboard chords had never worked (modifiers must be sent with wtype's `-M`); that is fixed.
 - Power mode icon is a tachometer: needle low for power saver, in the middle for balanced, pegged in the red zone for
   performance.
 

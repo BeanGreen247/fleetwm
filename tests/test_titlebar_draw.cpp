@@ -293,7 +293,7 @@ TEST(TitlebarDraw, EveryPerformanceItemStaysDocumented) {
       {"cheap overlay", "58% to 0.27%", "0.27%"},
       {"start menu card", "only as big as its card", "card-sized"},
       {"dmabuf scan-out feedback", "scan out", "wlr_scene_set_linux_dmabuf_v1"},
-      {"PGO training and PATH shim", "150 second training run", "pgo-path-shim"},
+      {"PGO training and PATH shim", "85 second training run", "pgo-path-shim"},
       {"unity clash check", "name clashes", "check-unity"},
       {"volume mixer single instance", "second launch closes it", "single instance"},
       {"every performance commit is listed", "tried and rejected", "other speed-ups, by commit"},

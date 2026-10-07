@@ -15,6 +15,7 @@
 #include <memory>
 #include <string>
 
+#include "quit_signals.hpp"
 #include "desktop_entry.hpp"
 #include "fleetkit.hpp"
 #include "keybinds_config.hpp"
@@ -116,6 +117,7 @@ struct Shortcuts {
 }  // namespace
 
 int main() {
+  fleetwm::block_quit_signals();  // before any thread exists, see quit_signals.hpp
   fleetwm::tune_malloc_for_low_rss();
   signal(SIGCHLD, SIG_IGN);
   if (toggle_existing()) return 0;
