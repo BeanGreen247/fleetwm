@@ -288,3 +288,51 @@ TEST(DescribeBattery, PluggedInButNotChargingIsNotDischarging) {
 
 }  // namespace
 }  // namespace fleetwm
+
+namespace fleetwm {
+namespace {
+
+BatteryReading reading(int percent, bool charging) {
+  BatteryReading r;
+  r.available = true;
+  r.percent = percent;
+  r.charging = charging;
+  return r;
+}
+
+TEST(BatteryFill, RedUnderTenPercentOtherwiseNormal) {
+  EXPECT_EQ(battery_fill(reading(9, false), 0, 6).color, BatteryFillColor::Red);
+  EXPECT_EQ(battery_fill(reading(0, true), 0, 6).color, BatteryFillColor::Red);
+  EXPECT_EQ(battery_fill(reading(10, false), 0, 6).color, BatteryFillColor::Normal);
+  EXPECT_EQ(battery_fill(reading(55, true), 3, 6).color, BatteryFillColor::Normal);
+}
+
+TEST(BatteryFill, GreenOnlyWhenFull) {
+  EXPECT_EQ(battery_fill(reading(100, false), 0, 6).color, BatteryFillColor::Green);
+  EXPECT_EQ(battery_fill(reading(100, true), 4, 6).color, BatteryFillColor::Green);
+  EXPECT_EQ(battery_fill(reading(99, true), 0, 6).color, BatteryFillColor::Normal);
+}
+
+TEST(BatteryFill, ChargingSweepsFromTheRealLevelToTheRightEdge) {
+  EXPECT_DOUBLE_EQ(battery_fill(reading(40, true), 0, 6).fraction, 0.40);
+  EXPECT_DOUBLE_EQ(battery_fill(reading(40, true), 3, 6).fraction, 0.70);
+  EXPECT_DOUBLE_EQ(battery_fill(reading(40, true), 6, 6).fraction, 1.0);
+  double last = -1;
+  for (int p = 0; p <= 6; ++p) {
+    const double f = battery_fill(reading(40, true), p, 6).fraction;
+    EXPECT_GT(f, last);
+    last = f;
+  }
+}
+
+TEST(BatteryFill, NotChargingOrFullDoesNotAnimate) {
+  for (int p = 0; p <= 6; ++p) {
+    EXPECT_DOUBLE_EQ(battery_fill(reading(40, false), p, 6).fraction, 0.40);
+    EXPECT_DOUBLE_EQ(battery_fill(reading(100, true), p, 6).fraction, 1.0);
+  }
+  EXPECT_DOUBLE_EQ(battery_fill(reading(40, true), 99, 6).fraction, 1.0);  // phase is clamped
+  EXPECT_DOUBLE_EQ(battery_fill(reading(150, false), 0, 6).fraction, 1.0);
+}
+
+}  // namespace
+}  // namespace fleetwm
