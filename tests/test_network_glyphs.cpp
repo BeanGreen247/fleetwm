@@ -9,7 +9,7 @@ namespace fleetwm::net {
 namespace {
 
 struct GlyphCounts {
-  int green = 0, blue = 0, red = 0, grey = 0;
+  int bright = 0, blue = 0, red = 0, grey = 0;
 };
 
 GlyphCounts glyph_render(void (*draw)(cairo_t*)) {
@@ -26,7 +26,7 @@ GlyphCounts glyph_render(void (*draw)(cairo_t*)) {
     for (int x = 0; x < 48; ++x) {
       const uint32_t v = px[y * stride + x];
       const int r = (v >> 16) & 255, g = (v >> 8) & 255, b = v & 255;
-      if (g > r + 60 && g > b + 60) ++c.green;
+      if (r > 200 && g > 200 && b > 200) ++c.bright;
       else if (b > r + 60 && b > g + 20) ++c.blue;
       else if (r > g + 80 && r > b + 80) ++c.red;
       else if (r > 40 && g > 40 && b > 40) ++c.grey;
@@ -57,18 +57,18 @@ TEST(NetworkGlyphs, WifiBarsFollowTheStrength) {
   EXPECT_EQ(wifi_bars_lit(100), 5);
 }
 
-TEST(NetworkGlyphs, WifiLitBarsAreGreenAndMoreBarsMeanMoreGreen) {
-  EXPECT_EQ(glyph_render(glyph_wifi<0>).green, 0);
-  const int one = glyph_render(glyph_wifi<1>).green, three = glyph_render(glyph_wifi<3>).green, five = glyph_render(glyph_wifi<5>).green;
+TEST(NetworkGlyphs, WifiLitBarsAreSolidWhiteAndMoreBarsMeanMoreOfIt) {
+  EXPECT_EQ(glyph_render(glyph_wifi<0>).bright, 0);
+  const int one = glyph_render(glyph_wifi<1>).bright, three = glyph_render(glyph_wifi<3>).bright, five = glyph_render(glyph_wifi<5>).bright;
   EXPECT_GT(one, 0);
   EXPECT_GT(three, one);
   EXPECT_GT(five, three);
   EXPECT_GT(glyph_render(glyph_wifi<0>).grey, 0);  // the unlit bars are still drawn, faintly
 }
 
-TEST(NetworkGlyphs, MobileHasItsOwnMastAndGreenBars) {
-  EXPECT_EQ(glyph_render(glyph_mobile<0>).green, 0);
-  EXPECT_GT(glyph_render(glyph_mobile<4>).green, glyph_render(glyph_mobile<1>).green);
+TEST(NetworkGlyphs, MobileHasItsOwnMastAndWhiteBars) {
+  EXPECT_EQ(glyph_render(glyph_mobile<0>).bright, 0);
+  EXPECT_GT(glyph_render(glyph_mobile<4>).bright, glyph_render(glyph_mobile<1>).bright);
   EXPECT_GT(glyph_render(glyph_mobile<0>).grey, 0);
 }
 
