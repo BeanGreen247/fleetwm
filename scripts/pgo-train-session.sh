@@ -321,7 +321,7 @@ ensure_running "${BUILD_DIR}/apps/lockapplet/fleetwm-lockapplet"
 spawn_client "${BUILD_DIR}/apps/audiomixer/fleetwm-audiomixer"
 sleep 0.6
 
-SETTINGS_PAGES=(theme bar wallpaper display network keyboard power date default audio performance about)
+SETTINGS_PAGES=(theme bar wallpaper display network keyboard mouse power date default audio performance about)
 round=0
 
 # ---- virtual desktops: windows on several of them, every workspace visited, windows sent between them ----------------
@@ -568,11 +568,11 @@ phase_icons() {
 settings_visits=0
 phase_windows_and_settings() {
   settings_visits=$((settings_visits + 1))
-  echo "    windows: four Settings pages (rotating, so every page is drawn over a full run), shortcuts, language picker, terminals"
+  echo "    windows: five Settings pages (rotating, so every page is drawn over a full run), shortcuts, language picker, terminals"
   local page k
-  for k in 0 1 2 3; do
+  for k in 0 1 2 3 4; do
     time_left || break
-    page="${SETTINGS_PAGES[$(( (settings_visits * 4 + k) % ${#SETTINGS_PAGES[@]} ))]}"
+    page="${SETTINGS_PAGES[$(( (settings_visits * 5 + k) % ${#SETTINGS_PAGES[@]} ))]}"
     open_window "${BUILD_DIR}/apps/settings/fleetwm-settings" --page "$page"
     wait_windows $((k + 1)) 3
     keys -k Tab -k Tab -k Down -k space
@@ -683,7 +683,7 @@ while time_left; do
   # What runs in which round. The code a phase reaches does not depend on the look, so the look-independent phases
   # (workspaces, menus, the IPC queries) run in the first rounds only; every round draws the icons; the pointer-driven
   # window and taskbar phases run where the geometry is known (taskbar at the bottom or the top). Three visits of the
-  # Settings phase (rounds 1, 2 and 4) show all twelve pages.
+  # Settings phase (rounds 1, 2 and 4) show all thirteen pages (five each).
   if (( DO_WORKSPACES[r] )); then timed phase_workspaces; else send_ipc "WORKSPACE 1"; send_ipc "WORKSPACE 2"; send_ipc "WORKSPACE 0"; fi
   time_left && timed phase_icons
   if [[ "${combo[0]}" == desktop ]]; then

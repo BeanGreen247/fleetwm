@@ -8,6 +8,16 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
 - A plain `kill` ended Settings, the bar and the mixer without a clean exit when PipeWire was running (PipeWire's thread
   started before SIGTERM was blocked). Every program now blocks it first thing in `main()`.
 
+### Added
+- Mouse settings (Settings -> Mouse): a pointer speed slider with the same eleven steps as Windows (6 is the default)
+  and "Enhance pointer precision" (pointer acceleration on or off), saved in `mouse.toml` and applied to every mouse
+  at once, including ones plugged in later. A preview shows the pointer shapes.
+- The mouse pointer is drawn by Fleetwm in the Windows 7 style: the Aero pointers with a soft shadow and the teal glass
+  busy ring when Glass effects is on, the same shapes flat (solid white, black outline, no shadow) when it is off. All
+  14 shapes (arrow, help, working in background, busy, text, link hand, precision cross, not allowed, move, the four
+  resize arrows, alternate select) are drawn once per style and scale and kept; toggling glass redraws them.
+  Programs that load their own cursor theme still show that theme.
+
 ### Changed
 - Battery icon: a plug replaces the charging bolt on AC power, the fill sweeps from left to right while charging, is
   green when full, red under 10% and the icon colour otherwise (the percentage is shown beside the icon).

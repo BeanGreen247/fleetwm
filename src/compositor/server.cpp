@@ -9,6 +9,8 @@
 #include <wayland-server-core.h>
 
 extern "C" {
+#include <libinput.h>
+#include <wlr/backend/libinput.h>
 #include <wlr/interfaces/wlr_keyboard.h>
 #include <wlr/render/pixman.h>
 #include <wlr/types/wlr_drm.h>
@@ -628,6 +630,20 @@ void server_new_input(wl_listener* listener, void* data) {
     new Keyboard(server, wlr_kb);  // owns itself; freed on its destroy event
   } else if (device->type == WLR_INPUT_DEVICE_POINTER) {
     wlr_cursor_attach_input_device(server->cursor_, device);
+    server->apply_mouse_config(device);
+    struct Watch {  // forgets the device when it is unplugged
+      Server* server;
+      wlr_input_device* device;
+      wl_listener destroy;
+    };
+    auto* watch = new Watch{server, device, {}};
+    watch->destroy.notify = [](wl_listener* l, void*) {
+      Watch* w = wl_container_of(l, w, destroy);
+      w->server->forget_mouse_device(w->device);
+      wl_list_remove(&w->destroy.link);
+      delete w;
+    };
+    wl_signal_add(&device->events.destroy, &watch->destroy);
   }
 }
 
@@ -1480,6 +1496,7 @@ bool Server::init() {
   update_app_appearance();
   default_apps_config_ = load_default_apps_config();
   keyboard_config_ = load_keyboard_config();
+  mouse_config_ = load_mouse_config();
   reload_keybinds_config();
 
   // Settings' Performance tab "Show performance overlay on startup" --
@@ -2043,6 +2060,27 @@ void Server::apply_keyboard_config(Keyboard* kb) {
   }
 }
 
+void Server::apply_mouse_config(wlr_input_device* device) {
+  if (std::find(mouse_devices_.begin(), mouse_devices_.end(), device) == mouse_devices_.end()) mouse_devices_.push_back(device);
+  if (!wlr_input_device_is_libinput(device)) return;  // nested, virtual and headless pointers have no acceleration to set
+  libinput_device* li = wlr_libinput_get_device_handle(device);
+  if (!li || !libinput_device_config_accel_is_available(li)) return;
+  libinput_device_config_accel_set_speed(li, libinput_speed_for_notch(mouse_config_.speed));
+  const uint32_t profiles = libinput_device_config_accel_get_profiles(li);
+  const libinput_config_accel_profile want =
+      wants_adaptive_profile(mouse_config_) ? LIBINPUT_CONFIG_ACCEL_PROFILE_ADAPTIVE : LIBINPUT_CONFIG_ACCEL_PROFILE_FLAT;
+  if (profiles & want) libinput_device_config_accel_set_profile(li, want);
+}
+
+void Server::reload_mouse_config() {
+  mouse_config_ = load_mouse_config();
+  for (wlr_input_device* device : mouse_devices_) apply_mouse_config(device);
+}
+
+void Server::forget_mouse_device(wlr_input_device* device) {
+  mouse_devices_.erase(std::remove(mouse_devices_.begin(), mouse_devices_.end(), device), mouse_devices_.end());
+}
+
 void Server::reload_keyboard_config() {
   keyboard_config_ = load_keyboard_config();
   layout_index_ = std::clamp(layout_index_, 0, static_cast<int>(keyboard_config_.layouts.size()) - 1);
@@ -2242,6 +2280,7 @@ int server_theme_watch_readable(int fd, uint32_t, void* data) {
   bool got_keybinds_event = false;
   bool got_power_event = false;
   bool got_keyboard_event = false;
+  bool got_mouse_event = false;
   ssize_t n;
   while ((n = read(fd, buf, sizeof(buf))) > 0) {
     ssize_t offset = 0;
@@ -2257,6 +2296,8 @@ int server_theme_watch_readable(int fd, uint32_t, void* data) {
         got_power_event = true;
       } else if (event->len > 0 && std::strcmp(event->name, "keyboard.toml") == 0) {
         got_keyboard_event = true;
+      } else if (event->len > 0 && std::strcmp(event->name, "mouse.toml") == 0) {
+        got_mouse_event = true;
       }
       offset += static_cast<ssize_t>(sizeof(struct inotify_event)) + event->len;
     }
@@ -2275,6 +2316,9 @@ int server_theme_watch_readable(int fd, uint32_t, void* data) {
   }
   if (got_keyboard_event) {
     server->reload_keyboard_config();
+  }
+  if (got_mouse_event) {
+    server->reload_mouse_config();
   }
   return 0;
 }
