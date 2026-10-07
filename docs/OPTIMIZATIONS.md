@@ -244,6 +244,22 @@ What was found and changed:
   pointer phases run where the geometry is known. Coverage was the same at 60 s as at 120 s (28.9% against 29.1% of
   arcs), so the default fell from 150 s to 85 s, the time six rounds need.
 
+### Glass against flat, measured again (2026-10-07)
+
+On the Celeron laptop in a nested compositor, with the same pointer workload (Settings window dragged by its
+titlebar and resized by its edge, 12 and 8 rounds), compositor plus bar CPU was 591, 611 and 619 ms with glass
+against 605, 601 and 621 ms flat, and the render engine of the UHD 600 was busy 44.6%, 45.1% and 44.8% with glass
+against 45.1%, 45.2% and 45.1% flat (`perflog/2026-10-07/glassbench.sh`, `glassgpu.sh`, raw in 15 and 16). Glass
+costs nothing measurable beyond flat in motion; the titlebar, frame, bar and menu pictures are all cached, so there
+is no glass-only work left to remove. A further "faster glass" change was not made because there is no gap to close.
+
+### Mouse pointer (2026-10-07)
+
+The pointer is drawn by `src/fleetkit/cursor_draw.cpp` (14 shapes, Aero with shadow in glass mode, flat otherwise)
+and each (shape, style, scale) picture is made once and kept by the compositor (`kit::CursorCache`), the whole set
+being under 0.7 MB. The theme's cursors are only used for names it does not draw. Mouse speed and pointer precision
+go straight to libinput (`mouse.toml`), so there is no per-motion work in the compositor for them.
+
 ### Other speed-ups, by commit (so none is lost)
 
 Performance work that is not in a table above, from the git history and this session:

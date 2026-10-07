@@ -322,23 +322,6 @@ int td_alpha(TdImage& img, int x, int y) { return td_px(img, x, y) >> 24; }
 
 }  // namespace
 
-TEST(TitlebarDraw, FramedBarCoversTheWholeSurfaceAndKeepsItsContentInside) {
-  td_clear();
-  const int w = 400, bar_h = 32, f = 6;
-  TdImage plain(w, bar_h), framed(w + 2 * f, bar_h + f);
-  td::TitlebarPaint p = td_paint(w, true);
-  td_draw(plain, p);
-  p.frame_px = f;
-  td_draw(framed, p);
-  EXPECT_GT(td_alpha(framed, 0, bar_h + f - 1), 0);  // the corner below the bar is painted
-  EXPECT_GT(td_alpha(framed, w + 2 * f - 1, 5), 0);  // and so is the right side beside it
-  // The close button sits where it did, shifted by the frame: the strip region matches the plain bar.
-  EXPECT_NE(td_px(framed, w + f - 20, f + 16), td_px(framed, 3, f + 16));
-  const double glass_alpha = td_alpha(framed, 3, f + 16) / 255.0;
-  EXPECT_GT(glass_alpha, 0.4);
-  EXPECT_LT(glass_alpha, 0.9) << "the glass frame stays see-through";
-}
-
 TEST(TitlebarDraw, FlatFrameIsOpaqueAndGlassFrameIsTranslucent) {
   td_clear();
   for (const td::FrameEdge edge : {td::FrameEdge::Left, td::FrameEdge::Right, td::FrameEdge::Bottom}) {
@@ -379,18 +362,18 @@ TEST(TitlebarDraw, FocusedAndUnfocusedFramesDiffer) {
   EXPECT_GT(td_max_diff(a, b), 0);
 }
 
-TEST(TitlebarDraw, FramedGlassBackgroundIsCachedSeparatelyFromThePlainOne) {
-  td_clear();
-  const int w = 200, h = 32;
-  TdImage plain(w, h), framed(w, h);
-  cairo_t* c1 = cairo_create(plain.surf);
-  td::paint_titlebar_glass_background(c1, w, h, true, td::Color{0.1, 0.1, 0.2, 1}, false);
-  cairo_destroy(c1);
-  cairo_t* c2 = cairo_create(framed.surf);
-  td::paint_titlebar_glass_background(c2, w, h, true, td::Color{0.1, 0.1, 0.2, 1}, true);
-  cairo_destroy(c2);
-  EXPECT_EQ(td::titlebar_glass_cache_stats().entries, 2);
-  EXPECT_GT(td_max_diff(plain, framed), 0) << "the framed one carries the outer rim down its sides";
+TEST(TitlebarDraw, TheTitlebarHasNoFrameAroundIt) {
+  // The frame (sides and bottom) starts under the bar: the bar spans the whole window width, borderless, with its
+  // buttons laid out over that full width. Nothing in the bar's own drawing knows about a frame any more.
+  const std::string draw = td_read("src/fleetkit/titlebar_draw.hpp");
+  EXPECT_EQ(draw.find("frame_px"), std::string::npos);
+  EXPECT_EQ(draw.find("framed"), std::string::npos);
+  const std::string view = td_read("src/compositor/view.cpp");
+  EXPECT_NE(view.find("int View::top_border() const { return desktop_mode() ? 0 : border_thickness(); }"), std::string::npos);
+  EXPECT_NE(view.find("const int bar_w = content_w + 2 * thickness;"), std::string::npos);
+  EXPECT_NE(view.find("const int y = top_border() + th;  // the sides and the bottom start under the titlebar"), std::string::npos);
+  const std::string server = td_read("src/compositor/server.cpp");
+  EXPECT_NE(server.find("geom::layout_titlebar(W, titlebar_metrics("), std::string::npos) << "the buttons follow the bar's full width";
 }
 
 TEST(TitlebarDraw, TheCompositorDrawsTheFrameFromTheSharedCode) {

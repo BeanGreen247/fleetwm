@@ -257,7 +257,7 @@ void view_mapped(View* view) {
       // window so a stack of new windows stays readable.
       const wlr_box geo = view->content_geometry();
       const int outer_w = (geo.width > 0 ? geo.width : 800) + 2 * view->border_thickness();
-      const int outer_h = (geo.height > 0 ? geo.height : 500) + view->titlebar_height() + 2 * view->border_thickness();
+      const int outer_h = (geo.height > 0 ? geo.height : 500) + view->titlebar_height() + view->border_thickness() + view->top_border();
       const wlr_box area = output->usable_area;
       const geom::Box at = geom::cascade_position({area.x, area.y, area.width, area.height}, outer_w,
                                                   outer_h, static_cast<int>(workspace.views().size()) - 1);
@@ -742,18 +742,19 @@ DecorationZone decoration_zone(Server* server, View* view) {
   const int bt = view->border_thickness();
   const int th = view->titlebar_height();
   const wlr_box geo = view->content_geometry();
+  const int top = view->top_border();
   const int W = view->content_w + 2 * bt;
-  const int H = std::max(1, geo.height) + th + 2 * bt;
+  const int H = std::max(1, geo.height) + th + top + bt;
 
   uint32_t edges = geom::resize_edges_at(lx, ly, W, H, std::max(kEdgeInner, bt), kCornerSpan);
   if (view->maximized) edges = 0;  // a maximized window is not resized by its edges
   zone.edges = edges;
   if (edges) return zone;
 
-  if (th > 0 && ly >= bt && ly < bt + th && lx >= bt && lx < bt + view->content_w) {
-    const geom::TitlebarLayout layout =
-        geom::layout_titlebar(view->content_w, titlebar_metrics(server->theme_config().titlebar));
-    zone.button = geom::titlebar_button_at(layout, lx - bt, ly - bt);
+  // The titlebar is as wide as the window (the frame starts under it), so the buttons are laid out over all of W.
+  if (th > 0 && ly >= top && ly < top + th && lx >= 0 && lx < W) {
+    const geom::TitlebarLayout layout = geom::layout_titlebar(W, titlebar_metrics(server->theme_config().titlebar));
+    zone.button = geom::titlebar_button_at(layout, lx, ly - top);
     zone.drag = zone.button == geom::kBtnNone;
   }
   return zone;

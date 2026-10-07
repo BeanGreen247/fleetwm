@@ -59,13 +59,11 @@ wlr_buffer* render_titlebar(int width, const TitlebarState& st, const TitlebarCo
   const int height = std::max(16, metrics.height);
   void* pixels = nullptr;
   size_t stride = 0;
-  const int frame = std::max(0, st.frame_px);
-  const int buf_w = width + 2 * frame, buf_h = height + frame;  // the frame's top and sides belong to the bar
-  wlr_buffer* buffer = create_pixel_buffer(buf_w, buf_h, &pixels, &stride);
+  wlr_buffer* buffer = create_pixel_buffer(width, height, &pixels, &stride);
   if (!buffer) return nullptr;
 
   cairo_surface_t* surf = cairo_image_surface_create_for_data(
-      static_cast<unsigned char*>(pixels), CAIRO_FORMAT_ARGB32, buf_w, buf_h, static_cast<int>(stride));
+      static_cast<unsigned char*>(pixels), CAIRO_FORMAT_ARGB32, width, height, static_cast<int>(stride));
   cairo_t* cr = cairo_create(surf);
 
   kit::TitlebarPaint paint;
@@ -74,7 +72,6 @@ wlr_buffer* render_titlebar(int width, const TitlebarState& st, const TitlebarCo
   paint.maximized = st.maximized;
   paint.pinned = st.pinned;
   paint.glass = st.glass;
-  paint.frame_px = frame;
   paint.hover_id = st.hover_button;
   paint.layout = layout;
   paint.align = metrics.align;
