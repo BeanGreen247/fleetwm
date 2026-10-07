@@ -19,6 +19,7 @@
 #include <string>
 #include <vector>
 
+#include "quit_signals.hpp"
 #include "fleetkit.hpp"
 #include "image.hpp"
 #include "login_ipc.hpp"
@@ -514,6 +515,7 @@ struct Login {
 }  // namespace
 
 int main() {
+  fleetwm::block_quit_signals();  // before any thread exists, see quit_signals.hpp
   fleetwm::tune_malloc_for_low_rss();
   const char* fd_env = std::getenv("FLEETWM_GREETER_IPC_FD");
   if (fd_env == nullptr) {

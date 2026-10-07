@@ -1,0 +1,17 @@
+program                               funcs hit         arcs hit
+fleetwm-audiomixer                   82/100    82.0%     342/721     47.4%
+fleetwm-langpicker                   93/150    62.0%     426/1155    36.9%
+fleetwm-launcher                    152/224    67.9%     895/2385    37.5%
+fleetwm-lockapplet                   31/65     47.7%     189/627     30.1%
+fleetwm-powermenu                    35/58     60.3%     168/439     38.3%
+fleetwm-settings                    277/388    71.4%    2082/5198    40.1%
+fleetwm-shortcuts                    80/92     87.0%     466/875     53.3%
+fleetwm-bar                         392/486    80.7%    2504/5015    49.9%
+libfleetwm-audiomixer-backend.a      37/93     39.8%     172/757     22.7%
+libfleetwm-common-core.a            301/2731   11.0%    2123/19210   11.1%
+fleetwm                             377/623    60.5%    2616/6068    43.1%
+libfleetwm-kit-image.a               84/148    56.8%     492/1477    33.3%
+libfleetwm-kit.a                    475/739    64.3%    2917/7258    40.2%
+libfleetwm-netmgr.a                  38/284    13.4%     371/3393    10.9%
+fleetwm-wallpaper                    46/54     85.2%     224/347     64.6%
+TOTAL                              2500/6235   40.1%   15987/54925   29.1%

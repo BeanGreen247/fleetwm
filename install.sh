@@ -310,8 +310,9 @@ ui_step "Setting the system language" \
 sudo update-locale LANG=C.UTF-8 LC_ALL=C.UTF-8 LANGUAGE=
 
 ui_step "Building Fleetwm (optimized, in three stages)" \
-  "What: stage 1 compiles an instrumented copy, stage 2 runs it for a few minutes of training on a virtual" \
-  "      screen (every Settings page, both layouts, glass on and off, the start menu, Alt+Tab, terminals) that" \
+  "What: stage 1 compiles an instrumented copy, stage 2 runs it for about a minute and a half of training on a" \
+  "      virtual screen (every Settings page, both layouts, every theme, every icon state, windows dragged, resized" \
+  "      and snapped, every virtual desktop, the start menu, Alt+Tab, terminals) that" \
   "      records which code is used most, stage 3 recompiles using that record. The unit tests run after each" \
   "      compile and must pass before anything is installed." \
   "Why:  this profile-guided build makes the hot paths (drawing, window moves, input) faster. It is the" \

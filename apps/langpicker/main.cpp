@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 
+#include "quit_signals.hpp"
 #include "desktop_entry.hpp"
 #include "fleetkit.hpp"
 #include "keyboard_config.hpp"
@@ -207,6 +208,7 @@ struct Picker {
 }  // namespace
 
 int main() {
+  fleetwm::block_quit_signals();  // before any thread exists, see quit_signals.hpp
   fleetwm::tune_malloc_for_low_rss();
   signal(SIGCHLD, SIG_IGN);
 

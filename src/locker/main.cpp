@@ -15,6 +15,7 @@
 #include <string>
 #include <memory>
 
+#include "quit_signals.hpp"
 #include "ipc_client.hpp"
 #include "fleetkit.hpp"
 #include "malloc_tuning.hpp"
@@ -257,6 +258,7 @@ struct Locker {
 }  // namespace
 
 int main() {
+  fleetwm::block_quit_signals();  // before any thread exists, see quit_signals.hpp
   fleetwm::tune_malloc_for_low_rss();
 
   Locker L;

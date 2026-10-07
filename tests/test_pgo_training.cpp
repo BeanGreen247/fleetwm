@@ -50,7 +50,10 @@ TEST(PgoTraining, RunsLongEnoughToCoverEverything) {
   const std::string driver = tr_read(tr_root() / "scripts/build-pgo-auto.sh");
   std::smatch m;
   ASSERT_TRUE(std::regex_search(driver, m, std::regex(R"(TRAIN_SECONDS="\$\{1:-(\d+)\}")"))) << "default training length not found";
-  EXPECT_GE(std::stoi(m[1]), 120) << "a short training run leaves most of the desktop unprofiled";
+  // Measured (docs/OPTIMIZATIONS.md, 2026-10-07): the dense workload covers 99% of a 120 s run's code by 60 s,
+  // and six rounds (one per look) need about 85 s. Shorter than that leaves looks, taskbar edges or icon states out.
+  EXPECT_GE(std::stoi(m[1]), 70) << "a short training run leaves looks, taskbar edges and icon states unprofiled";
+  EXPECT_LE(std::stoi(m[1]), 150) << "the training is a big part of the install time; it was made dense so it can be short";
 }
 
 TEST(PgoTraining, StartsEveryDesktopProgramThatCanRunOnAVirtualScreen) {
@@ -92,7 +95,7 @@ TEST(PgoTraining, VisitsEverySettingsPage) {
   }
 }
 
-TEST(PgoTraining, CoversBothLayoutsGlassOnAndOffAndBothColourModes) {
+TEST(PgoTraining, CoversBothLayoutsGlassOnAndOffAndEveryTheme) {
   const std::string script = tr_read(tr_root() / "scripts/pgo-train-session.sh");
   std::smatch m;
   ASSERT_TRUE(std::regex_search(script, m, std::regex(R"(COMBOS=\(([^)]*)\))"))) << "no COMBOS list";
@@ -106,7 +109,7 @@ TEST(PgoTraining, CoversBothLayoutsGlassOnAndOffAndBothColourModes) {
   }
   EXPECT_EQ(layouts, (std::set<std::string>{"desktop", "tiling"}));
   EXPECT_EQ(glass, (std::set<std::string>{"false", "true"}));
-  EXPECT_EQ(modes, (std::set<std::string>{"dark", "light"}));
+  EXPECT_EQ(modes, (std::set<std::string>{"dark", "light", "catppuccin", "dracula", "oled_black"})) << "every theme must be drawn";
 }
 
 TEST(PgoTraining, ExercisesTheInteractionPathsAndSkipsMissingToolsInsteadOfFailing) {
@@ -253,4 +256,124 @@ TEST(PgoTraining, NeverStartsAnInstalledCopyOrASecondOne) {
         << program << " is autostarted by the compositor; starting it again would run two";
   }
   EXPECT_NE(script.find("readlink"), std::string::npos) << "ensure_running compares the real executable, not a name";
+}
+
+// ---- a plain `kill` must end every program through its normal exit path -------------------------------------
+//
+// Found by the training run: with PipeWire running, Settings and the bar died on SIGTERM without writing their
+// profile, because PipeWire's thread existed before the signals were blocked (exit status 143 instead of 0).
+
+#include <pthread.h>
+#include <signal.h>
+
+#include <thread>
+
+#include "quit_signals.hpp"
+
+TEST(QuitSignals, ThreadsStartedAfterTheBlockInheritIt) {
+  sigset_t old;
+  pthread_sigmask(SIG_SETMASK, nullptr, &old);
+  fleetwm::block_quit_signals();
+  bool term_blocked = false, int_blocked = false;
+  std::thread t([&] {
+    sigset_t m;
+    pthread_sigmask(SIG_SETMASK, nullptr, &m);
+    term_blocked = sigismember(&m, SIGTERM) == 1;
+    int_blocked = sigismember(&m, SIGINT) == 1;
+  });
+  t.join();
+  pthread_sigmask(SIG_SETMASK, &old, nullptr);
+  EXPECT_TRUE(term_blocked);
+  EXPECT_TRUE(int_blocked);
+}
+
+TEST(QuitSignals, EveryProgramBlocksThemFirstThing) {
+  for (const char* file : {"src/bar/main.cpp", "apps/settings/main.cpp", "src/wallpaper/main.cpp", "apps/langpicker/main.cpp",
+                           "apps/powermenu/main.cpp", "src/locker/main.cpp", "src/greeter-login/main.cpp",
+                           "apps/audiomixer/main.cpp", "apps/launcher/main.cpp", "apps/shortcuts/main.cpp"}) {
+    const std::string src = tr_read(tr_root() / file);
+    const size_t main_at = src.find("\nint main(");
+    ASSERT_NE(main_at, std::string::npos) << file;
+    const size_t block_at = src.find("fleetwm::block_quit_signals();", main_at);
+    ASSERT_NE(block_at, std::string::npos) << file << " never calls block_quit_signals()";
+    const size_t body = src.find('{', main_at);
+    EXPECT_LT(block_at - body, 4u + std::string("\n  fleetwm::block_quit_signals();").size()) << file << ": it must be the first statement of main()";
+  }
+}
+
+// ---- what the training drives (so a later edit cannot quietly drop it) -------------------------------------
+
+namespace {
+std::string tr_script() { return tr_read(tr_root() / "scripts/pgo-train-session.sh"); }
+size_t tr_count(const std::string& hay, const std::string& needle) {
+  size_t n = 0;
+  for (size_t at = hay.find(needle); at != std::string::npos; at = hay.find(needle, at + needle.size())) ++n;
+  return n;
+}
+}  // namespace
+
+TEST(PgoTrainingCoverage, KeyChordsUseWtypeModifiersNotModifierKeyPresses) {
+  const std::string script = tr_script();
+  // `wtype -P Super_L` presses the key but leaves the modifier state empty, so no shortcut ever fired (found 2026-10-07).
+  EXPECT_EQ(script.find("keys -P"), std::string::npos) << "use -M/-m for modifiers";
+  EXPECT_EQ(script.find("-p Alt_L"), std::string::npos);
+  EXPECT_EQ(script.find("-p Super_L"), std::string::npos);
+  EXPECT_NE(script.find("keys -M logo -k \"$1\" -m logo"), std::string::npos) << "snap";
+  EXPECT_NE(script.find("maximize_key()  { keys -M alt -k F10 -m alt; }"), std::string::npos);
+}
+
+TEST(PgoTrainingCoverage, EveryThemeCornerStyleFrameWidthBarLayoutPowerModeAndTaskbarEdge) {
+  const std::string script = tr_script();
+  for (const char* theme : {"dark", "light", "catppuccin", "dracula", "oled_black"})
+    EXPECT_NE(script.find(std::string(" ") + theme + "\""), std::string::npos) << theme;
+  for (const char* what : {"CORNERS=(rounded square", "BAR_LAYOUTS=(full island capsules", "POWER_MODES=(normal performance battery_saver"})
+    EXPECT_NE(script.find(what), std::string::npos) << what;
+  std::smatch m;
+  ASSERT_TRUE(std::regex_search(script, m, std::regex(R"(EDGES=\(([^)]*)\))")));
+  const std::string edges = m[1];
+  for (const char* edge : {"bottom", "top", "left", "right"}) EXPECT_NE(edges.find(edge), std::string::npos) << edge;
+  ASSERT_TRUE(std::regex_search(script, m, std::regex(R"(FRAMES=\(([^)]*)\))")));
+  const std::string frames = m[1];
+  EXPECT_NE(frames.find(" 0 "), std::string::npos) << "a round without a frame";
+  EXPECT_NE(frames.find("12"), std::string::npos) << "a wide frame";
+}
+
+TEST(PgoTrainingCoverage, EveryIconStateIsDrawn) {
+  const std::string script = tr_script();
+  // Batteries: sweeping, full, under 10%, middle, almost empty and charging, none. Network: every kind in every state.
+  for (const char* state : {"icon_state 40 Charging", "icon_state 100 Full", "icon_state 8 Discharging", "icon_state 55 Discharging",
+                            "icon_state 5 Charging", "icon_state none"})
+    EXPECT_NE(script.find(state), std::string::npos) << state;
+  for (const char* nic : {"wifi:up", "wifi:down", "wired:up", "wired:unplugged", "mobile:up", "mobile:down"})
+    EXPECT_NE(script.find(nic), std::string::npos) << nic;
+  EXPECT_NE(script.find("FLEETWM_BATTERY_DIR"), std::string::npos);
+  EXPECT_NE(script.find("FLEETWM_SYS_NET"), std::string::npos);
+  EXPECT_NE(script.find("wpctl set-volume"), std::string::npos) << "volume levels through a PipeWire null sink";
+  EXPECT_NE(script.find("wpctl set-mute"), std::string::npos);
+  EXPECT_GE(tr_count(script, "icon_state "), 8u);
+}
+
+TEST(PgoTrainingCoverage, WindowsAreDraggedResizedSnappedAndTheirCaptionButtonsClicked) {
+  const std::string script = tr_script();
+  for (const char* what : {"ptr drag", "ptr dclick", "ptr rclick", "caption_buttons", "caption_at", "phase_window_elements",
+                           "phase_taskbar_pointer", "phase_tiling", "phase_workspaces", "phase_small_screen", "OUTPUT_SET",
+                           "tiling_shift p", "tiling_shift f", "ws_send_key", "WORKSPACE "})
+    EXPECT_NE(script.find(what), std::string::npos) << what;
+  // Every edge and corner of a window: right, left, bottom, top, and the four corners.
+  EXPECT_GE(tr_count(script, "ptr drag"), 14u);
+}
+
+TEST(PgoTrainingCoverage, ThePointerHelperIsBuiltOnTheFlyAndItsProtocolIsVendored) {
+  const std::string script = tr_script();
+  EXPECT_NE(script.find("wayland-scanner client-header"), std::string::npos);
+  EXPECT_NE(script.find("pgo-pointer.c"), std::string::npos);
+  EXPECT_TRUE(tr_fs::exists(tr_root() / "scripts/pgo-pointer.c"));
+  EXPECT_TRUE(tr_fs::exists(tr_root() / "scripts/wlr-virtual-pointer-unstable-v1.xml"));
+  EXPECT_NE(script.find("have wayland-scanner && have cc"), std::string::npos) << "without them the pointer part is skipped, not an error";
+}
+
+TEST(PgoTrainingCoverage, ACrashOfOneOfOurOwnProgramsIsReported) {
+  const std::string script = tr_script();
+  EXPECT_NE(script.find("WARNING: "), std::string::npos);
+  EXPECT_NE(script.find("crashes.log"), std::string::npos);
 }

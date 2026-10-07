@@ -23,6 +23,7 @@
 #include <string>
 #include <vector>
 
+#include "quit_signals.hpp"
 #include "audio_mixer.hpp"
 #include "bar_config.hpp"
 #include "battery_reading.hpp"
@@ -1218,6 +1219,7 @@ struct Settings {
 }  // namespace
 
 int main(int argc, char** argv) {
+  fleetwm::block_quit_signals();  // before any thread exists, see quit_signals.hpp
   fleetwm::tune_malloc_for_low_rss();
   signal(SIGCHLD, SIG_IGN);
 
