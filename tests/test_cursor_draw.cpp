@@ -25,11 +25,11 @@ struct CdPicture {
   }
 };
 
-CdPicture cd_draw(CursorShape shape, bool glass, int scale) {
+CdPicture cd_draw(CursorShape shape, bool glass, int scale, int phase = 0) {
   const int size = kit::kCursorGrid * scale;
   cairo_surface_t* s = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, size, size);
   cairo_t* cr = cairo_create(s);
-  kit::draw_cursor(cr, shape, glass, scale);
+  kit::draw_cursor(cr, shape, glass, scale, phase);
   cairo_destroy(cr);
   cairo_surface_flush(s);
   const uint32_t* p = reinterpret_cast<const uint32_t*>(cairo_image_surface_get_data(s));
@@ -48,6 +48,22 @@ TEST(CursorDraw, EveryShapeDrawsSomethingInBothStylesAndAtBothScales) {
         EXPECT_GT(pic.covered(), 40 * scale * scale) << "shape " << i << (glass ? " glass" : " flat") << " scale " << scale;
         EXPECT_LT(pic.covered(), pic.size * pic.size * 3 / 4) << "a cursor is not a filled square";
       }
+}
+
+TEST(CursorDraw, BusyRingTurnsWithThePhaseAndNothingElseDoes) {
+  for (CursorShape shape : {CursorShape::Wait, CursorShape::Progress})
+    for (bool glass : {false, true}) {
+      EXPECT_TRUE(kit::cursor_shape_spins(shape));
+      const CdPicture a = cd_draw(shape, glass, 2, 0), b = cd_draw(shape, glass, 2, 3), c = cd_draw(shape, glass, 2, kit::kBusyFrames);
+      EXPECT_NE(a.px, b.px) << (glass ? "glass" : "flat") << " ring looked the same a quarter turn later";
+      EXPECT_EQ(a.px, c.px) << "a full turn must come back to the first picture";
+      EXPECT_EQ(a.covered(), b.covered()) << "the ring keeps its outline";
+    }
+  for (int i = 0; i < kShapes; ++i) {
+    const CursorShape shape = static_cast<CursorShape>(i);
+    if (kit::cursor_shape_spins(shape)) continue;
+    EXPECT_EQ(cd_draw(shape, true, 1, 0).px, cd_draw(shape, true, 1, 5).px) << "shape " << i << " must ignore the phase";
+  }
 }
 
 TEST(CursorDraw, ScaleTwoIsTheSameDrawingAtDoubleResolution) {
@@ -208,7 +224,7 @@ std::string cd_read(const char* rel) {
 TEST(CursorCompositor, DrawsItsOwnPointerFromTheCacheAndRebuildsItWhenGlassChanges) {
   const std::string server = cd_read("src/compositor/server.cpp");
   EXPECT_NE(server.find("kit::cursor_shape_for_name(name, &shape)"), std::string::npos);
-  EXPECT_NE(server.find("cursor_picture(shape, theme_config_.glass, scale)"), std::string::npos);
+  EXPECT_NE(server.find("cursor_picture(shape, theme_config_.glass, scale, 0)"), std::string::npos);
   const size_t reload = server.find("void Server::reload_theme_config()");
   ASSERT_NE(reload, std::string::npos);
   EXPECT_NE(server.find("refresh_cursor();", reload), std::string::npos) << "a glass toggle must redraw the pointer";

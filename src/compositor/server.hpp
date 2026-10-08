@@ -34,6 +34,7 @@ extern "C" {
 #include <chrono>
 #include <list>
 
+#include "cursor_draw.hpp"
 #include "output_config.hpp"
 #include "keyboard_config.hpp"
 #include "mouse_config.hpp"
@@ -541,6 +542,10 @@ class Server {
   wlr_buffer* fallback_cursor_ = nullptr;  // built-in arrow, used when no cursor theme is installed
   int fallback_hotspot_x_ = 0, fallback_hotspot_y_ = 0;
   const char* cursor_name_ = nullptr;  // last xcursor name set by set_cursor_name()
+  wl_event_source* cursor_spin_timer_ = nullptr;  // runs only while a busy pointer is shown
+  int cursor_phase_ = 0;
+  kit::CursorShape cursor_shape_ = kit::CursorShape::Arrow;
+  void stop_cursor_spin();
   std::string cursor_name_storage_;    // keeps the name alive across refresh_cursor()
   BorderColors border_colors_{{0.9f, 0.9f, 0.95f, 1.0f}, {0.9f, 0.9f, 0.95f, 1.0f}, {0.9f, 0.9f, 0.95f, 1.0f}};
   bool appearance_applied_ = false, appearance_dark_ = true;

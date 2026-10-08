@@ -79,9 +79,9 @@ kit::CursorCache<wlr_buffer*>& cursor_picture_cache() {
   return cache;
 }
 
-wlr_buffer* cursor_picture(kit::CursorShape shape, bool glass, int scale) {
+wlr_buffer* cursor_picture(kit::CursorShape shape, bool glass, int scale, int phase) {
   scale = scale < 1 ? 1 : scale > 4 ? 4 : scale;
-  return cursor_picture_cache().get({shape, glass, scale}, [&]() -> wlr_buffer* {
+  return cursor_picture_cache().get({shape, glass, scale, phase}, [&]() -> wlr_buffer* {
     const int size = kit::kCursorGrid * scale;
     void* mem = nullptr;
     size_t stride = 0;
@@ -90,7 +90,7 @@ wlr_buffer* cursor_picture(kit::CursorShape shape, bool glass, int scale) {
     cairo_surface_t* surf = cairo_image_surface_create_for_data(static_cast<unsigned char*>(mem), CAIRO_FORMAT_ARGB32, size, size,
                                                                 static_cast<int>(stride));
     cairo_t* cr = cairo_create(surf);
-    kit::draw_cursor(cr, shape, glass, scale);
+    kit::draw_cursor(cr, shape, glass, scale, phase);
     cairo_destroy(cr);
     cairo_surface_destroy(surf);
     return buffer;  // the cache owns this reference

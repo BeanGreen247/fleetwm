@@ -960,6 +960,7 @@ void server_request_set_selection(wl_listener* listener, void* data) {
 Server::Server() = default;
 
 Server::~Server() {
+  stop_cursor_spin();
   if (windows_idle_) {
     wl_event_source_remove(windows_idle_);
   }
@@ -1714,16 +1715,43 @@ void Server::refresh_cursor() {
   set_cursor_name(cursor_name_storage_.c_str());
 }
 
+void Server::stop_cursor_spin() {
+  if (!cursor_spin_timer_) return;
+  wl_event_source_remove(cursor_spin_timer_);
+  cursor_spin_timer_ = nullptr;
+}
+
 void Server::set_cursor_name(const char* name) {
   if (cursor_name_ && std::strcmp(cursor_name_, name) == 0) return;
   cursor_name_ = name;  // callers pass string literals
+  stop_cursor_spin();
   // The Windows 7 style pointer (glass: Aero, otherwise the flat version); names it does not draw go to the theme.
   kit::CursorShape shape;
   if (kit::cursor_shape_for_name(name, &shape)) {
     const int scale = cursor_scale();
-    if (wlr_buffer* picture = cursor_picture(shape, theme_config_.glass, scale)) {
+    cursor_shape_ = shape;
+    cursor_phase_ = 0;
+    if (wlr_buffer* picture = cursor_picture(shape, theme_config_.glass, scale, 0)) {
       const kit::CursorHotspot hot = kit::cursor_hotspot(shape);
       wlr_cursor_set_buffer(cursor_, picture, hot.x, hot.y, static_cast<float>(scale));  // the hotspot is in logical pixels
+      if (kit::cursor_shape_spins(shape)) {
+        // The busy ring turns, twelve pictures at 12 per second; the timer exists only while one is shown.
+        cursor_spin_timer_ = wl_event_loop_add_timer(
+            wl_display_get_event_loop(display_),
+            [](void* data) -> int {
+              auto* server = static_cast<Server*>(data);
+              server->cursor_phase_ = (server->cursor_phase_ + 1) % kit::kBusyFrames;
+              const int scale = server->cursor_scale();
+              if (wlr_buffer* next = cursor_picture(server->cursor_shape_, server->theme_config_.glass, scale, server->cursor_phase_)) {
+                const kit::CursorHotspot hot = kit::cursor_hotspot(server->cursor_shape_);
+                wlr_cursor_set_buffer(server->cursor_, next, hot.x, hot.y, static_cast<float>(scale));
+              }
+              wl_event_source_timer_update(server->cursor_spin_timer_, 83);
+              return 0;
+            },
+            this);
+        if (cursor_spin_timer_) wl_event_source_timer_update(cursor_spin_timer_, 83);
+      }
       return;
     }
   }
