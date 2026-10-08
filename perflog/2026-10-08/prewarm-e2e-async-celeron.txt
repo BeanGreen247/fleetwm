@@ -1,0 +1,28 @@
+## gen
+off  bar exec at +343 ms (median), first buffer at +700 ms  [701 699 689 706 699 698 708 705]
+on   bar exec at +395 ms (median), first buffer at +744 ms  [739 947 792 734 747 744 743 740]
+## new
+off  bar exec at +348 ms (median), first buffer at +707 ms  [699 729 706 712 705 709 709 693]
+on   bar exec at +352 ms (median), first buffer at +709 ms  [715 713 706 705 706 711 703 711]
+## gen
+off  bar exec at +350 ms (median), first buffer at +712 ms  [702 675 713 713 713 680 766 712]
+on   bar exec at +393 ms (median), first buffer at +748 ms  [739 738 752 752 797 756 744 745]
+## new
+off  bar exec at +354 ms (median), first buffer at +709 ms  [716 706 766 710 712 705 707 688]
+on   bar exec at +362 ms (median), first buffer at +714 ms  [752 686 709 737 711 716 712 756]
+200:    // ioprio_set(IOPRIO_WHO_PROCESS, this thread, default class): disk reads of the main thread are served first.
+201:    syscall(SYS_ioprio_set, 1, static_cast<int>(syscall(SYS_gettid)), 0);
+## new2
+off  bar exec at +350 ms (median), first buffer at +703 ms  [707 711 692 694 716 695 712 699]
+on   bar exec at +353 ms (median), first buffer at +705 ms  [696 706 708 705 712 708 698 704]
+## new
+off  bar exec at +353 ms (median), first buffer at +705 ms  [705 698 708 705 692 756 666 709]
+on   bar exec at +358 ms (median), first buffer at +710 ms  [710 697 710 715 697 702 737 717]
+## new2
+off  bar exec at +351 ms (median), first buffer at +707 ms  [733 709 704 697 716 714 687 693]
+on   bar exec at +357 ms (median), first buffer at +706 ms  [702 710 699 709 704 711 704 710]
+## new
+off  bar exec at +354 ms (median), first buffer at +713 ms  [691 713 717 713 713 698 720 708]
+on   bar exec at +358 ms (median), first buffer at +711 ms  [689 695 725 712 711 731 715 690]
+off  bar exec at +199 ms (median), first buffer at +543 ms  [560 536 554 543 539 552 529 542]
+on   bar exec at +204 ms (median), first buffer at +554 ms  [534 568 551 564 554 557 544 554]

@@ -4,6 +4,7 @@
 #include <pthread.h>
 #include <signal.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -187,6 +188,19 @@ size_t prewarm_program(const std::string& exe_path, const std::string& program) 
   std::stringstream ss;
   ss << in.rdbuf();
   return replay(parse_manifest(ss.str()));
+}
+
+void prewarm_programs_async(std::vector<std::pair<std::string, std::string>> programs) {
+  const char* mode = std::getenv("FLEETWM_PREWARM");
+  if (mode && std::strcmp(mode, "off") == 0) return;
+  std::thread([programs = std::move(programs)] {
+    sigset_t all;
+    sigfillset(&all);
+    pthread_sigmask(SIG_BLOCK, &all, nullptr);
+    // ioprio_set(IOPRIO_WHO_PROCESS, this thread, class IDLE): the main thread's own disk reads go first.
+    syscall(SYS_ioprio_set, 1, static_cast<int>(syscall(SYS_gettid)), 3 << 13);
+    for (const auto& [exe, name] : programs) prewarm_program(exe, name);
+  }).detach();
 }
 
 namespace {

@@ -65,4 +65,9 @@ void start(const char* program);
 // The first `bytes` of every file named in `ranges`, as extra ranges (what the loader needs before any page is mapped).
 std::vector<Range> file_heads(const std::vector<Range>& ranges, uint64_t bytes);
 
+// Same for several programs, on one detached helper thread at idle I/O priority, so the caller (the compositor, which is itself reading its
+// own files from a cold disk at that moment) is not held up by the requests. (Measured on the Celeron laptop, docs/PERFORMANCE_FINDINGS.md
+// section 15: asking from the main thread delayed the bar's start by 36 ms; from this thread the delay is gone.) Entries are {executable path, program name}.
+void prewarm_programs_async(std::vector<std::pair<std::string, std::string>> programs);
+
 }  // namespace fleetwm::prewarm
