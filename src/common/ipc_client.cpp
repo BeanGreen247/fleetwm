@@ -83,11 +83,13 @@ void IpcClient::poll_lines(const std::function<void(const std::string&)>& on_lin
     break;  // n < 0: EAGAIN/EWOULDBLOCK or a real error either way stop here
   }
 
-  size_t pos;
-  while ((pos = read_buffer_.find('\n')) != std::string::npos) {
-    on_line(read_buffer_.substr(0, pos));
-    read_buffer_.erase(0, pos + 1);
+  // Head offset, one erase at the end (per-line erase is quadratic for a flood).
+  size_t head = 0, pos;
+  while ((pos = read_buffer_.find('\n', head)) != std::string::npos) {
+    on_line(read_buffer_.substr(head, pos - head));
+    head = pos + 1;
   }
+  read_buffer_.erase(0, head);
 }
 
 }  // namespace fleetwm
