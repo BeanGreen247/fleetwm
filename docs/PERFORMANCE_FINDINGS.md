@@ -279,3 +279,18 @@ So on a slow disk the design that works is the parent asking early, and reading 
 +710 ms (runs 681-721). Prewarm on: bar exec +389 ms, first buffer +741 ms (runs 730-782). Prewarm ON IS 31 ms (4%) SLOWER end to end on this laptop, outside the run spread of
 about 40 ms only by a small margin; the manifest reads delay the bar's exec by 36 ms and the bar's own part does not shrink enough to pay for it. Verdict so far: do not
 turn prewarm on by default for the Celeron until the manifest is replaced by the parent-asks-early/whole-file variant; the VM result (below noise) said the same.
+
+**Flags on the Celeron (test list row 3; `flagab-safe.sh 6 20 gen nolto native`, interleaved, 6 reps, nested compositor + `foot -F -e yes` for 20 s, pixman, schedutil).**
+Compositor CPU per 20 s of scrolling (median, min-max): LTO (the shipped build) 121.5 ms (117-126); no LTO 123.5 ms (115-154, one outlier); LTO + `-march=native` 125.0 ms (123-131).
+foot CPU ticks 2142 / 2137 / 2136; idle compositor CPU per 20 s 13.0 / 12.5 / 14.0 ms. All three are inside the run spread: no gain from LTO, none from `-march=native` (a hair worse,
+not significant); decision: keep the shipped flags, do not ship `-march=native` (a binary built for one CPU can fail on another). Raw: `perflog/2026-10-08/flagab-celeron.txt`.
+Builds: bgen/bnolto/bnative in `~/perf-test` on the laptop (master `ef297cc`); build time each a few minutes on the Celeron.
+
+**Real-hardware reads checked with the files the bar uses (no GUI; both machines).**
+- Intel GPU (card0 on the dev PC i5-8265U UHD 620, card1 on the laptop): vendor 0x8086, driver i915, `gt/gt0/rc6_residency_ms` and `gt/gt0/rps_act_freq_mhz` are readable by the user, so the
+  Intel idle/clock tooltip lines have a source on both (clock 300 MHz dev PC, 100 MHz laptop, idle).
+- RAPL `intel-rapl:0/energy_uj` is NOT readable by a normal user on either machine (permission denied), so the CPU power line cannot come from RAPL there; the tooltip must fall back to the
+  battery (`BAT0/power_now`, laptop shows 0 while "Not charging" at 100%) or show nothing. Per-core `scaling_cur_freq` is readable (2.69 GHz on the laptop at idle burst, 2.50 GHz dev PC).
+  Open: check the tooltip's text for the no-RAPL, no-discharge case in the bar itself.
+- Cached RAM right after boot on the laptop (`ram-report-laptop-boot.txt`): cache 334 MB = 8% of RAM, Shmem 39 MB, available 2979 MB of 3484; fleetwm Pss 71 MB (file 48, anon 22), bar 7.2 MB.
+  The "after the cache has built up" run is still to do.
