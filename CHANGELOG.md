@@ -5,6 +5,9 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
 ## Unreleased
 
 ### Added
+- Glass effects now frost Settings, Shortcuts and the language picker too: the compositor shows the blurred wallpaper behind the window
+  (it follows the window when it moves, resizes or changes screen) and the window paints a see-through background. The Tiling borders
+  are see-through with Glass effects on.
 - More than one screen: every screen gets its own bar and wallpaper (started and ended with the screen), windows open on the screen with the
   pointer, the taskbar of a screen lists its windows, windows follow when dragged across the edge, and the windows of an unplugged screen
   move to another one and come back when it returns. Workspaces are shared by all screens in the Desktop layout.

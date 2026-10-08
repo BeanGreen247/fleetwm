@@ -142,8 +142,10 @@ void Ui::begin(cairo_t* cr, double w, double h) {
   }
 
   cairo_save(cr_);
-  set_source(cr_, pal_.bg_primary);
+  cairo_set_operator(cr_, CAIRO_OPERATOR_SOURCE);  // the window is see-through with Glass effects: write the colour with its alpha
+  set_source(cr_, with_alpha(pal_.bg_primary, pal_.window_alpha));
   cairo_paint(cr_);
+  cairo_set_operator(cr_, CAIRO_OPERATOR_OVER);
 }
 
 void Ui::end() {

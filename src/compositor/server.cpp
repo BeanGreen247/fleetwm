@@ -43,6 +43,7 @@ extern "C" {
 #include "paths_config.h"
 #include "scene_node_owner.hpp"
 #include "cursor.hpp"
+#include "glass_backdrop.hpp"
 #include "titlebar.hpp"
 #include "window_geometry.hpp"
 #include "view.hpp"
@@ -1911,6 +1912,7 @@ void Server::update_grab() {
     }
     wlr_scene_node_set_position(&view->container_tree->node, x, y);
     view->sync_x11_position();
+    view->update_glass_backdrop();
     update_snap_preview(view);
     return;
   }
@@ -2372,7 +2374,9 @@ void Server::reload_theme_config() {
       if (view->minimized) view->set_minimized(false);
     }
   }
+  glass_backdrop_clear();  // the glass setting or the wallpaper may have changed
   for (const std::unique_ptr<View>& view : views) {
+    view->glass_bg_reset();
     view->invalidate_titlebar();
     view->resize_border();
   }

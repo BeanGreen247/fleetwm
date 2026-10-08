@@ -1243,7 +1243,9 @@ struct Settings {
     {
       const Palette& p = ui.palette();
       cairo_rectangle(cr, 0, 0, kSidebarW, h);
-      set_source(cr, p.bg_secondary);
+      Color sidebar = p.bg_secondary;
+      sidebar.a = p.window_alpha;  // see-through with Glass effects, like the rest of the window
+      set_source(cr, sidebar);
       cairo_fill(cr);
       cairo_rectangle(cr, kSidebarW - 1, 0, 1, h);
       Color line = p.fg_secondary;
