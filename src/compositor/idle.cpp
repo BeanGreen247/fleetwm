@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <string>
 
+#include "child_signals.hpp"
 #include "battery_reading.hpp"
 #include "output.hpp"
 #include "power_config.hpp"
@@ -121,6 +122,7 @@ void Server::on_idle_timer() {
     const char* command = std::getenv("FLEETWM_SUSPEND_COMMAND");
     if (!command || !*command) command = "systemctl suspend";
     if (fork() == 0) {
+      fleetwm::reset_signals_for_exec();
       execl("/bin/sh", "sh", "-c", command, static_cast<char*>(nullptr));
       _exit(127);
     }
