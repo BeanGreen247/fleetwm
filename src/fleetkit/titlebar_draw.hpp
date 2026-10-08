@@ -42,7 +42,7 @@ void draw_frame_strip(cairo_t* cr, int width, int height, FrameEdge edge, bool f
                       bool round_bottom = false);
 
 // The radius of the rounded outer corners of a window, in pixels.
-inline constexpr double kWindowCornerRadius = 7.0;
+inline constexpr double kWindowCornerRadius = 4.0;
 
 // How many glass backgrounds are cached and how many bytes they hold (tests, diagnostics).
 struct TitlebarCacheStats {

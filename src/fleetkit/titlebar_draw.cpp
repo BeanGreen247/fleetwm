@@ -270,6 +270,14 @@ void draw_frame_strip(cairo_t* cr, int width, int height, FrameEdge edge, bool f
   } else {
     line(rim.r, rim.g, rim.b, 1.0, true);
   }
+  if (edge == FrameEdge::Bottom) {
+    // The bottom strip spans the full width, so its two ends carry the outer line of the side strips and no break shows at the corners.
+    if (glass) cairo_set_source_rgba(cr, 1, 1, 1, 0.30);
+    else cairo_set_source_rgba(cr, rim.r, rim.g, rim.b, 1.0);
+    cairo_rectangle(cr, 0, 0, 1, height);
+    cairo_rectangle(cr, width - 1, 0, 1, height);
+    cairo_fill(cr);
+  }
   if (round_bottom && edge == FrameEdge::Bottom && width > 4) {
     // Keep only what lies inside a rectangle whose two bottom corners are rounded. The strip is only a few pixels
     // tall, so the radius stops at its height; the sides above it are square and meet it where it is full width.
@@ -303,6 +311,22 @@ void draw_titlebar(cairo_t* cr, int width, int height, const TitlebarPaint& p, c
     set_source(cr, tb_mix(bg, pal.fg_primary, 0.12));
     cairo_rectangle(cr, 0, height - 1, width, 1);
     cairo_fill(cr);
+  }
+
+  // The window's outer edge continues from the side strips (draw_frame_strip) up the titlebar's two ends, same colour and weight, so the
+  // outline has no break where the bar meets the frame. The top edge carries the same line in the flat look (the glass background has its own).
+  {
+    cairo_save(cr);
+    if (p.glass) cairo_set_source_rgba(cr, 1, 1, 1, 0.30);
+    else {
+      const Color rim = tb_mix(bg, pal.fg_primary, 0.12);
+      cairo_set_source_rgba(cr, rim.r, rim.g, rim.b, 1.0);
+    }
+    cairo_rectangle(cr, 0, 0, 1, height);
+    cairo_rectangle(cr, width - 1, 0, 1, height);
+    if (!p.glass) cairo_rectangle(cr, 0, 0, width, 1);
+    cairo_fill(cr);
+    cairo_restore(cr);
   }
 
   // Title, ellipsized to the span the buttons leave free.

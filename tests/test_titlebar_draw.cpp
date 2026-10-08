@@ -188,6 +188,11 @@ TEST(TitlebarDraw, CachedStripMatchesDirectDrawingInEveryState) {
             td::set_source(cr, line);
             cairo_rectangle(cr, 0, 31, W, 1);
             cairo_fill(cr);
+            // the window's outer edge on the bar's two ends and top (same colour as the side strips' outer line)
+            cairo_rectangle(cr, 0, 0, 1, 32);
+            cairo_rectangle(cr, W - 1, 0, 1, 32);
+            cairo_rectangle(cr, 0, 0, W, 1);
+            cairo_fill(cr);
             td::CaptionState st;
             st.colors = {bg, focused ? pal.fg_primary : pal.fg_secondary, pal.accent};  // what draw_titlebar derives from the palette
             st.focused = focused;
