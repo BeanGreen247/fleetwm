@@ -337,3 +337,9 @@ Reading: for a client that repaints its whole window every frame through shared 
 compositor's own code is not the cost. At the idle desktop nothing is uploaded, so this affects only busy shm clients; GPU (dmabuf) clients such as Lestrix's GL window avoid the copy
 (not measured yet: needs Lestrix under Fleetwm, row 12). Not measured: key-to-pixel latency (row 11, needs a camera or timestamps), `act_freq` stayed at its 100 MHz floor in most samples,
 so the busy percentage is the meaningful GPU number, and the dev PC (UHD 620, 4 cores) was not used for this.
+
+**Section 17 follow-up: is the upload avoidable? (WAYLAND_DEBUG=client on the scrolling foot, 6 s, gles2 rig, laptop.)** foot commits about 30 frames/s and each frame damages
+`damage_buffer(1, 2, 1278, 715)`, i.e. 1278x715 px of a 1280x720 surface (178 of 187 requests; the rest are first-frame and border strips): 3.66 MB per frame, 110 MB/s, nearly the whole
+window. A scrolling `yes` really changes every pixel, so the damage is honest and the compositor cannot upload less. The measured 57 ms of memcpy per second for 110 MB/s is about 2 GB/s,
+which is the order of this Celeron's single-thread write bandwidth into GPU-visible memory (section 3 style limit), so by the decision rule (gap under 2-4x of the hardware estimate) there is
+nothing to chase in Fleetwm's code. The remaining levers are outside it: clients that submit dmabufs (zero upload), or direct scan-out of a fullscreen client; neither was changed.
