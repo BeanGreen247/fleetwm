@@ -90,6 +90,9 @@ ui_live() {
   : > "${log}"
   "$@" > "${log}" 2>&1 &
   local pid=$! t0=$SECONDS text last_text="" elapsed rc cols=$(tput cols 2>/dev/null || echo 100) last_print=-100
+  # A step whose output stops growing is reported, with the programs that could be holding it up, so a hang is
+  # never silent: after UI_STALL_SECS (default 120) of no new output, then every UI_STALL_SECS again.
+  local stall=${UI_STALL_SECS:-120} log_size=0 new_size last_growth=$SECONDS last_stall_note=$SECONDS
   while kill -0 "${pid}" 2>/dev/null; do
     elapsed=$(( SECONDS - t0 ))
     text=$(ui_progress "${mode}" "${log}")
@@ -101,6 +104,18 @@ ui_live() {
       last_print=${elapsed}
     fi
     last_text=${text}
+    new_size=$(stat -c %s "${log}" 2>/dev/null || echo 0)
+    if (( new_size != log_size )); then
+      log_size=${new_size}
+      last_growth=${SECONDS}
+      last_stall_note=${SECONDS}
+    elif (( SECONDS - last_growth >= stall && SECONDS - last_stall_note >= stall )); then
+      last_stall_note=${SECONDS}
+      (( UI_TTY )) && printf "\r\033[K"
+      printf "  %s: no output for %s, still running. Possibly waiting on:\n" "${label}" "$(ui_time $(( SECONDS - last_growth )))" >&2
+      ps -eo pid,etime,stat,args --forest 2>/dev/null | grep -E 'apt|dpkg|needrestart|debconf|unattended|packagekit|meson|ninja' |
+        grep -v -e grep -e wait-for-signal | head -8 | sed 's/^/    /' >&2 || true
+    fi
     sleep 1
   done
   wait "${pid}" && rc=0 || rc=$?

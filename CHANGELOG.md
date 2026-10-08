@@ -16,6 +16,8 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
 - The volume icon shows a muted sink (red slash, "(muted)" in the tooltip).
 
 ### Fixed
+- install.sh: apt can no longer wait unseen. needrestart is told to ask and restart nothing, the dpkg lock is waited for, mirrors time
+  out and retry, and a step with no new output for two minutes prints what it may be waiting on.
 - Settings, Shortcuts and the language picker open centred in the work area, titlebar and frame included; at 1024x768 the
   Settings window used to reach 8 px under the taskbar. Long help lines in Settings now wrap instead of running off the page.
 - A headless or nested output now takes any size as a custom mode (`OUTPUT_SET` and `outputs.toml` were refused),

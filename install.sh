@@ -81,7 +81,7 @@ ui_item "libinput libxkbcommon libdrm" "keyboard, mouse and touchpad input, key 
 ui_item "libegl/libgles2 libpixman" "OpenGL ES drawing (GPU) and the software fallback"
 ui_item "libpipewire libpam libsystemd" "sound volume, password check for the lock screen, session and power control"
 ui_item "libjemalloc2" "a faster memory allocator for the compositor"
-ui_live plain "Refreshing the package lists" "$(mktemp)" sudo apt-get update -qq
+ui_live plain "Refreshing the package lists" "$(mktemp)" apt_update
 
 # NOTE: this is deliberately several separate `apt-get install` calls,
 # not one big backslash-continued list -- a `#` comment on its own line
