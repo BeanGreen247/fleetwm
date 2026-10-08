@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 #if FLEETWM_HAVE_PIPEWIRE
 extern "C" {
@@ -51,7 +52,7 @@ void VolumeSource::poll_wpctl_once() {
   // last-resort fallback (ADR 0005) -- kept deliberately simple.
   FILE* pipe = popen("wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null", "r");
   if (!pipe) {
-    on_update_(0, false);
+    on_update_(0, false, false);
     return;
   }
   char buf[128] = {};
@@ -61,9 +62,9 @@ void VolumeSource::poll_wpctl_once() {
 
   double fraction = 0.0;
   if (std::sscanf(buf, "Volume: %lf", &fraction) == 1) {
-    on_update_(static_cast<int>(fraction * 100.0 + 0.5), true);
+    on_update_(static_cast<int>(fraction * 100.0 + 0.5), true, std::strstr(buf, "[MUTED]") != nullptr);
   } else {
-    on_update_(0, false);  // wpctl not installed, or no default sink
+    on_update_(0, false, false);  // wpctl not installed, or no default sink
   }
 }
 
@@ -84,10 +85,10 @@ void VolumeSource::poll_wpctl_once() {
 // g_idle_add before touching on_update_/any GTK state, since GTK is not
 // thread-safe.
 
-void VolumeSource::report(int percent, bool available) {
+void VolumeSource::report(int percent, bool available, bool muted) {
   // Called from PipeWire's own thread; hop onto the main loop thread.
-  app_.post([this, percent, available] {
-    if (on_update_) on_update_(percent, available);
+  app_.post([this, percent, available, muted] {
+    if (on_update_) on_update_(percent, available, muted);
   });
 }
 
@@ -97,24 +98,27 @@ void VolumeSource::on_sink_node_param(void* data, int, uint32_t id, uint32_t, ui
   if (id != SPA_PARAM_Props || !param) {
     return;
   }
-  const spa_pod_prop* prop =
-      spa_pod_find_prop(param, nullptr, SPA_PROP_channelVolumes);
-  if (!prop) {
-    return;
+  bool seen = false;
+  if (const spa_pod_prop* mute_prop = spa_pod_find_prop(param, nullptr, SPA_PROP_mute)) {
+    bool muted = false;
+    if (spa_pod_get_bool(&mute_prop->value, &muted) == 0) {
+      self->pw_muted_ = muted;
+      seen = true;
+    }
   }
-  uint32_t n_values = 0;
-  void* values = spa_pod_get_array(&prop->value, &n_values);
-  if (!values || n_values == 0) {
-    return;
+  if (const spa_pod_prop* prop = spa_pod_find_prop(param, nullptr, SPA_PROP_channelVolumes)) {
+    uint32_t n_values = 0;
+    void* values = spa_pod_get_array(&prop->value, &n_values);
+    if (values && n_values > 0) {
+      // channelVolumes is an array of Float, linear scale (0.0-1.0+).
+      const float* volumes = static_cast<const float*>(values);
+      float sum = 0.0f;
+      for (uint32_t i = 0; i < n_values; ++i) sum += volumes[i];
+      self->pw_percent_ = static_cast<int>(sum / static_cast<float>(n_values) * 100.0f + 0.5f);
+      seen = true;
+    }
   }
-  // channelVolumes is an array of Float, linear scale (0.0-1.0+).
-  const float* volumes = static_cast<const float*>(values);
-  float sum = 0.0f;
-  for (uint32_t i = 0; i < n_values; ++i) {
-    sum += volumes[i];
-  }
-  float average = sum / static_cast<float>(n_values);
-  self->report(static_cast<int>(average * 100.0f + 0.5f), true);
+  if (seen) self->report(self->pw_percent_, true, self->pw_muted_);
 }
 
 void VolumeSource::on_sink_node_info(void*, const pw_node_info*) {
@@ -147,7 +151,7 @@ void VolumeSource::on_registry_global_remove(void* data, uint32_t id) {
     pw_proxy_destroy(self->sink_node_proxy_);
     self->sink_node_proxy_ = nullptr;
     self->sink_node_id_ = 0xffffffff;
-    self->report(0, false);
+    self->report(0, false, false);
     self->try_bind_sink();
   }
 }

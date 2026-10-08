@@ -28,7 +28,7 @@ namespace fleetwm::bar {
 // matches ADR 0005's GPU%/general "no crash, just show N/A" contract.
 class VolumeSource {
  public:
-  using Callback = std::function<void(int percent, bool available)>;
+  using Callback = std::function<void(int percent, bool available, bool muted)>;
 
   // Starts the backend and begins delivering updates via `on_update`
   // (called once immediately if an initial value is already known, then
@@ -78,7 +78,9 @@ class VolumeSource {
   std::map<uint32_t, std::string> sink_candidates_;
   void try_bind_sink();
   static void on_registry_global_remove(void* data, uint32_t id);
-  void report(int percent, bool available);
+  void report(int percent, bool available, bool muted = false);
+  int pw_percent_ = 0;  // last Props values seen on the PipeWire thread (a Props event may carry only one of them)
+  bool pw_muted_ = false;
 
   static void on_registry_global(void* data, uint32_t id, uint32_t permissions, const char* type,
                                   uint32_t version, const spa_dict* props);
