@@ -5,7 +5,9 @@
 // Mouse settings (Settings -> Mouse), saved per user in mouse.toml, the way Windows has them:
 //   * pointer speed: 11 notches, 6 is the middle and the default;
 //   * "Enhance pointer precision": the pointer accelerates with how fast you move the mouse; off, the pointer
-//     follows the mouse one to one at any speed.
+//     follows the mouse one to one at any speed;
+//   * primary button: left (default) or right, for left-handed use;
+//   * natural scrolling: the page follows the finger or wheel (content moves with the wheel instead of against it).
 
 namespace fleetwm {
 
@@ -14,6 +16,8 @@ inline constexpr int kMouseSpeedMin = 1, kMouseSpeedMax = 11, kMouseSpeedDefault
 struct MouseConfig {
   int speed = kMouseSpeedDefault;  // 1..11
   bool enhanced_precision = true;  // acceleration on
+  bool swap_buttons = false;       // right button is the primary one
+  bool natural_scroll = false;
   bool operator==(const MouseConfig&) const = default;
 };
 

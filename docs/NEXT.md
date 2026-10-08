@@ -26,8 +26,7 @@ The same list lives in the memory bank (`projects/fleetwm-state-2026-10-07-v0.4.
 5. Final summary table (before/after per item) at the top of `PERF_LOG_2026-10-07.md` and in `OPTIMIZATIONS.md`.
 6. Pointer: the busy ring now spins (12 frames at 12/s, only while shown: +15 ms CPU per 10 s of the compositor on the VM, none otherwise); no Xcursor theme is generated for other programs (GTK/Qt apps still show the
    installed cursor theme); the hand shape is an approximation of Windows 7's.
-7. Mouse: nothing is applied for non-libinput pointers (VMs with absolute devices, nested); no scroll speed, double-click speed or
-   button swap; the speed/precision were not checked on a real mouse.
+7. Mouse: primary button (left/right) and natural scrolling are in Settings -> Mouse and applied through libinput (compiled and the page checked at 1024x768; the libinput calls were never run, the VM has no libinput pointer). Still open: nothing is applied for non-libinput pointers (VMs with absolute devices, nested, virtual); no scroll speed or double-click speed (libinput has no scroll speed, double-click is up to the clients); speed, precision, buttons and scrolling were not checked on a real mouse or touchpad.
 8. Volume icon: mute is read (PipeWire Props and wpctl "[MUTED]"): red slash and "(muted)" in the tooltip; checked rendering only, the VM dummy sink cannot be muted.
 9. Network: mobile data (ww* interfaces, NetworkManager modems) was only tested with fake sysfs trees, never a real modem; the signal
    for mobile is not read (all bars when up); NM/wpa back ends are untrained and untested here.
