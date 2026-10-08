@@ -25,6 +25,7 @@
 #include "theme.hpp"
 #include "ui.hpp"
 #include "xkb_rules.hpp"
+#include "version.hpp"
 
 namespace {
 
@@ -208,8 +209,9 @@ struct Picker {
 
 }  // namespace
 
-int main() {
+int main(int argc, char** argv) {
   fleetwm::block_quit_signals();  // before any thread exists, see quit_signals.hpp
+  if (fleetwm::handle_info_flags(argc, argv, "fleetwm-langpicker", "")) return 0;
   fleetwm::tune_malloc_for_low_rss();
   fleetwm::prewarm::start("fleetwm-langpicker");
   signal(SIGCHLD, SIG_IGN);

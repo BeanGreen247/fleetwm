@@ -34,6 +34,7 @@
 #include "ipc_client.hpp"
 #include "lock_tooltip.hpp"
 #include "power_config.hpp"
+#include "version.hpp"
 
 extern "C" {
 extern const sd_bus_vtable lock_sni_vtable[];
@@ -302,7 +303,8 @@ int lock_ss_get_active(sd_bus_message* m, void*, sd_bus_error*) { return sd_bus_
 
 }  // extern "C"
 
-int main() {
+int main(int argc, char** argv) {
+  if (fleetwm::handle_info_flags(argc, argv, "fleetwm-lockapplet", "")) return 0;
   Applet applet;
   g_applet = &applet;
 
