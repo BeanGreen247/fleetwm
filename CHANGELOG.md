@@ -9,9 +9,12 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
   scheduler latency, power draw from the battery or the CPU energy counter), memory (used, free, available, cached,
   buffers, swap), GPU (core usage, power, core and memory clock, VRAM; AMD through sysfs, NVIDIA through `nvidia-smi`,
   Intel clock only), disk (read and write speed of all disks).
+- Settings -> Theme: "Window frame (px)" (0-16).
 - The volume icon shows a muted sink (red slash, "(muted)" in the tooltip).
 
 ### Fixed
+- Settings, Shortcuts and the language picker open centred in the work area, titlebar and frame included; at 1024x768 the
+  Settings window used to reach 8 px under the taskbar. Long help lines in Settings now wrap instead of running off the page.
 - A headless or nested output now takes any size as a custom mode (`OUTPUT_SET` and `outputs.toml` were refused),
   which made 1024x768 testable.
 - The seat offers the pointer from the start, so a session without a keyboard (headless) gives clients a pointer.

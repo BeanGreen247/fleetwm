@@ -31,7 +31,7 @@ The same list lives in the memory bank (`projects/fleetwm-state-2026-10-07-v0.4.
 8. Volume icon: mute is read (PipeWire Props and wpctl "[MUTED]"): red slash and "(muted)" in the tooltip; checked rendering only, the VM dummy sink cannot be muted.
 9. Network: mobile data (ww* interfaces, NetworkManager modems) was only tested with fake sysfs trees, never a real modem; the signal
    for mobile is not read (all bars when up); NM/wpa back ends are untrained and untested here.
-10. Window frame: `frame_px` has no Settings control; exact 1024x768 now runs (headless outputs take custom modes; bar and metric tooltips checked there, 2026-10-08);
+10. Window frame: `frame_px` is now a Settings -> Theme spin ("Window frame (px)"); exact 1024x768 now runs (headless outputs take custom modes; bar and metric tooltips checked there, 2026-10-08);
     resizing through the frame was driven only with the virtual pointer, never a real mouse; no rounded outer corners.
 11. Training: window and taskbar clicks assume 1280x720 with the taskbar at the bottom or top; the tray, NetworkManager, wpa_supplicant
     and the PAM locker are untrained.
