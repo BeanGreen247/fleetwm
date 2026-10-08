@@ -356,3 +356,7 @@ compositor 7.37-7.43 wake/s and 84-89 ms per 60 s (false: 2.35-2.65/s, 36-41 ms)
 about +50 ms (compositor) and +65 ms (bar) CPU per minute, together 0.2% of one core, and 5 extra wake-ups/s in each process: a feature cost the owner can switch off in Settings; no code change.
 Decision: the remaining timer alignment (clock/stats/network/battery to one tick) would save at most the 1-2 wake-ups/s of the non-clock timers, about 0.05% of a core; below the
 2-4x rule and the earlier rejection (section 9); not done.
+
+## 19. Install time on the VM (owner's screenshot, 2026-10-08 20:39, `~/Pictures/Screenshots/Screenshot_20261008_203902.png`)
+
+`install.sh` on the dev VM (2 vCPU i5-8500 KVM, Debian 13, all packages already present), version 0.4.0-43 around `572a00a`: total 6 min 35 s = dependencies 23 s (0 packages set up), instrumented build 2 min 51 s, training run 1 min 32 s, optimized build 1 min 45 s, install and set-up 4 s; 738 tests from 102 suites in 881 ms; 31005 source lines built twice at 225 lines/s; disk write 612.9 MB/s, disk read 496.4 MB/s; installed size 2.5 MB. The summary's line "Parallel speedup 0s of CPU in 276s = 0.00x speedup on 2 cores" is a measurement bug (the CPU-time counter read 0 s), not a real result: the two builds ran 276 s of wall time and used the cores. Not measured: the same install on the Celeron laptop (the owner ran it there too; no screenshot of its summary yet).
