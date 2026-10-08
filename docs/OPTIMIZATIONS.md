@@ -512,3 +512,11 @@ client rewrite alone and 280 MB originally.
   overlay with the card placed beside the taskbar, which is what makes click-away and re-clicking the start
   button close it without any extra IPC.
 
+
+## Round 2026-10-08 (section 8 test list; details in `PERFORMANCE_FINDINGS.md` section 9)
+
+Rig: dev VM, KVM, 2 vCPU i5-8500, pixman, no governor exposed, perf_event_paranoid raised 3 -> 1 at runtime with approval.
+
+- **Kept: line buffers in `IpcServer` and `IpcClient` use a head offset** instead of `erase(0, pos+1)` per line. 27-byte lines, `g++ -O2`, median of 5: 4 KB 7 us vs 4 us, 256 KB 21.9 ms vs 0.23 ms, 1 MB 503 ms vs 0.92 ms (quadratic before). Normal traffic unchanged. Bench: `perflog/2026-10-08/q.cpp`.
+- **No change: splice/clipboard/screenshot paths** (row 7). The clipboard is wlroots passing fds, there is no screenshot code, the wallpaper reads one file.
+- **No change: idle and scroll profile on a GPU-less VM** (row 13). Flat; no symbol above 4% while scrolling. Idle compositor + bar 0.012% CPU, about 3 context switches/s.

@@ -1,0 +1,70 @@
+PID=13162
+fleetwm-wallpaper: cannot load '/tmp/wp.png'
+fleetwm-bar: systray: could not own org.kde.StatusNotifierWatcher (already taken?) -- tray icons disabled this session
+fleetwm-wallpaper: cannot load '/tmp/wp.png'
+gov none
+[ perf record: Captured and wrote 0.024 MB /tmp/idle.data (24 samples) ]
+    10.63%  [k] syscall_return_via_sysret
+     5.77%  [.] pixman_region32_not_empty
+     5.57%  [.] 0x00000000000077f5
+     4.91%  [.] wlr_surface_from_resource
+     4.91%  [.] 0x0000000000090ec4
+     4.72%  [.] 0x0000000000090e62
+     4.70%  [k] __pv_queued_spin_unlock_slowpath
+     4.70%  [k] __schedule
+     4.70%  [.] 0x000000000006ec00
+     4.70%  [.] 0x00000000000770be
+     4.68%  [k] __update_load_avg_se
+     4.68%  [k] unix_stream_recvmsg
+     4.49%  [.] 0x000000000000d85a
+     3.73%  [k] update_rt_rq_load_avg
+     3.73%  [.] 0x0000000000077118
+     3.61%  [k] clear_bhb_loop
+     3.46%  [.] wl_resource_get_link@plt
+     3.46%  [.] 0x0000000000090e70
+     3.25%  [.] 0x000000000000254d
+     3.25%  [.] 0x00000000000770f6
+     3.25%  [.] 0x00000000000896a3
+     3.11%  [.] wlr_render_pass_init
+
+
+---- threads
+    TID COMMAND         %CPU
+  13162 fleetwm          0.1
+[ perf record: Captured and wrote 0.090 MB /tmp/scroll.data (367 samples) ]
+    37.21%  [kernel.kallsyms]          
+    25.13%  libwlroots-0.18.so         
+    16.79%  libwayland-server.so.0.23.1
+     7.81%  libc.so.6                  
+     4.73%  libffi.so.8.1.4            
+     4.29%  libpixman-1.so.0.44.0      
+     3.16%  fleetwm                    
+     0.52%  [vdso]                     
+     3.62%  [k] fdget
+     3.26%  [.] wl_event_loop_dispatch
+     2.04%  [.] fleetwm::(anonymous namespace)::output_frame(wl_listener*, void*) [clone .lto_priv.0]
+     1.96%  [.] __libc_calloc
+     1.76%  [.] wlr_addon_find
+     1.52%  [k] aa_sk_perm
+     1.52%  [k] entry_SYSRETQ_unsafe_stack
+     1.44%  [.] 0x0000000000077684
+     1.34%  [k] __memcg_slab_free_hook
+     1.33%  [k] entry_SYSCALL_64_after_hwframe
+     1.26%  [.] 0x00000000000a3db0
+     1.25%  [k] __put_user_nocheck_4
+     1.12%  [k] dequeue_entity
+     1.10%  [k] timerqueue_add
+     1.02%  [.] 0x000000000000af00
+     0.99%  [k] update_load_avg
+     0.96%  [.] 0x0000000000006d5f
+     0.93%  [k] syscall_return_via_sysret
+     0.92%  [.] wlr_scene_rect_set_color
+     0.90%  [.] wl_resource_get_link
+     0.88%  [.] wl_signal_emit_mutable
+     0.86%  [.] ffi_prep_cif
+     0.84%  [k] _raw_spin_lock_irq
+     0.84%  [.] 0x000000000003e560
+     0.83%  [k] __virt_addr_valid
+   100.00%  fleetwm
+
+
