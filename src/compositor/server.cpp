@@ -242,9 +242,14 @@ void view_mapped(View* view) {
     if (is_settings) {
       // Center using the toplevel's own committed geometry (known now --
       // see the resize_border() comment above for why).
+      // The whole window (titlebar and frame included) goes in the work area, not under the taskbar: at
+      // 1024x768 the 800x620 panel plus its titlebar is 658 px of a 724 px work area.
       const wlr_box geo = view->content_geometry();
-      wlr_scene_node_set_position(&view->container_tree->node, box.x + (box.width - geo.width) / 2,
-                                   box.y + (box.height - geo.height) / 2);
+      const int outer_w = geo.width + 2 * view->border_thickness();
+      const int outer_h = geo.height + view->titlebar_height() + view->border_thickness() + view->top_border();
+      const wlr_box area = output->usable_area;
+      wlr_scene_node_set_position(&view->container_tree->node, area.x + std::max(0, (area.width - outer_w) / 2),
+                                   area.y + std::max(0, (area.height - outer_h) / 2));
       wlr_scene_node_raise_to_top(&view->container_tree->node);
     } else if (is_dialog) {
       // Center over the PARENT's current on-screen box, not the whole
