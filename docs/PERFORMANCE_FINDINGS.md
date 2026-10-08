@@ -216,3 +216,17 @@ Re-run with a pointer that reaches the bar (`perflog/2026-10-08/hover2.sh 20 3`,
 The conclusion of rows 2 and 5 stands with real data: the bar does not repaint more during a sweep (+1-3 ms per 20 s), the compositor spends 0.9% of a core on 130 events/s (profile unchanged from section 9). The new live tooltips (CPU/RAM/GPU/disk) cost +9 ms of compositor time and under 1 ms in the bar per 20 s while shown, nothing otherwise.
 
 The same missing capability explains the earlier note that Lestrix could not be typed into on the headless rig (no keyboard device): only the keyboard half is still missing there. Exact 1024x768 now works on the headless rig too (custom modes), so the 1024x768 checks of this round (tooltips, bar) were run at that size.
+
+## 13. PGO prewarm: the upper bound (2026-10-08)
+
+Question: how much could any prewarm of a program's own files (readahead replay, `MADV_WILLNEED`, the stage 2 and 3 design in the memory bank note
+`fleetwm-installer-and-prewarm-research-2026-10-07`) save at start-up? Upper bound = start with every page of the bar's own files already resident (a
+prewarm that is perfect and free) against the same start with them evicted (`posix_fadvise(DONTNEED)` on all 45 files the running bar maps; pages that other
+running processes map, such as libc, the compositor's libraries and wlroots, stay resident, so this is a partial cold start). Metric: time from `exec` to the
+bar's first `wl_surface.commit` (`WAYLAND_DEBUG=client` timestamps), 8 interleaved pairs, nested headless compositor on the dev VM (i5-8500, KVM; the disk image
+sits in the host's page cache, so reads are fast), `perflog/2026-10-08/coldstart.py`, output `coldstart-bar.txt`.
+
+Result: evicted minus warm = 3.5 ms (median; warm 99-100, evicted 94-97 on the script's relative scale, spread about 1 ms). That is the most a perfect prewarm of the
+bar's files could remove from a start that takes tens of milliseconds, at the price of resident memory and a record/replay mechanism. Not implemented. It
+stays open for a machine where reads are slow (the Celeron laptop's disk, or a spinning disk): the same script gives the number there in one minute. The
+earlier measurement (2026-10-06) that app start-up costs 20-40 ms CPU and 11-14 MB points the same way: the cost is CPU and memory, not I/O.
