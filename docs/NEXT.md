@@ -63,3 +63,9 @@ progress helper `ui_live` now reports a step whose output stops growing for 120 
 processes that could be holding it. Checked: syntax, the stall note against a fake 6 s step, apt accepting the options (`apt-get -s`). Not
 checked: a real fresh install on a machine where needrestart actually prompts (no such machine here); the cause of the original hang is
 still a suspect (needrestart), not a proven one.
+
+## Cached RAM (htop yellow) on the real machine
+`scripts/ram-report.sh` (read-only, no root needed, more with sudo) splits "Cached" into reclaimable cache, tmpfs/shared memory that is stuck, and mapped
+files, lists the programs that hold the most file-backed memory, the biggest files in the page cache (`fincore`), tmpfs users, slab and the memory sysctls, and
+ends with a short list of experiments (one needs the owner's OK: dropping caches). Run it on the laptop when it is idle, once right after boot and once after the
+cache has built up, and keep both outputs. Tried on the dev PC: it ran in 10 s and found the answer there (browsers' and editors' binaries, apt .deb files, /tmp as tmpfs).
