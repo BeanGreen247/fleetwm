@@ -9,6 +9,7 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
   scheduler latency, power draw from the battery or the CPU energy counter), memory (used, free, available, cached,
   buffers, swap), GPU (core usage, power, core and memory clock, VRAM; AMD through sysfs, NVIDIA through `nvidia-smi`,
   Intel clock only), disk (read and write speed of all disks).
+- The busy pointer (wait, progress) spins: twelve cached pictures at twelve per second, a timer that runs only while one is shown.
 - Settings -> Theme: "Window frame (px)" (0-16).
 - The volume icon shows a muted sink (red slash, "(muted)" in the tooltip).
 

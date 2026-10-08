@@ -120,7 +120,7 @@ void arrow_path(cairo_t* cr, double ox = 0, double oy = 0) {
 }
 
 // The busy ring. Glass: teal glass ring with a bright top edge; flat: a single blue ring.
-void ring(cairo_t* cr, const Style& st, double cx, double cy, double r, double w) {
+void ring(cairo_t* cr, const Style& st, double cx, double cy, double r, double w, double spin) {
   cairo_save(cr);
   // white halo so it reads on dark backgrounds
   cairo_new_path(cr);
@@ -140,7 +140,7 @@ void ring(cairo_t* cr, const Style& st, double cx, double cy, double r, double w
     cairo_stroke(cr);
     cairo_pattern_destroy(g);
     cairo_new_path(cr);  // glossy highlight along the upper left
-    cairo_arc(cr, cx, cy, r + w * 0.15, M_PI * 1.05, M_PI * 1.75);
+    cairo_arc(cr, cx, cy, r + w * 0.15, M_PI * 1.05 + spin, M_PI * 1.75 + spin);
     cairo_set_source_rgba(cr, 1, 1, 1, 0.75);
     cairo_set_line_width(cr, w * 0.3);
     cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
@@ -155,6 +155,11 @@ void ring(cairo_t* cr, const Style& st, double cx, double cy, double r, double w
     cairo_new_path(cr);
     cairo_arc(cr, cx, cy, r, 0, 2 * M_PI);
     cairo_set_source_rgb(cr, 0.16, 0.50, 0.86);
+    cairo_set_line_width(cr, w);
+    cairo_stroke(cr);
+    cairo_new_path(cr);  // a light quarter that turns with the phase
+    cairo_arc(cr, cx, cy, r, M_PI * 1.05 + spin, M_PI * 1.75 + spin);
+    cairo_set_source_rgb(cr, 0.62, 0.82, 0.98);
     cairo_set_line_width(cr, w);
     cairo_stroke(cr);
   }
@@ -357,7 +362,8 @@ CursorHotspot cursor_hotspot(CursorShape shape) {
   }
 }
 
-void draw_cursor(cairo_t* cr, CursorShape shape, bool glass, int scale) {
+void draw_cursor(cairo_t* cr, CursorShape shape, bool glass, int scale, int phase) {
+  const double spin = 2 * M_PI * (phase % kBusyFrames) / kBusyFrames;
   const Style st{glass};
   cairo_save(cr);
   cairo_scale(cr, scale < 1 ? 1 : scale, scale < 1 ? 1 : scale);
@@ -375,9 +381,9 @@ void draw_cursor(cairo_t* cr, CursorShape shape, bool glass, int scale) {
     case CursorShape::Progress:
       arrow_path(cr);
       paint_body(cr, st, 0, 20);
-      ring(cr, st, 21.5, 21.5, 4.6, 2.6);
+      ring(cr, st, 21.5, 21.5, 4.6, 2.6, spin);
       break;
-    case CursorShape::Wait: ring(cr, st, 16, 16, 8.6, 4.2); break;
+    case CursorShape::Wait: ring(cr, st, 16, 16, 8.6, 4.2, spin); break;
     case CursorShape::Text: ibeam(cr, st); break;
     case CursorShape::Hand: hand(cr, st); break;
     case CursorShape::Cross: cross(cr, st); break;

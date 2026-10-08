@@ -24,7 +24,7 @@ The same list lives in the memory bank (`projects/fleetwm-state-2026-10-07-v0.4.
    align them to the clock tick and reuse one timerfd. Not measured as worth it (idle bar 0.33%, compositor 0.25%).
 4. Re-measure the PGO build against a non-PGO build on the laptop (PGO speed was never re-measured; Lestrix found PGO no gain).
 5. Final summary table (before/after per item) at the top of `PERF_LOG_2026-10-07.md` and in `OPTIMIZATIONS.md`.
-6. Pointer: busy ring does not spin (Windows 7's does); no Xcursor theme is generated for other programs (GTK/Qt apps still show the
+6. Pointer: the busy ring now spins (12 frames at 12/s, only while shown: +15 ms CPU per 10 s of the compositor on the VM, none otherwise); no Xcursor theme is generated for other programs (GTK/Qt apps still show the
    installed cursor theme); the hand shape is an approximation of Windows 7's.
 7. Mouse: nothing is applied for non-libinput pointers (VMs with absolute devices, nested); no scroll speed, double-click speed or
    button swap; the speed/precision were not checked on a real mouse.

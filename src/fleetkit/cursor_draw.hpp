@@ -42,7 +42,10 @@ struct CursorHotspot {
 CursorHotspot cursor_hotspot(CursorShape shape);
 
 // Draws the cursor into `cr`, an ARGB surface of (32 * scale) pixels square that starts transparent.
-void draw_cursor(cairo_t* cr, CursorShape shape, bool glass, int scale);
+// `phase` (0..kBusyFrames-1) turns the busy ring's highlight; every other shape ignores it.
+inline constexpr int kBusyFrames = 12;
+inline bool cursor_shape_spins(CursorShape shape) { return shape == CursorShape::Wait || shape == CursorShape::Progress; }
+void draw_cursor(cairo_t* cr, CursorShape shape, bool glass, int scale, int phase = 0);
 
 }  // namespace fleetwm::kit
 
@@ -60,6 +63,7 @@ struct CursorKey {
   CursorShape shape = CursorShape::Arrow;
   bool glass = false;
   int scale = 1;
+  int phase = 0;  // busy-ring frame, 0 for shapes that do not spin
   bool operator==(const CursorKey&) const = default;
 };
 
