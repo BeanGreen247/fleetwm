@@ -2,6 +2,20 @@
 
 All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags are on GitHub.
 
+## Unreleased
+
+### Added
+- Hover tooltips on the bar's metrics are richer and update every second while shown: CPU (each core's load and clock,
+  scheduler latency, power draw from the battery or the CPU energy counter), memory (used, free, available, cached,
+  buffers, swap), GPU (core usage, power, core and memory clock, VRAM; AMD through sysfs, NVIDIA through `nvidia-smi`,
+  Intel clock only), disk (read and write speed of all disks).
+- The volume icon shows a muted sink (red slash, "(muted)" in the tooltip).
+
+### Fixed
+- A headless or nested output now takes any size as a custom mode (`OUTPUT_SET` and `outputs.toml` were refused),
+  which made 1024x768 testable.
+- The seat offers the pointer from the start, so a session without a keyboard (headless) gives clients a pointer.
+
 ## 0.4.0 - 2026-10-07
 
 ### Fixed

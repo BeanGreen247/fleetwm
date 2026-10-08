@@ -31,7 +31,7 @@ The same list lives in the memory bank (`projects/fleetwm-state-2026-10-07-v0.4.
 8. Volume icon: mute is read (PipeWire Props and wpctl "[MUTED]"): red slash and "(muted)" in the tooltip; checked rendering only, the VM dummy sink cannot be muted.
 9. Network: mobile data (ww* interfaces, NetworkManager modems) was only tested with fake sysfs trees, never a real modem; the signal
    for mobile is not read (all bars when up); NM/wpa back ends are untrained and untested here.
-10. Window frame: `frame_px` has no Settings control; 1024x768 was not run exactly (the headless output is fixed at 1280x720);
+10. Window frame: `frame_px` has no Settings control; exact 1024x768 now runs (headless outputs take custom modes; bar and metric tooltips checked there, 2026-10-08);
     resizing through the frame was driven only with the virtual pointer, never a real mouse; no rounded outer corners.
 11. Training: window and taskbar clicks assume 1280x720 with the taskbar at the bottom or top; the tray, NetworkManager, wpa_supplicant
     and the PAM locker are untrained.
@@ -54,3 +54,5 @@ The same list lives in the memory bank (`projects/fleetwm-state-2026-10-07-v0.4.
 ## Performance test list from the Lestrix round (worked through 2026-10-08)
 Results per row: `docs/PERFORMANCE_FINDINGS.md` section 9, raw files in `perflog/2026-10-08/`. Done: 13 (perf on the VM; needed `perf_event_paranoid` 3 -> 1, runtime only, approved), 6 and 10 (kept: IPC line parsing with a head offset, 4096-byte recv buffers), 7, 4, 2, 3, 5, 8, 9 (rejected or not applicable, with numbers). Still open: row 1 (render CPU/GPU per frame on a real GPU, needs the laptop or Lestrix GPU numbers), row 11 (key-to-pixel latency, needs a GPU and a camera or timestamps), row 12 (Lestrix under Fleetwm: the VM lacks SDL2, so it needs `apt install` there or the laptop), row 3 on the Celeron (tested only on the VM i5-8500), row 14 (no UI changed this round). The laptop (192.168.0.182) was unreachable on 2026-10-08; the VM reset `perf_event_paranoid` to 3.
  Idle wake-ups per process measured 2026-10-08 (findings section 11): nothing to change; the Celeron table is still open.\n
+## Added 2026-10-08 (owner request): metric tooltips
+CPU, memory, GPU and disk tooltips show the detailed readings (see CHANGELOG, Unreleased). Verified on the VM at 1280x720 and 1024x768 (CPU per core, scheduler latency, memory breakdown, live disk write speed). Not verifiable there, needs hardware: battery/RAPL power draw, per-core clocks, AMD sysfs and NVIDIA readings (parsers are unit-tested against fake trees). "CPU latency" was read as scheduler wake-up latency (a 200 us sleep, best of 5); say if another latency was meant.

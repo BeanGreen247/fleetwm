@@ -21,6 +21,7 @@
 #include <fstream>
 #include <map>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -48,6 +49,7 @@
 #include "system_devices.hpp"
 #include "tray.hpp"
 #include "xkb_rules.hpp"
+#include "hw_stats.hpp"
 #include "volume_source.hpp"
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
 
@@ -122,6 +124,7 @@ struct Bar {
     enum class Kind { AmdBusy, IntelIdle, Nvidia } kind = Kind::AmdBusy;
     std::string vendor, driver;  // "AMD", "amdgpu"
     std::string path;            // the busy or idle-residency file
+    std::string device_dir;      // /sys/class/drm/cardN/device
     std::string freq_path, freq_max_path;
     int fd = -1;
     long long idle_prev_ms = -1;
@@ -217,6 +220,7 @@ struct Bar {
   int hover_power = 0;
   std::unique_ptr<Tooltip> tooltip;
   int tooltip_timer = 0;
+  int tooltip_refresh = 0;  // 1 s timer that re-reads a CPU/RAM/GPU/disk tooltip while it is shown
 
   bool island = false;
   BarLayout layout_style = BarLayout::Capsules;
@@ -1271,6 +1275,7 @@ struct Bar {
       const std::string driver = std::filesystem::read_symlink(base + "/device/driver", ec).filename().string();
       Gpu g;
       g.driver = driver;
+      g.device_dir = base + "/device";
       if (vendor_id == "0x1002") g.vendor = "AMD";
       else if (vendor_id == "0x8086") g.vendor = "Intel";
       else if (vendor_id == "0x10de") g.vendor = "NVIDIA";
@@ -1331,6 +1336,7 @@ struct Bar {
     return t;
   }
   std::vector<int> nvidia_percent;
+  std::vector<fleetwm::GpuDetail> nvidia_detail;  // power, clocks and memory from the same nvidia-smi call
 
   bool update_gpu() {
     bool changed = false;
@@ -1366,15 +1372,21 @@ struct Bar {
       gpu_query_running = true;
       // nvidia-smi can take a while; keep it off the UI thread. It prints one line per card.
       std::thread([this] {
-        std::vector<int> pcts;
-        if (FILE* p = popen("nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits 2>/dev/null", "r")) {
-          int v = 0;
-          while (std::fscanf(p, "%d", &v) == 1) pcts.push_back(std::clamp(v, 0, 100));
+        std::string out;
+        if (FILE* p = popen("nvidia-smi --query-gpu=utilization.gpu,power.draw,clocks.gr,clocks.mem,memory.used,memory.total "
+                            "--format=csv,noheader,nounits 2>/dev/null", "r")) {
+          char buf[512];
+          size_t n;
+          while ((n = std::fread(buf, 1, sizeof buf, p)) > 0) out.append(buf, n);
           pclose(p);
         }
-        app.post([this, pcts] {
+        std::vector<fleetwm::GpuDetail> cards = fleetwm::parse_nvidia_smi_csv(out);
+        std::vector<int> pcts;
+        for (const auto& c : cards) pcts.push_back(c.percent);
+        app.post([this, pcts, cards = std::move(cards)] {
           gpu_query_running = false;
           nvidia_percent = pcts;
+          nvidia_detail = cards;
           nvidia_cards = static_cast<int>(pcts.size());
           if (set_if_changed(gpu_text, build_gpu_text())) redraw();
         });
@@ -1419,12 +1431,17 @@ struct Bar {
   }
 
   std::string ram_tooltip_text() {
-    MemInfo m;
-    if (!read_meminfo(&m)) return "Memory info unavailable";
+    std::ifstream in("/proc/meminfo");
+    std::stringstream ss;
+    ss << in.rdbuf();
+    fleetwm::MemDetail m;
+    if (!fleetwm::parse_meminfo(ss.str(), &m)) return "Memory info unavailable";
     const unsigned long long used = m.total - m.available;
     std::string t = "Memory: " + fmt_kib(used) + " used of " + fmt_kib(m.total) + "\n" +
+                    "Free: " + fmt_kib(m.free) + "\n" +
                     "Available: " + fmt_kib(m.available) + "\n" +
-                    "Cache + buffers: " + fmt_kib(m.cached + m.buffers);
+                    "Cached: " + fmt_kib(m.cached) + "\n" +
+                    "Buffers: " + fmt_kib(m.buffers);
     if (m.swap_total > 0)
       t += "\nSwap: " + fmt_kib(m.swap_total - m.swap_free) + " of " + fmt_kib(m.swap_total);
     else
@@ -1432,52 +1449,131 @@ struct Bar {
     return t;
   }
 
+  // Samples behind the rates in the CPU and disk tooltips. Taken when the pointer arrives on the widget and
+  // again at every tooltip refresh, so the first tooltip already shows the rate over the hover delay.
+  struct HwSample {
+    std::vector<fleetwm::CpuTimes> cores;
+    fleetwm::DiskCounters disk;
+    long long rapl_uj = -1;
+    std::chrono::steady_clock::time_point at;
+    bool valid = false;
+  } hw_prev;
+  static std::string slurp(const char* path) {
+    std::ifstream in(path);
+    std::stringstream ss;
+    ss << in.rdbuf();
+    return ss.str();
+  }
+  HwSample take_hw_sample() {
+    HwSample h;
+    h.cores = fleetwm::parse_proc_stat_cores(slurp("/proc/stat"));
+    h.disk = fleetwm::parse_diskstats(slurp("/proc/diskstats"));
+    h.rapl_uj = fleetwm::rapl_energy_uj("/sys/class/powercap");
+    h.at = std::chrono::steady_clock::now();
+    h.valid = true;
+    return h;
+  }
+
   std::string cpu_tooltip_text() {
+    const HwSample now = take_hw_sample();
+    const double dt = hw_prev.valid ? std::chrono::duration<double>(now.at - hw_prev.at).count() : 0;
+    const std::vector<int> pct = fleetwm::core_percents(hw_prev.cores, now.cores);
     std::string t;
+    char b[96];
+    const bool compact = now.cores.size() > 12;  // many cores: four per line, no clocks, so the tooltip stays on screen
+    for (size_t i = 0; i < now.cores.size(); ++i) {
+      if (compact) {
+        std::snprintf(b, sizeof b, "%sC%zu %s", i == 0 ? "" : i % 4 ? "   " : "\n", i,
+                      (i < pct.size() && pct[i] >= 0 ? std::to_string(pct[i]) + "%" : std::string("--%")).c_str());
+        t += b;
+        continue;
+      }
+      std::snprintf(b, sizeof b, "%sCore %zu: ", i ? "\n" : "", i);
+      t += b;
+      t += (i < pct.size() && pct[i] >= 0 ? std::to_string(pct[i]) + "%" : std::string("--%"));
+      if (std::FILE* f = std::fopen(("/sys/devices/system/cpu/cpu" + std::to_string(i) + "/cpufreq/scaling_cur_freq").c_str(), "r")) {
+        long khz = 0;
+        if (std::fscanf(f, "%ld", &khz) == 1 && khz > 0) {
+          std::snprintf(b, sizeof b, "  %.2f GHz", khz / 1.0e6);
+          t += b;
+        }
+        std::fclose(f);
+      }
+    }
+    if (t.empty()) t = "Per-core load unavailable";
+    std::snprintf(b, sizeof b, "\nScheduler latency: %.0f us (200 us sleep, best of 5)", fleetwm::timer_latency_us());
+    t += b;
+    double watts = fleetwm::battery_power_watts(fleetwm::kPowerSupplyDir);
+    std::string source = "battery";
+    if (watts < 0 && hw_prev.rapl_uj >= 0 && now.rapl_uj >= hw_prev.rapl_uj && dt > 0.05) {
+      watts = static_cast<double>(now.rapl_uj - hw_prev.rapl_uj) / 1e6 / dt;
+      source = "CPU package";
+    }
+    if (watts >= 0) {
+      std::snprintf(b, sizeof b, "\nPower draw: %.1f W (%s)", watts, source.c_str());
+      t += b;
+    } else {
+      t += "\nPower draw: n/a (no battery, no readable energy counter)";
+    }
+    std::string load;
     double l1 = 0, l5 = 0, l15 = 0;
     if (std::FILE* f = std::fopen("/proc/loadavg", "r")) {
       if (std::fscanf(f, "%lf %lf %lf", &l1, &l5, &l15) == 3) {
-        char b[64];
-        std::snprintf(b, sizeof b, "Load average: %.2f  %.2f  %.2f", l1, l5, l15);
-        t = b;
-      }
-      std::fclose(f);
-    }
-    if (t.empty()) t = "Load average unavailable";
-    t += "\nCores: " + std::to_string(std::max(1L, sysconf(_SC_NPROCESSORS_ONLN)));
-    if (std::FILE* f = std::fopen("/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq", "r")) {
-      long khz = 0;
-      if (std::fscanf(f, "%ld", &khz) == 1 && khz > 0) {
-        char b[48];
-        std::snprintf(b, sizeof b, "\nCore 0 clock: %.2f GHz", khz / 1.0e6);
+        std::snprintf(b, sizeof b, "\nLoad average: %.2f  %.2f  %.2f", l1, l5, l15);
         t += b;
       }
       std::fclose(f);
     }
+    hw_prev = now;
+    return t;
+  }
+
+  static std::string gpu_detail_lines(const fleetwm::GpuDetail& d, bool shared_memory) {
+    char b[96];
+    std::string t;
+    if (d.power_w >= 0) {
+      std::snprintf(b, sizeof b, "\nPower draw: %.1f W", d.power_w);
+      t += b;
+    } else {
+      t += "\nPower draw: n/a";
+    }
+    t += d.core_mhz >= 0 ? "\nCore clock: " + std::to_string(d.core_mhz) + " MHz" : std::string("\nCore clock: n/a");
+    t += d.mem_mhz >= 0 ? "\nMemory clock: " + std::to_string(d.mem_mhz) + " MHz" : std::string("\nMemory clock: n/a");
+    if (d.vram_used >= 0 && d.vram_total > 0)
+      t += "\nVRAM: " + fmt_kib(static_cast<unsigned long long>(d.vram_used) / 1024) + " of " +
+           fmt_kib(static_cast<unsigned long long>(d.vram_total) / 1024);
+    else
+      t += shared_memory ? "\nVRAM: shared with system memory" : "\nVRAM: n/a";
     return t;
   }
 
   std::string gpu_tooltip_text() {
     std::string t;
     int n = 0;
+    const bool several = gpus.size() + nvidia_cards > 1;
     for (const Gpu& g : gpus) {
       if (n++) t += "\n\n";
-      t += (gpus.size() + nvidia_cards > 1 ? "GPU" + std::to_string(n) + ": " : std::string()) + g.vendor + " (" + g.driver + ")  " +
-           (g.percent < 0 ? std::string("--") : std::to_string(g.percent)) + "%";
-      if (g.kind == Gpu::Kind::IntelIdle) {
-        t += " active";
+      fleetwm::GpuDetail d;
+      if (g.kind == Gpu::Kind::AmdBusy) d = fleetwm::read_amd_gpu_detail(g.device_dir);
+      t += (several ? "GPU" + std::to_string(n) + ": " : std::string()) + g.vendor + " (" + g.driver + ")\nCore usage: " +
+           (g.percent < 0 ? std::string("--") : std::to_string(g.percent)) + "%" +
+           (g.kind == Gpu::Kind::IntelIdle ? " active" : "");
+      if (g.kind == Gpu::Kind::IntelIdle) {  // the Intel counters give the core clock only; memory is the system's
         const long long cur = g.freq_path.empty() ? -1 : read_number(g.freq_path);
+        d.core_mhz = cur >= 0 ? static_cast<int>(cur) : -1;
         const long long max = g.freq_max_path.empty() ? -1 : read_number(g.freq_max_path);
-        if (cur >= 0) t += "\nClock: " + std::to_string(cur) + (max > 0 ? " of " + std::to_string(max) : std::string()) + " MHz";
+        t += gpu_detail_lines(d, true);
+        if (max > 0) t += " (max " + std::to_string(max) + ")";
       } else {
-        t += " busy";
+        t += gpu_detail_lines(d, false);
       }
     }
     for (int i = 0; i < nvidia_cards; ++i) {
       if (n++) t += "\n\n";
-      const int v = nvidia_percent.size() > static_cast<size_t>(i) ? nvidia_percent[static_cast<size_t>(i)] : -1;
-      t += (gpus.size() + nvidia_cards > 1 ? "GPU" + std::to_string(n) + ": " : std::string()) + "NVIDIA  " +
-           (v < 0 ? std::string("--") : std::to_string(v)) + "% busy";
+      fleetwm::GpuDetail d;
+      if (nvidia_detail.size() > static_cast<size_t>(i)) d = nvidia_detail[static_cast<size_t>(i)];
+      t += (several ? "GPU" + std::to_string(n) + ": " : std::string()) + "NVIDIA\nCore usage: " +
+           (d.percent < 0 ? std::string("--") : std::to_string(d.percent)) + "%" + gpu_detail_lines(d, false);
     }
     if (t.empty()) return "No GPU utilisation source found\n(software rendering or unsupported driver)";
     return t;
@@ -1488,8 +1584,17 @@ struct Bar {
     if (statvfs("/", &v) != 0) return "Disk usage unavailable";
     const unsigned long long fr = v.f_frsize ? v.f_frsize : v.f_bsize;
     const unsigned long long total = v.f_blocks * fr / 1024, free_b = v.f_bavail * fr / 1024;
+    const HwSample now = take_hw_sample();
+    std::string io = "\nRead (all disks): --\nWrite (all disks): --";
+    if (hw_prev.valid) {
+      const double dt = std::chrono::duration<double>(now.at - hw_prev.at).count();
+      if (dt > 0.05 && now.disk.read_bytes >= hw_prev.disk.read_bytes && now.disk.write_bytes >= hw_prev.disk.write_bytes)
+        io = "\nRead (all disks): " + fleetwm::format_rate(static_cast<double>(now.disk.read_bytes - hw_prev.disk.read_bytes) / dt) +
+             "\nWrite (all disks): " + fleetwm::format_rate(static_cast<double>(now.disk.write_bytes - hw_prev.disk.write_bytes) / dt);
+    }
+    hw_prev = now;
     return "Root filesystem (/)\nUsed: " + fmt_kib(total - v.f_bfree * fr / 1024) + " of " + fmt_kib(total) +
-           "\nFree: " + fmt_kib(free_b);
+           "\nFree: " + fmt_kib(free_b) + io;
   }
 
   std::string vol_tooltip_text() { return vol_text + "\nClick to open the audio mixer"; }
@@ -1709,6 +1814,10 @@ struct Bar {
   }
 
   void hide_tooltip() {
+    if (tooltip_refresh) {
+      app.unwatch(tooltip_refresh);
+      tooltip_refresh = 0;
+    }
     if (tooltip_timer) {
       app.unwatch(tooltip_timer);
       tooltip_timer = 0;
@@ -1760,6 +1869,7 @@ struct Bar {
     if (want != tooltip_for) {
       hide_tooltip();
       tooltip_for = want;
+      if (want == 3 || want == 5) hw_prev = take_hw_sample();  // baseline for the rates shown 400 ms later
     }
     if (want && !tooltip && !tooltip_timer) {
       tooltip_timer = app.add_oneshot(400, [this, r, want] {
@@ -1780,6 +1890,10 @@ struct Bar {
     const std::string text = kind >= 1000 ? window_tooltip(static_cast<uint32_t>(kind - 1000)) : tooltip_text(kind);
     if (text.empty()) return;
     place_tooltip(r, text);
+    if (kind >= 2 && kind <= 5)  // live numbers: replace the picture each second (the new one is made before the old goes)
+      tooltip_refresh = app.add_timer(1000, [this, r, kind] {
+        if (tooltip && tooltip_for == kind) place_tooltip(r, tooltip_text(kind));
+      });
   }
 
   void place_tooltip(const Rect& r, const std::string& text) {

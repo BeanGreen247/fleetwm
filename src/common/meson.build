@@ -78,6 +78,7 @@ libcommon_core = static_library(
     'default_apps.cpp',
     'keybinds_config.cpp',
     'battery_reading.cpp',
+    'hw_stats.cpp',
     'malloc_tuning.cpp',
     'pipewire_json.cpp',
     'window_geometry.cpp',
