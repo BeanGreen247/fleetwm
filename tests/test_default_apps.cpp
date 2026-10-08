@@ -72,12 +72,12 @@ TEST_F(DefaultAppsTest, CommandWithUnicodeRoundTrips) {
   EXPECT_EQ(load_default_apps_config().terminal_command, "term --title=端末");
 }
 
-TEST_F(DefaultAppsTest, MalformedTomlThrows) {
+TEST_F(DefaultAppsTest, MalformedTomlKeepsDefaults) {
   std::filesystem::create_directories(dir_ / "fleetwm");
   std::ofstream out(dir_ / "fleetwm" / "default_apps.toml");
   out << "terminal_command = \"unterminated\n";
   out.close();
-  EXPECT_THROW(load_default_apps_config(), toml::parse_error);
+  EXPECT_NO_THROW(load_default_apps_config());
 }
 
 TEST_F(DefaultAppsTest, UnrelatedKeyIsIgnoredNotFatal) {

@@ -34,7 +34,12 @@ WallpaperConfig load_wallpaper_config() {
     }
   }
 
-  toml::table table = toml::parse_file(path.string());
+  toml::table table;
+  try {
+    table = toml::parse_file(path.string());
+  } catch (const toml::parse_error&) {
+    return config;  // a damaged file must not take the session down: the defaults stay
+  }
   if (auto v = table["path"].value<std::string>()) {
     config.path = *v;
   }

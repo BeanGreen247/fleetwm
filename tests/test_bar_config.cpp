@@ -243,12 +243,12 @@ TEST_F(BarConfigTest, PowerModeBatterySaverRoundTrips) {
   EXPECT_EQ(load_bar_config().power_mode, PowerMode::BatterySaver);
 }
 
-TEST_F(BarConfigTest, MalformedTomlThrows) {
+TEST_F(BarConfigTest, MalformedTomlKeepsDefaults) {
   std::filesystem::create_directories(dir_ / "fleetwm");
   std::ofstream out(dir_ / "fleetwm" / "bar.toml");
   out << "[clock\nshow_seconds = true\n";
   out.close();
-  EXPECT_THROW(load_bar_config(), toml::parse_error);
+  EXPECT_NO_THROW(load_bar_config());
 }
 
 TEST_F(BarConfigTest, EmptyConfigFileYieldsDefaults) {

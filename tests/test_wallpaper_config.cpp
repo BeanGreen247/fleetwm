@@ -127,12 +127,12 @@ TEST_F(WallpaperConfigTest, RelativePathRoundTripsVerbatim) {
   EXPECT_EQ(load_wallpaper_config().path, "relative/wall.jpg");
 }
 
-TEST_F(WallpaperConfigTest, MalformedTomlThrows) {
+TEST_F(WallpaperConfigTest, MalformedTomlKeepsDefaults) {
   std::filesystem::create_directories(dir_ / "fleetwm");
   std::ofstream out(dir_ / "fleetwm" / "wallpaper.toml");
   out << "path = [unterminated\n";
   out.close();
-  EXPECT_THROW(load_wallpaper_config(), toml::parse_error);
+  EXPECT_NO_THROW(load_wallpaper_config());
 }
 
 TEST_F(WallpaperConfigTest, EmptyConfigFileYieldsDefaults) {

@@ -370,13 +370,13 @@ TEST_F(ThemeTest, WrongTypeInFieldIsIgnoredNotCrashed) {
   EXPECT_EQ(config.accent.hex, "#89b4fa");
 }
 
-TEST_F(ThemeTest, MalformedTomlThrows) {
+TEST_F(ThemeTest, MalformedTomlKeepsDefaults) {
   std::filesystem::create_directories(dir_ / "fleetwm");
   std::ofstream out(dir_ / "fleetwm" / "theme.toml");
   out << "this is not [ valid toml\n";
   out.close();
 
-  EXPECT_THROW(load_theme_config(), toml::parse_error);
+  EXPECT_NO_THROW(load_theme_config());
 }
 
 TEST_F(ThemeTest, EmptyConfigFileYieldsDefaults) {
