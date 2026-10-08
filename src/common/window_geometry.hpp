@@ -69,9 +69,9 @@ enum class TitleAlignment { Left, Center, Right };
 // Everything the titlebar layout depends on (a plain copy of the user's
 // [titlebar] settings, so this module stays independent of the config code).
 struct TitlebarMetrics {
-  int height = 32;        // titlebar height
-  int button_w = 38;      // width of one button cell
-  int button_h = 24;      // height of a button (centered in the titlebar)
+  int height = 30;        // titlebar height
+  int button_w = 28;      // width of one button cell
+  int button_h = 20;      // height of a button (centered in the titlebar)
   bool buttons_right = true;
   TitleAlignment align = TitleAlignment::Center;
   bool show_pin = true;
@@ -84,7 +84,8 @@ struct TitlebarMetrics {
 };
 
 // How much wider the close button is than the others in a caption strip.
-constexpr double kStripCloseScale = 1.6;
+// Windows 7 at 100%: 28 px for minimize and maximize, 47 px for close (measured on Wikimedia Commons "Aero UI.png").
+constexpr double kStripCloseScale = 1.68;
 
 struct ButtonSlot {
   int id = kBtnNone;

@@ -77,7 +77,8 @@ std::string title_align_to_string(TitleAlign align) {
 TitleAlign title_align_from_string(const std::string& s) {
   if (s == "left") return TitleAlign::Left;
   if (s == "right") return TitleAlign::Right;
-  return TitleAlign::Center;
+  if (s == "center" || s == "middle") return TitleAlign::Center;
+  return TitleAlign::Left;
 }
 
 std::string theme_css_filename(ThemeName theme) {

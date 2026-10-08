@@ -143,7 +143,14 @@ TEST(Cascade, NegativeIndexIsTreatedAsFirst) {
 // ---- titlebar layout --------------------------------------------------------
 
 namespace {
-TitlebarMetrics metrics() { return TitlebarMetrics{}; }
+// The numbers these tests were written with, independent of the shipped defaults (Windows 7 sizes).
+TitlebarMetrics metrics() {
+  TitlebarMetrics m;
+  m.height = 32;
+  m.button_w = 38;
+  m.button_h = 24;
+  return m;
+}
 
 std::vector<int> ids(const TitlebarLayout& l) {
   std::vector<int> out;

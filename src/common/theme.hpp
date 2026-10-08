@@ -50,11 +50,11 @@ enum class ButtonSide { Right, Left };
 enum class TitleAlign { Left, Center, Right };
 
 struct TitlebarConfig {
-  int height = 32;         // 20..64
-  int button_width = 38;   // 20..80
-  int button_height = 24;  // 14..height
+  int height = 30;         // 20..64 (Windows 7: 30)
+  int button_width = 28;   // 20..80 (Windows 7: 28; the close button is wider, kStripCloseScale)
+  int button_height = 20;  // 14..height (Windows 7: 20)
   ButtonSide buttons_side = ButtonSide::Right;
-  TitleAlign title_align = TitleAlign::Center;
+  TitleAlign title_align = TitleAlign::Left;
   bool show_pin = true;
   bool show_minimize = true;
   bool show_maximize = true;

@@ -4,6 +4,8 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
 
 ## Unreleased
 
+- Window titlebar defaults follow Windows 7 measurements (docs/WINDOWS7_FRAME_REFERENCE.md): height 30, buttons 28x20 with a 47 px close button, title left-aligned. Existing `theme.toml` values are kept.
+
 ### Added
 - Start-up prewarm: every program learns once which pages of which files it uses while starting, and the compositor asks the kernel to read
   those ahead before it starts the bar, the wallpaper and the lock applet (`~/.cache/fleetwm/prewarm/`, off with `FLEETWM_PREWARM=off`).

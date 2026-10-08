@@ -113,7 +113,7 @@ TEST_F(ThemeTest, SettingsArePerUser) {
   const ThemeConfig theirs = load_theme_config();
   EXPECT_EQ(theirs.gap_px, 8);
   EXPECT_EQ(theirs.window_layout, WindowLayout::Tiling);
-  EXPECT_EQ(theirs.titlebar.height, 32);
+  EXPECT_EQ(theirs.titlebar.height, 30);
 
   // Switching back finds the first user's file untouched.
   ::setenv("XDG_CONFIG_HOME", dir_.c_str(), 1);
@@ -125,11 +125,11 @@ TEST_F(ThemeTest, SettingsArePerUser) {
 
 TEST_F(ThemeTest, TitlebarDefaults) {
   const TitlebarConfig tb = load_theme_config().titlebar;
-  EXPECT_EQ(tb.height, 32);
-  EXPECT_EQ(tb.button_width, 38);
-  EXPECT_EQ(tb.button_height, 24);
+  EXPECT_EQ(tb.height, 30);
+  EXPECT_EQ(tb.button_width, 28);
+  EXPECT_EQ(tb.button_height, 20);
   EXPECT_EQ(tb.buttons_side, ButtonSide::Right);
-  EXPECT_EQ(tb.title_align, TitleAlign::Center);
+  EXPECT_EQ(tb.title_align, TitleAlign::Left);
   EXPECT_TRUE(tb.show_pin);
   EXPECT_TRUE(tb.show_minimize);
   EXPECT_TRUE(tb.show_maximize);
@@ -174,14 +174,14 @@ TEST_F(ThemeTest, TitlebarButtonHeightFollowsAShorterTitlebar) {
   write_config("theme.toml", "[titlebar]\nheight = 22\n");
   const TitlebarConfig tb = load_theme_config().titlebar;
   EXPECT_EQ(tb.height, 22);
-  EXPECT_EQ(tb.button_height, 22);  // default 24 clamped to the height
+  EXPECT_EQ(tb.button_height, 20);  // the default 20 already fits
 }
 
 TEST_F(ThemeTest, TitlebarUnknownStringsFallBackToDefaults) {
   write_config("theme.toml", "[titlebar]\nbuttons_side = \"top\"\ntitle_align = \"diagonal\"\n");
   const TitlebarConfig tb = load_theme_config().titlebar;
   EXPECT_EQ(tb.buttons_side, ButtonSide::Right);
-  EXPECT_EQ(tb.title_align, TitleAlign::Center);
+  EXPECT_EQ(tb.title_align, TitleAlign::Left);
 }
 
 TEST_F(ThemeTest, TitlebarSettingsDoNotDisturbTopLevelKeys) {
