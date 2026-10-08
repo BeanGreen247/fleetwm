@@ -40,6 +40,7 @@
 #include "glyph_cache.hpp"
 #include "speaker_glyph.hpp"
 #include "malloc_tuning.hpp"
+#include "prewarm.hpp"
 #include "theme.hpp"
 #include "backdrop.hpp"
 #include "keyboard_config.hpp"
@@ -1958,6 +1959,7 @@ struct Bar {
 int main(int argc, char** argv) {
   fleetwm::block_quit_signals();  // before any thread exists, see quit_signals.hpp
   fleetwm::tune_malloc_for_low_rss();
+  fleetwm::prewarm::start("fleetwm-bar");
   signal(SIGCHLD, SIG_IGN);  // spawned helpers are fire-and-forget
 
   Bar B;

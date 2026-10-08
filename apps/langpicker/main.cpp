@@ -20,6 +20,7 @@
 #include "fleetkit.hpp"
 #include "keyboard_config.hpp"
 #include "malloc_tuning.hpp"
+#include "prewarm.hpp"
 #include "paths_config.h"
 #include "theme.hpp"
 #include "ui.hpp"
@@ -210,6 +211,7 @@ struct Picker {
 int main() {
   fleetwm::block_quit_signals();  // before any thread exists, see quit_signals.hpp
   fleetwm::tune_malloc_for_low_rss();
+  fleetwm::prewarm::start("fleetwm-langpicker");
   signal(SIGCHLD, SIG_IGN);
 
   Picker P;

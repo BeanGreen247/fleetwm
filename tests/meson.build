@@ -17,6 +17,7 @@ fleetwm_test_sources = files(
   'test_ipc_client.cpp',
   'test_battery_source.cpp',
   'test_hw_stats.cpp',
+  'test_prewarm.cpp',
   'test_fleetkit.cpp',
   'test_output_config.cpp',
   'test_window_geometry.cpp',

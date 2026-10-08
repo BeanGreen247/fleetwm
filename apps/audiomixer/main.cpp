@@ -19,6 +19,7 @@
 #include "audio_mixer.hpp"
 #include "fleetkit.hpp"
 #include "malloc_tuning.hpp"
+#include "prewarm.hpp"
 #include "bar_config.hpp"
 #include "popup_namespaces.hpp"
 #include "popup_spot.hpp"
@@ -324,6 +325,7 @@ struct Mixer {
 int main() {
   fleetwm::block_quit_signals();  // before any thread exists, see quit_signals.hpp
   fleetwm::tune_malloc_for_low_rss();
+  fleetwm::prewarm::start("fleetwm-audiomixer");
 
   // A second launch (a second click on the volume readout) closes the open mixer instead of stacking another.
   const std::string pid_file = fleetwm::single_instance_pid_file("fleetwm-audiomixer");

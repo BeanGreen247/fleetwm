@@ -34,6 +34,7 @@
 #include "desktop_entry.hpp"
 #include "fleetkit.hpp"
 #include "malloc_tuning.hpp"
+#include "prewarm.hpp"
 #include "cursor_draw.hpp"
 #include "keyboard_tab.hpp"
 #include "mouse_config.hpp"
@@ -1289,6 +1290,7 @@ struct Settings {
 int main(int argc, char** argv) {
   fleetwm::block_quit_signals();  // before any thread exists, see quit_signals.hpp
   fleetwm::tune_malloc_for_low_rss();
+  fleetwm::prewarm::start("fleetwm-settings");
   signal(SIGCHLD, SIG_IGN);
 
   Settings S;

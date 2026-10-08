@@ -21,6 +21,7 @@
 #include "ipc_client.hpp"
 #include "fleetkit.hpp"
 #include "malloc_tuning.hpp"
+#include "prewarm.hpp"
 #include "power_actions.hpp"
 #include "power_icons.hpp"
 #include "theme.hpp"
@@ -150,6 +151,7 @@ struct PowerMenu {
 int main() {
   fleetwm::block_quit_signals();  // before any thread exists, see quit_signals.hpp
   fleetwm::tune_malloc_for_low_rss();
+  fleetwm::prewarm::start("fleetwm-powermenu");
 
   PowerMenu P;
   P.pal = load_palette(load_theme_config());

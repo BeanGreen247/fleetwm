@@ -230,3 +230,29 @@ Result: evicted minus warm = 3.5 ms (median; warm 99-100, evicted 94-97 on the s
 bar's files could remove from a start that takes tens of milliseconds, at the price of resident memory and a record/replay mechanism. Not implemented. It
 stays open for a machine where reads are slow (the Celeron laptop's disk, or a spinning disk): the same script gives the number there in one minute. The
 earlier measurement (2026-10-06) that app start-up costs 20-40 ms CPU and 11-14 MB points the same way: the cost is CPU and memory, not I/O.
+
+## 14. PGO prewarm built, and what it does (2026-10-08, same VM)
+
+Built: `src/common/prewarm.*`. A program learns, once per build, which pages of which files it mapped while starting (pagemap present bit) plus the first 256 KB of each of
+those files, writes that to `~/.cache/fleetwm/prewarm/<program>-<size>-<mtime>.manifest` four seconds after it started, and the compositor asks the kernel to read
+the manifests of the programs it is about to start (bar, wallpaper, lock applet) at the top of its `main()`, so the reads run while it sets up its screens (about 60-110 ms
+before the fork on the VM). `FLEETWM_PREWARM=off` disables it, `=record` relearns. Unit tests: manifest format, merging, the pagemap collector on a real mapping, the
+parent lookup. Measured with `perflog/2026-10-08/prewarm-ab.py fleetwm-bar 10` (exec to the first `wl_surface.commit`, medians against the warm start, ms) and
+`prewarm-e2e.py` (compositor exec to the bar's first buffer, strace):
+
+| start | ms vs warm |
+|---|---|
+| warm page cache | 0 |
+| the bar's 45 files evicted | +3.0 to +3.5 |
+| evicted, program replays its own manifest at the top of `main()` | +3.7 to +4.0 (worse: it starts too late and adds 12 MB of requests) |
+| evicted, parent asks for the manifest ranges 0 / 30 / 500 ms ahead | +3.1 / +3.2 / +2.9 to +3.6 (the manifest alone recovers nothing) |
+| evicted, parent asks for manifest ranges plus the first 256 KB of each file | +1.6 |
+| evicted, parent asks for every byte of the 18 MB (45 files) | +0.6 |
+| evicted, every byte read back in first | +0.1 |
+| end to end, compositor exec to the bar's first buffer, helpers' files evicted, prewarm off / on (8 pairs, strace) | 354 / 355 ms (spread about 25 ms) |
+
+What this says: on this VM (disk image in the host's page cache) the whole cold-start penalty of the bar is 3 ms, a perfect prewarm recovers at most 2.4 ms of it, and the
+end-to-end start of the session is dominated by other things (output set-up, 130 ms to the bar's exec, then the bar's own 200 ms) so the effect is below the noise. The
+design that works is "parent asks early, ask for the heads of files too"; the one that does not is "the started program asks for itself". Whether the numbers are
+different where a read costs milliseconds (the Celeron laptop's disk) is the open question: run `prewarm-ab.py` there. Cost of keeping it on: one short-lived thread in a
+first run, a few dozen syscalls in the compositor's start, and up to the manifest sizes in page cache (bar 12 MB, mostly libraries other programs share).

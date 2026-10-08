@@ -32,6 +32,7 @@
 #include "ipc_client.hpp"
 #include "popup_namespaces.hpp"
 #include "malloc_tuning.hpp"
+#include "prewarm.hpp"
 #include "mimeapps.hpp"
 #include "theme.hpp"
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
@@ -959,6 +960,7 @@ struct Launcher {
 int main(int argc, char** argv) {
   fleetwm::block_quit_signals();  // before any thread exists, see quit_signals.hpp
   fleetwm::tune_malloc_for_low_rss();
+  fleetwm::prewarm::start("fleetwm-launcher");
   signal(SIGCHLD, SIG_IGN);
 
   for (int i = 1; i + 1 < argc; ++i)
