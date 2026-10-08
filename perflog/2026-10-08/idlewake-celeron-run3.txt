@@ -1,0 +1,5 @@
+fleetwm                threads=1  wake/s=2.40  cpu_ms=33.29
+fleetwm-bar            threads=1  wake/s=3.58  cpu_ms=60.84
+fleetwm-wallpaper      threads=1  wake/s=0.00  cpu_ms=0.00
+fleetwm-launcher       threads=1  wake/s=0.00  cpu_ms=0.00
+fleetwm-lockapplet     threads=1  wake/s=0.00  cpu_ms=0.00

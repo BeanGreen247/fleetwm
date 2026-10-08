@@ -1,0 +1,11 @@
+files 40 total bytes 17914996
+manifest: ['fleetwm-bar-948624-1791470310.manifest'] ranges: 45 bytes: 13635584
+whole    +68 +68 +63 +62 +66 +65 +40 +67 +70 +63   median +65.6 ms vs warm
+manifest+heads +66 +64 +66 +69 +71 +67 +65 +40 +67 +63   median +65.9 ms vs warm
+full     +0 +1 -0 -1 +1 -1 -1 -0 +1 +0   median -0.0 ms vs warm
+warm     -4 +0 +1 -0 +0 +0 +0 -0 -0 -0   median +0.0 ms vs warm
+warm_idle -1 -1 +0 +1 -0 +1 -0 -3 -1 -3   median -0.6 ms vs warm
+evicted  +75 +112 +106 +112 +103 +100 +109 +113 +112 +78   median +107.5 ms vs warm
+replay   +111 +102 +111 +113 +113 +100 +105 +107 +109 +106   median +108.0 ms vs warm
+parent0  +70 +71 +40 +63 +66 +69 +63 +63 +66 +72   median +65.7 ms vs warm
+parent500 +69 +65 +66 +45 +68 +67 +68 +63 +68 +67   median +66.6 ms vs warm

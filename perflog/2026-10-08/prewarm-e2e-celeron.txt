@@ -1,0 +1,3 @@
+manifests: ['fleetwm-698984-1791470287.manifest', 'fleetwm-bar-948624-1791470310.manifest', 'fleetwm-wallpaper-291472-1791470324.manifest']
+off  bar exec at +353 ms (median), first buffer at +710 ms  [714 681 713 721 706 697 699 720]
+on   bar exec at +389 ms (median), first buffer at +741 ms  [782 734 764 740 730 756 740 743]
