@@ -35,7 +35,7 @@ The same list lives in the memory bank (`projects/fleetwm-state-2026-10-07-v0.4.
 11. Training: window and taskbar clicks assume 1280x720 with the taskbar at the bottom or top; the tray, NetworkManager, wpa_supplicant
     and the PAM locker are untrained.
 12. Older items still open from 2026-10-06 (state note `fleetwm-state-2026-10-06b`): direct scan-out check with `vkcube`; pressed
-    state of caption buttons not passed by the compositor; glass for Tiling borders, tooltips and Settings windows; real NM/wpa connects;
+    state of caption buttons (done 2026-10-08: drawn while held, acts on release over the same button, cancels when released elsewhere); glass for Tiling borders, tooltips and Settings windows; real NM/wpa connects;
     install.sh silent hang (hardened 2026-10-08, see below); PGO stage 2/3 prewarm; multi-monitor design (afternoon prep note in the bank).
 
 ## Left to find out

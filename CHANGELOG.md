@@ -5,6 +5,8 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
 ## Unreleased
 
 ### Added
+- Caption buttons show their pressed look while held and act when released over the same button (released elsewhere cancels),
+  like Windows.
 - Hover tooltips on the bar's metrics are richer and update every second while shown: CPU (each core's load and clock,
   scheduler latency, power draw from the battery or the CPU energy counter), memory (used, free, available, cached,
   buffers, swap), GPU (core usage, power, core and memory clock, VRAM; AMD through sysfs, NVIDIA through `nvidia-smi`,

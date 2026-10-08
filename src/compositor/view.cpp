@@ -318,13 +318,13 @@ void View::update_titlebar() {
   const int bar_w = content_w + 2 * thickness;  // as wide as the window, over the frame's sides
   if (bar_w == titlebar_w_ && height == titlebar_h_ && focused == rendered_.focused &&
       maximized == rendered_.maximized && pinned == rendered_.pinned &&
-      hover_button == rendered_.hover_button && rendered_.title == title &&
+      hover_button == rendered_.hover_button && pressed_button == rendered_.pressed_button && rendered_.title == title &&
       server->theme_config().glass == rendered_.glass) {
     return;
   }
   titlebar_w_ = bar_w;
   titlebar_h_ = height;
-  rendered_ = {title, focused, maximized, pinned, hover_button, server->theme_config().glass};
+  rendered_ = {title, focused, maximized, pinned, hover_button, pressed_button, server->theme_config().glass};
   if (wlr_buffer* buffer = render_titlebar(bar_w, rendered_, server->theme_config().titlebar)) {
     wlr_scene_buffer_set_buffer(titlebar, buffer);
     wlr_buffer_drop(buffer);
@@ -369,6 +369,14 @@ void View::update_frame(int content_h) {
       wlr_buffer_drop(buffer);
     }
   }
+}
+
+void View::set_pressed_button(int button) {
+  if (pressed_button == button) {
+    return;
+  }
+  pressed_button = button;
+  update_titlebar();
 }
 
 void View::set_hover_button(int button) {

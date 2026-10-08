@@ -572,6 +572,7 @@ class Server {
   View* grab_view_ = nullptr;
   View* hover_view_ = nullptr;
   View* last_click_view_ = nullptr;
+  View* pressed_view_ = nullptr;  // the window whose caption button is held down
   uint32_t last_click_time_ = 0;
   double grab_cursor_x_ = 0, grab_cursor_y_ = 0;
   wlr_box grab_box_{};  // container x,y + content w,h when the grab began

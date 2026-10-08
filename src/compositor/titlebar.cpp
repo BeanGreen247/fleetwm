@@ -73,6 +73,7 @@ wlr_buffer* render_titlebar(int width, const TitlebarState& st, const TitlebarCo
   paint.pinned = st.pinned;
   paint.glass = st.glass;
   paint.hover_id = st.hover_button;
+  paint.pressed_id = st.pressed_button;
   paint.layout = layout;
   paint.align = metrics.align;
   kit::draw_titlebar(cr, width, height, paint, g_palette);

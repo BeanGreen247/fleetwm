@@ -218,6 +218,7 @@ class View {
   wlr_scene_rect* grab_rect = nullptr;  // invisible ring around the window: resize handles
   int content_w = 0;                    // last known content width
   int hover_button = geom::kBtnNone;   // geom::TitleButton under the pointer, or -1
+  int pressed_button = geom::kBtnNone; // the caption button held down (acts when released over it), or -1
 
   // Desktop layout is active in theme.toml.
   bool desktop_mode() const;
@@ -228,6 +229,7 @@ class View {
   // Re-renders the titlebar if its inputs changed; hides it when not wanted.
   void update_titlebar();
   void set_hover_button(int button);
+  void set_pressed_button(int button);
   // Forces the next update_titlebar() to re-render (palette/theme changed).
   void invalidate_titlebar() {
     titlebar_w_ = -1;
