@@ -1,0 +1,40 @@
+lines=10740
+   1682 mmap
+    963 openat
+    933 close
+    894 read
+    633 fstat
+    419 futex
+    418 mprotect
+    346 newfstatat
+    273 access
+    238 pread64
+
+19860 17:18:02.779811 epoll_wait(11,  <unfinished ...>
+19860 17:18:02.780040 <... epoll_wait resumed>[{events=EPOLLIN, data=0x56280600bf80}], 32, -1) = 1
+19860 17:18:02.780918 poll([{fd=9, events=POLLIN}], 1, 25000 <unfinished ...>
+19860 17:18:02.782854 poll([{fd=9, events=POLLIN}], 1, 25000 <unfinished ...>
+19860 17:18:02.783657 poll([{fd=9, events=POLLIN}], 1, 25000 <unfinished ...>
+19860 17:18:02.784622 epoll_wait(11,  <unfinished ...>
+19862 17:18:02.789076 ppoll([{fd=15, events=POLLIN}], 1, NULL, NULL, 8 <unfinished ...>
+19860 17:18:02.792144 <... epoll_wait resumed> <unfinished ...>) = ?
+19862 17:18:02.792164 <... ppoll resumed> <unfinished ...>) = ?
+19773 17:18:02.794081 poll([{fd=3, events=POLLIN}, {fd=4, events=POLLIN}, {fd=7, events=POLLIN}, {fd=10, events=POLLIN}, {fd=11, events=POLLIN}, {fd=1
+19773 17:18:02.798183 poll([{fd=3, events=POLLIN}, {fd=4, events=POLLIN}, {fd=7, events=POLLIN}, {fd=10, events=POLLIN}, {fd=11, events=POLLIN}, {fd=1
+19773 17:18:02.798544 poll([{fd=3, events=POLLIN}, {fd=4, events=POLLIN}, {fd=7, events=POLLIN}, {fd=10, events=POLLIN}, {fd=11, events=POLLIN}, {fd=1
+
+37
+1000
+bus
+dbus-1
+dconf
+fleetwm.sock
+gnupg
+openssh_agent
+pipewire-0
+pipewire-0-manager
+pipewire-0-manager.lock
+pipewire-0.lock
+1
+20596 17:18:41.143480 execve("/home/dev/perf-test/gen/bin/fleetwm-bar", ["/home/dev/perf-test/gen/bin/flee"...
+fleetwm-bar: systray: could not own org.kde.StatusNotifierWatcher (already taken?) -- tray icons disabled this session

@@ -294,3 +294,11 @@ Builds: bgen/bnolto/bnative in `~/perf-test` on the laptop (master `ef297cc`); b
   Open: check the tooltip's text for the no-RAPL, no-discharge case in the bar itself.
 - Cached RAM right after boot on the laptop (`ram-report-laptop-boot.txt`): cache 334 MB = 8% of RAM, Shmem 39 MB, available 2979 MB of 3484; fleetwm Pss 71 MB (file 48, anon 22), bar 7.2 MB.
   The "after the cache has built up" run is still to do.
+
+**Rig correction for the idle table above (strace of the idle bar, 40 s, `bar-strace-celeron.txt`).** In the nested rig the runtime dir has no PipeWire socket, so the bar fell back to
+`sh -c wpctl` and forked a shell plus `wpctl` (20 threads wake) every 5.0 s (8 spawns in 40 s). With the live PipeWire socket linked into the rig (`ln -s /run/user/1000/pipewire-0`)
+there are no spawns, but the idle numbers do not get lower: 3 runs of `idlewake-pw.sh gen 60`: bar 3.15 / 4.57 / 4.48 wake/s with 3 threads, CPU 65-70 ms per 60 s (fallback: 1.8-4.3 wake/s,
+57-62 ms, one thread, but the forked children's wake-ups are not in the bar's count); compositor 2.65 / 2.35 / 2.55 wake/s, 36-41 ms. So on the Celeron the native PipeWire path costs the
+bar about +8 ms CPU per minute and extra wake-ups from graph events, against a fork+exec every 5 s in the fallback; neither is large (0.1% of a core). The VM's 1.18 wake/s bar
+figure was measured against a dummy sink, which is quiet. Open: attribute the remaining 3-4 wake/s per timer/fd (strace shows only part of them because completed calls are printed
+without "resumed"; use `perf trace` or `bpftrace` with `perf_event_paranoid` lowered, which needs the owner's OK).
