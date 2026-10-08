@@ -30,6 +30,7 @@
 #include "power_config.hpp"
 #include "settings_pages.hpp"
 #include "default_apps.hpp"
+#include "terminal_launch.hpp"
 #include "ipc_client.hpp"
 #include "desktop_entry.hpp"
 #include "fleetkit.hpp"
@@ -306,11 +307,10 @@ struct Settings {
       }
       if (!is_term) continue;
       const auto argv = exec_argv(entries[i]);
-      std::string cmdline;
-      for (const auto& a : argv) cmdline += (cmdline.empty() ? "" : " ") + a;
       const int index = static_cast<int>(terminal_apps.size());
-      if (default_apps.terminal_command == cmdline) exact_match = index;
-      if (!argv.empty() && default_apps.terminal_command == argv[0]) executable_match = index;
+      // Two entries can share one program ("Lestrix" and "Lestrix Lite" = lestrix --lite): the whole command line says which was picked.
+      if (exact_match < 0 && split_command(default_apps.terminal_command) == argv) exact_match = index;
+      if (executable_match < 0 && !argv.empty() && default_apps.terminal_command == argv[0]) executable_match = index;
       terminal_apps.push_back(static_cast<int>(i));
     }
     // An exact command-line match wins over a mere executable match.
@@ -1097,7 +1097,7 @@ struct Settings {
       if (ui.radio_group(names, &terminal_selected) && terminal_selected >= 0) {
         const auto argv = exec_argv(entries[static_cast<size_t>(terminal_apps[static_cast<size_t>(terminal_selected)])]);
         if (!argv.empty()) {
-          default_apps.terminal_command = argv[0];
+          default_apps.terminal_command = join_command(argv);  // with its arguments: "lestrix --lite" is not "lestrix"
           save_default_apps_config(default_apps);
         }
       }
