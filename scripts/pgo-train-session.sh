@@ -480,6 +480,8 @@ phase_taskbar_pointer() {
   for x in 240 420 240 420; do ptr click "$x" "$y"; sleep 0.08; done    # window buttons: activate, minimize, restore
   # tooltips need the pointer to rest for 400 ms: window button, CPU, layout, volume, network, power mode, battery, clock
   for x in 240 850 965 1008 1046 1083 1130 1240; do ptr abs "$x" "$y"; sleep 0.45; done
+  # the stats grid: the tooltips of CPU, RAM, GPU and disk redraw once a second while they are shown, so rest 1.5 s on each
+  for xy in "850 $((y - 11))" "915 $((y - 11))" "850 $((y + 11))" "915 $((y + 11))"; do ptr abs ${xy}; sleep 1.5; done
   ptr click 965 "$y"; sleep 0.1                                         # next keyboard layout
   ptr click 1046 "$y"; sleep 0.3                                        # network: opens Settings on its page
   ptr click 1130 "$y"; sleep 0.2                                        # battery: opens Settings on the Power page
