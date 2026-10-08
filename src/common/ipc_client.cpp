@@ -67,7 +67,7 @@ void IpcClient::poll_lines(const std::function<void(const std::string&)>& on_lin
     return;
   }
 
-  char buf[512];
+  char buf[4096];
   for (;;) {
     ssize_t n = ::recv(fd_, buf, sizeof(buf), 0);
     if (n > 0) {
