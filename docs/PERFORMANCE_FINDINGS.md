@@ -256,3 +256,26 @@ end-to-end start of the session is dominated by other things (output set-up, 130
 design that works is "parent asks early, ask for the heads of files too"; the one that does not is "the started program asks for itself". Whether the numbers are
 different where a read costs milliseconds (the Celeron laptop's disk) is the open question: run `prewarm-ab.py` there. Cost of keeping it on: one short-lived thread in a
 first run, a few dozen syscalls in the compositor's start, and up to the manifest sizes in page cache (bar 12 MB, mostly libraries other programs share).
+
+## 15. Celeron laptop repeats (2026-10-08, test laptop 192.168.0.182)
+
+Rig: Intel Celeron N4020, 2 cores, 3.4 GB, kernel 6.18, governor schedutil, `perf_event_paranoid` 2 (not touched), disk /dev/sda3. Build `~/perf-test/bgen` from master `ef297cc`
+(release, unity, LTO, no PGO; 737 unit tests pass in 1.3 s), nested headless compositor with pixman (`nest_headless.sh gen`, own runtime dir and HOME, the owner's live
+session left alone: only recorded PIDs were killed). Raw output: `perflog/2026-10-08/*-celeron*.txt`. The laptop was freshly booted (up 7 min) for the first runs.
+
+**Idle wake-ups (idlewake.sh gen 60, three runs, show_seconds false, one thread per process).** Compositor 2.57 / 2.40 / 2.40 per s (VM: 0.90); bar 1.82 / 4.30 / 3.58 per s
+(VM: 1.18); wallpaper and launcher 0.00; CPU over 60 s: compositor 33-35 ms, bar 57-62 ms. The compositor is steady at 2.4-2.6/s, the bar spread is large (1.8 to 4.3), so the
+bar figure is "2 to 4 per s" and not one number; the lock applet exited by itself in the first run (alive=n, no log text), not looked into. Cause of the higher count than on the
+VM is not found (no strace -c per thread yet); idle CPU is still about 0.1% of a core for the bar and 0.06% for the compositor.
+
+**Cold start of the bar (coldstart.py 10 reps, interleaved).** Evicting the bar's files from the page cache costs +108 ms to the first surface commit on this disk (VM: 3 ms).
+This is the real cold-start penalty a prewarm can attack.
+
+**Prewarm A/B (prewarm-ab.py fleetwm-bar 10).** Evicted +107.5 ms vs warm; "replay" (the started program asks for its own manifest) +108.0 ms, i.e. NO recovery; "parent0" and
+"parent500" (parent asks early) +65.7 / +66.6 ms (recovers 41 ms of 107); "whole" +65.6; "manifest+heads" +65.9; "full" (all of the files' pages) -0.0 ms (recovers all 107).
+So on a slow disk the design that works is the parent asking early, and reading the whole files would be better again than manifest ranges (13.6 MB of 17.9 MB).
+
+**Prewarm end to end (prewarm-e2e.py 8 reps, files evicted before each start, compositor exec to the bar's first buffer).** Prewarm off: bar exec +353 ms, first buffer
++710 ms (runs 681-721). Prewarm on: bar exec +389 ms, first buffer +741 ms (runs 730-782). Prewarm ON IS 31 ms (4%) SLOWER end to end on this laptop, outside the run spread of
+about 40 ms only by a small margin; the manifest reads delay the bar's exec by 36 ms and the bar's own part does not shrink enough to pay for it. Verdict so far: do not
+turn prewarm on by default for the Celeron until the manifest is replaced by the parent-asks-early/whole-file variant; the VM result (below noise) said the same.

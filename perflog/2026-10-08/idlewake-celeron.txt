@@ -1,0 +1,9 @@
+fleetwm                threads=1  wake/s=2.57  cpu_ms=34.38
+fleetwm-bar            threads=1  wake/s=1.82  cpu_ms=56.57
+fleetwm-wallpaper      threads=1  wake/s=0.00  cpu_ms=0.00
+fleetwm-launcher       threads=1  wake/s=0.00  cpu_ms=0.00
+fleetwm-lockapplet     threads=1  wake/s=0.00  cpu_ms=0.00
+fleetwm-bar alive=y log: fleetwm-bar: systray: could not own org.kde.StatusNotifierWatcher (already taken?) -- tray icons disabled this session 
+fleetwm-wallpaper alive=y log: 
+fleetwm-launcher alive=y log: 
+fleetwm-lockapplet alive=n log: 
