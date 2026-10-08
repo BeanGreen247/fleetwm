@@ -386,41 +386,9 @@ void View::update_frame(int content_h) {
 }
 
 void View::update_glass_backdrop() {
-  const bool own = xdg_toplevel && xdg_toplevel->app_id && std::strncmp(xdg_toplevel->app_id, "dev.fleetwm.", 12) == 0;
-  const wlr_box geo = is_window() ? content_geometry() : wlr_box{};
-  const bool want = own && server->theme_config().glass && desktop_mode() && output && geo.width > 0 && geo.height > 0 && !fullscreen;
-  if (!want) {
-    if (glass_bg_) wlr_scene_node_set_enabled(&glass_bg_->node, false);
-    return;
-  }
-  wlr_box ob{};
-  wlr_output_layout_get_box(server->output_layout(), output->wlr_output_ptr, &ob);
-  if (!glass_bg_) {
-    glass_bg_ = wlr_scene_buffer_create(container_tree, nullptr);
-    glass_bg_->node.data = &tag;
-    wlr_scene_node_lower_to_bottom(&glass_bg_->node);
-  }
-  if (glass_bg_w_ != ob.width || glass_bg_h_ != ob.height) {
-    wlr_buffer* picture = glass_backdrop_for(ob.width, ob.height);
-    if (!picture) {
-      wlr_scene_node_set_enabled(&glass_bg_->node, false);
-      return;
-    }
-    wlr_scene_buffer_set_buffer(glass_bg_, picture);
-    wlr_buffer_drop(picture);
-    glass_bg_w_ = ob.width;
-    glass_bg_h_ = ob.height;
-  }
-  wlr_scene_node_set_enabled(&glass_bg_->node, true);
-  wlr_scene_node_set_position(&glass_bg_->node, border_thickness(), top_border() + titlebar_height());
-  int lx = 0, ly = 0;
-  wlr_scene_node_coords(&glass_bg_->node, &lx, &ly);
-  const double w = geo.width, h = geo.height;
-  const double sx = std::clamp<double>(lx - ob.x, 0, std::max<double>(0, ob.width - w));
-  const double sy = std::clamp<double>(ly - ob.y, 0, std::max<double>(0, ob.height - h));
-  const wlr_fbox src{sx, sy, std::min<double>(w, ob.width), std::min<double>(h, ob.height)};
-  wlr_scene_buffer_set_source_box(glass_bg_, &src);
-  wlr_scene_buffer_set_dest_size(glass_bg_, geo.width, geo.height);
+  // Fleetwm's own windows used to get a frosted picture behind their (then see-through) body. Their body is opaque now, only the
+  // frame is glass, so the picture is never wanted; this just switches off one made earlier.
+  if (glass_bg_) wlr_scene_node_set_enabled(&glass_bg_->node, false);
 }
 
 bool View::round_corners() const {
