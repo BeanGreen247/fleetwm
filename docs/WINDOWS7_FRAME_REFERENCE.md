@@ -14,3 +14,9 @@ Not done: the application icon in front of the title; Aero glass/blur as the def
 - Frame: 8 px on the sides and bottom = 1 px outer light line + 6 px translucent fill + 1 px inner dark line (measured on the Fleetwm render: x 172..179 left, y 524..531 bottom). The titlebar is 30 px (rows 0..29), its last row is the inner dark line, the side strips start at row 30.
 - The outer line used to stop at the titlebar's and the bottom strip's ends; both now carry the same 1 px line (same colour and alpha as the side strips), so the outline is continuous down the left and right edges (checked at 14x and 18x zoom on a render over a vivid wallpaper, 1280x720 and 1024x768).
 - `glass_effects` defaults to true (was false); an existing `theme.toml` keeps its own value.
+
+## Third pass: real desktop screenshots (same day)
+Source: `File:Google Chrome Screenshot.png` (1066x725, unscaled Windows 7 Aero window incl. its glass frame, Wikimedia Commons, fetched through the Chrome debug browser and measured at 18x zoom). Findings that replaced the earlier guesses:
+- The window edge is TWO lines that follow the rounded corners: a dark 1 px outline on the outside and a light 1 px line just inside it (left edge: x=13 dark, x=14 light, x=15..19 glass fill, x=20 inner light line, content from x=21: 8 px in all).
+- The corner radius is about 6 px (the outline reaches the straight left edge about 6 px below the top and the top edge about 6 px to the right), on all four outer corners, for both lines. The previous version (radius 4, a straight light line clipped by the corner mask) looked like cut-off corners.
+- Fleetwm now draws the outline with `kit::draw_window_edge` (radius `kWindowCornerRadius` = 6): dark line (black 60% on glass), light line inside it (white 60% on glass), in the titlebar (top corners), the side strips (straight) and the bottom strip (bottom corners), so the two lines run unbroken round the window.

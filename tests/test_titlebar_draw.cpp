@@ -188,11 +188,6 @@ TEST(TitlebarDraw, CachedStripMatchesDirectDrawingInEveryState) {
             td::set_source(cr, line);
             cairo_rectangle(cr, 0, 31, W, 1);
             cairo_fill(cr);
-            // the window's outer edge on the bar's two ends and top (same colour as the side strips' outer line)
-            cairo_rectangle(cr, 0, 0, 1, 32);
-            cairo_rectangle(cr, W - 1, 0, 1, 32);
-            cairo_rectangle(cr, 0, 0, W, 1);
-            cairo_fill(cr);
             td::CaptionState st;
             st.colors = {bg, focused ? pal.fg_primary : pal.fg_secondary, pal.accent};  // what draw_titlebar derives from the palette
             st.focused = focused;
@@ -200,6 +195,7 @@ TEST(TitlebarDraw, CachedStripMatchesDirectDrawingInEveryState) {
             st.pinned = pinned;
             st.hover_id = hover;
             td::draw_caption_buttons(cr, strip, layout.count, st);
+            td::draw_window_edge(cr, 0, 0, W, 32 + 20, 0, 0, 0, 0, false, bg, pal);  // the window's outer edge, over the strip
             cairo_destroy(cr);
           }
           EXPECT_LE(td_max_diff(cached, direct), 2) << "hover " << hover << " focused " << focused << " max " << maximized << " pin " << pinned;
@@ -403,14 +399,15 @@ TEST(TitlebarDraw, FlatFrameIsOpaqueAndGlassFrameIsTranslucent) {
   }
 }
 
-TEST(TitlebarDraw, FrameStripsHaveALightOuterRimAndADarkerInnerEdgeOnGlass) {
+TEST(TitlebarDraw, FrameStripsHaveADarkOutlineALightLineInsideAndADarkerInnerEdgeOnGlass) {
   const int w = 6, h = 100;
   TdImage left(w, h);
   cairo_t* cr = cairo_create(left.surf);
   td::draw_frame_strip(cr, w, h, td::FrameEdge::Left, true, true, td::Palette{});
   cairo_destroy(cr);
   auto lum = [&](int x) { const uint32_t p = td_px(left, x, 50); return int((p >> 16) & 255) + int((p >> 8) & 255) + int(p & 255); };
-  EXPECT_GT(lum(0), lum(2)) << "outer rim lighter than the middle of the frame";
+  EXPECT_LT(lum(0), lum(2)) << "the outermost line is the dark outline";
+  EXPECT_GT(lum(1), lum(2)) << "the light line just inside it is lighter than the middle of the frame";
   EXPECT_LT(lum(w - 1), lum(2)) << "the edge against the window content is darker";
 }
 
