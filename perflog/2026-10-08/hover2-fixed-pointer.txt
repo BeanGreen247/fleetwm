@@ -1,0 +1,12 @@
+idle bar_ms=4 comp_ms=2
+sweep bar_ms=5 comp_ms=177
+rest_cpu bar_ms=4 comp_ms=11
+rest_blank bar_ms=3 comp_ms=1
+idle bar_ms=4 comp_ms=3
+sweep bar_ms=5 comp_ms=176
+rest_cpu bar_ms=5 comp_ms=11
+rest_blank bar_ms=3 comp_ms=2
+idle bar_ms=4 comp_ms=2
+sweep bar_ms=7 comp_ms=179
+rest_cpu bar_ms=4 comp_ms=14
+rest_blank bar_ms=5 comp_ms=3
