@@ -302,3 +302,9 @@ there are no spawns, but the idle numbers do not get lower: 3 runs of `idlewake-
 bar about +8 ms CPU per minute and extra wake-ups from graph events, against a fork+exec every 5 s in the fallback; neither is large (0.1% of a core). The VM's 1.18 wake/s bar
 figure was measured against a dummy sink, which is quiet. Open: attribute the remaining 3-4 wake/s per timer/fd (strace shows only part of them because completed calls are printed
 without "resumed"; use `perf trace` or `bpftrace` with `perf_event_paranoid` lowered, which needs the owner's OK).
+
+**Cached RAM on the laptop after the cache built up (`ram-report-laptop-warm.txt`, run with sudo, after three builds and the A/B runs, ~70 min after boot).** Cached 636 MB
+(boot: 334 MB), of which Shmem 43 MB (boot 39), mapped by programs 98 MB (boot 96), so the growth of about 300 MB is ordinary reclaimable page cache from file reads (compiler
+output and sources), 17% of RAM; available 2939 MB of 3484 (boot 2979); anonymous 72 MB, slab 103 MB (35.6 MB reclaimable), "used" 281 MB. Nothing is stuck; /tmp is tmpfs but empty
+(0.0 MB in the tmpfs list). `fincore` is not installed on the laptop so the per-file list is missing; `drop_caches` was NOT run (needs the owner's OK). Reading: the yellow in htop here
+is page cache from the work done, it shrinks under pressure; the owner's concern may apply to the machine where it was seen, so run the report there idle after boot and later.
