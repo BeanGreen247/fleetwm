@@ -319,12 +319,12 @@ void View::update_titlebar() {
   if (bar_w == titlebar_w_ && height == titlebar_h_ && focused == rendered_.focused &&
       maximized == rendered_.maximized && pinned == rendered_.pinned &&
       hover_button == rendered_.hover_button && pressed_button == rendered_.pressed_button && rendered_.title == title &&
-      server->theme_config().glass == rendered_.glass) {
+      server->theme_config().glass == rendered_.glass && round_corners() == rendered_.round_corners) {
     return;
   }
   titlebar_w_ = bar_w;
   titlebar_h_ = height;
-  rendered_ = {title, focused, maximized, pinned, hover_button, pressed_button, server->theme_config().glass};
+  rendered_ = {title, focused, maximized, pinned, hover_button, pressed_button, server->theme_config().glass, round_corners()};
   if (wlr_buffer* buffer = render_titlebar(bar_w, rendered_, server->theme_config().titlebar)) {
     wlr_scene_buffer_set_buffer(titlebar, buffer);
     wlr_buffer_drop(buffer);
@@ -356,7 +356,8 @@ void View::update_frame(int content_h) {
   wlr_scene_node_set_position(&frame_bottom_->node, 0, y + content_h);
 
   const bool glass = server->theme_config().glass;
-  const FrameKey key{content_w, content_h, th, bt, focused, glass};
+  const bool round = round_corners();
+  const FrameKey key{content_w, content_h, th, bt, focused, glass, round};
   if (key == frame_key_) {
     return;
   }
@@ -364,11 +365,15 @@ void View::update_frame(int content_h) {
   const int w = content_w + 2 * bt;
   const int dims[3][2] = {{bt, content_h}, {bt, content_h}, {w, bt}};
   for (int i = 0; i < 3; ++i) {
-    if (wlr_buffer* buffer = render_frame_strip(dims[i][0], dims[i][1], i, focused, glass)) {
+    if (wlr_buffer* buffer = render_frame_strip(dims[i][0], dims[i][1], i, focused, glass, round)) {
       wlr_scene_buffer_set_buffer(*slots[i], buffer);
       wlr_buffer_drop(buffer);
     }
   }
+}
+
+bool View::round_corners() const {
+  return server->theme_config().corner_style == CornerStyle::Rounded && !maximized && snap_zone == geom::SnapZone::None;
 }
 
 void View::set_pressed_button(int button) {

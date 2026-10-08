@@ -31,6 +31,7 @@ struct TitlebarState {
   int hover_button = geom::kBtnNone;
   int pressed_button = geom::kBtnNone;
   bool glass = false;  // theme.toml glass_effects: translucent, sheen, round glossy buttons
+  bool round_corners = false;  // rounded outer top corners (corner_style rounded, window not maximized or snapped)
 };
 
 // Returns a new buffer (caller owns one reference: wlr_buffer_drop() it once
@@ -38,6 +39,6 @@ struct TitlebarState {
 wlr_buffer* render_titlebar(int width, const TitlebarState& state, const TitlebarConfig& cfg);
 
 // One side of the window frame: edge 0 = left, 1 = right, 2 = bottom. Same ownership as above.
-wlr_buffer* render_frame_strip(int width, int height, int edge, bool focused, bool glass);
+wlr_buffer* render_frame_strip(int width, int height, int edge, bool focused, bool glass, bool round_bottom = false);
 
 }  // namespace fleetwm

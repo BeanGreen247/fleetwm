@@ -5,6 +5,9 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
 ## Unreleased
 
 ### Added
+- Window corners: the outer corners of a free-floating window are rounded (radius 7) when the theme's corner style is rounded; maximized
+  and snapped windows stay square.
+- Tooltips of the bar are frosted like the bar when Glass effects is on.
 - Caption buttons show their pressed look while held and act when released over the same button (released elsewhere cancels),
   like Windows.
 - Hover tooltips on the bar's metrics are richer and update every second while shown: CPU (each core's load and clock,

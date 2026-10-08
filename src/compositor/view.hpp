@@ -299,13 +299,15 @@ class View {
   wlr_scene_buffer* frame_bottom_ = nullptr;
   struct FrameKey {
     int w = -1, h = -1, th = 0, px = 0;
-    bool focused = false, glass = false;
+    bool focused = false, glass = false, round = false;
     bool operator==(const FrameKey& o) const {
-      return w == o.w && h == o.h && th == o.th && px == o.px && focused == o.focused && glass == o.glass;
+      return w == o.w && h == o.h && th == o.th && px == o.px && focused == o.focused && glass == o.glass && round == o.round;
     }
   };
   FrameKey frame_key_;
   void update_frame(int content_h);
+  // Rounded outer corners: the theme asks for them and the window is a free-floating one, not filling the screen.
+  bool round_corners() const;
  public:
   void focus();
   void close();
