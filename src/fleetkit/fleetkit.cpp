@@ -62,6 +62,7 @@ void rounded_rect(cairo_t* cr, double x, double y, double w, double h, double r)
 Palette load_palette(const ThemeConfig& theme) {
   Palette p;
   p.rounded = theme.corner_style == CornerStyle::Rounded;
+  p.window_alpha = theme.glass ? 0.70 : 1.0;
   std::ifstream in(themes_dir() + "/" + theme_css_filename(theme.theme));
   std::string line;
   while (std::getline(in, line)) {

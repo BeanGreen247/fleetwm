@@ -231,6 +231,10 @@ class View {
   void update_titlebar();
   void set_hover_button(int button);
   void set_pressed_button(int button);
+  // Glass effects: Fleetwm's own windows (Settings and the like) get the frosted wallpaper behind them, aimed at the part of the screen
+  // they cover; call after the window moved, resized or changed screen.
+  void update_glass_backdrop();
+  void glass_bg_reset() { glass_bg_w_ = glass_bg_h_ = 0; }  // the picture behind it was dropped (glass or wallpaper changed)
   // Forces the next update_titlebar() to re-render (palette/theme changed).
   void invalidate_titlebar() {
     titlebar_w_ = -1;
@@ -306,6 +310,8 @@ class View {
     }
   };
   FrameKey frame_key_;
+  wlr_scene_buffer* glass_bg_ = nullptr;
+  int glass_bg_w_ = 0, glass_bg_h_ = 0;  // output size of the picture it shows, to set it only when it changes
   void update_frame(int content_h);
   // Rounded outer corners: the theme asks for them and the window is a free-floating one, not filling the screen.
   bool round_corners() const;

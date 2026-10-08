@@ -232,6 +232,7 @@ void Server::transfer_view_to_output(View* view, Output* to, bool keep_position)
   to->relayout();
   to->fit_floating_views();
   view->resize_border();
+  view->update_glass_backdrop();
   schedule_windows_broadcast();
 }
 

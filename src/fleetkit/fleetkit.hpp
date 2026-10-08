@@ -45,6 +45,9 @@ struct Palette {
   Color fg_primary{0.804, 0.839, 0.957}, fg_secondary{0.651, 0.678, 0.784};
   Color accent{0.537, 0.706, 0.980};
   bool rounded = true;  // theme.toml corner_style
+  // How opaque the background of a Fleetwm window (Ui::begin) is: 1 normally, less with Glass effects, where the compositor puts
+  // the frosted wallpaper behind the window (compositor/glass_backdrop.hpp). Programs that paint their own background ignore it.
+  double window_alpha = 1.0;
 };
 Palette load_palette(const ThemeConfig& theme);
 
