@@ -308,3 +308,18 @@ without "resumed"; use `perf trace` or `bpftrace` with `perf_event_paranoid` low
 output and sources), 17% of RAM; available 2939 MB of 3484 (boot 2979); anonymous 72 MB, slab 103 MB (35.6 MB reclaimable), "used" 281 MB. Nothing is stuck; /tmp is tmpfs but empty
 (0.0 MB in the tmpfs list). `fincore` is not installed on the laptop so the per-file list is missing; `drop_caches` was NOT run (needs the owner's OK). Reading: the yellow in htop here
 is page cache from the work done, it shrinks under pressure; the owner's concern may apply to the machine where it was seen, so run the report there idle after boot and later.
+
+## 16. Prewarm made asynchronous, and why it still gains nothing end to end (Celeron laptop, 2026-10-08)
+
+Change: the compositor now asks for its helpers' files from one detached thread at idle I/O priority (`prewarm_programs_async`, `src/common/prewarm.*`, `src/compositor/main.cpp`)
+instead of three synchronous calls on its main thread. Build `new` against `gen` (section 15's build), same rig, `prewarm-e2e-v2.py 8 VARIANT`, files evicted before each start, 2 interleaved
+rounds each (raw: `perflog/2026-10-08/prewarm-e2e-async-celeron.txt`). Compositor exec to the bar's first buffer, median ms, off / on:
+- `gen` (synchronous): 700 / 744 and 712 / 748, bar exec at +343..350 off, +393..395 on  -> prewarm costs +36..44 ms.
+- `new` (async, idle I/O class): 707 / 709 and 709 / 714, bar exec +348..354 off, +352..362 on -> cost +2..5 ms, i.e. noise.
+- `new2` (async, default I/O class, a throwaway build): 703 / 705 and 707 / 706 -> same as idle; idle class kept.
+- Warm cache (no eviction) for scale, `NOEVICT=1`: bar exec +199 ms, first buffer 543 ms (off) / 554 ms (on).
+So the asynchronous version removes the 36-44 ms regression but recovers nothing of the ~160 ms that eviction costs (543 warm vs 705 evicted): the bar's exec itself moves from +199 to
++350 ms, i.e. the cold cost is in the COMPOSITOR's own start-up files, which nobody prewarms (it is the first program to run; its manifest only helps if its parent asks). The bar's
+share of the cold cost end to end is about 13 ms (357 evicted vs 344 warm, exec to buffer). Where the gain is: whoever starts the compositor (the greeter, `fleetwm-greet`) reading
+`/usr/local/bin/fleetwm`'s manifest while the user types the password. NOT built: the greeter runs as root and would have to open files named by a user-writable manifest; that needs
+a privilege drop in a forked child before reading (the auto-mode classifier refused an implementation as an attack surface, 2026-10-08); the owner decides whether to allow it.

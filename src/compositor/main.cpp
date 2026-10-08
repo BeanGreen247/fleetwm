@@ -3,6 +3,8 @@
 
 #include <cstring>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include <pthread.h>
 #include <sys/resource.h>
@@ -30,8 +32,10 @@ int main(int argc, char** argv) {
   // run while the compositor sets up its screens and are done by the time it forks them.
   {
     const char* bindir = std::getenv("FLEETWM_PREWARM_BINDIR");  // a test build run from its own directory
+    std::vector<std::pair<std::string, std::string>> programs;
     for (const char* helper : {"fleetwm-bar", "fleetwm-wallpaper", "fleetwm-lockapplet"})
-      fleetwm::prewarm::prewarm_program(std::string(bindir && *bindir ? bindir : FLEETWM_BINDIR) + "/" + helper, helper);
+      programs.emplace_back(std::string(bindir && *bindir ? bindir : FLEETWM_BINDIR) + "/" + helper, helper);
+    fleetwm::prewarm::prewarm_programs_async(std::move(programs));
   }
 
   // Run ahead of ordinary processes so a busy build or browser never delays a frame or a
