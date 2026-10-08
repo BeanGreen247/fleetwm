@@ -5,6 +5,9 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
 ## Unreleased
 
 ### Added
+- Start-up prewarm: every program learns once which pages of which files it uses while starting, and the compositor asks the kernel to read
+  those ahead before it starts the bar, the wallpaper and the lock applet (`~/.cache/fleetwm/prewarm/`, off with `FLEETWM_PREWARM=off`).
+  On the dev VM the whole cold-start penalty of the bar is 3 ms, so the gain is small there; it is meant for slow disks.
 - Glass effects now frost Settings, Shortcuts and the language picker too: the compositor shows the blurred wallpaper behind the window
   (it follows the window when it moves, resizes or changes screen) and the window paints a see-through background. The Tiling borders
   are see-through with Glass effects on.

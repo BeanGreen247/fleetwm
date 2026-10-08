@@ -2,10 +2,13 @@
 #include <cstdlib>
 
 #include <cstring>
+#include <string>
 
 #include <pthread.h>
 #include <sys/resource.h>
 
+#include "paths_config.h"
+#include "prewarm.hpp"
 #include "server.hpp"
 #include "version.hpp"
 
@@ -21,6 +24,15 @@ int main(int argc, char** argv) {
   // jemalloc would only add ~10 MB of resident arenas per small process.
   unsetenv("LD_PRELOAD");
   unsetenv("MALLOC_CONF");
+
+  fleetwm::prewarm::start("fleetwm");  // learns this program's own manifest on its first run (see prewarm.hpp)
+  // The programs the session starts a moment from now (the bar, the wallpaper, the lock applet): ask for their files now, so the reads
+  // run while the compositor sets up its screens and are done by the time it forks them.
+  {
+    const char* bindir = std::getenv("FLEETWM_PREWARM_BINDIR");  // a test build run from its own directory
+    for (const char* helper : {"fleetwm-bar", "fleetwm-wallpaper", "fleetwm-lockapplet"})
+      fleetwm::prewarm::prewarm_program(std::string(bindir && *bindir ? bindir : FLEETWM_BINDIR) + "/" + helper, helper);
+  }
 
   // Run ahead of ordinary processes so a busy build or browser never delays a frame or a
   // key press. Needs the nice limit installed by install.sh (limits.d/fleetwm.conf); without

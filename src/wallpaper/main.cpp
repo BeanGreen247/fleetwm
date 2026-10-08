@@ -23,6 +23,7 @@
 #include "quit_signals.hpp"
 #include "image.hpp"
 #include "malloc_tuning.hpp"
+#include "prewarm.hpp"
 #include "theme.hpp"
 #include "wallpaper_config.hpp"
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
@@ -244,6 +245,7 @@ int open_config_watch() {
 int main(int argc, char** argv) {
   fleetwm::block_quit_signals();  // before any thread exists, see quit_signals.hpp
   fleetwm::tune_malloc_for_low_rss();
+  fleetwm::prewarm::start("fleetwm-wallpaper");
 
   reload_config();
 

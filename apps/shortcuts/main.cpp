@@ -20,6 +20,7 @@
 #include "fleetkit.hpp"
 #include "keybinds_config.hpp"
 #include "malloc_tuning.hpp"
+#include "prewarm.hpp"
 #include "shortcut_list.hpp"
 #include "theme.hpp"
 #include "ui.hpp"
@@ -119,6 +120,7 @@ struct Shortcuts {
 int main() {
   fleetwm::block_quit_signals();  // before any thread exists, see quit_signals.hpp
   fleetwm::tune_malloc_for_low_rss();
+  fleetwm::prewarm::start("fleetwm-shortcuts");
   signal(SIGCHLD, SIG_IGN);
   if (toggle_existing()) return 0;
   { std::ofstream(pid_path()) << getpid() << "\n"; }
