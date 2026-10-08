@@ -20,6 +20,10 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
 - Settings -> Theme: "Window frame (px)" (0-16).
 - The volume icon shows a muted sink (red slash, "(muted)" in the tooltip).
 
+### Changed
+- Thicker window borders by default: the Desktop frame 6 -> 8 px, the Tiling focus border 2 -> 4 px and the pinned border 3 -> 4 px.
+  A theme.toml that already holds a value keeps it: change them in Settings -> Theme (Window frame, Focus border, Pinned border).
+
 ### Fixed
 - install.sh: apt can no longer wait unseen. needrestart is told to ask and restart nothing, the dpkg lock is waited for, mirrors time
   out and retry, and a step with no new output for two minutes prints what it may be waiting on.

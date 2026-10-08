@@ -58,7 +58,7 @@ struct TitlebarConfig {
   bool show_pin = true;
   bool show_minimize = true;
   bool show_maximize = true;
-  int frame_px = 6;        // 0..16, the Windows 7 style frame around a window with a titlebar (0 = none)
+  int frame_px = 8;        // 0..16, the Windows 7 style frame around a window with a titlebar (0 = none)
 };
 
 std::string button_side_to_string(ButtonSide side);
@@ -81,7 +81,7 @@ struct ThemeConfig {
   // Focus-indicator border thickness in px, drawn by the compositor
   // around whichever window currently has keyboard focus. 2px default
   // matches the previous hardcoded constant it replaces.
-  int focus_border_thickness_px = 2;
+  int focus_border_thickness_px = 4;
   // Color of that same focus-only border, independent of `accent` --
   // accent.hex drives UI chrome everywhere (bar, launcher, settings,
   // selection highlights), and reusing it for the focus border too made
@@ -101,7 +101,7 @@ struct ThemeConfig {
   // pinned, same as before.
   std::string pinned_border_color = "#3399ff";           // blue
   std::string pinned_focused_border_color = "#99e666";   // green
-  int pinned_border_thickness_px = 3;
+  int pinned_border_thickness_px = 4;
   // Gap in px between tiled windows (master/stack split, and between
   // stacked windows), applied by Output::relayout(). Does not add extra
   // spacing against the top bar or screen edges -- that's governed
