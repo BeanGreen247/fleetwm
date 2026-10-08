@@ -35,7 +35,7 @@ The same list lives in the memory bank (`projects/fleetwm-state-2026-10-07-v0.4.
 11. Training: window and taskbar clicks assume 1280x720 with the taskbar at the bottom or top; the tray, NetworkManager, wpa_supplicant
     and the PAM locker are untrained.
 12. Older items still open from 2026-10-06 (state note `fleetwm-state-2026-10-06b`): direct scan-out check with `vkcube`; pressed
-    state of caption buttons (done 2026-10-08: drawn while held, acts on release over the same button, cancels when released elsewhere); glass for tooltips (done 2026-10-08); still open: Tiling borders and Settings windows (a client window cannot blur what is behind it without compositor support, a design decision); real NM/wpa connects;
+    state of caption buttons (done 2026-10-08: drawn while held, acts on release over the same button, cancels when released elsewhere); glass for tooltips (done 2026-10-08); still open: Tiling borders and Settings windows (a client window cannot blur what is behind it without compositor support, a design decision); real NM/wpa connects (the wpa back end is now trained against `scripts/pgo-fake-wpa.py`, a pretend supplicant: page open + scan polling, checked at 1024x768; NM still untrained, the VM has no NetworkManager);
     install.sh silent hang (hardened 2026-10-08, see below); PGO stage 2/3 prewarm; multi-monitor design (written 2026-10-08: `docs/MULTI_MONITOR.md`, with the measured current behaviour; nothing built).
 
 ## Left to find out
