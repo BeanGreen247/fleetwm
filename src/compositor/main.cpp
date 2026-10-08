@@ -15,10 +15,7 @@
 #include "version.hpp"
 
 int main(int argc, char** argv) {
-  if (argc > 1 && (std::strcmp(argv[1], "--version") == 0 || std::strcmp(argv[1], "-V") == 0)) {
-    std::printf("fleetwm %s\n", fleetwm::version_string().c_str());
-    return 0;
-  }
+  if (fleetwm::handle_info_flags(argc, argv, "fleetwm", "")) return 0;
   // The session environment preloads jemalloc for this process, where it pays
   // off (the compositor churns large buffers). The preload is already in effect
   // by now; dropping it from the environment keeps every child -- the bar,

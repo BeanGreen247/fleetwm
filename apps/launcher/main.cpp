@@ -36,6 +36,7 @@
 #include "mimeapps.hpp"
 #include "theme.hpp"
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
+#include "version.hpp"
 
 namespace {
 
@@ -959,6 +960,7 @@ struct Launcher {
 
 int main(int argc, char** argv) {
   fleetwm::block_quit_signals();  // before any thread exists, see quit_signals.hpp
+  if (fleetwm::handle_info_flags(argc, argv, "fleetwm-launcher", "[--start-menu]")) return 0;
   fleetwm::tune_malloc_for_low_rss();
   fleetwm::prewarm::start("fleetwm-launcher");
   signal(SIGCHLD, SIG_IGN);

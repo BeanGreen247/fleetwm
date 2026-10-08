@@ -26,6 +26,7 @@
 #include "power_icons.hpp"
 #include "theme.hpp"
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
+#include "version.hpp"
 
 extern char** environ;
 
@@ -148,8 +149,9 @@ struct PowerMenu {
 
 }  // namespace
 
-int main() {
+int main(int argc, char** argv) {
   fleetwm::block_quit_signals();  // before any thread exists, see quit_signals.hpp
+  if (fleetwm::handle_info_flags(argc, argv, "fleetwm-powermenu", "")) return 0;
   fleetwm::tune_malloc_for_low_rss();
   fleetwm::prewarm::start("fleetwm-powermenu");
 
