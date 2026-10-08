@@ -6,6 +6,7 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
 
 - Window titlebar defaults follow Windows 7 measurements (docs/WINDOWS7_FRAME_REFERENCE.md): height 30, buttons 28x20 with a 47 px close button, title left-aligned. Existing `theme.toml` values are kept.
 - Glass (translucent frame, taskbar, menus) is on by default; window corner radius 4 like Windows 7; the window's outer line is continuous from the titlebar down the side strips and round the bottom corners.
+- Window edge redrawn from real Windows 7 screenshots: a dark outline with a light line inside it, both following corners of radius 6 (was 4, with a clipped straight line that looked cut off).
 
 ### Added
 - Start-up prewarm: every program learns once which pages of which files it uses while starting, and the compositor asks the kernel to read

@@ -14,6 +14,21 @@ Color tb_mix(const Color& a, const Color& b, double t) {
   return {a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t, 1.0};
 }
 
+// A rectangle with its own radius on each corner (0 = square), as a closed sub-path.
+void rounded_rect_path(cairo_t* cr, double x0, double y0, double x1, double y1, double tl, double tr, double br, double bl) {
+  cairo_new_sub_path(cr);
+  cairo_move_to(cr, x0 + tl, y0);
+  cairo_line_to(cr, x1 - tr, y0);
+  if (tr > 0) cairo_arc(cr, x1 - tr, y0 + tr, tr, -M_PI / 2, 0);
+  cairo_line_to(cr, x1, y1 - br);
+  if (br > 0) cairo_arc(cr, x1 - br, y1 - br, br, 0, M_PI / 2);
+  cairo_line_to(cr, x0 + bl, y1);
+  if (bl > 0) cairo_arc(cr, x0 + bl, y1 - bl, bl, M_PI / 2, M_PI);
+  cairo_line_to(cr, x0, y0 + tl);
+  if (tl > 0) cairo_arc(cr, x0 + tl, y0 + tl, tl, M_PI, 3 * M_PI / 2);
+  cairo_close_path(cr);
+}
+
 // The glass background, drawn from scratch: the theme colour see-through, a sheen fading down from the top
 // and one soft diagonal band; a light line along the top edge and a darker one under the bar.
 void draw_glass_background(cairo_t* cr, int width, int height, bool focused, const Color& bg) {
@@ -41,9 +56,6 @@ void draw_glass_background(cairo_t* cr, int width, int height, bool focused, con
   cairo_close_path(cr);
   cairo_fill(cr);
   cairo_pattern_destroy(band);
-  cairo_set_source_rgba(cr, 1, 1, 1, 0.30);
-  cairo_rectangle(cr, 0, 0, width, 1);
-  cairo_fill(cr);
   cairo_set_source_rgba(cr, 0, 0, 0, 0.30);
   cairo_rectangle(cr, 0, height - 1, width, 1);
   cairo_fill(cr);
@@ -246,6 +258,31 @@ void titlebar_strip_cache_clear() {
   g_strips.clear();
 }
 
+void draw_window_edge(cairo_t* cr, double x0, double y0, double x1, double y1, double r_tl, double r_tr, double r_br, double r_bl,
+                      bool glass, const Color& bg, const Palette& pal) {
+  // Windows 7 Aero (measured on real screenshots, docs/WINDOWS7_FRAME_REFERENCE.md): a dark 1 px line on the outside and a light 1 px line
+  // just inside it, both following the rounded corners.
+  const Color dark = glass ? Color{0, 0, 0, 0.60} : tb_mix(bg, Color{0, 0, 0, 1}, 0.55);
+  const Color light = glass ? Color{1, 1, 1, 0.60} : tb_mix(bg, pal.fg_primary, 0.30);
+  auto shape = [&](double k) {
+    rounded_rect_path(cr, x0 + k, y0 + k, x1 - k, y1 - k, std::max(0.0, r_tl - k), std::max(0.0, r_tr - k), std::max(0.0, r_br - k),
+                      std::max(0.0, r_bl - k));
+  };
+  cairo_save(cr);
+  cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
+  cairo_set_fill_rule(cr, CAIRO_FILL_RULE_EVEN_ODD);
+  cairo_new_path(cr);
+  shape(0);
+  shape(1);
+  cairo_set_source_rgba(cr, dark.r, dark.g, dark.b, glass ? dark.a : 1.0);
+  cairo_fill(cr);
+  shape(1);
+  shape(2);
+  cairo_set_source_rgba(cr, light.r, light.g, light.b, glass ? light.a : 1.0);
+  cairo_fill(cr);
+  cairo_restore(cr);
+}
+
 void draw_frame_strip(cairo_t* cr, int width, int height, FrameEdge edge, bool focused, bool glass, const Palette& pal,
                       bool round_bottom) {
   const Color bg = focused ? tb_mix(pal.bg_secondary, pal.accent, 0.12) : pal.bg_secondary;
@@ -256,7 +293,6 @@ void draw_frame_strip(cairo_t* cr, int width, int height, FrameEdge edge, bool f
   cairo_paint(cr);
   cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
   // Line against the window content ("inner") and along the outside of the window ("outer").
-  const Color rim = tb_mix(bg, pal.fg_primary, 0.12);
   auto line = [&](double r, double g, double b, double a, bool outer) {
     cairo_set_source_rgba(cr, r, g, b, a);
     if (left) cairo_rectangle(cr, outer ? 0 : width - 1, 0, 1, height);
@@ -264,19 +300,14 @@ void draw_frame_strip(cairo_t* cr, int width, int height, FrameEdge edge, bool f
     else cairo_rectangle(cr, 0, outer ? height - 1 : 0, width, 1);
     cairo_fill(cr);
   };
-  if (glass) {
-    line(1, 1, 1, 0.30, true);
-    line(0, 0, 0, 0.30, false);
-  } else {
-    line(rim.r, rim.g, rim.b, 1.0, true);
-  }
-  if (edge == FrameEdge::Bottom) {
-    // The bottom strip spans the full width, so its two ends carry the outer line of the side strips and no break shows at the corners.
-    if (glass) cairo_set_source_rgba(cr, 1, 1, 1, 0.30);
-    else cairo_set_source_rgba(cr, rim.r, rim.g, rim.b, 1.0);
-    cairo_rectangle(cr, 0, 0, 1, height);
-    cairo_rectangle(cr, width - 1, 0, 1, height);
-    cairo_fill(cr);
+  if (glass) line(0, 0, 0, 0.30, false);  // against the content
+  // The outer edge: dark line with a light one inside it, round the bottom corners on the bottom strip. The window's shape is
+  // drawn larger than the strip so only the part that lies in this strip shows.
+  {
+    const double r = round_bottom && edge == FrameEdge::Bottom ? kWindowCornerRadius : 0.0;
+    if (edge == FrameEdge::Left) draw_window_edge(cr, 0, -20, width + 100, height + 20, 0, 0, 0, 0, glass, bg, pal);
+    else if (edge == FrameEdge::Right) draw_window_edge(cr, -100, -20, width, height + 20, 0, 0, 0, 0, glass, bg, pal);
+    else draw_window_edge(cr, 0, -20, width, height, 0, 0, r, r, glass, bg, pal);
   }
   if (round_bottom && edge == FrameEdge::Bottom && width > 4) {
     // Keep only what lies inside a rectangle whose two bottom corners are rounded. The strip is only a few pixels
@@ -301,6 +332,7 @@ void draw_frame_strip(cairo_t* cr, int width, int height, FrameEdge edge, bool f
 void draw_titlebar(cairo_t* cr, int width, int height, const TitlebarPaint& p, const Palette& pal) {
   const Color bg = p.focused ? tb_mix(pal.bg_secondary, pal.accent, 0.12) : pal.bg_secondary;
   const Color fg = p.focused ? pal.fg_primary : pal.fg_secondary;
+  const bool glass_look = p.glass;  // read before the buttons, which are drawn the same either way
 
   if (p.glass) {
     paint_titlebar_glass_background(cr, width, height, p.focused, bg);
@@ -311,22 +343,6 @@ void draw_titlebar(cairo_t* cr, int width, int height, const TitlebarPaint& p, c
     set_source(cr, tb_mix(bg, pal.fg_primary, 0.12));
     cairo_rectangle(cr, 0, height - 1, width, 1);
     cairo_fill(cr);
-  }
-
-  // The window's outer edge continues from the side strips (draw_frame_strip) up the titlebar's two ends, same colour and weight, so the
-  // outline has no break where the bar meets the frame. The top edge carries the same line in the flat look (the glass background has its own).
-  {
-    cairo_save(cr);
-    if (p.glass) cairo_set_source_rgba(cr, 1, 1, 1, 0.30);
-    else {
-      const Color rim = tb_mix(bg, pal.fg_primary, 0.12);
-      cairo_set_source_rgba(cr, rim.r, rim.g, rim.b, 1.0);
-    }
-    cairo_rectangle(cr, 0, 0, 1, height);
-    cairo_rectangle(cr, width - 1, 0, 1, height);
-    if (!p.glass) cairo_rectangle(cr, 0, 0, width, 1);
-    cairo_fill(cr);
-    cairo_restore(cr);
   }
 
   // Title, ellipsized to the span the buttons leave free.
@@ -363,6 +379,11 @@ void draw_titlebar(cairo_t* cr, int width, int height, const TitlebarPaint& p, c
   caption.hover_id = p.hover_id;
   caption.pressed_id = p.pressed_id;
   if (p.layout.count > 0) draw_strip_cached(cr, strip, p.layout.count, caption, height, width);
+
+  {
+    const double r = p.round_top && width > 2 * kWindowCornerRadius ? std::min<double>(kWindowCornerRadius, height) : 0.0;
+    draw_window_edge(cr, 0, 0, width, height + 20, r, r, 0, 0, glass_look, bg, pal);
+  }
 
   if (p.round_top && width > 2 * kWindowCornerRadius) {
     const double r = std::min<double>(kWindowCornerRadius, height);

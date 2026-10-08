@@ -42,7 +42,13 @@ void draw_frame_strip(cairo_t* cr, int width, int height, FrameEdge edge, bool f
                       bool round_bottom = false);
 
 // The radius of the rounded outer corners of a window, in pixels.
-inline constexpr double kWindowCornerRadius = 4.0;
+inline constexpr double kWindowCornerRadius = 6.0;
+
+// The window's outer edge as Windows 7 draws it: a dark 1 px line and, just inside it, a light 1 px line, both following the rounded
+// corners. (x0,y0)-(x1,y1) is the whole window's outer rectangle in `cr`'s coordinates (it may reach beyond the surface when only one
+// part of the frame is being drawn); r_* are the radii of its four corners, 0 for a square one. Painted over what is there.
+void draw_window_edge(cairo_t* cr, double x0, double y0, double x1, double y1, double r_tl, double r_tr, double r_br, double r_bl,
+                      bool glass, const Color& bg, const Palette& palette);
 
 // How many glass backgrounds are cached and how many bytes they hold (tests, diagnostics).
 struct TitlebarCacheStats {
