@@ -343,3 +343,16 @@ so the busy percentage is the meaningful GPU number, and the dev PC (UHD 620, 4 
 window. A scrolling `yes` really changes every pixel, so the damage is honest and the compositor cannot upload less. The measured 57 ms of memcpy per second for 110 MB/s is about 2 GB/s,
 which is the order of this Celeron's single-thread write bandwidth into GPU-visible memory (section 3 style limit), so by the decision rule (gap under 2-4x of the hardware estimate) there is
 nothing to chase in Fleetwm's code. The remaining levers are outside it: clients that submit dmabufs (zero upload), or direct scan-out of a fullscreen client; neither was changed.
+
+## 18. Where the bar's idle wake-ups come from, and what seconds cost (Celeron laptop, 2026-10-08)
+
+Steady-state strace of the idle bar with the live PipeWire socket (25 s window of `bar-idle-pw.st`, show_seconds false; `bar-strace-celeron.txt`): the main thread wakes from `poll` at 1 s,
+2 s and 5 s gaps (clock/stats/network timers, 1.36 poll returns/s), opens 2.4 files/s (every 2 s `/proc/meminfo` and the i915 `rc6_residency_ms`; every 5 s `/proc/net/wireless` and
+the four files of the Wi-Fi interface plus a `/sys/class/net` directory scan; every 15 s the battery and AC files), 5 reads/s; the PipeWire thread wakes every 5.0 s (0.44 epoll returns/s,
+0.8 recvmsg/s). Nothing polls by stat or sleeps; every wake-up is a timer or a PipeWire event, as in section 11. The listed timers explain about 2-3 wake-ups/s; the rest of the 3-4/s
+counted by the scheduler is the stats tick's child work and strace noise, not attributed further without `perf trace`.
+The default config on this laptop has `show_seconds = true`; measured with it (2 runs, `idlewake-pw.sh gen 60`, PipeWire linked, `idlewake-celeron-pw-secs.txt`) against false (3 runs):
+compositor 7.37-7.43 wake/s and 84-89 ms per 60 s (false: 2.35-2.65/s, 36-41 ms); bar 7.22-7.70 wake/s and 132-138 ms (false: 3.15-4.57/s, 65-70 ms). Showing seconds costs
+about +50 ms (compositor) and +65 ms (bar) CPU per minute, together 0.2% of one core, and 5 extra wake-ups/s in each process: a feature cost the owner can switch off in Settings; no code change.
+Decision: the remaining timer alignment (clock/stats/network/battery to one tick) would save at most the 1-2 wake-ups/s of the non-clock timers, about 0.05% of a core; below the
+2-4x rule and the earlier rejection (section 9); not done.

@@ -38,3 +38,20 @@ pipewire-0.lock
 1
 20596 17:18:41.143480 execve("/home/dev/perf-test/gen/bin/fleetwm-bar", ["/home/dev/perf-test/gen/bin/flee"...
 fleetwm-bar: systray: could not own org.kde.StatusNotifierWatcher (already taken?) -- tray icons disabled this session
+(20596, 'read') 5.0 /s
+(20596, 'close') 2.68 /s
+(20596, 'openat') 2.4 /s
+(20596, 'poll') 1.36 /s
+(20596, 'recvmsg') 1.16 /s
+(20596, 'newfstatat') 0.84 /s
+(20596, 'sendmsg') 0.8 /s
+(20598, 'recvmsg') 0.8 /s
+(20596, 'fstat') 0.76 /s
+(20596, 'pread64') 0.52 /s
+(20596, 'getdents64') 0.48 /s
+(20598, 'epoll_wait') 0.44 /s
+(20596, 'fcntl') 0.4 /s
+(20596, 'munmap') 0.36 /s
+(20596, 'poll') gaps [1.99, 0.0, 0.78, 0.0, 0.01, 1.2, 0.01, 2.0, 2.0, 0.0, 1.0, 0.01, 0.0, 1.0, 2.0, 0.0, 2.01, 0.0, 0.0, 0.0, 0.01, 1.98, 2.0, 0.0]
+(20598, 'epoll_wait') gaps [0.0, 5.0, 0.0, 5.0, 0.0, 5.0, 0.0, 5.0, 0.0, 3.12]
+(20596, 'futex') gaps [0.0]
