@@ -199,3 +199,20 @@ Rig as section 9 (dev VM, nested headless compositor, `gen` build). Script `perf
 - **wpctl fallback** (`VolumeSource`, `sh -c` + `wpctl` every 5 s, used only when the native PipeWire connection fails): 8 interleaved 60 s runs, bar incl. waited children, fallback 0-20 ms vs native 10-20 ms (tick resolution 10 ms): no measurable difference. Rejected; the strace shows exactly one `sh` + `wpctl` pair per 5 s and nothing else spawns.
 - **Lock applet reconnect**: with "keep awake" on and no compositor, the applet retries the IPC connect about every 1.5 s (20 failed `connect` per 30 s, 0.8 ms of syscall time); it only happens while the compositor is gone. Not changed. A nested lock applet could not be run (it exits when the session bus name is taken by the VM's live instance), so its idle number is the live instance's `strace -c`: 19 `poll` per 30 s.
 - Open: the same table on the Celeron laptop (offline), GPU rows 1 and 11 (owner's numbers).
+
+## 12. Correction: the earlier hover tests never reached the bar (found 2026-10-08)
+
+The nested headless compositor had no keyboard, and the seat only advertised the pointer capability when a keyboard was added, so `wl_seat.capabilities` was 0 and clients (the bar included) got no `wl_pointer`. The virtual pointer moved the cursor and cost the compositor CPU, but the bar saw no enter or motion events: the bar side of the section 9 hover numbers (rows 2 and 5) measured nothing. Fixed in the compositor (`wlr_seat_set_capabilities(POINTER)` at start-up); on real hardware a keyboard always existed, so users were never affected.
+
+Re-run with a pointer that reaches the bar (`perflog/2026-10-08/hover2.sh 20 3`, VM, 3 interleaved reps of 20 s, CPU ms from schedstat, `hover2-fixed-pointer.txt`):
+
+| condition | bar ms | compositor ms |
+|---|---|---|
+| idle | 4, 4, 4 | 2, 3, 2 |
+| sweep across the bar (about 130 motion events/s) | 5, 5, 7 | 177, 176, 179 |
+| resting on the CPU widget (tooltip redrawn every second) | 4, 5, 4 | 11, 11, 14 |
+| resting on empty desktop | 3, 3, 5 | 1, 2, 3 |
+
+The conclusion of rows 2 and 5 stands with real data: the bar does not repaint more during a sweep (+1-3 ms per 20 s), the compositor spends 0.9% of a core on 130 events/s (profile unchanged from section 9). The new live tooltips (CPU/RAM/GPU/disk) cost +9 ms of compositor time and under 1 ms in the bar per 20 s while shown, nothing otherwise.
+
+The same missing capability explains the earlier note that Lestrix could not be typed into on the headless rig (no keyboard device): only the keyboard half is still missing there. Exact 1024x768 now works on the headless rig too (custom modes), so the 1024x768 checks of this round (tooltips, bar) were run at that size.
