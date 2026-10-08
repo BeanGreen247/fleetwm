@@ -151,7 +151,7 @@ TEST_F(ThemeTest, TitlebarRoundTripsEveryField) {
 }
 
 TEST_F(ThemeTest, WindowFrameWidthDefaultsRoundTripsAndIsClamped) {
-  EXPECT_EQ(load_theme_config().titlebar.frame_px, 6);
+  EXPECT_EQ(load_theme_config().titlebar.frame_px, 8);
   ThemeConfig c;
   c.titlebar.frame_px = 9;
   save_theme_config(c);
@@ -504,7 +504,7 @@ TEST_F(ThemeTest, WrongTypeFocusBorderThicknessIgnored) {
   std::ofstream out(dir_ / "fleetwm" / "theme.toml");
   out << "focus_border_thickness_px = \"thick\"\n";
   out.close();
-  EXPECT_EQ(load_theme_config().focus_border_thickness_px, 2);
+  EXPECT_EQ(load_theme_config().focus_border_thickness_px, 4);
 }
 
 TEST_F(ThemeTest, WrongTypeFocusBorderColorIgnored) {
@@ -545,8 +545,8 @@ TEST_F(ThemeTest, OnlyGapPxSetKeepsOtherDefaults) {
 
   ThemeConfig config = load_theme_config();
   EXPECT_EQ(config.gap_px, 7);
-  EXPECT_EQ(config.pinned_border_thickness_px, 3);
-  EXPECT_EQ(config.focus_border_thickness_px, 2);
+  EXPECT_EQ(config.pinned_border_thickness_px, 4);
+  EXPECT_EQ(config.focus_border_thickness_px, 4);
 }
 
 TEST_F(ThemeTest, OnlyPinnedBorderColorSetKeepsOtherDefaults) {
@@ -660,7 +660,7 @@ TEST_F(ThemeTest, OnlyFocusBorderColorSetKeepsOtherDefaults) {
 
   ThemeConfig config = load_theme_config();
   EXPECT_EQ(config.focus_border_color, "#abcabc");
-  EXPECT_EQ(config.focus_border_thickness_px, 2);
+  EXPECT_EQ(config.focus_border_thickness_px, 4);
 }
 
 TEST_F(ThemeTest, OnlyPinnedFocusedBorderColorSetKeepsOtherDefaults) {
@@ -682,7 +682,7 @@ TEST_F(ThemeTest, OnlyPinnedBorderThicknessSetKeepsOtherDefaults) {
 
   ThemeConfig config = load_theme_config();
   EXPECT_EQ(config.pinned_border_thickness_px, 9);
-  EXPECT_EQ(config.focus_border_thickness_px, 2);
+  EXPECT_EQ(config.focus_border_thickness_px, 4);
 }
 
 TEST_F(ThemeTest, OnlyFocusBorderThicknessSetKeepsOtherDefaults) {
@@ -693,7 +693,7 @@ TEST_F(ThemeTest, OnlyFocusBorderThicknessSetKeepsOtherDefaults) {
 
   ThemeConfig config = load_theme_config();
   EXPECT_EQ(config.focus_border_thickness_px, 6);
-  EXPECT_EQ(config.pinned_border_thickness_px, 3);
+  EXPECT_EQ(config.pinned_border_thickness_px, 4);
 }
 
 TEST_F(ThemeTest, AccentHexAllDigits) {
