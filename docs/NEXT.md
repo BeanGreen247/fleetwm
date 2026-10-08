@@ -69,3 +69,7 @@ still a suspect (needrestart), not a proven one.
 files, lists the programs that hold the most file-backed memory, the biggest files in the page cache (`fincore`), tmpfs users, slab and the memory sysctls, and
 ends with a short list of experiments (one needs the owner's OK: dropping caches). Run it on the laptop when it is idle, once right after boot and once after the
 cache has built up, and keep both outputs. Tried on the dev PC: it ran in 10 s and found the answer there (browsers' and editors' binaries, apt .deb files, /tmp as tmpfs).
+
+## Celeron laptop round, 2026-10-08 evening (findings section 15)
+Done: idle wake-ups (compositor 2.4-2.6/s, bar 1.8-4.3/s), cold start (+108 ms evicted), prewarm A/B (replay no gain, parent-early +66 vs +107, full file 0) and end to end (prewarm ON 31 ms slower), LTO / no-LTO / `-march=native` A/B (noise), Intel GPU and per-core clock sysfs readable, RAPL not readable as a user, boot RAM report.
+Still open: prewarm design for slow disks (parent asks early + whole files; keep off by default until it wins end to end), why the bar wakes 2-4/s on the Celeron against 1.2/s on the VM, lock applet exiting by itself in the nested rig, RAM report after the cache has built up, power line without RAPL, libinput, mobile data, NM, hotplug, GPU render numbers (owner).
