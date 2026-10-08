@@ -546,6 +546,14 @@ phase_icons() {
   # The big icons on the Settings network page, for a Wi-Fi card, a cable and a modem.
   FLEETWM_SYS_NET="$FAKE/net-1" open_window "${BUILD_DIR}/apps/settings/fleetwm-settings" --page network
   FLEETWM_SYS_NET="$FAKE/net-3" open_window "${BUILD_DIR}/apps/settings/fleetwm-settings" --page network
+  # The wpa_supplicant back end (used when NetworkManager is absent) against a pretend supplicant, which stops by itself.
+  if have python3; then
+    python3 "${SCRIPT_DIR}/pgo-fake-wpa.py" "$FAKE/wpa" 7 >/dev/null 2>&1 &
+    CHILD_PIDS+=("$!")
+    sleep 0.4
+    FLEETWM_WPA_DIR="$FAKE/wpa" FLEETWM_SYS_NET="$FAKE/net-1" open_window "${BUILD_DIR}/apps/settings/fleetwm-settings" --page network
+    sleep 2.5
+  fi
   # Volume: every number of waves, then muted, on the real bar through the PipeWire null sink.
   if (( AUDIO )); then
     local v
