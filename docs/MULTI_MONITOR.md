@@ -1,6 +1,7 @@
 # Multi-monitor design (2026-10-08)
 
-Status: design plus a measurement of what happens today. Nothing of the design below is built. Cross-reference of dwm and i3: memory bank note
+Status: stages 1 to 4 are built and were run on the headless rig with two and then three outputs (2026-10-08); stages 5 and 6 and the
+real-hardware risks are open. The measurement of the starting point is kept below. Cross-reference of dwm and i3: memory bank note
 `dwm-multi-monitor-crossref-2026-10-07`.
 
 ## What happens today (measured, headless rig, two outputs)
@@ -63,3 +64,19 @@ tiling stage; the desktop stage does not need it.
 
 Stages 1 and 2 give most of the value (a usable second screen) and are about a day each including tests; 3 and 4 follow; 5 only on demand. The first step
 is stage 1(a), since it needs no change to the bar's internal state.
+
+## Built (2026-10-08) and how it was checked
+
+- Stage 1: wl_output is bound at version 4 (connector name), `fleetwm-bar --output NAME` and `fleetwm-wallpaper --output NAME`; the compositor starts one of
+  each per output when the session is up and for every output plugged in later, and ends them with the output (`Server::start_output_helpers`,
+  `stop_output_helpers`). Layer surfaces that ask for no output (menus, the mixer, tooltips of a bar with `--output`) go to the output with the pointer
+  (`Server::focused_output`). Run: two outputs gave two bars and two wallpapers, a screenshot per output shows a bar on each.
+- Stage 2: new windows open on the output with the pointer; the window list carries the screen (`2@HEADLESS-2` in the workspace field, old form still parses) and
+  a bar started with `--output` lists only its screen's windows. Workspaces are one set for all screens in the Desktop layout (`switch_workspace_everywhere`),
+  per screen in Tiling. Run: a foot opened with the pointer on HEADLESS-2 appeared on that bar only.
+- Stage 3: the keyboard move already existed (Super+arrows at the edge); it and the new drag-across-the-edge (`adopt_output_under` at the end of a move drag) share
+  `transfer_view_to_output`. The drag was not driven on the rig, only the keyboard path shares its code.
+- Stage 4: removing an output moves its windows to the first other output and remembers the name (`evacuate_output`); adding one with the same name moves them
+  back (`restore_output_windows`). Run: `DEBUG_OUTPUT_REMOVE HEADLESS-2` moved the foot to HEADLESS-1 and ended that bar and wallpaper; `DEBUG_OUTPUT_ADD`
+  started a new pair. The return path was not exercised: headless outputs get a new name every time.
+- Test hooks: `FLEETWM_DEBUG_OUTPUTS=1` in the compositor's environment enables the IPC commands `DEBUG_OUTPUT_ADD <w> <h>` and `DEBUG_OUTPUT_REMOVE <name>`.

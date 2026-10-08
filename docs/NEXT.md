@@ -36,7 +36,7 @@ The same list lives in the memory bank (`projects/fleetwm-state-2026-10-07-v0.4.
     and the PAM locker are untrained.
 12. Older items still open from 2026-10-06 (state note `fleetwm-state-2026-10-06b`): direct scan-out check with `vkcube`; pressed
     state of caption buttons (done 2026-10-08: drawn while held, acts on release over the same button, cancels when released elsewhere); glass for tooltips (done 2026-10-08); still open: Tiling borders and Settings windows (a client window cannot blur what is behind it without compositor support, a design decision); real NM/wpa connects (the wpa back end is now trained against `scripts/pgo-fake-wpa.py`, a pretend supplicant: page open + scan polling, checked at 1024x768; NM still untrained, the VM has no NetworkManager);
-    install.sh silent hang (hardened 2026-10-08, see below); PGO stage 2/3 prewarm; multi-monitor design (written 2026-10-08: `docs/MULTI_MONITOR.md`, with the measured current behaviour; nothing built).
+    install.sh silent hang (hardened 2026-10-08, see below); PGO stage 2/3 prewarm; multi-monitor (`docs/MULTI_MONITOR.md`: stages 1-4 built 2026-10-08 and run on two headless outputs; stage 5 tiling per screen, stage 6 Settings, and every real-hardware check still open).
 
 ## Left to find out
 - What closed the owner's live `foot` terminal (pid 792) on the laptop around 20:36 during the round (alive at 19:45; every kill was by

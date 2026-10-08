@@ -35,6 +35,7 @@ using namespace fleetwm;
 struct Output {
   wl_output* output = nullptr;
   uint32_t name = 0;
+  std::string connector;
   int32_t scale = 1;
 };
 
@@ -150,8 +151,10 @@ void out_done(void*, wl_output*) { paint(); }
 void out_scale(void* data, wl_output*, int32_t factor) {
   static_cast<Output*>(data)->scale = factor > 0 ? factor : 1;
 }
-const wl_output_listener kOutputListener = {out_geometry, out_mode, out_done, out_scale, nullptr,
-                                            nullptr};
+void out_name(void* data, wl_output*, const char* name) { static_cast<Output*>(data)->connector = name ? name : ""; }
+void out_description(void*, wl_output*, const char*) {}
+const wl_output_listener kOutputListener = {out_geometry, out_mode, out_done, out_scale, out_name,
+                                            out_description};
 
 // ---- wl_surface ----
 void surf_enter(void*, wl_surface*, wl_output* o) {
@@ -194,7 +197,7 @@ void reg_global(void*, wl_registry* r, uint32_t name, const char* iface, uint32_
     auto* o = new Output;
     o->name = name;
     o->output = static_cast<wl_output*>(
-        wl_registry_bind(r, name, &wl_output_interface, std::min(version, 3u)));
+        wl_registry_bind(r, name, &wl_output_interface, std::min(version, 4u)));
     wl_output_add_listener(o->output, &kOutputListener, o);
     g.outputs.push_back(o);
   }
@@ -238,7 +241,7 @@ int open_config_watch() {
 
 }  // namespace
 
-int main() {
+int main(int argc, char** argv) {
   fleetwm::block_quit_signals();  // before any thread exists, see quit_signals.hpp
   fleetwm::tune_malloc_for_low_rss();
 
@@ -252,15 +255,22 @@ int main() {
   g.registry = wl_display_get_registry(g.display);
   wl_registry_add_listener(g.registry, &kRegistryListener, nullptr);
   wl_display_roundtrip(g.display);
+  wl_display_roundtrip(g.display);  // the outputs' events (their connector names) follow the binds
   if (!g.compositor || !g.shm || !g.layer_shell) {
     std::fprintf(stderr, "fleetwm-wallpaper: compositor lacks wl_compositor/wl_shm/wlr-layer-shell\n");
     return 1;
   }
 
+  // `fleetwm-wallpaper --output DP-1`: one wallpaper per screen (the compositor starts them); without it the compositor picks.
+  wl_output* wanted = nullptr;
+  for (int i = 1; i + 1 < argc; ++i)
+    if (std::string(argv[i]) == "--output")
+      for (Output* o : g.outputs)
+        if (o->connector == argv[i + 1]) wanted = o->output;
   g.surface = wl_compositor_create_surface(g.compositor);
   wl_surface_add_listener(g.surface, &kSurfaceListener, nullptr);
   g.layer_surface = zwlr_layer_shell_v1_get_layer_surface(
-      g.layer_shell, g.surface, nullptr, ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND,
+      g.layer_shell, g.surface, wanted, ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND,
       "fleetwm-wallpaper");
   zwlr_layer_surface_v1_add_listener(g.layer_surface, &kLayerListener, nullptr);
   zwlr_layer_surface_v1_set_anchor(g.layer_surface,

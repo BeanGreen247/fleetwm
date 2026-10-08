@@ -142,9 +142,9 @@ void Server::show_desktop_toggle() {
 void Server::switch_workspace(int index) {
   if (outputs.empty() || index < 0 || index >= kWorkspaceCount) return;
   View* focused = focused_view_for_actions();
-  Output* out = focused && focused->output ? focused->output : outputs.front().get();
+  Output* out = focused && focused->output ? focused->output : focused_output();
   if (out->active_workspace_index == index) return;
-  out->switch_workspace(index);
+  switch_workspace_everywhere(index);
   if (ipc_server) ipc_server->broadcast_workspace_changed(index);
   // The window that was focused is now hidden; hand focus to something that is visible.
   focus_next_after(nullptr);
@@ -154,7 +154,7 @@ void Server::switch_workspace(int index) {
 void Server::switch_workspace_relative(int delta) {
   if (outputs.empty()) return;
   View* focused = focused_view_for_actions();
-  Output* out = focused && focused->output ? focused->output : outputs.front().get();
+  Output* out = focused && focused->output ? focused->output : focused_output();
   const int next = ((out->active_workspace_index + delta) % kWorkspaceCount + kWorkspaceCount) % kWorkspaceCount;
   switch_workspace(next);
 }
@@ -195,10 +195,17 @@ bool Server::move_view_to_screen(View* view, int delta) {
   if (it == order.end()) return false;
   const long target_index = (it - order.begin()) + delta;
   if (target_index < 0 || target_index >= static_cast<long>(order.size())) return false;
-  Output* from = view->output;
   Output* to = order[static_cast<size_t>(target_index)];
 
-  // Keep the window's place relative to its screen, then let layout fix it up.
+  transfer_view_to_output(view, to, false);
+  focus_view(view);
+  return true;
+}
+
+
+void Server::transfer_view_to_output(View* view, Output* to, bool keep_position) {
+  if (!view || !to || !view->output || !view->workspace || view->output == to) return;
+  Output* from = view->output;
   wlr_box from_box{}, to_box{};
   wlr_output_layout_get_box(output_layout_, from->wlr_output_ptr, &from_box);
   wlr_output_layout_get_box(output_layout_, to->wlr_output_ptr, &to_box);
@@ -210,21 +217,63 @@ bool Server::move_view_to_screen(View* view, int delta) {
   view->snap_zone = geom::SnapZone::None;
   view->has_placed = false;
 
+  const int index = view->workspace->index();
   view->workspace->remove_view(view);
-  Workspace& target = to->active_workspace();
+  Workspace& target = to->workspaces[static_cast<size_t>(index)];
   target.add_view(view);
   view->workspace = &target;
   view->output = to;
-  wlr_scene_node_set_position(&view->container_tree->node, to_box.x + std::min(rel_x, std::max(0, to_box.width - 80)),
-                              to_box.y + std::min(rel_y, std::max(0, to_box.height - 40)));
-  wlr_scene_node_set_enabled(&view->container_tree->node, !view->minimized);
+  if (!keep_position)
+    wlr_scene_node_set_position(&view->container_tree->node, to_box.x + std::min(rel_x, std::max(0, to_box.width - 80)),
+                                to_box.y + std::min(rel_y, std::max(0, to_box.height - 40)));
+  const bool visible = index == to->active_workspace_index;
+  wlr_scene_node_set_enabled(&view->container_tree->node, (visible || view->pinned) && !view->minimized);
   from->relayout();
   to->relayout();
   to->fit_floating_views();
   view->resize_border();
-  focus_view(view);
   schedule_windows_broadcast();
-  return true;
+}
+
+void Server::evacuate_output(Output* from) {
+  Output* to = nullptr;
+  for (const std::unique_ptr<Output>& o : outputs)
+    if (o.get() != from) {
+      to = o.get();
+      break;
+    }
+  if (!to) return;
+  std::vector<View*> moving;
+  for (const std::unique_ptr<View>& view : views)
+    if (view->output == from && view->workspace) moving.push_back(view.get());
+  for (View* view : moving) {
+    view->last_output_name = from->wlr_output_ptr->name ? from->wlr_output_ptr->name : "";
+    transfer_view_to_output(view, to, false);
+  }
+}
+
+void Server::restore_output_windows(Output* back) {
+  const char* name = back->wlr_output_ptr->name;
+  if (!name) return;
+  std::vector<View*> returning;
+  for (const std::unique_ptr<View>& view : views)
+    if (view->last_output_name == name && view->output && view->output != back && view->workspace) returning.push_back(view.get());
+  for (View* view : returning) {
+    view->last_output_name.clear();
+    transfer_view_to_output(view, back, false);
+  }
+}
+
+void Server::adopt_output_under(View* view) {
+  if (!view || !view->output || outputs.size() < 2) return;
+  const wlr_box geo = view->content_geometry();
+  const double cx = view->container_tree->node.x + geo.width / 2.0, cy = view->container_tree->node.y + geo.height / 2.0;
+  wlr_output* at = wlr_output_layout_output_at(output_layout_, cx, cy);
+  Output* target = at ? output_for(at) : nullptr;
+  if (target && target != view->output) {
+    view->last_output_name.clear();
+    transfer_view_to_output(view, target, true);
+  }
 }
 
 }  // namespace fleetwm

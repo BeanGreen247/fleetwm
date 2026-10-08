@@ -33,6 +33,8 @@ extern "C" {
 
 #include <chrono>
 #include <list>
+#include <map>
+#include <vector>
 
 #include "cursor_draw.hpp"
 #include "output_config.hpp"
@@ -167,6 +169,10 @@ class Server {
   // this is a thin forwarding call kept on Server for callers (input.cpp
   // keybind handling, ipc_server.cpp) that don't already hold an Output*.
   Workspace* active_workspace_for_focused_output();
+  // The screen with the pointer (the first one when the pointer is nowhere): where new windows, popups and bars' menus open.
+  Output* focused_output() const;
+  // Shows workspace `index`: on every screen in the Desktop layout (one set of workspaces, like Windows), on the focused one in Tiling.
+  void switch_workspace_everywhere(int index);
 
   // Finds the Output wrapping a given wlr_output*, or nullptr if none
   // (e.g. the output was already destroyed). Used by layer-shell exclusive-
@@ -233,6 +239,15 @@ class Server {
   // Send `view` to the neighbouring screen (-1 previous, +1 next, ordered left to right).
   // Returns false when there is no such screen.
   bool move_view_to_screen(View* view, int delta);
+  // Puts `view` on screen `to` (its workspace of the same number, so it stays where the user left it). `keep_position`: leave it
+  // where it is on the desktop (a drag across the edge); otherwise keep its place relative to its old screen.
+  void transfer_view_to_output(View* view, Output* to, bool keep_position);
+  // A screen is going away: its windows move to the first other screen and remember where they came from.
+  void evacuate_output(Output* from);
+  // A screen came back: the windows that were moved off it return.
+  void restore_output_windows(Output* back);
+  // After a window was dragged: it belongs to the screen most of it is on.
+  void adopt_output_under(View* view);
   View* focused_view_for_actions() const;
 
   // ---- window list for taskbar clients (IPC) ----
@@ -573,6 +588,19 @@ class Server {
   View* hover_view_ = nullptr;
   View* last_click_view_ = nullptr;
   View* pressed_view_ = nullptr;  // the window whose caption button is held down
+
+ public:
+  // One bar and one wallpaper per screen: started with `--output NAME` once the session is up (and for every screen plugged
+  // in later), ended with the screen. Windows of a removed screen move to the first remaining one (Output::~Output users).
+  void start_output_helpers(wlr_output* out);
+  void stop_output_helpers(const char* name);
+  bool autostart_done() const { return autostart_done_; }
+  bool debug_add_output(int width, int height);
+  bool debug_remove_output(const std::string& name);
+
+ private:
+  bool autostart_done_ = false;
+  std::map<std::string, std::vector<pid_t>> output_helper_pids_;  // connector name -> its bar and wallpaper
   uint32_t last_click_time_ = 0;
   double grab_cursor_x_ = 0, grab_cursor_y_ = 0;
   wlr_box grab_box_{};  // container x,y + content w,h when the grab began

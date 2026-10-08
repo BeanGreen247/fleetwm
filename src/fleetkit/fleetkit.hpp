@@ -169,6 +169,7 @@ struct OutputInfo {
   int32_t scale = 1;
   int32_t width = 0, height = 0;  // current mode, physical px
   std::string description;
+  std::string connector;  // "DP-1", "HEADLESS-2": the wl_output name event (version 4)
 };
 
 class App {
@@ -204,6 +205,16 @@ class App {
   zwlr_layer_shell_v1* layer_shell() const { return layer_shell_; }
   xdg_wm_base* wm_base() const { return wm_base_; }
   const std::vector<OutputInfo>& outputs() const { return outputs_; }
+  // The output a program was asked to live on (`--output NAME`), else the first one. Null before any output is known.
+  void set_preferred_output(const std::string& connector) { preferred_output_ = connector; }
+  const OutputInfo* preferred_output() const;
+  // The wl_output for a program started with `--output NAME`, or null when it was not asked for one (the compositor chooses).
+  wl_output* requested_output() const {
+    if (preferred_output_.empty()) return nullptr;
+    for (const OutputInfo& o : outputs_)
+      if (o.connector == preferred_output_) return o.output;
+    return nullptr;
+  }
   int output_scale(wl_output* o) const;
   std::function<void()> on_outputs_changed;
 
@@ -237,6 +248,7 @@ class App {
   wl_keyboard* keyboard_ = nullptr;
   wl_pointer* pointer_ = nullptr;
   std::vector<OutputInfo> outputs_;
+  std::string preferred_output_;
   std::map<wl_surface*, Surface*> surfaces_;
   std::vector<Watch> watches_;
   int next_id_ = 1;

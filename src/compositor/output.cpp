@@ -166,6 +166,8 @@ void output_request_state(wl_listener* listener, void* data) {
 
 void output_destroy(wl_listener* listener, void*) {
   Output* output = wl_container_of(listener, output, destroy);
+  output->server->stop_output_helpers(output->wlr_output_ptr->name);
+  output->server->evacuate_output(output);
   auto& outputs = output->server->outputs;
   outputs.erase(
       std::remove_if(outputs.begin(), outputs.end(),
