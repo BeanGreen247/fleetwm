@@ -323,3 +323,17 @@ So the asynchronous version removes the 36-44 ms regression but recovers nothing
 share of the cold cost end to end is about 13 ms (357 evicted vs 344 warm, exec to buffer). Where the gain is: whoever starts the compositor (the greeter, `fleetwm-greet`) reading
 `/usr/local/bin/fleetwm`'s manifest while the user types the password. NOT built: the greeter runs as root and would have to open files named by a user-writable manifest; that needs
 a privilege drop in a forked child before reading (the auto-mode classifier refused an implementation as an attack surface, 2026-10-08); the owner decides whether to allow it.
+
+## 17. Render cost on a real GPU (test list rows 1; Celeron laptop UHD 600, i915, Mesa 25.0.7, 2026-10-08)
+
+Rig: the nested headless compositor with the renderer chosen by `WLR_RENDERER` (pixman = CPU, gles2 = the GPU through `/dev/dri/renderD128`; no display needed), `foot -F -e yes`
+scrolling for 20 s, interleaved, schedutil. GPU busy = 100 - share of the i915 `rc6_residency_ms` over the window (the GT is awake that fraction of the time); `act_freq` sampled 4 times.
+Script `perflog/2026-10-08/gpu-render.sh`, raw `gpu-render-celeron.txt`, profile `gpu-render-perf-celeron.txt`. Compositor CPU per 20 s of scrolling:
+- 1280x720, 5 reps: pixman 119-128 ms (median 123); gles2 1118-1241 ms (median 1147): the GPU path costs 9.3x the CPU time of software rendering; GPU busy 21-23% (pixman 1%); foot ticks equal (2112-2176 vs 2149-2178).
+- 1024x768, 3 reps: pixman 142-155 ms; gles2 1206-1258 ms (8.5x); GPU busy 22-23%.
+- Profile of the compositor on gles2 (`perf record -F 999 -g`, 15 s): 73.5% of its CPU is one libc routine (the memcpy family) called from Mesa's gallium driver, i.e. copying the client's
+  shm buffer into a GL texture (`wlr_texture_update_from_buffer`); everything of Fleetwm's own (`output_frame` etc.) is 0.2-0.4% each. Same result as the 2026-10-07 profile (53% memcpy).
+Reading: for a client that repaints its whole window every frame through shared memory (a scrolling `foot`), the GPU does not remove work from the CPU, it adds a full-frame copy; the
+compositor's own code is not the cost. At the idle desktop nothing is uploaded, so this affects only busy shm clients; GPU (dmabuf) clients such as Lestrix's GL window avoid the copy
+(not measured yet: needs Lestrix under Fleetwm, row 12). Not measured: key-to-pixel latency (row 11, needs a camera or timestamps), `act_freq` stayed at its 100 MHz floor in most samples,
+so the busy percentage is the meaningful GPU number, and the dev PC (UHD 620, 4 cores) was not used for this.
