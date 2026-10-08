@@ -10,7 +10,9 @@
 
 extern "C" {
 #include <libinput.h>
+#include <wlr/backend/headless.h>
 #include <wlr/backend/libinput.h>
+#include <wlr/backend/multi.h>
 #include <wlr/interfaces/wlr_keyboard.h>
 #include <wlr/render/pixman.h>
 #include <wlr/types/wlr_drm.h>
@@ -143,7 +145,12 @@ void server_new_output(wl_listener* listener, void* data) {
   // exclusive-zone support existed).
   output->update_usable_area();
 
+  Output* added = output.get();
+  if (server->desktop_layout() && !server->outputs.empty())  // one set of workspaces: show the one the others show
+    added->switch_workspace(server->outputs.front()->active_workspace_index);
   server->outputs.push_back(std::move(output));
+  server->restore_output_windows(added);
+  if (server->autostart_done()) server->start_output_helpers(wlr_out);  // a screen plugged in after start-up
   if (server->ipc_server) {
     server->ipc_server->broadcast_outputs_changed();
   }
@@ -230,7 +237,7 @@ void view_mapped(View* view) {
   }
 
   if (!view->server->outputs.empty()) {
-    Output* output = view->server->outputs.front().get();
+    Output* output = view->server->focused_output();
     Workspace& workspace = output->active_workspace();
     workspace.add_view(view);
     view->workspace = &workspace;
@@ -598,7 +605,7 @@ void server_new_layer_surface(wl_listener* listener, void* data) {
       wlr_layer_surface_v1_destroy(layer_surface);
       return;
     }
-    layer_surface->output = server->outputs.front()->wlr_output_ptr;
+    layer_surface->output = server->focused_output()->wlr_output_ptr;
   }
 
   wlr_scene_tree* parent = server->layer_tree_for(layer_surface->pending.layer);
@@ -1062,6 +1069,63 @@ void spawn_autostart(const char* name, const char* full_path) {
 }
 
 }  // namespace
+
+namespace {
+pid_t spawn_with_output(const char* name, const std::string& output) {
+  const std::string pattern = std::string(name) + " --output " + output;  // the command line of an instance that already runs
+  if (already_running(pattern.c_str())) return -1;
+  pid_t pid = fork();
+  if (pid < 0) {
+    wlr_log(WLR_ERROR, "fleetwm: fork for '%s' failed", name);
+    return -1;
+  }
+  if (pid == 0) {
+    execlp(name, name, "--output", output.c_str(), nullptr);
+    std::fprintf(stderr, "fleetwm: failed to exec '%s': %s\n", name, std::strerror(errno));
+    _exit(1);
+  }
+  return pid;
+}
+}  // namespace
+
+namespace {
+void find_headless(wlr_backend* b, void* data) {
+  if (wlr_backend_is_headless(b)) *static_cast<wlr_backend**>(data) = b;
+}
+}  // namespace
+
+bool Server::debug_add_output(int width, int height) {
+  wlr_backend* headless = nullptr;
+  if (wlr_backend_is_multi(backend_)) wlr_multi_for_each_backend(backend_, find_headless, &headless);
+  else if (wlr_backend_is_headless(backend_)) headless = backend_;
+  if (!headless) return false;
+  return wlr_headless_add_output(headless, static_cast<unsigned>(width), static_cast<unsigned>(height)) != nullptr;
+}
+
+bool Server::debug_remove_output(const std::string& name) {
+  for (const std::unique_ptr<Output>& o : outputs)
+    if (o->wlr_output_ptr->name && name == o->wlr_output_ptr->name) {
+      wlr_output_destroy(o->wlr_output_ptr);  // output_destroy() then evacuates its windows and ends its bar
+      return true;
+    }
+  return false;
+}
+
+void Server::start_output_helpers(wlr_output* out) {
+  if (!out || !out->name || output_helper_pids_.count(out->name)) return;
+  std::vector<pid_t>& pids = output_helper_pids_[out->name];
+  for (const char* program : {"fleetwm-bar", "fleetwm-wallpaper"}) {
+    const pid_t pid = spawn_with_output(program, out->name);
+    if (pid > 0) pids.push_back(pid);
+  }
+}
+
+void Server::stop_output_helpers(const char* name) {
+  auto it = output_helper_pids_.find(name ? name : "");
+  if (it == output_helper_pids_.end()) return;
+  for (pid_t pid : it->second) kill(pid, SIGTERM);  // the programs also close themselves when their screen goes
+  output_helper_pids_.erase(it);
+}
 
 pid_t Server::spawn_locker() {
   pid_t pid = fork();
@@ -1556,8 +1620,8 @@ bool Server::init() {
     setenv("XDG_CONFIG_DIRS", dirs.c_str(), 1);
   }
 
-  spawn_autostart("fleetwm-bar", FLEETWM_BINDIR "/fleetwm-bar");
-  spawn_autostart("fleetwm-wallpaper", FLEETWM_BINDIR "/fleetwm-wallpaper");
+  autostart_done_ = true;
+  for (const std::unique_ptr<Output>& o : outputs) start_output_helpers(o->wlr_output_ptr);
   spawn_autostart("fleetwm-lockapplet", FLEETWM_BINDIR "/fleetwm-lockapplet");
 
   return true;
@@ -1907,6 +1971,7 @@ void Server::end_grab() {
     hide_snap_preview();
     view->snap_to(zone);
   }
+  if (grab_mode_ == GrabMode::Move && grab_view_) adopt_output_under(grab_view_);  // dragged across the edge: it is on the other screen now
   snap_pending_ = geom::SnapZone::None;
   hide_snap_preview();
   grab_mode_ = GrabMode::None;
@@ -1974,7 +2039,7 @@ static void reveal_workspace(Server* server, View* view) {
   if (view->output && view->workspace && !view->pinned &&
       view->workspace != &view->output->active_workspace()) {
     const int index = view->workspace->index();
-    view->output->switch_workspace(index);
+    server->switch_workspace_everywhere(index);
     if (server->ipc_server) server->ipc_server->broadcast_workspace_changed(index);
   }
 }
@@ -2016,6 +2081,7 @@ std::vector<WindowEntry> Server::window_snapshot() const {
     entry.minimized = view->minimized;
     entry.pinned = view->pinned;
     entry.workspace = view->workspace ? view->workspace->index() : 0;
+    if (view->output && view->output->wlr_output_ptr->name) entry.output = view->output->wlr_output_ptr->name;
     if (view->window_app_id()) entry.app_id = view->window_app_id();
     if (view->window_title()) entry.title = view->window_title();
     out.push_back(std::move(entry));
@@ -2515,9 +2581,25 @@ Workspace* Server::active_workspace_for_focused_output() {
   if (outputs.empty()) {
     return nullptr;
   }
-  // Phase 0 has one implicit "focused output" (the first one) until Phase 1
-  // adds real focus-follows-cursor output tracking for multi-monitor setups.
-  return &outputs.front()->active_workspace();
+  return &focused_output()->active_workspace();
+}
+
+Output* Server::focused_output() const {
+  if (outputs.empty()) return nullptr;
+  if (cursor_) {
+    if (wlr_output* at = wlr_output_layout_output_at(output_layout_, cursor_->x, cursor_->y))
+      if (Output* o = output_for(at)) return o;
+  }
+  return outputs.front().get();
+}
+
+void Server::switch_workspace_everywhere(int index) {
+  if (outputs.empty()) return;
+  if (desktop_layout()) {
+    for (const std::unique_ptr<Output>& o : outputs) o->switch_workspace(index);
+  } else {
+    focused_output()->switch_workspace(index);
+  }
 }
 
 Output* Server::output_for(wlr_output* wlr_output_ptr) const {

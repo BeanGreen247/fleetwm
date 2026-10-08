@@ -44,6 +44,20 @@ TEST(WindowList, FlagsAndWorkspaceAreCompact) {
   EXPECT_EQ(format_window_list({win(3, false, false, true, 5, "a", "b")}), "WINDOWS\t3\tP\t5\ta\tb");
 }
 
+TEST(WindowList, TheScreenRidesAlongTheWorkspaceField) {
+  WindowEntry w = win(5, false, false, false, 2, "foot", "t");
+  w.output = "DP-1";
+  EXPECT_EQ(format_window_list({w}), "WINDOWS\t5\t-\t2@DP-1\tfoot\tt");
+  std::vector<WindowEntry> out;
+  ASSERT_TRUE(parse_window_list(format_window_list({w}), &out));
+  EXPECT_EQ(out[0].output, "DP-1");
+  EXPECT_EQ(out[0].workspace, 2);
+  ASSERT_TRUE(parse_window_list("WINDOWS\t5\t-\t2\tfoot\tt", &out));  // the old form still parses
+  EXPECT_EQ(out[0].output, "");
+  EXPECT_FALSE(parse_window_list("WINDOWS\t5\t-\t2@\tfoot\tt", &out));
+  EXPECT_FALSE(parse_window_list("WINDOWS\t5\t-\t2DP-1\tfoot\tt", &out));
+}
+
 TEST(WindowList, PinnedIsParsedSeparatelyFromFocus) {
   std::vector<WindowEntry> out;
   ASSERT_TRUE(parse_window_list("WINDOWS\t4\tFP\t6\tfoot\tx", &out));

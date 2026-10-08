@@ -162,6 +162,25 @@ void IpcServer::handle_line(Client& client, const std::string& line) {
     return;
   }
 
+  // Test hooks for plugging and unplugging a screen on a headless session (FLEETWM_DEBUG_OUTPUTS=1 in the compositor's
+  // environment; a real session ignores them): DEBUG_OUTPUT_ADD <width> <height> and DEBUG_OUTPUT_REMOVE <name>.
+  if (line.rfind("DEBUG_OUTPUT_", 0) == 0) {
+    std::string reply = "ERR debug outputs are off\n";
+    if (std::getenv("FLEETWM_DEBUG_OUTPUTS")) {
+      std::istringstream in(line.substr(13));
+      std::string verb, name;
+      int w = 1280, h = 720;
+      in >> verb;
+      if (verb == "ADD") {
+        in >> w >> h;
+        reply = server_->debug_add_output(w, h) ? "OK\n" : "ERR not a headless session\n";
+      } else if (verb == "REMOVE" && (in >> name)) {
+        reply = server_->debug_remove_output(name) ? "OK\n" : "ERR no such output\n";
+      }
+    }
+    send(client.fd, reply.data(), reply.size(), MSG_NOSIGNAL);
+    return;
+  }
   if (line.rfind("OUTPUT_SET ", 0) == 0) {
     // OUTPUT_SET <name> <width> <height> <refresh_mhz> <x> <y>
     // width/height 0 = keep the current mode; x/y of -999999 = keep the position.
@@ -275,10 +294,7 @@ void IpcServer::handle_line(Client& client, const std::string& line) {
     if (index < 0 || index >= kWorkspaceCount || server_->outputs.empty()) {
       return;
     }
-    // Phase 0 has no output-focus tracking yet (single-monitor dev setups
-    // are the norm at this stage); route to the first output until Phase 1
-    // wires real per-output focus-follows-cursor.
-    server_->outputs.front()->switch_workspace(index);
+    server_->switch_workspace_everywhere(index);  // the bar that was clicked is on the screen the pointer is on
     broadcast_workspace_changed(index);
   }
 }

@@ -218,6 +218,7 @@ class View {
   wlr_scene_rect* grab_rect = nullptr;  // invisible ring around the window: resize handles
   int content_w = 0;                    // last known content width
   int hover_button = geom::kBtnNone;   // geom::TitleButton under the pointer, or -1
+  std::string last_output_name;  // the screen it was moved off when that screen was unplugged; it returns when it comes back
   int pressed_button = geom::kBtnNone; // the caption button held down (acts when released over it), or -1
 
   // Desktop layout is active in theme.toml.

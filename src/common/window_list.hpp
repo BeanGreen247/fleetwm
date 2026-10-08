@@ -6,9 +6,10 @@
 
 // Wire format for the compositor's window list, sent to subscribed IPC
 // clients (the taskbar in fleetwm-bar). One line per snapshot:
-//   WINDOWS\t<id>\t<flags>\t<workspace>\t<app_id>\t<title>[\t<id>\t...]
+//   WINDOWS\t<id>\t<flags>\t<workspace>[@<output>]\t<app_id>\t<title>[\t<id>\t...]
 // flags is "-" or a mix of F (focused), M (minimized) and P (pinned: shown on every
-// workspace); workspace is the 0-9 workspace the window lives on. Tabs and newlines
+// workspace); workspace is the 0-9 workspace the window lives on, followed by "@" and the screen it is on (a connector
+// name such as DP-1) when the compositor knows it. Tabs and newlines
 // inside app ids and titles are replaced with spaces so the line stays parseable.
 
 namespace fleetwm {
@@ -19,6 +20,7 @@ struct WindowEntry {
   bool minimized = false;
   bool pinned = false;
   int workspace = 0;
+  std::string output;  // connector name of the screen the window is on, "" when unknown
   std::string app_id;
   std::string title;
 

@@ -183,7 +183,7 @@ Surface::Surface(App& app, const Config& cfg) : app_(app), cfg_(cfg) {
     return;
   }
 
-  ls_ = zwlr_layer_shell_v1_get_layer_surface(app.layer_shell(), surface_, cfg.output, cfg.layer,
+  ls_ = zwlr_layer_shell_v1_get_layer_surface(app.layer_shell(), surface_, cfg.output ? cfg.output : app.requested_output(), cfg.layer,
                                               cfg.name.c_str());
   static const zwlr_layer_surface_v1_listener lsl = {
       [](void* d, zwlr_layer_surface_v1* ls, uint32_t serial, uint32_t w, uint32_t h) {
@@ -404,6 +404,13 @@ App::~App() {
   if (display_) wl_display_disconnect(display_);
 }
 
+const OutputInfo* App::preferred_output() const {
+  if (!preferred_output_.empty())
+    for (const OutputInfo& o : outputs_)
+      if (o.connector == preferred_output_) return &o;
+  return outputs_.empty() ? nullptr : &outputs_.front();
+}
+
 int App::output_scale(wl_output* o) const {
   for (const auto& i : outputs_)
     if (i.output == o) return i.scale;
@@ -458,7 +465,7 @@ bool App::connect() {
           OutputInfo oi;
           oi.name = name;
           oi.output = static_cast<wl_output*>(
-              wl_registry_bind(r, name, &wl_output_interface, std::min(ver, 3u)));
+              wl_registry_bind(r, name, &wl_output_interface, std::min(ver, 4u)));
           a->outputs_.push_back(oi);
           static const wl_output_listener ol = {
               [](void*, wl_output*, int32_t, int32_t, int32_t, int32_t, int32_t, const char*,
@@ -481,7 +488,11 @@ bool App::connect() {
                 for (auto& i : app->outputs_)
                   if (i.output == o) i.scale = f > 0 ? f : 1;
               },
-              [](void*, wl_output*, const char*) {},
+              [](void* d, wl_output* o, const char* connector) {
+                auto* app = static_cast<App*>(d);
+                for (auto& i : app->outputs_)
+                  if (i.output == o) i.connector = connector ? connector : "";
+              },
               [](void*, wl_output*, const char*) {}};
           wl_output_add_listener(oi.output, &ol, a);
         }

@@ -243,8 +243,12 @@ struct Bar {
   // every workspace); the rest appear when you switch to their workspace.
   void rebuild_shown() {
     shown.clear();
-    for (const WindowEntry& w : windows)
+    // A bar started for one screen (`--output`) lists only the windows on that screen.
+    const OutputInfo* mine = app.requested_output() ? app.preferred_output() : nullptr;
+    for (const WindowEntry& w : windows) {
+      if (mine && !w.output.empty() && w.output != mine->connector) continue;
       if (w.pinned || w.workspace == active_workspace) shown.push_back(w);
+    }
   }
 
   // Workspace buttons (the ones the user asked for, 1-10). Laid out in a row, or in two
@@ -382,17 +386,17 @@ struct Bar {
   }
 
   int monitor_height() {
-    const auto& outs = app.outputs();
-    if (outs.empty()) return 0;
-    const int sc = std::max(1, outs[0].scale);
-    return outs[0].height / sc;
+    const OutputInfo* o = app.preferred_output();
+    if (!o) return 0;
+    const int sc = std::max(1, o->scale);
+    return o->height / sc;
   }
 
   int monitor_width() {
-    const auto& outs = app.outputs();
-    if (outs.empty()) return 0;
-    const int sc = std::max(1, outs[0].scale);
-    return outs[0].width / sc;
+    const OutputInfo* o = app.preferred_output();
+    if (!o) return 0;
+    const int sc = std::max(1, o->scale);
+    return o->width / sc;
   }
 
   // Applies Full/Island sizing to the layer surface.
@@ -1951,7 +1955,7 @@ struct Bar {
 
 }  // namespace
 
-int main() {
+int main(int argc, char** argv) {
   fleetwm::block_quit_signals();  // before any thread exists, see quit_signals.hpp
   fleetwm::tune_malloc_for_low_rss();
   signal(SIGCHLD, SIG_IGN);  // spawned helpers are fire-and-forget
@@ -1961,6 +1965,9 @@ int main() {
   B.config = load_bar_config();
   B.pal = load_palette(B.theme);
   B.refresh_glass();
+  // `fleetwm-bar --output DP-1`: the compositor starts one bar per screen; without it the compositor picks the screen.
+  for (int i = 1; i + 1 < argc; ++i)
+    if (std::string(argv[i]) == "--output") B.app.set_preferred_output(argv[i + 1]);
   if (!B.app.connect()) return 1;
 
   Surface::Config cfg;

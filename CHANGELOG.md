@@ -5,6 +5,9 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
 ## Unreleased
 
 ### Added
+- More than one screen: every screen gets its own bar and wallpaper (started and ended with the screen), windows open on the screen with the
+  pointer, the taskbar of a screen lists its windows, windows follow when dragged across the edge, and the windows of an unplugged screen
+  move to another one and come back when it returns. Workspaces are shared by all screens in the Desktop layout.
 - Window corners: the outer corners of a free-floating window are rounded (radius 7) when the theme's corner style is rounded; maximized
   and snapped windows stay square.
 - Tooltips of the bar are frosted like the bar when Glass effects is on.

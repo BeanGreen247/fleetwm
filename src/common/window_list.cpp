@@ -22,7 +22,7 @@ std::string format_window_list(const std::vector<WindowEntry>& windows) {
     if (w.minimized) flags += 'M';
     if (w.pinned) flags += 'P';
     line += '\t' + (flags.empty() ? std::string("-") : flags);
-    line += '\t' + std::to_string(w.workspace);
+    line += '\t' + std::to_string(w.workspace) + (w.output.empty() ? std::string() : '@' + clean(w.output));
     line += '\t' + clean(w.app_id);
     line += '\t' + clean(w.title);
   }
@@ -58,11 +58,12 @@ bool parse_window_list(const std::string& line, std::vector<WindowEntry>* out) {
     w.minimized = flags.find('M') != std::string::npos;
     w.pinned = flags.find('P') != std::string::npos;
     const std::string& ws = fields[i + 2];
-    if (ws.size() != 1 || ws[0] < '0' || ws[0] > '9') {
+    if (ws.empty() || ws[0] < '0' || ws[0] > '9' || (ws.size() > 1 && (ws[1] != '@' || ws.size() == 2))) {
       out->clear();
       return false;
     }
     w.workspace = ws[0] - '0';
+    if (ws.size() > 2) w.output = ws.substr(2);
     w.app_id = fields[i + 3];
     w.title = fields[i + 4];
     out->push_back(std::move(w));
