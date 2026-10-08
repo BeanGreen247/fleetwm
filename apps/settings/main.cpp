@@ -1131,6 +1131,19 @@ struct Settings {
     ui.paragraph("On: the pointer speeds up with the mouse, so small moves stay precise and big ones cross the screen.", true);
     ui.paragraph("Off: the pointer follows the mouse one to one at any speed.", true);
     ui.space(6);
+    ui.section("Buttons and scrolling");
+    ui.row("Primary button");
+    int primary = mouse.swap_buttons ? 1 : 0;
+    if (ui.segmented({"Left", "Right"}, &primary)) {
+      mouse.swap_buttons = primary == 1;
+      save_mouse();
+    }
+    ui.newline();
+    ui.row("Natural scrolling");
+    if (ui.toggle(&mouse.natural_scroll)) save_mouse();
+    ui.newline();
+    ui.paragraph("Natural: the page moves with the wheel or the touchpad, as on a phone. Applies to every mouse and touchpad, not to the virtual pointers of remote desktops.", true);
+    ui.space(6);
     ui.section("Pointer shapes");
     UiRect r;
     ui.canvas(48, &r);

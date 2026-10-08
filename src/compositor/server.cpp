@@ -2109,7 +2109,12 @@ void Server::apply_mouse_config(wlr_input_device* device) {
   if (std::find(mouse_devices_.begin(), mouse_devices_.end(), device) == mouse_devices_.end()) mouse_devices_.push_back(device);
   if (!wlr_input_device_is_libinput(device)) return;  // nested, virtual and headless pointers have no acceleration to set
   libinput_device* li = wlr_libinput_get_device_handle(device);
-  if (!li || !libinput_device_config_accel_is_available(li)) return;
+  if (!li) return;
+  if (libinput_device_config_left_handed_is_available(li))
+    libinput_device_config_left_handed_set(li, mouse_config_.swap_buttons ? 1 : 0);
+  if (libinput_device_config_scroll_has_natural_scroll(li))
+    libinput_device_config_scroll_set_natural_scroll_enabled(li, mouse_config_.natural_scroll ? 1 : 0);
+  if (!libinput_device_config_accel_is_available(li)) return;
   libinput_device_config_accel_set_speed(li, libinput_speed_for_notch(mouse_config_.speed));
   const uint32_t profiles = libinput_device_config_accel_get_profiles(li);
   const libinput_config_accel_profile want =

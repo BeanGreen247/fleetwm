@@ -15,15 +15,21 @@ TEST_F(MouseConfigTest, DefaultsToTheMiddleNotchWithPrecisionOn) {
   const MouseConfig c = load_mouse_config();
   EXPECT_EQ(c.speed, 6);
   EXPECT_TRUE(c.enhanced_precision);
+  EXPECT_FALSE(c.swap_buttons);
+  EXPECT_FALSE(c.natural_scroll);
 }
 
 TEST_F(MouseConfigTest, RoundTrips) {
   MouseConfig c;
   c.speed = 9;
   c.enhanced_precision = false;
+  c.swap_buttons = true;
+  c.natural_scroll = true;
   save_mouse_config(c);
   EXPECT_EQ(load_mouse_config(), c);
   c.speed = 1;
+  c.swap_buttons = false;
+  c.natural_scroll = false;
   c.enhanced_precision = true;
   save_mouse_config(c);
   EXPECT_EQ(load_mouse_config(), c);
@@ -46,6 +52,14 @@ TEST_F(MouseConfigTest, ABrokenFileGivesTheDefaultsAndAnUnknownKeyIsIgnored) {
   write_config("mouse.toml", "speed = 3\nsomething_else = true\n");
   EXPECT_EQ(load_mouse_config().speed, 3);
   EXPECT_TRUE(load_mouse_config().enhanced_precision);
+}
+
+TEST_F(MouseConfigTest, ButtonAndScrollOptionsLoadFromTheFileAndIgnoreOtherTypes) {
+  write_config("mouse.toml", "swap_buttons = true\nnatural_scroll = true\n");
+  EXPECT_TRUE(load_mouse_config().swap_buttons);
+  EXPECT_TRUE(load_mouse_config().natural_scroll);
+  write_config("mouse.toml", "swap_buttons = \"yes\"\n");
+  EXPECT_FALSE(load_mouse_config().swap_buttons);
 }
 
 TEST(MouseSpeed, NotchSixIsLibinputZeroAndTheEndsAreMinusOneAndPlusOne) {

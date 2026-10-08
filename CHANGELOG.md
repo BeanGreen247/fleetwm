@@ -10,6 +10,8 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
   buffers, swap), GPU (core usage, power, core and memory clock, VRAM; AMD through sysfs, NVIDIA through `nvidia-smi`,
   Intel clock only), disk (read and write speed of all disks).
 - The busy pointer (wait, progress) spins: twelve cached pictures at twelve per second, a timer that runs only while one is shown.
+- Settings -> Mouse: "Primary button" (left or right) and "Natural scrolling", saved in `mouse.toml` and applied to every
+  libinput mouse and touchpad, including ones plugged in later.
 - Settings -> Theme: "Window frame (px)" (0-16).
 - The volume icon shows a muted sink (red slash, "(muted)" in the tooltip).
 
