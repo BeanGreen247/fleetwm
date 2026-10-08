@@ -104,3 +104,20 @@ What it said about Lestrix: the ASCII flood used 15-25% of RAM bandwidth and the
 4. `perf record -g` of the compositor while scrolling a full-window terminal and while idle with glass on; look first for work that is produced and discarded (2.1), redraws without a change (2.2), and copies (2.3).
 5. Try the one-line IPC buffer test (2.5) and the pointer-motion repaint log (2.2) on the bar and start menu.
 6. Re-measure each change with an interleaved A/B on the laptop; keep rejected results in `OPTIMIZATIONS.md` so they are not retried.
+
+## 7. Lestrix round 2026-10-08 (findings that transfer; numbers are Lestrix's, not Fleetwm's)
+
+Source: lestrix `native/docs/PERFORMANCE_2026-10-07.md` (sections "Serial parser", "Gap 1", "Gap 3" to "Gap 6") and `native/docs/PERF_GAPS_2026-10-08.md`; machine: i5-8500 desktop, 6 cores, perf blocked (`perf_event_paranoid=3`), so callgrind plus interleaved A/B builds.
+
+1. **Delete the check, not just the copy.** Scrolled rows were packed from 8-byte cells to 1 byte per character with an SSE2 pass (+14%); marking the row "plain ASCII, one style" at write time and copying shadow bytes (+20-25%) beat even the upper-bound experiment (delete the pass, fill with a constant: +14-21%). A mark set by one writer and cleared by all others needs a differential test (same random stream with and without the optimisation, plus a mutation check that a deliberately broken variant is caught). Same idea applies to any "row/tile is clean and simple" flag in a damage tracker.
+2. **Upper-bound experiment before the real change** (replace the suspect work with a constant and time it) decides in minutes whether a gap is worth chasing.
+3. **Instruction count can rise while time falls**; judge by interleaved wall time, and always run the short-input case too (a 20-character-line regression of 20% was hidden behind the long-line win; fixed with a length threshold).
+4. **Compiler flags again measured nothing:** `-march=native`, LTO, PGO, `-freorder-blocks-algorithm=simple`, `-fvect-cost-model=unlimited` were all inside noise or slightly worse on the parse gate (1369-1405 vs 1426 MB/s). A wider SIMD loop (16 bytes per step) was also no gain and cost short runs 10%.
+5. **A hot loop's neighbours matter:** handling `\r` and `\n` inline right after a text run instead of re-entering the state machine gave +10-20% on 20-170 character lines.
+6. **When a producer is idle, the bottleneck is downstream.** A timing build of the pipe helper showed it waiting 0.25-0.46 s of a 0.55 s run; replacing its sleep polling with `inotify` changed nothing and was reverted. Measure each stage's idle time before optimising a hand-off.
+7. **`splice()` instead of read+write through a user buffer** for pipe to tmpfs: stage 0.22 to 0.17 s, end to end -4 to -9%. Overwriting two persistent tmpfs files instead of creating and unlinking per chunk would cut the stage to 0.11 s but needs an acknowledgement channel.
+8. **Quadratic queue drains hide in small code:** `memmove` of the whole remaining queue after each partial `write()` (8 MB through a 4 KB pipe: 0.42 s, head offset 0.07 s). Look for this in IPC buffers and input queues (checklist 2.5).
+9. **A `sched_yield` spin that looked wasteful measured as noise** (limits 2000/200/0 all 0.32-0.38 s); record such rejections so they are not retried.
+10. **Test harness rules:** run GUI benchmarks and smoke tests under `xvfb-run -a` (never on the owner's display); `SDL_TEXTINPUT` events carry at most 31 bytes, so scripted typing must use short commands; software GL under Xvfb makes absolute numbers comparable only with each other.
+
+Open on the Lestrix side that may matter here: per-request cost of streamed input on the consumer side (0.5 s per 256 MB as pipe chunks vs 0.30 s as one file), and whether widening the list of programs allowed to switch the pty to raw newlines is acceptable (owner decision).
