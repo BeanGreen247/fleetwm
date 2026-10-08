@@ -802,14 +802,12 @@ struct Settings {
     ui.row("Glass effects (Windows Aero)");
     if (ui.checkbox("Translucent frames and menus", &config.glass)) save_theme();
     ui.newline();
-    ui.label("The bar, the taskbar, titlebars, the start menu and the Alt+Tab panel get a see-through, frosted look. Off is flat and matte.", true);
-    ui.newline();
+    ui.paragraph("The bar, the taskbar, titlebars, the start menu and the Alt+Tab panel get a see-through, frosted look. Off is flat and matte.", true);
     const bool tiling = config.window_layout == WindowLayout::Tiling;
     const bool desktop = !tiling;
-    ui.label(tiling ? "Tiling: windows tile automatically; keyboard shortcuts drive everything (Alt+Shift+/ lists them)."
-                    : "Desktop: floating windows with titlebars, a taskbar and a start menu. Super+/ lists the shortcuts.",
-             true);
-    ui.newline();
+    ui.paragraph(tiling ? "Tiling: windows tile automatically; keyboard shortcuts drive everything (Alt+Shift+/ lists them)."
+                        : "Desktop: floating windows with titlebars, a taskbar and a start menu. Super+/ lists the shortcuts.",
+                 true);
 
     // Settings that only one layout uses stay visible but greyed out in the other.
     ui.space(6);
@@ -847,6 +845,9 @@ struct Settings {
       tb.button_height = std::min(tb.button_height, tb.height);
       save_theme();
     }
+    ui.newline();
+    ui.row("Window frame (px)");
+    if (ui.spin(&tb.frame_px, 0, 16, 1, desktop)) save_theme();
     ui.newline();
     ui.row("Button width (px)");
     if (ui.spin(&tb.button_width, 20, 80, 1, desktop)) save_theme();
@@ -963,8 +964,7 @@ struct Settings {
     ui.set_cursor_y(std::max(y1, ui.cursor_y()));
     ui.set_cursor_x(left);
     ui.space(4);
-    ui.label("Apps that keep the screen awake (video, presentations) are respected.", true);
-    ui.newline();
+    ui.paragraph("Apps that keep the screen awake (video, presentations) are respected.", true);
 
     ui.space(6);
     ui.section("Power mode");
@@ -1047,8 +1047,7 @@ struct Settings {
     ui.row("Window buttons");
     if (ui.checkbox("Rounded corners", &bar.taskbar_rounded, desktop)) save_bar();
     ui.newline();
-    ui.label("Start menu, one button per window, and the clock and status widgets on the right.", true);
-    ui.newline();
+    ui.paragraph("Start menu, one button per window, and the clock and status widgets on the right.", true);
   }
 
   void tab_wallpaper(cairo_t* cr) {
@@ -1125,15 +1124,12 @@ struct Settings {
       save_mouse();
     }
     ui.newline();
-    ui.label("Slow to fast in eleven steps, like Windows. The middle step is the default.", true);
-    ui.newline();
+    ui.paragraph("Slow to fast in eleven steps, like Windows. The middle step is the default.", true);
     ui.row("Enhance pointer precision");
     if (ui.toggle(&mouse.enhanced_precision)) save_mouse();
     ui.newline();
-    ui.label("On: the pointer speeds up with the mouse, so small moves stay precise and big ones cross the screen.", true);
-    ui.newline();
-    ui.label("Off: the pointer follows the mouse one to one at any speed.", true);
-    ui.newline();
+    ui.paragraph("On: the pointer speeds up with the mouse, so small moves stay precise and big ones cross the screen.", true);
+    ui.paragraph("Off: the pointer follows the mouse one to one at any speed.", true);
     ui.space(6);
     ui.section("Pointer shapes");
     UiRect r;
