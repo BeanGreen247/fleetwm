@@ -104,6 +104,7 @@ struct Bar {
   // Display text.
   std::string clock_text = "--:--:--", cpu_text = "CPU --%", ram_text = "RAM --%", gpu_text = "GPU --%",
               disk_text = "Disk --%", vol_text = "Vol --%";
+  bool vol_muted = false;
   int vol_percent = -1;  // -1: no volume could be read
   int active_workspace = 0;
   BatteryReading battery;
@@ -487,8 +488,9 @@ struct Bar {
   void draw_speaker(cairo_t* cr, double cx, double cy, const Color& c) {
     const int waves = speaker_waves(std::max(0, vol_percent));
     const bool na = vol_percent < 0;
-    draw_cached_glyph(cr, cx - 12, cy - 12, {2, waves * 2 + (na ? 1 : 0), glyph_rgb(c.r, c.g, c.b), 24, 24},
-                      [&](cairo_t* g, double x, double y) { draw_speaker_glyph(g, x, y, 16, waves, c.r, c.g, c.b, na); });
+    const bool crossed = na || vol_muted;  // muted: the red slash over the dimmed cone, as for unknown
+    draw_cached_glyph(cr, cx - 12, cy - 12, {2, waves * 4 + (na ? 1 : 0) + (vol_muted ? 2 : 0), glyph_rgb(c.r, c.g, c.b), 24, 24},
+                      [&](cairo_t* g, double x, double y) { draw_speaker_glyph(g, x, y, 16, waves, c.r, c.g, c.b, crossed); });
   }
 
   // Mains plug: body, two prongs, cord.
@@ -1877,9 +1879,12 @@ int main() {
   B.tray->start();
 
   B.volume = std::make_unique<VolumeSource>(B.app);
-  B.volume->start([&B](int percent, bool available) {
+  B.volume->start([&B](int percent, bool available, bool muted) {
     B.vol_percent = available ? percent : -1;
-    if (B.set_if_changed(B.vol_text, available ? "Vol " + std::to_string(percent) + "%" : "Vol N/A")) {
+    const bool mute_changed = B.vol_muted != (available && muted);
+    B.vol_muted = available && muted;
+    const std::string text = !available ? "Vol N/A" : "Vol " + std::to_string(percent) + "%" + (muted ? " (muted)" : "");
+    if (B.set_if_changed(B.vol_text, text) || mute_changed) {
       if (B.island) B.apply_layout();
       B.redraw();
     }

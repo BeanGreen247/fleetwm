@@ -28,7 +28,7 @@ The same list lives in the memory bank (`projects/fleetwm-state-2026-10-07-v0.4.
    installed cursor theme); the hand shape is an approximation of Windows 7's.
 7. Mouse: nothing is applied for non-libinput pointers (VMs with absolute devices, nested); no scroll speed, double-click speed or
    button swap; the speed/precision were not checked on a real mouse.
-8. Volume icon: mute is not read (VolumeSource gives percent and availability only), so a muted sink shows its level.
+8. Volume icon: mute is read (PipeWire Props and wpctl "[MUTED]"): red slash and "(muted)" in the tooltip; checked rendering only, the VM dummy sink cannot be muted.
 9. Network: mobile data (ww* interfaces, NetworkManager modems) was only tested with fake sysfs trees, never a real modem; the signal
    for mobile is not read (all bars when up); NM/wpa back ends are untrained and untested here.
 10. Window frame: `frame_px` has no Settings control; 1024x768 was not run exactly (the headless output is fixed at 1280x720);
