@@ -1,3 +1,4 @@
+#include "child_signals.hpp"
 #include "server.hpp"
 
 #include <dirent.h>
@@ -1034,6 +1035,7 @@ bool already_running(const char* full_path) {
     return false;  // can't tell; fall through and spawn anyway
   }
   if (pid == 0) {
+    fleetwm::reset_signals_for_exec();
     int devnull = open("/dev/null", O_WRONLY);
     if (devnull >= 0) {
       dup2(devnull, STDOUT_FILENO);
@@ -1062,6 +1064,7 @@ void spawn_autostart(const char* name, const char* full_path) {
     return;
   }
   if (pid == 0) {
+    fleetwm::reset_signals_for_exec();
     execlp(name, name, nullptr);
     std::fprintf(stderr, "fleetwm: failed to exec autostart '%s': %s\n", name,
                  std::strerror(errno));
@@ -1081,6 +1084,7 @@ pid_t spawn_with_output(const char* name, const std::string& output) {
     return -1;
   }
   if (pid == 0) {
+    fleetwm::reset_signals_for_exec();
     execlp(name, name, "--output", output.c_str(), nullptr);
     std::fprintf(stderr, "fleetwm: failed to exec '%s': %s\n", name, std::strerror(errno));
     _exit(1);
@@ -1135,6 +1139,7 @@ pid_t Server::spawn_locker() {
     return -1;
   }
   if (pid == 0) {
+    fleetwm::reset_signals_for_exec();
     execlp("fleetwm-locker", "fleetwm-locker", nullptr);
     std::fprintf(stderr, "fleetwm: failed to exec fleetwm-locker: %s\n", std::strerror(errno));
     _exit(1);
@@ -1567,6 +1572,7 @@ bool Server::init() {
   // session variables they need (best effort, it is fine if the tool is missing).
   setenv("XDG_CURRENT_DESKTOP", "fleetwm", false);
   if (fork() == 0) {
+    fleetwm::reset_signals_for_exec();
     execlp("dbus-update-activation-environment", "dbus-update-activation-environment", "--systemd",
            "WAYLAND_DISPLAY", "XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP", "QT_QPA_PLATFORMTHEME",
            static_cast<char*>(nullptr));

@@ -53,6 +53,7 @@
 #include "hw_stats.hpp"
 #include "volume_source.hpp"
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
+#include "child_signals.hpp"
 #include "version.hpp"
 
 extern char** environ;
@@ -80,7 +81,7 @@ struct Rect {
 void spawn(const char* prog) {
   char* argv[] = {const_cast<char*>(prog), nullptr};
   pid_t pid;
-  if (posix_spawnp(&pid, prog, nullptr, nullptr, argv, environ) != 0)
+  if (posix_spawnp(&pid, prog, nullptr, fleetwm::CleanSpawnAttr().get(), argv, environ) != 0)
     std::fprintf(stderr, "fleetwm-bar: failed to launch %s\n", prog);
 }
 
@@ -88,7 +89,7 @@ void spawn(const char* prog) {
 void spawn_settings_page(const char* page) {
   char* argv[] = {const_cast<char*>("fleetwm-settings"), const_cast<char*>("--page"), const_cast<char*>(page), nullptr};
   pid_t pid;
-  if (posix_spawnp(&pid, "fleetwm-settings", nullptr, nullptr, argv, environ) != 0)
+  if (posix_spawnp(&pid, "fleetwm-settings", nullptr, fleetwm::CleanSpawnAttr().get(), argv, environ) != 0)
     std::fprintf(stderr, "fleetwm-bar: failed to launch fleetwm-settings\n");
 }
 
@@ -1185,7 +1186,7 @@ struct Bar {
   void spawn_start_menu() {
     const char* argv[] = {"fleetwm-launcher", "--start-menu", nullptr};
     pid_t pid;
-    if (posix_spawnp(&pid, "fleetwm-launcher", nullptr, nullptr, const_cast<char* const*>(argv), environ) != 0)
+    if (posix_spawnp(&pid, "fleetwm-launcher", nullptr, fleetwm::CleanSpawnAttr().get(), const_cast<char* const*>(argv), environ) != 0)
       std::fprintf(stderr, "fleetwm-bar: failed to launch the start menu\n");
   }
 

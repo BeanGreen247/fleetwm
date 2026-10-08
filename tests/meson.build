@@ -12,6 +12,7 @@ fleetwm_test_sources = files(
   'test_wallpaper_config.cpp',
   'test_damaged_config.cpp',
   'test_info_flags.cpp',
+  'test_child_signals.cpp',
   'test_default_apps.cpp',
   'test_keybinds_config.cpp',
   'test_bar_config.cpp',

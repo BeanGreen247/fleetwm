@@ -1,3 +1,4 @@
+#include "child_signals.hpp"
 #include "input.hpp"
 
 #include <unistd.h>
@@ -179,6 +180,7 @@ void spawn(const char* cmd) {
     return;
   }
   if (pid == 0) {
+    fleetwm::reset_signals_for_exec();
     execlp(cmd, cmd, nullptr);
     // execlp only returns on failure -- log why before the child dies, since
     // this failure would otherwise be completely silent.
@@ -223,6 +225,7 @@ void spawn_terminal(const char* command) {
     return;
   }
   if (pid == 0) {
+    fleetwm::reset_signals_for_exec();
     std::vector<char*> env;
     for (char** e = environ; *e != nullptr; ++e) {
       if (std::strncmp(*e, "LD_PRELOAD=", 11) != 0 && std::strncmp(*e, "MALLOC_CONF=", 12) != 0) {
@@ -249,6 +252,7 @@ void spawn_shell(const char* shell_cmd) {
     return;
   }
   if (pid == 0) {
+    fleetwm::reset_signals_for_exec();
     execlp("/bin/sh", "/bin/sh", "-c", shell_cmd, nullptr);
     std::fprintf(stderr, "fleetwm: failed to exec '%s': %s\n", shell_cmd, std::strerror(errno));
     _exit(1);

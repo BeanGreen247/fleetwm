@@ -1,3 +1,4 @@
+#include "child_signals.hpp"
 #include "app_appearance.hpp"
 
 #include <spawn.h>
@@ -103,7 +104,7 @@ void apply_app_appearance(bool dark) {
   const std::string script = appearance_shell_script(dark);
   const char* argv[] = {"sh", "-c", script.c_str(), nullptr};
   pid_t pid;
-  posix_spawn(&pid, "/bin/sh", nullptr, nullptr, const_cast<char* const*>(argv), environ);
+  posix_spawn(&pid, "/bin/sh", nullptr, CleanSpawnAttr().get(), const_cast<char* const*>(argv), environ);
 }
 
 }  // namespace fleetwm

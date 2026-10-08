@@ -1,3 +1,4 @@
+#include "child_signals.hpp"
 #include "desktop_entry.hpp"
 #include "util.hpp"
 
@@ -240,6 +241,7 @@ bool spawn_detached(const std::vector<std::string>& argv, const std::string& wor
   const pid_t pid = fork();
   if (pid < 0) return false;
   if (pid == 0) {
+    fleetwm::reset_signals_for_exec();
     setsid();
     if (!workdir.empty() && chdir(workdir.c_str()) != 0) {
     }
