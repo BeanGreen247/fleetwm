@@ -260,6 +260,13 @@ class App {
 // A small text tooltip: overlay layer surface anchored top-left, pointer
 // transparent. `x` is the desired horizontal center and `y` the top edge, in
 // screen-logical px.
+// Where a tooltip sits on the screen is what the glass look lines its backdrop up with: pass the blurred wallpaper and
+// the output size and the tooltip is frosted like the bar (the surface is referenced, not copied).
+struct TooltipGlass {
+  cairo_surface_t* backdrop = nullptr;
+  int out_w = 0, out_h = 0;
+};
+
 class Tooltip {
  public:
   // Where (x, y) sits relative to the tooltip: Below = tooltip hangs under the
@@ -267,7 +274,7 @@ class Tooltip {
   // bar); Right / Left = beside it, vertically centered (side bars).
   enum class Placement { Below, Above, Right, Left };
   Tooltip(App& app, const Palette& pal, const std::string& text, int x, int y,
-          Placement placement = Placement::Below);
+          Placement placement = Placement::Below, const TooltipGlass* glass = nullptr);
 
  private:
   std::unique_ptr<Surface> surface_;

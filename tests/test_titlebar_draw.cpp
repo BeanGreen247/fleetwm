@@ -102,6 +102,36 @@ TEST(TitlebarDraw, AHeldCaptionButtonLooksDifferentFromHoverAndFromNothing) {
   }
 }
 
+TEST(TitlebarDraw, RoundedOuterCornersAreTransparentAndTheRestIsUntouched) {
+  const int W = 400, H = 32;
+  for (bool glass : {false, true}) {
+    td::TitlebarPaint sq = td_paint(W, glass), rd = sq;
+    rd.round_top = true;
+    TdImage a(W, H), b(W, H);
+    td_draw(a, sq);
+    td_draw(b, rd);
+    auto alpha = [&](TdImage& im, int x, int y) { return im.data()[y * im.stride() + x * 4 + 3]; };
+    EXPECT_GT(alpha(a, 0, 0), 200) << "the square bar fills its corner";
+    EXPECT_EQ(alpha(b, 0, 0), 0) << "the rounded bar cuts it away";
+    EXPECT_EQ(alpha(b, W - 1, 0), 0);
+    EXPECT_GT(alpha(b, 0, H - 1), 200) << "the bottom corners stay square, the frame sides continue there";
+    EXPECT_EQ(td_max_diff(a, b, 12, W - 12), 0) << "away from the corners nothing changes";
+  }
+}
+
+TEST(TitlebarDraw, RoundedBottomStripCutsOnlyItsBottomCorners) {
+  const int W = 200, H = 6;
+  TdImage a(W, H), b(W, H);
+  { cairo_t* cr = cairo_create(a.surf); td::draw_frame_strip(cr, W, H, td::FrameEdge::Bottom, true, true, td::Palette{}, false); cairo_destroy(cr); }
+  { cairo_t* cr = cairo_create(b.surf); td::draw_frame_strip(cr, W, H, td::FrameEdge::Bottom, true, true, td::Palette{}, true); cairo_destroy(cr); }
+  auto alpha = [&](TdImage& im, int x, int y) { return im.data()[y * im.stride() + x * 4 + 3]; };
+  EXPECT_GT(alpha(a, 0, H - 1), 0);
+  EXPECT_EQ(alpha(b, 0, H - 1), 0);
+  EXPECT_EQ(alpha(b, W - 1, H - 1), 0);
+  EXPECT_GT(alpha(b, 0, 0), 0) << "the top of the strip, where the sides meet it, is still there";
+  EXPECT_EQ(td_max_diff(a, b, 10, W - 10), 0);
+}
+
 TEST(TitlebarCompositor, CaptionButtonsActWhenReleasedOverThemNotWhenPressed) {
   const std::string server = td_read("src/compositor/server.cpp");
   const size_t press = server.find("view->set_pressed_button(zone.button);");

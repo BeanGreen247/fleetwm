@@ -246,7 +246,8 @@ void titlebar_strip_cache_clear() {
   g_strips.clear();
 }
 
-void draw_frame_strip(cairo_t* cr, int width, int height, FrameEdge edge, bool focused, bool glass, const Palette& pal) {
+void draw_frame_strip(cairo_t* cr, int width, int height, FrameEdge edge, bool focused, bool glass, const Palette& pal,
+                      bool round_bottom) {
   const Color bg = focused ? tb_mix(pal.bg_secondary, pal.accent, 0.12) : pal.bg_secondary;
   const bool left = edge == FrameEdge::Left, right = edge == FrameEdge::Right;
   cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
@@ -268,6 +269,24 @@ void draw_frame_strip(cairo_t* cr, int width, int height, FrameEdge edge, bool f
     line(0, 0, 0, 0.30, false);
   } else {
     line(rim.r, rim.g, rim.b, 1.0, true);
+  }
+  if (round_bottom && edge == FrameEdge::Bottom && width > 4) {
+    // Keep only what lies inside a rectangle whose two bottom corners are rounded. The strip is only a few pixels
+    // tall, so the radius stops at its height; the sides above it are square and meet it where it is full width.
+    const double r = std::min<double>(kWindowCornerRadius, height);
+    cairo_save(cr);
+    cairo_set_operator(cr, CAIRO_OPERATOR_DEST_IN);
+    cairo_new_path(cr);
+    cairo_move_to(cr, 0, 0);
+    cairo_line_to(cr, width, 0);
+    cairo_line_to(cr, width, height - r);
+    cairo_arc(cr, width - r, height - r, r, 0, M_PI / 2);
+    cairo_line_to(cr, r, height);
+    cairo_arc(cr, r, height - r, r, M_PI / 2, M_PI);
+    cairo_close_path(cr);
+    cairo_set_source_rgba(cr, 0, 0, 0, 1);
+    cairo_fill(cr);
+    cairo_restore(cr);
   }
 }
 
@@ -320,6 +339,23 @@ void draw_titlebar(cairo_t* cr, int width, int height, const TitlebarPaint& p, c
   caption.hover_id = p.hover_id;
   caption.pressed_id = p.pressed_id;
   if (p.layout.count > 0) draw_strip_cached(cr, strip, p.layout.count, caption, height, width);
+
+  if (p.round_top && width > 2 * kWindowCornerRadius) {
+    const double r = std::min<double>(kWindowCornerRadius, height);
+    cairo_save(cr);
+    cairo_set_operator(cr, CAIRO_OPERATOR_DEST_IN);
+    cairo_new_path(cr);
+    cairo_move_to(cr, 0, height);
+    cairo_line_to(cr, 0, r);
+    cairo_arc(cr, r, r, r, M_PI, 3 * M_PI / 2);
+    cairo_line_to(cr, width - r, 0);
+    cairo_arc(cr, width - r, r, r, 3 * M_PI / 2, 2 * M_PI);
+    cairo_line_to(cr, width, height);
+    cairo_close_path(cr);
+    cairo_set_source_rgba(cr, 0, 0, 0, 1);
+    cairo_fill(cr);
+    cairo_restore(cr);
+  }
 }
 
 }  // namespace fleetwm::kit

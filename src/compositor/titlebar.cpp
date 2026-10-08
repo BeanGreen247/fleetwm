@@ -72,6 +72,7 @@ wlr_buffer* render_titlebar(int width, const TitlebarState& st, const TitlebarCo
   paint.maximized = st.maximized;
   paint.pinned = st.pinned;
   paint.glass = st.glass;
+  paint.round_top = st.round_corners;
   paint.hover_id = st.hover_button;
   paint.pressed_id = st.pressed_button;
   paint.layout = layout;
@@ -83,7 +84,7 @@ wlr_buffer* render_titlebar(int width, const TitlebarState& st, const TitlebarCo
   return buffer;
 }
 
-wlr_buffer* render_frame_strip(int width, int height, int edge, bool focused, bool glass) {
+wlr_buffer* render_frame_strip(int width, int height, int edge, bool focused, bool glass, bool round_bottom) {
   if (width < 1 || height < 1) return nullptr;
   void* pixels = nullptr;
   size_t stride = 0;
@@ -94,7 +95,7 @@ wlr_buffer* render_frame_strip(int width, int height, int edge, bool focused, bo
   cairo_t* cr = cairo_create(surf);
   kit::draw_frame_strip(cr, width, height,
                         edge == 0 ? kit::FrameEdge::Left : edge == 1 ? kit::FrameEdge::Right : kit::FrameEdge::Bottom,
-                        focused, glass, g_palette);
+                        focused, glass, g_palette, round_bottom);
   cairo_destroy(cr);
   cairo_surface_destroy(surf);
   return buffer;

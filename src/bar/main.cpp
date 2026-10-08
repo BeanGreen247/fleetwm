@@ -1928,7 +1928,8 @@ struct Bar {
       tx = left + static_cast<int>(cx);
       ty = (island ? kIslandTopMargin : layout_style == BarLayout::Capsules ? kCapsuleTopMargin : 0) + kBarHeight + 4;
     }
-    tooltip = std::make_unique<Tooltip>(app, pal, text, tx, ty, pl);
+    TooltipGlass tg{backdrop, monitor_width(), monitor_height()};
+    tooltip = std::make_unique<Tooltip>(app, pal, text, tx, ty, pl, glass && backdrop ? &tg : nullptr);
   }
 
   // Island: surface is centered horizontally by the compositor.

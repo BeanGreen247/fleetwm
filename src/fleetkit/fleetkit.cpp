@@ -1,5 +1,7 @@
 #include "fleetkit.hpp"
 
+#include "backdrop.hpp"
+
 #include <poll.h>
 #include <sys/mman.h>
 #include <fcntl.h>
@@ -16,6 +18,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <sstream>
 
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
@@ -881,7 +884,7 @@ int watch_dirs(App& app, const std::vector<std::string>& dirs, std::function<voi
 }
 
 Tooltip::Tooltip(App& app, const Palette& pal, const std::string& text, int x, int y,
-                 Placement placement) {
+                 Placement placement, const TooltipGlass* glass) {
   // Multi-line: '\n' separates lines. Measure with a scratch context.
   std::vector<std::string> lines;
   {
@@ -936,13 +939,25 @@ Tooltip::Tooltip(App& app, const Palette& pal, const std::string& text, int x, i
   surface_ = std::make_unique<Surface>(app, cfg);
   surface_->set_input_passthrough();
   const Palette p = pal;
-  surface_->on_draw = [p, lines, asc](cairo_t* c, int sw, int sh) {
-    rounded_rect(c, 0.5, 0.5, sw - 1, sh - 1, p.rounded ? 6 : 0);
-    set_source(c, p.bg_secondary);
-    cairo_fill_preserve(c);
-    set_source(c, p.fg_secondary);
-    cairo_set_line_width(c, 1);
-    cairo_stroke(c);
+  std::shared_ptr<cairo_surface_t> backdrop;
+  const int out_w = glass ? glass->out_w : 0, out_h = glass ? glass->out_h : 0;
+  if (glass && glass->backdrop) backdrop.reset(cairo_surface_reference(glass->backdrop), cairo_surface_destroy);
+  const double screen_x = cfg.margin_left, screen_y = cfg.margin_top;
+  surface_->on_draw = [p, lines, asc, backdrop, out_w, out_h, screen_x, screen_y](cairo_t* c, int sw, int sh) {
+    if (backdrop) {
+      GlassStyle st;
+      st.tint = p.bg_primary;
+      st.tint_alpha = 0.72;  // a little more tint than the bar: tooltips are small and must stay readable
+      st.radius = p.rounded ? 6 : 0;
+      paint_glass(c, backdrop.get(), out_w, out_h, screen_x, screen_y, 0.5, 0.5, sw - 1, sh - 1, st);
+    } else {
+      rounded_rect(c, 0.5, 0.5, sw - 1, sh - 1, p.rounded ? 6 : 0);
+      set_source(c, p.bg_secondary);
+      cairo_fill_preserve(c);
+      set_source(c, p.fg_secondary);
+      cairo_set_line_width(c, 1);
+      cairo_stroke(c);
+    }
     for (size_t k = 0; k < lines.size(); ++k)
       draw_text(c, lines[k], 8, 4 + k * kLineH + (kLineH + asc) / 2.0 - 3, 13, p.fg_primary);
   };

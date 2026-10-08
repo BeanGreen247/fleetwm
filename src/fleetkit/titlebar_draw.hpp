@@ -20,6 +20,7 @@ struct TitlebarPaint {
   bool pinned = false;
   bool glass = false;  // translucent background with a sheen (the Windows Aero look); false: flat
   int hover_id = geom::kBtnNone;
+  bool round_top = false;  // the outer top corners are rounded (not for a maximized or snapped window)
   int pressed_id = geom::kBtnNone;  // the caption button being held down
   geom::TitlebarLayout layout;  // where the caption buttons are and the span the title may use
   geom::TitleAlignment align = geom::TitleAlignment::Center;
@@ -36,7 +37,12 @@ void paint_titlebar_glass_background(cairo_t* cr, int width, int height, bool fo
 // The left, right and bottom parts of a window frame, in the same glass (or flat) as the titlebar they hang
 // from: translucent colour with a light line on the outer edge and a darker one against the content.
 enum class FrameEdge { Left, Right, Bottom };
-void draw_frame_strip(cairo_t* cr, int width, int height, FrameEdge edge, bool focused, bool glass, const Palette& palette);
+// `round_bottom` rounds the two outer bottom corners of the bottom strip (radius up to the strip's own height).
+void draw_frame_strip(cairo_t* cr, int width, int height, FrameEdge edge, bool focused, bool glass, const Palette& palette,
+                      bool round_bottom = false);
+
+// The radius of the rounded outer corners of a window, in pixels.
+inline constexpr double kWindowCornerRadius = 7.0;
 
 // How many glass backgrounds are cached and how many bytes they hold (tests, diagnostics).
 struct TitlebarCacheStats {
