@@ -28,12 +28,20 @@ STATS_CPU_START=$(stats_cpu_seconds)
 # ("Fetched 14.7 MB in 3s"). Non-interactive on purpose: the output is hidden behind the
 # progress line, so a question from a package (a config file prompt) would look like a hang;
 # existing config files are kept.
+# Every apt call of the installer goes through these, so none of them can wait for an answer nobody gives:
+#   * needrestart (a post-install hook on Debian and Ubuntu images) is told to restart nothing and ask nothing;
+#   * the dpkg lock is waited for (up to 5 minutes) instead of failing at once, and a stalled mirror times out and retries;
+#   * stdin is /dev/null, so a package that tries to ask gets end-of-file instead of a silent wait.
+APT_ENV=(DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1 APT_LISTCHANGES_FRONTEND=none)
+APT_OPTS=(-o DPkg::Lock::Timeout=300 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=3)
+apt_update() { sudo env "${APT_ENV[@]}" apt-get update -qq "${APT_OPTS[@]}" </dev/null; }
+
 apt_install() {
   local out rc fetched bytes secs
   out="$(mktemp)"
   ui_live apt "Installing $*" "${out}" \
-    sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y \
-      -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold "$@" && rc=0 || rc=$?
+    sudo env "${APT_ENV[@]}" apt-get install -y "${APT_OPTS[@]}" \
+      -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold "$@" </dev/null && rc=0 || rc=$?
   fetched="$(awk '/^Fetched /' "${out}" | tail -1)"
   if [[ -n "${fetched}" ]]; then
     read -r bytes secs < <(echo "${fetched}" | awk '{

@@ -36,7 +36,7 @@ The same list lives in the memory bank (`projects/fleetwm-state-2026-10-07-v0.4.
     and the PAM locker are untrained.
 12. Older items still open from 2026-10-06 (state note `fleetwm-state-2026-10-06b`): direct scan-out check with `vkcube`; pressed
     state of caption buttons not passed by the compositor; glass for Tiling borders, tooltips and Settings windows; real NM/wpa connects;
-    install.sh silent hang analysis; PGO stage 2/3 prewarm; multi-monitor design (afternoon prep note in the bank).
+    install.sh silent hang (hardened 2026-10-08, see below); PGO stage 2/3 prewarm; multi-monitor design (afternoon prep note in the bank).
 
 ## Left to find out
 - What closed the owner's live `foot` terminal (pid 792) on the laptop around 20:36 during the round (alive at 19:45; every kill was by
@@ -55,3 +55,11 @@ Results per row: `docs/PERFORMANCE_FINDINGS.md` section 9, raw files in `perflog
  Idle wake-ups per process measured 2026-10-08 (findings section 11): nothing to change; the Celeron table is still open.\n
 ## Added 2026-10-08 (owner request): metric tooltips
 CPU, memory, GPU and disk tooltips show the detailed readings (see CHANGELOG, Unreleased). Verified on the VM at 1280x720 and 1024x768 (CPU per core, scheduler latency, memory breakdown, live disk write speed). Not verifiable there, needs hardware: battery/RAPL power draw, per-core clocks, AMD sysfs and NVIDIA readings (parsers are unit-tested against fake trees). "CPU latency" was read as scheduler wake-up latency (a 200 us sleep, best of 5); say if another latency was meant.
+
+## install.sh hang hardening, 2026-10-08
+The apt phase could wait without a word. Every apt call now runs with `NEEDRESTART_MODE=a NEEDRESTART_SUSPEND=1`, `DPkg::Lock::Timeout=300`,
+http/https timeouts of 30 s with 3 retries, and stdin from /dev/null (`apt_update` and `apt_install` in `scripts/install-stats.sh`). The
+progress helper `ui_live` now reports a step whose output stops growing for 120 s (`UI_STALL_SECS`), every 120 s, with the apt/dpkg/needrestart
+processes that could be holding it. Checked: syntax, the stall note against a fake 6 s step, apt accepting the options (`apt-get -s`). Not
+checked: a real fresh install on a machine where needrestart actually prompts (no such machine here); the cause of the original hang is
+still a suspect (needrestart), not a proven one.
