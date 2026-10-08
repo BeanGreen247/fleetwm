@@ -84,6 +84,11 @@ wlr_output_mode* pick_mode(wlr_output* out, const OutputSetting* setting) {
   return best ? best : preferred;
 }
 
+// Headless and nested outputs list no modes and take any size as a custom mode.
+bool takes_custom_mode(wlr_output* out, const OutputSetting* setting) {
+  return setting && setting->width > 0 && setting->height > 0 && wl_list_empty(&out->modes);
+}
+
 }  // namespace
 
 void server_new_output(wl_listener* listener, void* data) {
@@ -102,10 +107,13 @@ void server_new_output(wl_listener* listener, void* data) {
   wlr_output_state_init(&state);
   wlr_output_state_set_enabled(&state, true);
   wlr_output_mode* mode = pick_mode(wlr_out, setting);
-  if (mode) {
+  const bool custom = takes_custom_mode(wlr_out, setting);
+  if (custom) {
+    wlr_output_state_set_custom_mode(&state, setting->width, setting->height, setting->refresh_mhz > 0 ? setting->refresh_mhz : 60000);
+  } else if (mode) {
     wlr_output_state_set_mode(&state, mode);
   }
-  if (!wlr_output_commit_state(wlr_out, &state) && mode != wlr_output_preferred_mode(wlr_out)) {
+  if (!wlr_output_commit_state(wlr_out, &state) && !custom && mode != wlr_output_preferred_mode(wlr_out)) {
     // The saved mode was rejected: fall back to the monitor's preferred one
     // rather than leaving the output dark.
     wlr_output_state_finish(&state);
@@ -1218,7 +1226,8 @@ bool Server::apply_output_setting(const std::string& name, const OutputSetting& 
 
   if (setting.width > 0 && setting.height > 0) {
     wlr_output_mode* mode = pick_mode(wo, &setting);
-    const bool exact = mode && mode->width == setting.width && mode->height == setting.height;
+    const bool custom = takes_custom_mode(wo, &setting);
+    const bool exact = custom || (mode && mode->width == setting.width && mode->height == setting.height);
     if (!exact) {
       if (error) {
         *error = "mode " + std::to_string(setting.width) + "x" + std::to_string(setting.height) +
@@ -1226,7 +1235,7 @@ bool Server::apply_output_setting(const std::string& name, const OutputSetting& 
       }
       return false;
     }
-    if (wo->current_mode != mode) {
+    if (custom ? (wo->width != setting.width || wo->height != setting.height) : wo->current_mode != mode) {
       if (!target->has_fallback) {
         target->has_fallback = true;
         target->fallback_width = wo->width;
@@ -1238,7 +1247,8 @@ bool Server::apply_output_setting(const std::string& name, const OutputSetting& 
       wlr_output_state state;
       wlr_output_state_init(&state);
       wlr_output_state_set_enabled(&state, true);
-      wlr_output_state_set_mode(&state, mode);
+      if (custom) wlr_output_state_set_custom_mode(&state, setting.width, setting.height, setting.refresh_mhz > 0 ? setting.refresh_mhz : 60000);
+      else wlr_output_state_set_mode(&state, mode);
       const bool ok = wlr_output_test_state(wo, &state) && wlr_output_commit_state(wo, &state);
       wlr_output_state_finish(&state);
       if (!ok) {
@@ -1448,6 +1458,7 @@ bool Server::init() {
   wl_signal_add(&backend_->events.new_input, &new_input_);
 
   seat_ = wlr_seat_create(display_, "seat0");
+  wlr_seat_set_capabilities(seat_, WL_SEAT_CAPABILITY_POINTER);  // the pointer is always offered (keyboards add theirs later); a headless session has no devices yet
   request_cursor_.notify = server_request_cursor;
   wl_signal_add(&seat_->events.request_set_cursor, &request_cursor_);
   request_set_selection_.notify = server_request_set_selection;
