@@ -180,3 +180,22 @@ The papers in the performance skill (`sources/papers/`, netmap `04_netmap_atc12`
 - **Estimate the speed of light.** Scroll cost on the VM is 100-110 ms of CPU per 20 s (0.5% of a core, about 80 us per frame at 60 fps). With roughly 8 syscalls per frame at 1-2 us each that is 10-20% of the frame cost, consistent with the 33.8% inclusive number once kernel entry costs under mitigations are counted. A 100x gap would be structural; this is 1x-3x, so no restructuring is justified.
 - **Report setup.** All numbers above name the rig (VM, i5-8500 KVM, headless backend, pixman). The paper rule that throughput claims name the hardware applies: none of the syscall counts transfer to the laptop until measured there.
 
+
+## 11. Idle wake-ups per process (round 2026-10-08, continued)
+
+Rig as section 9 (dev VM, nested headless compositor, `gen` build). Script `perflog/2026-10-08/idlewake.sh VARIANT SECONDS` (voluntary + involuntary context switches over all threads and schedstat CPU, fixed window, no diagnostic on), `volab.sh` (bar, native PipeWire against the wpctl fallback), `strace -f -c` for syscall mixes. Lestrix lesson tested: a fixed 1 s tick that stats files.
+
+| Process (40 s idle window) | wake-ups/s | CPU ms |
+|---|---|---|
+| compositor, default bar (`show_seconds=false`) | 0.90 | 3.2 |
+| bar, default | 1.18 | 8.9 |
+| compositor, `show_seconds=true` | 7.15 | 17.8 |
+| bar, `show_seconds=true` | 3.83 | 18.2 |
+| wallpaper | 0.00 | 0.0 |
+| launcher (open, idle) | 0.00 | 0.0 |
+
+- **No file-stat polling anywhere.** Idle `strace -c` of the bar (30 s) shows no `stat` family beyond start-up; the wallpaper, launcher and compositor block in `poll`/`epoll_wait` on inotify and sockets. Every wake-up in the bar is a timer (clock tick, stats 2 s, disk 5 s, network 5 s, battery 15 s) plus the compositor's frame callback it triggers.
+- **Clock seconds are the one real cost**: with `show_seconds=true` the bar re-arms a fresh timerfd every second (1 tick = bar wake, commit, compositor frame, frame-done = about 7 compositor wake-ups per tick), 0.9 -> 7.2 wake-ups/s and +14.6 ms CPU per 40 s (0.04% of a core) for the compositor. It is off by default and the cost is the feature; not changed.
+- **wpctl fallback** (`VolumeSource`, `sh -c` + `wpctl` every 5 s, used only when the native PipeWire connection fails): 8 interleaved 60 s runs, bar incl. waited children, fallback 0-20 ms vs native 10-20 ms (tick resolution 10 ms): no measurable difference. Rejected; the strace shows exactly one `sh` + `wpctl` pair per 5 s and nothing else spawns.
+- **Lock applet reconnect**: with "keep awake" on and no compositor, the applet retries the IPC connect about every 1.5 s (20 failed `connect` per 30 s, 0.8 ms of syscall time); it only happens while the compositor is gone. Not changed. A nested lock applet could not be run (it exits when the session bus name is taken by the VM's live instance), so its idle number is the live instance's `strace -c`: 19 `poll` per 30 s.
+- Open: the same table on the Celeron laptop (offline), GPU rows 1 and 11 (owner's numbers).
