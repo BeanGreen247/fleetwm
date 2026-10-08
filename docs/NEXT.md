@@ -50,3 +50,6 @@ The same list lives in the memory bank (`projects/fleetwm-state-2026-10-07-v0.4.
   and tools; the owner reinstalls by fresh git clone.
 - VM `fleetwm-dev` (192.168.0.223): clean Debian 13, pixman, started by the owner; `~/perf-test/{C,D}` and `nest_headless.sh`.
 - Build rig: `perflog/2026-10-07/rig/README.md` (Docker image, the compositor only builds there, not on the dev PC).
+
+## Performance test list from the Lestrix round (added 2026-10-08)
+`docs/PERFORMANCE_FINDINGS.md` section 8 has a 14-row table of ideas that were deferred, rejected in Lestrix, or could not be tested there (GPU render side, damage flags with differential tests, flags on the Celeron, poll-to-event hand-offs, read coalescing, queue `memmove`, `splice`, `mmap` for owned files, key-to-pixel latency, Lestrix running under Fleetwm, `perf` on the laptop, 1024x768 checks). Nothing in it is implemented yet; start there for the next Fleetwm performance round.
