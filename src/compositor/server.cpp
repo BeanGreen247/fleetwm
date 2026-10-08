@@ -847,6 +847,13 @@ void server_cursor_motion_absolute(wl_listener* listener, void* data) {
   process_cursor_motion(server, event->time_msec);
 }
 
+static void activate_caption_button(Server* server, View* view, int button) {
+  if (button == geom::kBtnClose) view->close();
+  else if (button == geom::kBtnMinimize) server->minimize_view(view);
+  else if (button == geom::kBtnPin) view->set_pinned(!view->pinned);
+  else if (button == geom::kBtnMaximize) server->toggle_maximize(view);
+}
+
 void server_cursor_button(wl_listener* listener, void* data) {
   Server* server = wl_container_of(listener, server, cursor_button_);
   server->note_activity();
@@ -856,6 +863,15 @@ void server_cursor_button(wl_listener* listener, void* data) {
     if (server->grab_active()) {
       server->end_grab();
       server->swallow_release = false;
+      return;
+    }
+    if (View* held = server->pressed_view_) {
+      // A caption button acts when it is let go over the button it was pressed on, like Windows.
+      server->pressed_view_ = nullptr;
+      const int which = held->pressed_button;
+      held->set_pressed_button(geom::kBtnNone);
+      server->swallow_release = false;
+      if (decoration_zone(server, held).button == which) activate_caption_button(server, held, which);
       return;
     }
     if (server->swallow_release) {
@@ -894,14 +910,9 @@ void server_cursor_button(wl_listener* listener, void* data) {
         const DecorationZone zone = decoration_zone(server, view);
         if (zone.edges) {
           server->begin_resize(view, zone.edges);
-        } else if (zone.button == geom::kBtnClose) {
-          view->close();
-        } else if (zone.button == geom::kBtnMinimize) {
-          server->minimize_view(view);
-        } else if (zone.button == geom::kBtnPin) {
-          view->set_pinned(!view->pinned);
-        } else if (zone.button == geom::kBtnMaximize) {
-          server->toggle_maximize(view);
+        } else if (zone.button != geom::kBtnNone) {
+          server->pressed_view_ = view;  // drawn pressed now, acts on release
+          view->set_pressed_button(zone.button);
         } else if (zone.drag) {
           if (server->is_double_click(view, event->time_msec)) {
             server->toggle_maximize(view);
@@ -1909,6 +1920,7 @@ void Server::forget_view(View* view) {
   if (grab_view_ == view) end_grab();
   if (hover_view_ == view) hover_view_ = nullptr;
   if (last_click_view_ == view) last_click_view_ = nullptr;
+  if (pressed_view_ == view) pressed_view_ = nullptr;
 }
 
 void Server::set_hover_view(View* view) {

@@ -85,6 +85,35 @@ void td_clear() {
 
 }  // namespace
 
+TEST(TitlebarDraw, AHeldCaptionButtonLooksDifferentFromHoverAndFromNothing) {
+  for (bool glass : {false, true}) {
+    td_clear();
+    const int W = 800;
+    td::TitlebarPaint none = td_paint(W, glass), hover = none, held = none;
+    hover.hover_id = geom::kBtnClose;
+    held.hover_id = geom::kBtnClose;
+    held.pressed_id = geom::kBtnClose;
+    TdImage a(W, 32), b(W, 32), c(W, 32);
+    td_draw(a, none);
+    td_draw(b, hover);
+    td_draw(c, held);
+    EXPECT_GT(td_max_diff(a, c), 20) << "pressed must show";
+    EXPECT_GT(td_max_diff(b, c), 10) << "pressed must differ from hover alone, " << (glass ? "glass" : "flat");
+  }
+}
+
+TEST(TitlebarCompositor, CaptionButtonsActWhenReleasedOverThemNotWhenPressed) {
+  const std::string server = td_read("src/compositor/server.cpp");
+  const size_t press = server.find("view->set_pressed_button(zone.button);");
+  ASSERT_NE(press, std::string::npos);
+  const size_t release = server.find("activate_caption_button(server, held, which)");
+  ASSERT_NE(release, std::string::npos);
+  // the press only marks the button; the action is in the release path
+  EXPECT_EQ(server.substr(press - 200, 200).find("activate_caption_button"), std::string::npos);
+  EXPECT_NE(server.find("decoration_zone(server, held).button == which"), std::string::npos) << "released elsewhere cancels";
+  EXPECT_NE(server.find("if (pressed_view_ == view) pressed_view_ = nullptr;"), std::string::npos) << "a closed window must not stay referenced";
+}
+
 TEST(TitlebarDraw, CachedGlassBackgroundIsThePictureDrawnFromScratch) {
   td_clear();
   TdImage fresh(800, 32), cached(800, 32), again(800, 32);

@@ -318,6 +318,7 @@ void draw_titlebar(cairo_t* cr, int width, int height, const TitlebarPaint& p, c
   caption.maximized = p.maximized;
   caption.pinned = p.pinned;
   caption.hover_id = p.hover_id;
+  caption.pressed_id = p.pressed_id;
   if (p.layout.count > 0) draw_strip_cached(cr, strip, p.layout.count, caption, height, width);
 }
 

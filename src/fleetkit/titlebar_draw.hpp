@@ -20,6 +20,7 @@ struct TitlebarPaint {
   bool pinned = false;
   bool glass = false;  // translucent background with a sheen (the Windows Aero look); false: flat
   int hover_id = geom::kBtnNone;
+  int pressed_id = geom::kBtnNone;  // the caption button being held down
   geom::TitlebarLayout layout;  // where the caption buttons are and the span the title may use
   geom::TitleAlignment align = geom::TitleAlignment::Center;
 };
