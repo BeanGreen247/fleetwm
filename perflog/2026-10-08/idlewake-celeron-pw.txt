@@ -1,0 +1,6 @@
+fleetwm                threads=1  wake/s=2.65  cpu_ms=40.63
+fleetwm-bar            threads=3  wake/s=3.15  cpu_ms=69.20
+fleetwm                threads=1  wake/s=2.35  cpu_ms=35.54
+fleetwm-bar            threads=3  wake/s=4.57  cpu_ms=65.01
+fleetwm                threads=1  wake/s=2.55  cpu_ms=40.21
+fleetwm-bar            threads=3  wake/s=4.48  cpu_ms=70.11
