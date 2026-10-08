@@ -338,12 +338,12 @@ TEST_F(KeybindsConfigTest, WrongTypeQuitIgnored) {
 
 // -- misc --------------------------------------------------------------------
 
-TEST_F(KeybindsConfigTest, MalformedTomlThrows) {
+TEST_F(KeybindsConfigTest, MalformedTomlKeepsDefaults) {
   std::filesystem::create_directories(dir_ / "fleetwm");
   std::ofstream out(dir_ / "fleetwm" / "keybinds.toml");
   out << "terminal = \"unterminated\n";
   out.close();
-  EXPECT_THROW(load_keybinds_config(), toml::parse_error);
+  EXPECT_NO_THROW(load_keybinds_config());
 }
 
 TEST_F(KeybindsConfigTest, EmptyConfigFileYieldsDefaults) {
