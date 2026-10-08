@@ -1,0 +1,18 @@
+## 1280x720, 5 reps
+pixman comp_ms=127 foot_ticks=2131 gpu_busy_pct=1 gpu_mhz=100 00:00:00.000 [INFO
+gles2 comp_ms=1241 foot_ticks=2159 gpu_busy_pct=23 gpu_mhz=100 00:00:00.000 [INF
+pixman comp_ms=128 foot_ticks=2149 gpu_busy_pct=1 gpu_mhz=100 00:00:00.000 [INFO
+gles2 comp_ms=1144 foot_ticks=2178 gpu_busy_pct=21 gpu_mhz=100 00:00:00.000 [INF
+pixman comp_ms=123 foot_ticks=2143 gpu_busy_pct=1 gpu_mhz=100 00:00:00.000 [INFO
+gles2 comp_ms=1118 foot_ticks=2149 gpu_busy_pct=21 gpu_mhz=112 00:00:00.000 [INF
+pixman comp_ms=122 foot_ticks=2112 gpu_busy_pct=1 gpu_mhz=100 00:00:00.000 [INFO
+gles2 comp_ms=1147 foot_ticks=2169 gpu_busy_pct=21 gpu_mhz=100 00:00:00.000 [INF
+pixman comp_ms=119 foot_ticks=2176 gpu_busy_pct=1 gpu_mhz=100 00:00:00.000 [INFO
+gles2 comp_ms=1154 foot_ticks=2165 gpu_busy_pct=22 gpu_mhz=100 00:00:00.000 [INF
+## 1024x768, 3 reps
+pixman comp_ms=144 foot_ticks=2087 gpu_busy_pct=1 gpu_mhz=100 00:00:00.000 [INFO
+gles2 comp_ms=1206 foot_ticks=2029 gpu_busy_pct=22 gpu_mhz=100 00:00:00.000 [INF
+pixman comp_ms=142 foot_ticks=2111 gpu_busy_pct=1 gpu_mhz=100 00:00:00.000 [INFO
+gles2 comp_ms=1258 foot_ticks=2059 gpu_busy_pct=22 gpu_mhz=100 00:00:00.000 [INF
+pixman comp_ms=155 foot_ticks=2039 gpu_busy_pct=1 gpu_mhz=100 00:00:00.000 [INFO
+gles2 comp_ms=1233 foot_ticks=1953 gpu_busy_pct=23 gpu_mhz=100 00:00:00.000 [INF
