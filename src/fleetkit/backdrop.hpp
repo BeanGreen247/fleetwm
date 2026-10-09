@@ -22,7 +22,8 @@ void downscale_rgba(const uint8_t* src, int sw, int sh, int max_w, uint8_t** dst
 // The blurred wallpaper as a cairo surface (caller owns it), or nullptr when there is none (no
 // wallpaper and nothing to fall back to). The caller owns one reference; the picture itself is shared
 // within the process and re-checked against the wallpaper every couple of seconds. A solid-colour wallpaper gives a flat surface.
-cairo_surface_t* load_backdrop();
+// `recheck` skips the two-second rest and looks at the wallpaper now: for the caller that was just told it changed.
+cairo_surface_t* load_backdrop(bool recheck = false);
 
 // Same, without the per-process copy (reads the cached PNG, or makes it). load_backdrop() wraps this.
 cairo_surface_t* load_backdrop_uncached();

@@ -149,7 +149,7 @@ struct Bar {
   void refresh_glass() {
     glass = theme.glass;
     if (backdrop) cairo_surface_destroy(backdrop);
-    backdrop = glass ? load_backdrop() : nullptr;
+    backdrop = glass ? load_backdrop(true) : nullptr;  // called when the config or the wallpaper changed
   }
   // Paints the bar background of one rectangle: flat, or glass when that is on. (sx, sy) is where the
   // rectangle sits on the screen, which is what the backdrop is lined up with.
