@@ -4,9 +4,30 @@
 
 namespace fleetwm::fm {
 
+// Lays the groups of an icon or tile view out one under the other, each starting on a new row.
+static void grid_groups(ViewMetrics* m, int font_px) {
+  if (m->group_starts.empty()) return;
+  m->group_head_h = font_px + 18;
+  int y = 0;
+  const int n = static_cast<int>(m->group_starts.size());
+  for (int g = 0; g < n; ++g) {
+    const int end = g + 1 < n ? m->group_starts[static_cast<size_t>(g) + 1] : m->count;
+    const int items = std::max(0, end - m->group_starts[static_cast<size_t>(g)]);
+    m->group_head_y.push_back(y);
+    m->group_items_y.push_back(y + m->group_head_h);
+    y += m->group_head_h + ((items + m->cols - 1) / m->cols) * m->cell_h;
+  }
+  m->content_h = y;
+  m->rows = y / std::max(1, m->cell_h);
+}
+
+bool is_grid_mode(ViewMode mode) {
+  return mode == ViewMode::SmallIcons || mode == ViewMode::MediumIcons || mode == ViewMode::LargeIcons || mode == ViewMode::ExtraLargeIcons || mode == ViewMode::Tiles;
+}
+
 ViewMetrics compute_metrics(ViewMode mode, int count, int vw, int vh, int icon_px, int row_h, int font_px, int header_h, int details_w, const std::vector<int>* groups) {
   ViewMetrics m;
-  if (groups && mode == ViewMode::Details) m.group_starts = *groups;
+  if (groups && (mode == ViewMode::Details || is_grid_mode(mode))) m.group_starts = *groups;
   m.mode = mode;
   m.count = count;
   m.view_w = vw;
@@ -39,6 +60,7 @@ ViewMetrics compute_metrics(ViewMode mode, int count, int vw, int vh, int icon_p
       m.rows = (count + m.cols - 1) / m.cols;
       m.content_w = vw;
       m.content_h = m.rows * m.cell_h;
+      grid_groups(&m, font_px);
       break;
     case ViewMode::Content:
       m.cell_w = vw;
@@ -55,10 +77,16 @@ ViewMetrics compute_metrics(ViewMode mode, int count, int vw, int vh, int icon_p
       m.rows = (count + m.cols - 1) / m.cols;
       m.content_w = vw;
       m.content_h = m.rows * m.cell_h;
+      grid_groups(&m, font_px);
       break;
     }
   }
   return m;
+}
+
+int group_of_item(const ViewMetrics& m, int item) {
+  if (m.group_starts.empty() || item < 0) return -1;
+  return static_cast<int>(std::upper_bound(m.group_starts.begin(), m.group_starts.end(), item) - m.group_starts.begin()) - 1;
 }
 
 int row_of_item(const ViewMetrics& m, int item) {
@@ -94,6 +122,13 @@ void row_info(const ViewMetrics& m, int row, bool* is_header, int* index) {
 
 ItemRect group_header_rect(const ViewMetrics& m, int g, int sx, int sy) {
   ItemRect r;
+  if (m.grid_grouped()) {
+    r.w = m.view_w;
+    r.h = m.group_head_h;
+    r.x = -sx;
+    r.y = m.header_h + m.group_head_y[static_cast<size_t>(g)] - sy;
+    return r;
+  }
   r.w = m.cell_w;
   r.h = m.cell_h;
   r.x = -sx;
@@ -112,6 +147,10 @@ ItemRect item_rect(const ViewMetrics& m, int i, int sx, int sy) {
     const int col = i / m.rows, row = i % m.rows;
     r.x = col * m.cell_w - sx;
     r.y = row * m.cell_h;
+  } else if (m.grid_grouped()) {
+    const int g = group_of_item(m, i), local = i - m.group_starts[static_cast<size_t>(g)];
+    r.x = (local % m.cols) * m.cell_w - sx;
+    r.y = m.header_h + m.group_items_y[static_cast<size_t>(g)] + (local / m.cols) * m.cell_h - sy;
   } else {
     const int col = i % m.cols, row = m.group_starts.empty() ? i / m.cols : row_of_item(m, i);
     r.x = col * m.cell_w - sx;
@@ -128,6 +167,19 @@ void visible_range(const ViewMetrics& m, int sx, int sy, int* first, int* last) 
     const int c0 = std::max(0, sx / m.cell_w), c1 = std::min(m.cols - 1, (sx + m.view_w) / m.cell_w);
     *first = c0 * m.rows;
     *last = std::min(m.count - 1, (c1 + 1) * m.rows - 1);
+  } else if (m.grid_grouped()) {
+    const int top = sy, bottom = sy + std::max(1, m.view_h - m.header_h);
+    auto group_at = [&](int y) {
+      const int g = static_cast<int>(std::upper_bound(m.group_head_y.begin(), m.group_head_y.end(), y) - m.group_head_y.begin()) - 1;
+      return std::clamp(g, 0, static_cast<int>(m.group_starts.size()) - 1);
+    };
+    const int g0 = group_at(top), g1 = group_at(bottom);
+    const size_t a = static_cast<size_t>(g0), b = static_cast<size_t>(g1);
+    *first = top <= m.group_items_y[a] ? m.group_starts[a] : m.group_starts[a] + (top - m.group_items_y[a]) / m.cell_h * m.cols;
+    const int end1 = g1 + 1 < static_cast<int>(m.group_starts.size()) ? m.group_starts[b + 1] : m.count;
+    if (bottom < m.group_items_y[b]) *last = m.group_starts[b] - 1;
+    else *last = std::min(end1 - 1, m.group_starts[b] + ((bottom - m.group_items_y[b]) / m.cell_h + 1) * m.cols - 1);
+    *last = std::min(*last, m.count - 1);
   } else {
     const int r0 = std::max(0, sy / m.cell_h), r1 = std::min(m.rows - 1, (sy + m.view_h - m.header_h) / m.cell_h);
     if (!m.group_starts.empty()) {
@@ -156,6 +208,14 @@ int index_at(const ViewMetrics& m, int x, int y, int sx, int sy) {
   } else {
     const int col = x / m.cell_w, row = (y - m.header_h + sy) / m.cell_h;
     if (col >= m.cols) return -1;
+    if (m.grid_grouped()) {
+      const int yy = y - m.header_h + sy;
+      const int g = std::clamp(static_cast<int>(std::upper_bound(m.group_head_y.begin(), m.group_head_y.end(), yy) - m.group_head_y.begin()) - 1, 0, static_cast<int>(m.group_starts.size()) - 1);
+      if (yy < m.group_items_y[static_cast<size_t>(g)]) return -1;  // on the heading
+      const int end = g + 1 < static_cast<int>(m.group_starts.size()) ? m.group_starts[static_cast<size_t>(g) + 1] : m.count;
+      const int i = m.group_starts[static_cast<size_t>(g)] + ((yy - m.group_items_y[static_cast<size_t>(g)]) / m.cell_h) * m.cols + col;
+      return i >= 0 && i < end ? i : -1;
+    }
     if (!m.group_starts.empty()) {
       bool header;
       int ix;
@@ -190,9 +250,19 @@ void scroll_to_show(const ViewMetrics& m, int i, int* sx, int* sy) {
     else if (left + m.cell_w > *sx + m.view_w) *sx = left + m.cell_w - m.view_w;
     *sx = std::clamp(*sx, 0, max_scroll_x(m));
   } else {
-    const int top = (m.group_starts.empty() ? i / m.cols : row_of_item(m, i)) * m.cell_h, body = std::max(1, m.view_h - m.header_h);
+    const int body = std::max(1, m.view_h - m.header_h);
+    int top;
+    if (m.grid_grouped()) {
+      const int g = group_of_item(m, i);
+      top = m.group_items_y[static_cast<size_t>(g)] + ((i - m.group_starts[static_cast<size_t>(g)]) / m.cols) * m.cell_h;
+      // the first row of a group shows its heading too
+      if (i - m.group_starts[static_cast<size_t>(g)] < m.cols) top = m.group_head_y[static_cast<size_t>(g)];
+    } else {
+      top = (m.group_starts.empty() ? i / m.cols : row_of_item(m, i)) * m.cell_h;
+    }
+    const int bottom = top + m.cell_h + (m.grid_grouped() && i - m.group_starts[static_cast<size_t>(group_of_item(m, i))] < m.cols ? m.group_head_h : 0);
     if (top < *sy) *sy = top;
-    else if (top + m.cell_h > *sy + body) *sy = top + m.cell_h - body;
+    else if (bottom > *sy + body) *sy = bottom - body;
     *sy = std::clamp(*sy, 0, max_scroll_y(m));
   }
 }
@@ -202,6 +272,38 @@ int navigate(const ViewMetrics& m, int from, Nav key) {
   if (from < 0) return key == Nav::End || key == Nav::Up || key == Nav::Left ? m.count - 1 : 0;
   const int body = std::max(1, m.view_h - m.header_h);
   const int page_rows = std::max(1, body / m.cell_h);
+  if (m.grid_grouped() && (key == Nav::Up || key == Nav::Down || key == Nav::PageUp || key == Nav::PageDown)) {
+    int to = from;
+    const int steps = key == Nav::PageUp || key == Nav::PageDown ? page_rows : 1;
+    for (int s = 0; s < steps; ++s) {
+      const int g = group_of_item(m, to), start = m.group_starts[static_cast<size_t>(g)];
+      const int end = g + 1 < static_cast<int>(m.group_starts.size()) ? m.group_starts[static_cast<size_t>(g) + 1] : m.count;
+      const int col = (to - start) % m.cols;
+      if (key == Nav::Up || key == Nav::PageUp) {
+        if (to - start >= m.cols) to -= m.cols;
+        else if (g > 0) {  // the last row of the group above, same column (or its last cell)
+          const int pstart = m.group_starts[static_cast<size_t>(g) - 1], pn = start - pstart;
+          to = pstart + std::min(((pn - 1) / m.cols) * m.cols + col, pn - 1);
+        }
+      } else {
+        if (to + m.cols < end) to += m.cols;
+        else if (g + 1 < static_cast<int>(m.group_starts.size())) {  // the first row of the group below, same column
+          const int nstart = end, nend = g + 2 < static_cast<int>(m.group_starts.size()) ? m.group_starts[static_cast<size_t>(g) + 2] : m.count;
+          to = std::min(nstart + col, nend - 1);
+        } else if ((end - 1 - start) / m.cols > (to - start) / m.cols) {
+          to = end - 1;  // a short last row: Down goes to its last cell
+        }
+      }
+    }
+    return std::clamp(to, 0, m.count - 1);
+  }
+  if (m.grid_grouped() && (key == Nav::Left || key == Nav::Right)) {
+    const int g = group_of_item(m, from), start = m.group_starts[static_cast<size_t>(g)];
+    const int end = g + 1 < static_cast<int>(m.group_starts.size()) ? m.group_starts[static_cast<size_t>(g) + 1] : m.count;
+    const int col = (from - start) % m.cols;
+    if (key == Nav::Left) return col == 0 ? from : from - 1;
+    return col == m.cols - 1 || from + 1 >= end ? from : from + 1;
+  }
   int to = from;
   switch (key) {
     case Nav::Home: to = 0; break;

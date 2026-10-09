@@ -378,6 +378,102 @@ TEST(FmBrowser, LazyEntriesGetTheirStatWhenAskedAndTheSourceListingToo) {
   fs::remove_all(dir);
 }
 
+// ---- grouping in the icon and tile views ----
+namespace {
+// 7 items in 3 groups (0-2, 3-4, 5-6) in a view 4 cells wide: rows of 4 and 3, then 2, then 2.
+ViewMetrics grouped_grid(ViewMode mode = ViewMode::MediumIcons, int view_h = 400) {
+  const std::vector<int> groups = {0, 3, 5};
+  ViewMetrics probe = compute_metrics(mode, 7, 800, view_h, 48, 22, 13);
+  const int w = probe.cell_w * 4;  // exactly four cells across
+  return compute_metrics(mode, 7, w, view_h, 48, 22, 13, 0, 0, &groups);
+}
+}  // namespace
+
+TEST(FmViewMetrics, GroupedIconsStackGroupsWithHeadings) {
+  const ViewMetrics m = grouped_grid();
+  ASSERT_TRUE(m.grid_grouped());
+  ASSERT_EQ(m.cols, 4);
+  ASSERT_EQ(m.group_head_y.size(), 3u);
+  EXPECT_EQ(m.group_head_y[0], 0);
+  EXPECT_EQ(m.group_items_y[0], m.group_head_h);
+  // group 0 has 3 items: one row. Group 1 starts below it.
+  EXPECT_EQ(m.group_head_y[1], m.group_head_h + m.cell_h);
+  EXPECT_EQ(m.group_head_y[2], 2 * (m.group_head_h + m.cell_h));
+  EXPECT_EQ(m.content_h, 3 * (m.group_head_h + m.cell_h));
+  // Items sit below their own heading, column by column.
+  const ItemRect a = item_rect(m, 0, 0, 0), b = item_rect(m, 1, 0, 0), c = item_rect(m, 3, 0, 0);
+  EXPECT_EQ(a.y, m.group_head_h);
+  EXPECT_EQ(b.x, m.cell_w);
+  EXPECT_EQ(b.y, a.y);
+  EXPECT_EQ(c.x, 0) << "the first item of a group starts a new row at the left";
+  EXPECT_EQ(c.y, m.group_items_y[1]);
+  const ItemRect h = group_header_rect(m, 1, 0, 0);
+  EXPECT_EQ(h.y, m.group_head_y[1]);
+  EXPECT_EQ(h.w, m.view_w);
+}
+
+TEST(FmViewMetrics, GroupedGridHitTestingSkipsHeadingsAndEmptyCells) {
+  const ViewMetrics m = grouped_grid();
+  EXPECT_EQ(index_at(m, 5, 5, 0, 0), -1) << "a heading is not an item";
+  EXPECT_EQ(index_at(m, 5, m.group_items_y[0] + 5, 0, 0), 0);
+  EXPECT_EQ(index_at(m, m.cell_w * 2 + 5, m.group_items_y[0] + 5, 0, 0), 2);
+  EXPECT_EQ(index_at(m, m.cell_w * 3 + 5, m.group_items_y[0] + 5, 0, 0), -1) << "the fourth cell of a three-item row is empty";
+  EXPECT_EQ(index_at(m, 5, m.group_items_y[2] + 5, 0, 0), 5);
+  EXPECT_EQ(index_at(m, m.cell_w + 5, m.group_items_y[2] + 5, 0, 0), 6);
+  EXPECT_EQ(index_at(m, 5, m.content_h + 50, 0, 0), -1);
+}
+
+TEST(FmViewMetrics, GroupedGridVisibleRangeFollowsTheScroll) {
+  const ViewMetrics m = grouped_grid(ViewMode::MediumIcons, 100);  // shorter than the content
+  int first, last;
+  visible_range(m, 0, 0, &first, &last);
+  EXPECT_EQ(first, 0);
+  EXPECT_GE(last, 2);
+  visible_range(m, 0, m.group_head_y[2], &first, &last);
+  EXPECT_EQ(first, 5);
+  EXPECT_EQ(last, 6);
+  // Items that are visible are exactly those whose rectangles touch the view.
+  for (int sy : {0, 40, 130, 200, max_scroll_y(m)}) {
+    visible_range(m, 0, sy, &first, &last);
+    for (int i = 0; i < m.count; ++i) {
+      const ItemRect r = item_rect(m, i, 0, sy);
+      const bool touches = r.y < m.view_h && r.y + r.h > 0;
+      if (touches) EXPECT_TRUE(i >= first && i <= last) << "item " << i << " at scroll " << sy;
+    }
+  }
+}
+
+TEST(FmViewMetrics, GroupedGridArrowKeysCrossGroups) {
+  const ViewMetrics m = grouped_grid();
+  EXPECT_EQ(navigate(m, 1, Nav::Down), 4) << "from group 0, column 1: the group below, same column";
+  EXPECT_EQ(navigate(m, 2, Nav::Down), 4) << "column 2 does not exist in the two-item group: its last cell";
+  EXPECT_EQ(navigate(m, 4, Nav::Up), 1);
+  EXPECT_EQ(navigate(m, 3, Nav::Down), 5);
+  EXPECT_EQ(navigate(m, 6, Nav::Down), 6) << "the last row stays put";
+  EXPECT_EQ(navigate(m, 0, Nav::Up), 0);
+  EXPECT_EQ(navigate(m, 2, Nav::Right), 2) << "right stops at the end of a group's row";
+  EXPECT_EQ(navigate(m, 3, Nav::Left), 3) << "left stops at the first column";
+  EXPECT_EQ(navigate(m, 3, Nav::Right), 4);
+  EXPECT_EQ(navigate(m, 0, Nav::End), 6);
+}
+
+TEST(FmViewMetrics, GroupedGridScrollShowsTheHeadingWithTheFirstRow) {
+  const ViewMetrics m = grouped_grid(ViewMode::MediumIcons, 200);
+  int sx = 0, sy = 0;
+  scroll_to_show(m, 5, &sx, &sy);
+  EXPECT_LE(sy, m.group_head_y[2]) << "scrolling to a group's first item brings its heading into view";
+  EXPECT_GT(sy, 0);
+}
+
+TEST(FmViewMetrics, GroupingAlsoWorksInTilesAndLeavesListAndContentAlone) {
+  const std::vector<int> groups = {0, 3, 5};
+  EXPECT_TRUE(compute_metrics(ViewMode::Tiles, 7, 800, 400, 48, 22, 13, 0, 0, &groups).grid_grouped());
+  EXPECT_FALSE(compute_metrics(ViewMode::List, 7, 800, 400, 16, 22, 13, 0, 0, &groups).grid_grouped());
+  EXPECT_TRUE(compute_metrics(ViewMode::List, 7, 800, 400, 16, 22, 13, 0, 0, &groups).group_starts.empty());
+  EXPECT_FALSE(compute_metrics(ViewMode::Content, 7, 800, 400, 48, 22, 13, 0, 0, &groups).grid_grouped());
+  EXPECT_FALSE(compute_metrics(ViewMode::MediumIcons, 7, 800, 400, 48, 22, 13).grid_grouped());
+}
+
 // ---- grouping ----
 TEST(FmMetrics, GroupedDetailsRowsHaveHeadings) {
   const std::vector<int> groups = {0, 3, 4};  // items 0-2, 3, 4-5
