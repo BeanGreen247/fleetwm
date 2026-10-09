@@ -16,11 +16,11 @@ stats_phase_end() { STATS_PHASE["$1"]=$(( SECONDS - ${STATS_PHASE_START["$1"]:-$
 
 # CPU seconds used so far by everything this script has run (compilers, tests, ...).
 stats_cpu_seconds() {
-  times | sed -n 2p | awk '{
-    n = split($1 " " $2, parts, " ")
-    total = 0
-    for (i = 1; i <= n; i++) { split(parts[i], t, /[ms]/); total += t[1] * 60 + t[2] }
-    printf "%.1f", total }'
+  # Read from /proc/$$/stat (cutime + cstime, fields 16 and 17): $$ is the installer even inside $(...), while
+  # `times` run in a command substitution reports the fresh subshell and always gave 0.
+  local ticks
+  ticks=$(getconf CLK_TCK 2>/dev/null || echo 100)
+  sed 's/^.*) //' "/proc/$$/stat" 2>/dev/null | awk -v hz="${ticks}" '{ printf "%.1f", ($14 + $15) / hz }'
 }
 STATS_CPU_START=$(stats_cpu_seconds)
 
