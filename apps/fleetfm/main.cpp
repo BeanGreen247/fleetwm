@@ -159,6 +159,7 @@ int main(int argc, char** argv) {
   host.paste_text = [&](std::function<void(const std::string&)> cb) { app.paste_text(std::move(cb)); };
   host.now = now_seconds;
   host.quit = [&] { app.quit(); };
+  host.open_settings = [](const std::string& page) { fm::spawn_detached({"fleetwm-settings", "--page", page}); };
   host.set_clipboard_files = [&](const std::vector<std::string>& paths, bool cut) {
     std::string uris = fm::make_uri_list(paths), plain;
     std::string gnome = cut ? "cut" : "copy";
@@ -217,6 +218,26 @@ int main(int argc, char** argv) {
   app.watch_fd(watcher.fd, [&] {
     if (watcher.drain()) win.on_dir_changed();
   });
+
+  // Every option lives in the Settings app: follow its changes to fleetfm.toml and theme.toml while the window is open.
+  const std::filesystem::path conf_dir = std::filesystem::path(fm::fm_settings_path()).parent_path();
+  std::error_code conf_ec;
+  std::filesystem::create_directories(conf_dir, conf_ec);
+  const int conf_fd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
+  if (conf_fd >= 0 && inotify_add_watch(conf_fd, conf_dir.c_str(), IN_CLOSE_WRITE | IN_MOVED_TO) >= 0) {
+    app.watch_fd(conf_fd, [&, conf_fd] {
+      alignas(inotify_event) char buf[4096];
+      bool mine = false;
+      ssize_t n;
+      while ((n = read(conf_fd, buf, sizeof buf)) > 0)
+        for (char* p = buf; p < buf + n; p += sizeof(inotify_event) + reinterpret_cast<inotify_event*>(p)->len) {
+          const inotify_event* ev = reinterpret_cast<inotify_event*>(p);
+          if (ev->len && (std::strcmp(ev->name, "fleetfm.toml") == 0 || std::strcmp(ev->name, "theme.toml") == 0)) mine = true;
+        }
+      if (!mine) return;
+      win.reload_config(fm::load_fm_settings(), kit::load_palette(load_theme_config()));
+    });
+  }
 
   sigset_t mask;
   sigemptyset(&mask);

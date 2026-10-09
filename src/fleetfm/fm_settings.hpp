@@ -80,7 +80,7 @@ struct FmSettings {
   DateStyle date_style = DateStyle::Windows7;
   std::vector<ColumnSetting> columns;               // empty = the defaults
   // ---- Appearance ----
-  ColorScheme colour_scheme = ColorScheme::StyleDefault;
+  ColorScheme colour_scheme = ColorScheme::FollowTheme;
   int font_px = 0;                                  // 0 = the style's
   int row_height = 0;                               // 0 = the style's
   int icon_px = 0;                                  // 0 = the view mode's

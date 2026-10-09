@@ -91,3 +91,21 @@ Open, most important first:
 4. Group by in the icon views, "Other application..." under Open with, a Settings page for `desktop.toml` (the shortcut card can only be turned off in the file).
 5. Performance next steps with an estimate: prefix-key array for the 100,000-name sort (about 20 ms), overlap read-back with writing for big files.
 6. The pointer was never moved by a real mouse in a running session; everything was driven by tests and the headless compositor.
+
+## Taskbar options (owner request 2026-10-09, not started)
+One "Taskbar" page in Settings (the Bar page grows into it; Date & Time keeps only the system clock and NTP, the clock format and bar time zone move here):
+1. Order of the elements (start, workspaces, pinned apps, window list, tray, keyboard layout, volume, network, power mode, battery, metrics, clock) as a list the user reorders (up/down, later drag), saved in `bar.toml` as `taskbar_order`; unknown names are dropped and missing ones appended, so an older file still loads.
+2. A toggle per element (`taskbar_hidden = [...]`).
+3. Auto-hide (`taskbar_autohide`): the compositor must stop reserving the strip and the bar must slide in from the edge on pointer contact; needs a compositor change (exclusive zone 0 plus a 1 px trigger strip), the largest part.
+4. Start menu centred, Windows 11 style (`start_centered`): start button, pinned apps and window buttons form one centred group; the status area stays at the right edge.
+5. Pinned apps (`pinned = ["firefox.desktop", ...]`): icon-only buttons that start the app, or focus its window when one is open; add and remove from the Settings page and from the window button menu.
+6. Window buttons as icon and title or icon only (`taskbar_labels`).
+Both orientations (horizontal and the vertical Left/Right taskbar) must follow the same order. Tests at 1024x768. The bar's two draw paths (`draw_taskbar_horizontal`, `draw_taskbar_vertical` in src/bar/main.cpp) are fixed layouts today, so step 1 is to turn them into one list of element widths that either path lays out.
+
+## Task manager app (owner request 2026-10-09, not started)
+`fleetwm-taskmgr`: code-drawn like the other apps (fleetkit, no GTK), Windows 7 Task Manager layout with the Windows 10/11 details, kept simple.
+- Tabs: Processes (name, PID, CPU, memory, disk, user; end task), Performance (CPU graph with one small graph per core, memory graph and history, disk, network, GPU, and the numbers the bar already shows: CPU, RAM, GPU, disk, plus scheduler latency and audio latency), Startup/Services only if they stay small.
+- The bar's metrics (CPU, RAM, GPU, disk) become off by default; right click on the taskbar shows "Task Manager" and opens the app, and the same values come from one shared reader (`src/common/hw_stats.*` today) so the bar and the app never disagree.
+- Cost: it must not disturb what it measures. Sample only while the window is visible (stop on minimise/hidden), 1 s default tick, read `/proc` with one open file per source and `pread`, no per-process work on the Performance tab, redraw only damage, no allocation in the tick; measure its own CPU and RSS with the app idle and open (budget: under 1% CPU, a few MB) and write the numbers down.
+- Reference: research with the browser/websearch skills (Windows 7 Task Manager, Windows 10/11 Performance tab, btop/htop, GNOME System Monitor, KDE System Monitor) before drawing anything; keep the reference screenshots out of the repo.
+- Tests at 1024x768; unit tests for the /proc parsers with fixture files.

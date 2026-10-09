@@ -297,11 +297,6 @@ int run_train(const std::string& dir) {
     d.key(XKB_KEY_Escape);
     d.key(XKB_KEY_Escape);
   }
-  for (int page = 0; page < 8; ++page) {
-    d.win->show_settings_page(page);
-    d.frame();
-  }
-  d.win->close_dialog_for_test();
   for (Cmd dl : {Cmd::About, Cmd::ConnectServer, Cmd::AddNextcloud, Cmd::Properties, Cmd::Checksums}) {
     d.win->run(dl);
     d.settle();

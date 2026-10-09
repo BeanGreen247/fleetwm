@@ -487,7 +487,9 @@ void FmWindow::run(Cmd c, int arg, const std::string& sarg) {
         eject_volume_at(sarg);
       }
       break;
-    case Cmd::Settings: open_dialog(Dlg::Settings); break;
+    case Cmd::Settings:
+      if (host_.open_settings) host_.open_settings("File Manager");
+      break;
     case Cmd::About: open_dialog(Dlg::About); break;
     case Cmd::SetView: set_view_mode(static_cast<ViewMode>(arg)); break;
     case Cmd::SetSort:
@@ -1166,7 +1168,6 @@ void FmWindow::show_message(const std::string& title, const std::string& text, b
 
 void FmWindow::open_dialog(Dlg d) {
   dlg_ = d;
-  if (d == Dlg::Settings) settings_page_ = 0;
   if (!ui_) {
     kit::Palette pal;
     ui_ = std::make_unique<kit::Ui>(pal);
@@ -1250,7 +1251,6 @@ Rect FmWindow::item_screen_rect(int index) const {
 std::string FmWindow::dialog_name() const {
   switch (dlg_) {
     case Dlg::None: return "";
-    case Dlg::Settings: return "settings";
     case Dlg::About: return "about";
     case Dlg::Properties: return "properties";
     case Dlg::Connect: return "connect";
@@ -1263,11 +1263,6 @@ std::string FmWindow::dialog_name() const {
     case Dlg::ConfirmEmptyTrash: return "confirm-empty-trash";
   }
   return "";
-}
-
-void FmWindow::show_settings_page(int page) {
-  open_dialog(Dlg::Settings);
-  settings_page_ = page;
 }
 
 void FmWindow::save_session() {
@@ -1285,8 +1280,7 @@ void FmWindow::save_session() {
 void FmWindow::screenshot_setup(const std::string& what) {
   if (what.empty()) return;
   Browser& b = tab();
-  if (what == "settings") run(Cmd::Settings);
-  else if (what == "about") run(Cmd::About);
+  if (what == "about") run(Cmd::About);
   else if (what == "connect") run(Cmd::ConnectServer);
   else if (what == "nextcloud") run(Cmd::AddNextcloud);
   else if (what == "properties") {

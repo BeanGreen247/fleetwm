@@ -70,6 +70,11 @@ bash "$(dirname "${BASH_SOURCE[0]}")/pgo-path-shim.sh" "$BUILD_DIR" "$SHIM_DIR"
 export PATH="${SHIM_DIR}:${PATH}"
 
 have() { command -v "$1" >/dev/null 2>&1; }
+# Parts of the run need helper programs; without them those parts are skipped silently, which leaves the profile thinner
+# (no wtype/wlrctl: nothing driven by the keyboard, so Alt+Tab, the shortcuts and the overlay are never trained). Say so.
+missing_tools=()
+for t in wtype wlrctl foot grim wpctl pw-cli wayland-scanner cc; do have "$t" || missing_tools+=("$t"); done
+(( ${#missing_tools[@]} )) && echo "    NOTE: not installed, so the matching parts of the training are skipped: ${missing_tools[*]}"
 
 # ---- fake machine state: battery and network trees the bar reads (test hooks of the bar and of netmgr) -------------
 FAKE="${RUNTIME_DIR}/fake"
@@ -656,6 +661,20 @@ phase_files_and_desktop() {
   fi
 }
 
+# Export and import of the whole configuration (fleetwm-config, the same code the Settings About tab runs): the files the
+# earlier rounds wrote go into one archive and come back, including the refusal of a bad archive.
+phase_config_backup() {
+  echo "    configuration backup: export, import, a refused archive"
+  local arc="${RUNTIME_DIR}/backup.tar.gz" cfg="${BUILD_DIR}/apps/config/fleetwm-config"
+  "$cfg" export "$arc" >/dev/null 2>&1 || echo "    WARNING: fleetwm-config export failed" | tee -a "${RUNTIME_DIR}/crashes.log"
+  "$cfg" export "${arc}.all" --all >/dev/null 2>&1
+  "$cfg" import "$arc" >/dev/null 2>&1 || echo "    WARNING: fleetwm-config import failed" | tee -a "${RUNTIME_DIR}/crashes.log"
+  "$cfg" import "${arc}.all" --all >/dev/null 2>&1
+  printf 'not an archive' > "${RUNTIME_DIR}/junk.tar.gz"
+  "$cfg" import "${RUNTIME_DIR}/junk.tar.gz" >/dev/null 2>&1
+  rm -rf "${HOME}"/.config/fleetwm.bak-* "$arc" "${arc}.all" "${RUNTIME_DIR}/junk.tar.gz"
+}
+
 phase_ipc_and_layouts() {
   echo "    layouts: keyboard layout, idle inhibit, window queries"
   next_layout
@@ -745,6 +764,7 @@ while time_left; do
   (( DO_SETTINGS[r] )) && time_left && timed phase_windows_and_settings
   (( DO_MENUS[r] )) && time_left && timed phase_menus
   (( DO_IPC[r] )) && time_left && timed phase_ipc_and_layouts
+  (( r == 1 )) && time_left && timed phase_config_backup
   (( r == 2 )) && time_left && timed phase_small_screen
   # Flip the layout while windows are open, so the relayout and snap paths run with real content.
   if time_left; then
