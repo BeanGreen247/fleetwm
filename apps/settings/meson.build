@@ -4,6 +4,6 @@ executable(
   'fleetwm-settings',
   files('main.cpp'),
   include_directories: include_directories('.'),
-  dependencies: [libfleetkit_dep, libcommon_core_dep, libaudiomixer_dep, libnetmgr_dep],
+  dependencies: [libfleetkit_dep, libcommon_core_dep, libaudiomixer_dep, libnetmgr_dep, libfleetfm_settings_ui_dep],
   install: true,
 )

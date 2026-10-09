@@ -45,10 +45,11 @@ double now_seconds() {
   return duration<double>(steady_clock::now().time_since_epoch()).count();
 }
 
-const char* kUsage = "[--train DIR] [--screenshot FILE [--size WxH] [--style NAME] [--view MODE] [--show WHAT]] [--write-icon FILE [SIZE]] [FOLDER|URI ...]";
+const char* kUsage = "[--train DIR] [--screenshot FILE [--size WxH] [--style NAME] [--view MODE] [--show WHAT]] [--write-icon FILE [SIZE]] [--connect | --nextcloud] [FOLDER|URI ...]";
 
 int screenshot(const std::vector<std::string>& args) {
   std::string out, style, view, show, where;
+  std::vector<std::string> clicks;  // "x,y": a left click after the window is up (checks popups and the like)
   int w = 1024, h = 768;
   for (size_t i = 0; i < args.size(); ++i) {
     const std::string& a = args[i];
@@ -57,6 +58,7 @@ int screenshot(const std::vector<std::string>& args) {
     else if (a == "--style" && i + 1 < args.size()) style = args[++i];
     else if (a == "--view" && i + 1 < args.size()) view = args[++i];
     else if (a == "--show" && i + 1 < args.size()) show = args[++i];
+    else if (a == "--click" && i + 1 < args.size()) clicks.push_back(args[++i]);
     else if (a[0] != '-') where = a;
   }
   fm::FmSettings s = fm::load_fm_settings();
@@ -74,6 +76,17 @@ int screenshot(const std::vector<std::string>& args) {
   win.screenshot_setup(show);
   cairo_surface_t* surf = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
   cairo_t* cr = cairo_create(surf);
+  win.draw(cr, w, h);
+  for (const std::string& c : clicks) {
+    int cx = 0, cy = 0;
+    if (std::sscanf(c.c_str(), "%d,%d", &cx, &cy) != 2) continue;
+    win.draw(cr, w, h);
+    win.on_motion(cx, cy);
+    win.draw(cr, w, h);
+    win.on_button(cx, cy, 0x110, true);
+    win.on_button(cx, cy, 0x110, false);
+    win.draw(cr, w, h);
+  }
   win.draw(cr, w, h);   // the first frame builds the layout the second one positions menus and dialogs with
   win.draw(cr, w, h);
   win.wait_idle(2.0);
@@ -216,6 +229,10 @@ int main(int argc, char** argv) {
   for (const std::string& a : args)
     if (!a.empty() && a[0] != '-') open.push_back(a);
   win.start(open.empty() ? std::string() : open[0]);
+  for (const std::string& a : args) {  // from the Settings app: open the dialog straight away
+    if (a == "--connect") win.screenshot_setup("connect");
+    else if (a == "--nextcloud") win.screenshot_setup("nextcloud");
+  }
   for (size_t i = 1; i < open.size(); ++i) win.open_address(open[i], true);
   surface->queue_draw();
   app.run();
