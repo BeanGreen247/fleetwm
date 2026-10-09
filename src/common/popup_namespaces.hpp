@@ -11,10 +11,12 @@ namespace fleetwm {
 
 inline constexpr const char* kStartMenuNamespace = "fleetwm-start-menu";
 inline constexpr const char* kAudioMixerNamespace = "fleetwm-audiomixer";
+inline constexpr const char* kCtxMenuNamespace = "fleetwm-ctxmenu";
 
 inline bool dismisses_on_outside_click(const char* layer_namespace) {
   if (layer_namespace == nullptr) return false;
-  return std::strcmp(layer_namespace, kStartMenuNamespace) == 0 || std::strcmp(layer_namespace, kAudioMixerNamespace) == 0;
+  return std::strcmp(layer_namespace, kStartMenuNamespace) == 0 || std::strcmp(layer_namespace, kAudioMixerNamespace) == 0 ||
+         std::strcmp(layer_namespace, kCtxMenuNamespace) == 0;
 }
 
 }  // namespace fleetwm

@@ -28,6 +28,7 @@
 
 #include "quit_signals.hpp"
 #include "bluetooth_glyph.hpp"
+#include "ctx_menu.hpp"
 #include "bt_backend.hpp"
 #include "taskbar_layout.hpp"
 #include "tick_plan.hpp"
@@ -1380,6 +1381,84 @@ struct Bar {
               na ? with_alpha(soft_fg(), 1.0) : pal.fg_primary);
   }
 
+  // ---- the right-click menu (fleetwm-ctxmenu) ----
+  static bool program_exists(const char* name) {
+    const char* path = std::getenv("PATH");
+    std::string dirs = path ? path : "";
+    size_t at = 0;
+    while (at <= dirs.size()) {
+      size_t end = dirs.find(':', at);
+      if (end == std::string::npos) end = dirs.size();
+      const std::string full = dirs.substr(at, end - at) + "/" + name;
+      if (access(full.c_str(), X_OK) == 0) return true;
+      at = end + 1;
+    }
+    return false;
+  }
+
+  void open_ctx_menu(const std::vector<MenuItem>& items, double x, double y) {
+    std::vector<std::string> args = {"fleetwm-ctxmenu", "--edge", taskbar_position_to_string(tb_pos), "--at",
+                                     std::to_string(static_cast<int>(vertical() ? y : x))};
+    for (const MenuItem& i : items) {
+      args.push_back("--item");
+      args.push_back(format_menu_item(i));
+    }
+    std::vector<char*> argv;
+    for (std::string& a : args) argv.push_back(a.data());
+    argv.push_back(nullptr);
+    pid_t pid;
+    if (posix_spawnp(&pid, "fleetwm-ctxmenu", nullptr, fleetwm::CleanSpawnAttr().get(), argv.data(), environ) != 0)
+      std::fprintf(stderr, "fleetwm-bar: failed to launch fleetwm-ctxmenu\n");
+  }
+
+  static MenuItem item(MenuItem::Kind k, const char* label, const std::string& arg) { return MenuItem{k, label, arg}; }
+
+  // The desktop entry a window belongs to, if any (for "Pin to taskbar").
+  const kit::DesktopEntry* entry_for_window(const WindowEntry& w) {
+    for (const kit::DesktopEntry& de : desktop_entries)
+      if (window_is_app(de, w.app_id)) return &de;
+    return nullptr;
+  }
+
+  void tail_items(std::vector<MenuItem>* m) {
+    if (!m->empty()) m->push_back(MenuItem{});
+    if (program_exists("fleetwm-taskmgr")) m->push_back(item(MenuItem::Kind::Exec, "Task Manager", "fleetwm-taskmgr"));
+    m->push_back(item(MenuItem::Kind::Exec, "Taskbar settings", "fleetwm-settings --page taskbar"));
+  }
+
+  void taskbar_context_menu(double x, double y) {
+    std::vector<MenuItem> m;
+    for (size_t i = 0; i < pinned_rects.size() && i < pinned.size(); ++i) {
+      if (!pinned_rects[i].hit(x, y)) continue;
+      const PinnedApp& pa = pinned[i];
+      std::string cmd;
+      for (const std::string& a : kit::exec_argv(pa.entry)) cmd += (cmd.empty() ? "" : " ") + a;
+      if (!cmd.empty()) m.push_back(item(MenuItem::Kind::Exec, pa.running ? "New window" : "Open", cmd));
+      if (pa.running) m.push_back(item(MenuItem::Kind::Ipc, "Close window", "WINDOW_CLOSE " + std::to_string(pa.win_id)));
+      m.push_back(item(MenuItem::Kind::Unpin, "Unpin from taskbar", pa.id));
+      tail_items(&m);
+      return open_ctx_menu(m, x, y);
+    }
+    for (size_t i = 0; i < win_rects.size() && i < shown_unpinned.size(); ++i) {
+      if (!win_rects[i].hit(x, y)) continue;
+      const WindowEntry& w = shown_unpinned[i];
+      m.push_back(item(MenuItem::Kind::Ipc, "Close window", "WINDOW_CLOSE " + std::to_string(w.id)));
+      if (const kit::DesktopEntry* de = entry_for_window(w)) m.push_back(item(MenuItem::Kind::Pin, "Pin to taskbar", de->id));
+      tail_items(&m);
+      return open_ctx_menu(m, x, y);
+    }
+    tail_items(&m);
+    open_ctx_menu(m, x, y);
+  }
+
+  // A right click on these keeps its own meaning (keyboard layout settings, tray items).
+  bool over_status_widget(double x, double y) const {
+    if (layout_rect.hit(x, y) && !kb_layouts.empty()) return true;
+    for (const Rect& r : tray_rects)
+      if (r.hit(x, y)) return true;
+    return false;
+  }
+
   void start_pinned(const PinnedApp& pa) {
     const std::vector<std::string> argv = kit::exec_argv(pa.entry);
     if (argv.empty()) return;
@@ -2018,6 +2097,7 @@ struct Bar {
   void on_button(double x, double y, uint32_t b, bool pressed) {
     if (!pressed) return;
     if (taskbar) {
+      if (b == 0x111 && !over_status_widget(x, y)) return taskbar_context_menu(x, y);  // right button on a window, a pinned app or empty space
       if (b == kBtnLeft && start_rect.hit(x, y)) return spawn_start_menu();
       for (size_t i = 0; i < pinned_rects.size() && i < pinned.size(); ++i) {
         if (!pinned_rects[i].hit(x, y)) continue;

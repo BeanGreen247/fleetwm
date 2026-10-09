@@ -290,7 +290,7 @@ TEST(QuitSignals, ThreadsStartedAfterTheBlockInheritIt) {
 
 TEST(QuitSignals, EveryProgramBlocksThemFirstThing) {
   for (const char* file : {"src/bar/main.cpp", "apps/settings/main.cpp", "src/wallpaper/main.cpp", "apps/langpicker/main.cpp",
-                           "apps/powermenu/main.cpp", "src/locker/main.cpp", "src/greeter-login/main.cpp",
+                           "apps/powermenu/main.cpp", "apps/ctxmenu/main.cpp", "src/locker/main.cpp", "src/greeter-login/main.cpp",
                            "apps/audiomixer/main.cpp", "apps/launcher/main.cpp", "apps/shortcuts/main.cpp"}) {
     const std::string src = tr_read(tr_root() / file);
     const size_t main_at = src.find("\nint main(");
