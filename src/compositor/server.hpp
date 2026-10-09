@@ -351,6 +351,7 @@ class Server {
     unsigned tiling_mod = kModAlt;  // held for the Tiling layout's shortcuts
     Combo desktop_terminal{kModCtrl | kModAlt, XKB_KEY_t};
     Combo desktop_browser{kModLogo | kModShift, XKB_KEY_b};
+    Combo desktop_task_manager{kModCtrl | kModShift, XKB_KEY_Escape};
     Combo desktop_file_manager{kModLogo | kModShift, XKB_KEY_e};
     Combo desktop_text_editor{kModLogo | kModShift, XKB_KEY_t};
     Combo desktop_debug_overlay{kModCtrl | kModAlt, XKB_KEY_i};

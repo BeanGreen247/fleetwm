@@ -55,6 +55,7 @@
 #include "system_devices.hpp"
 #include "tray.hpp"
 #include "xkb_rules.hpp"
+#include "gpu_monitor.hpp"
 #include "hw_stats.hpp"
 #include "volume_source.hpp"
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
@@ -125,25 +126,7 @@ struct Bar {
   unsigned long long prev_idle = 0, prev_total = 0;
   bool have_prev = false;
   int cpu_fd = -1;
-  // One entry per GPU found. AMD has a "busy percent" file; Intel has none, so its idle time (RC6
-  // residency) over wall-clock time gives the share of time it was awake; NVIDIA is asked through
-  // nvidia-smi in the background (one line per card).
-  struct Gpu {
-    enum class Kind { AmdBusy, IntelIdle, Nvidia } kind = Kind::AmdBusy;
-    std::string vendor, driver;  // "AMD", "amdgpu"
-    std::string path;            // the busy or idle-residency file
-    std::string device_dir;      // /sys/class/drm/cardN/device
-    std::string freq_path, freq_max_path;
-    int fd = -1;
-    long long idle_prev_ms = -1;
-    std::chrono::steady_clock::time_point idle_prev_time;
-    int percent = -1;
-  };
-  std::vector<Gpu> gpus;
-  int nvidia_cards = 0;  // how many nvidia-smi reported, once it has answered
-  int gpu_tick = 0;
-  bool gpu_query_running = false;
-  bool has_nvidia_smi = false;
+  fleetwm::GpuMonitor gpu;  // shared with the Task Manager (src/common/gpu_monitor.hpp)
 
   // Hit rects, rebuilt on every draw.
   // Glass look (theme.toml glass_effects): the blurred wallpaper behind translucent surfaces.
@@ -1620,144 +1603,18 @@ struct Bar {
     return changed;
   }
 
-  static std::string read_word(const std::string& path) {
-    std::string w;
-    std::ifstream(path) >> w;
-    return w;
-  }
-  static long long read_number(const std::string& path) {
-    long long v = -1;
-    std::ifstream(path) >> v;
-    return v;
+  bool update_gpu() {
+    bool changed = gpu.sample([](std::function<void()> fn) { std::thread(std::move(fn)).detach(); },
+                              [this](std::function<void()> fn) { app.post(std::move(fn)); });
+    return changed && set_if_changed(gpu_text, gpu.text());
   }
 
   void init_gpu() {
-    for (int card = 0; card < 8; ++card) {
-      const std::string base = "/sys/class/drm/card" + std::to_string(card);
-      const std::string vendor_id = read_word(base + "/device/vendor");
-      if (vendor_id.empty()) continue;
-      std::error_code ec;
-      const std::string driver = std::filesystem::read_symlink(base + "/device/driver", ec).filename().string();
-      Gpu g;
-      g.driver = driver;
-      g.device_dir = base + "/device";
-      if (vendor_id == "0x1002") g.vendor = "AMD";
-      else if (vendor_id == "0x8086") g.vendor = "Intel";
-      else if (vendor_id == "0x10de") g.vendor = "NVIDIA";
-      else g.vendor = vendor_id;
-      if (std::ifstream(base + "/device/gpu_busy_percent").good()) {
-        g.kind = Gpu::Kind::AmdBusy;
-        g.path = base + "/device/gpu_busy_percent";
-      } else if (vendor_id == "0x8086") {
-        for (const char* rel : {"/gt/gt0/rc6_residency_ms", "/power/rc6_residency_ms", "/device/tile0/gt0/gtidle/idle_residency_ms"})
-          if (std::ifstream(base + rel).good()) {
-            g.kind = Gpu::Kind::IntelIdle;
-            g.path = base + rel;
-            break;
-          }
-        for (const char* rel : {"/gt/gt0/rps_act_freq_mhz", "/gt_act_freq_mhz", "/device/tile0/gt0/freq0/act_freq"})
-          if (std::ifstream(base + rel).good()) {
-            g.freq_path = base + rel;
-            break;
-          }
-        for (const char* rel : {"/gt/gt0/rps_RP0_freq_mhz", "/gt_RP0_freq_mhz", "/device/tile0/gt0/freq0/max_freq"})
-          if (std::ifstream(base + rel).good()) {
-            g.freq_max_path = base + rel;
-            break;
-          }
-      }
-      if (!g.path.empty()) gpus.push_back(std::move(g));
-    }
-    if (const char* path = std::getenv("PATH")) {
-      std::string p = path;
-      size_t pos = 0;
-      while (pos <= p.size()) {
-        size_t e = p.find(':', pos);
-        if (e == std::string::npos) e = p.size();
-        const std::string cand = p.substr(pos, e - pos) + "/nvidia-smi";
-        if (access(cand.c_str(), X_OK) == 0) {
-          has_nvidia_smi = true;
-          break;
-        }
-        pos = e + 1;
-      }
-    }
-    if (gpus.empty() && !has_nvidia_smi) gpu_text = "GPU N/A";
-  }
-
-  // "GPU 12%" for one GPU; "GPU1 12%  GPU2 40%" for several.
-  std::string build_gpu_text() const {
-    struct Item {
-      int percent;
+    gpu.on_nvidia_update = [this] {
+      if (set_if_changed(gpu_text, gpu.text())) redraw();
     };
-    std::vector<int> values;
-    for (const Gpu& g : gpus) values.push_back(g.percent);
-    for (int i = 0; i < nvidia_cards; ++i) values.push_back(nvidia_percent.size() > static_cast<size_t>(i) ? nvidia_percent[static_cast<size_t>(i)] : -1);
-    if (values.empty()) return "GPU N/A";
-    auto one = [](int v) { return v < 0 ? std::string("--%") : std::to_string(v) + "%"; };
-    if (values.size() == 1) return "GPU " + one(values[0]);
-    std::string t;
-    for (size_t i = 0; i < values.size(); ++i) t += (i ? "  GPU" : "GPU") + std::to_string(i + 1) + " " + one(values[i]);
-    return t;
-  }
-  std::vector<int> nvidia_percent;
-  std::vector<fleetwm::GpuDetail> nvidia_detail;  // power, clocks and memory from the same nvidia-smi call
-
-  bool update_gpu() {
-    bool changed = false;
-    for (Gpu& g : gpus) {
-      int pct = g.percent;
-      if (g.kind == Gpu::Kind::AmdBusy) {
-        if (g.fd < 0) g.fd = open(g.path.c_str(), O_RDONLY | O_CLOEXEC);
-        if (g.fd < 0) continue;
-        char buf[32];
-        const ssize_t got = pread(g.fd, buf, sizeof buf - 1, 0);
-        if (got <= 0) continue;
-        buf[got] = 0;
-        pct = std::clamp(std::atoi(buf), 0, 100);
-      } else {
-        const long long idle_ms = read_number(g.path);
-        if (idle_ms < 0) continue;
-        const auto now = std::chrono::steady_clock::now();
-        if (g.idle_prev_ms >= 0) {
-          const double wall_ms = std::chrono::duration<double, std::milli>(now - g.idle_prev_time).count();
-          if (wall_ms < 50) continue;
-          pct = static_cast<int>(100.0 * (1.0 - std::clamp((idle_ms - g.idle_prev_ms) / wall_ms, 0.0, 1.0)) + 0.5);
-        }
-        g.idle_prev_ms = idle_ms;
-        g.idle_prev_time = now;
-      }
-      if (pct != g.percent) {
-        g.percent = pct;
-        changed = true;
-      }
-    }
-    if (has_nvidia_smi && ++gpu_tick >= 3 && !gpu_query_running) {
-      gpu_tick = 0;
-      gpu_query_running = true;
-      // nvidia-smi can take a while; keep it off the UI thread. It prints one line per card.
-      std::thread([this] {
-        std::string out;
-        if (FILE* p = popen("nvidia-smi --query-gpu=utilization.gpu,power.draw,clocks.gr,clocks.mem,memory.used,memory.total "
-                            "--format=csv,noheader,nounits 2>/dev/null", "r")) {
-          char buf[512];
-          size_t n;
-          while ((n = std::fread(buf, 1, sizeof buf, p)) > 0) out.append(buf, n);
-          pclose(p);
-        }
-        std::vector<fleetwm::GpuDetail> cards = fleetwm::parse_nvidia_smi_csv(out);
-        std::vector<int> pcts;
-        for (const auto& c : cards) pcts.push_back(c.percent);
-        app.post([this, pcts, cards = std::move(cards)] {
-          gpu_query_running = false;
-          nvidia_percent = pcts;
-          nvidia_detail = cards;
-          nvidia_cards = static_cast<int>(pcts.size());
-          if (set_if_changed(gpu_text, build_gpu_text())) redraw();
-        });
-      }).detach();
-    }
-    return (changed && set_if_changed(gpu_text, build_gpu_text()));
+    gpu.discover();
+    if (!gpu.any()) gpu_text = "GPU N/A";
   }
 
   struct MemInfo {
@@ -1915,28 +1772,28 @@ struct Bar {
   std::string gpu_tooltip_text() {
     std::string t;
     int n = 0;
-    const bool several = gpus.size() + nvidia_cards > 1;
-    for (const Gpu& g : gpus) {
+    const bool several = gpu.devices().size() + gpu.nvidia_cards() > 1;
+    for (const fleetwm::GpuDevice& g : gpu.devices()) {
       if (n++) t += "\n\n";
       fleetwm::GpuDetail d;
-      if (g.kind == Gpu::Kind::AmdBusy) d = fleetwm::read_amd_gpu_detail(g.device_dir);
+      if (g.kind == fleetwm::GpuDevice::Kind::AmdBusy) d = fleetwm::read_amd_gpu_detail(g.device_dir);
       t += (several ? "GPU" + std::to_string(n) + ": " : std::string()) + g.vendor + " (" + g.driver + ")\nCore usage: " +
            (g.percent < 0 ? std::string("--") : std::to_string(g.percent)) + "%" +
-           (g.kind == Gpu::Kind::IntelIdle ? " active" : "");
-      if (g.kind == Gpu::Kind::IntelIdle) {  // the Intel counters give the core clock only; memory is the system's
-        const long long cur = g.freq_path.empty() ? -1 : read_number(g.freq_path);
+           (g.kind == fleetwm::GpuDevice::Kind::IntelIdle ? " active" : "");
+      if (g.kind == fleetwm::GpuDevice::Kind::IntelIdle) {  // the Intel counters give the core clock only; memory is the system's
+        const long long cur = g.freq_path.empty() ? -1 : fleetwm::GpuMonitor::read_number(g.freq_path);
         d.core_mhz = cur >= 0 ? static_cast<int>(cur) : -1;
-        const long long max = g.freq_max_path.empty() ? -1 : read_number(g.freq_max_path);
+        const long long max = g.freq_max_path.empty() ? -1 : fleetwm::GpuMonitor::read_number(g.freq_max_path);
         t += gpu_detail_lines(d, true);
         if (max > 0) t += " (max " + std::to_string(max) + ")";
       } else {
         t += gpu_detail_lines(d, false);
       }
     }
-    for (int i = 0; i < nvidia_cards; ++i) {
+    for (int i = 0; i < gpu.nvidia_cards(); ++i) {
       if (n++) t += "\n\n";
       fleetwm::GpuDetail d;
-      if (nvidia_detail.size() > static_cast<size_t>(i)) d = nvidia_detail[static_cast<size_t>(i)];
+      if (gpu.nvidia_detail().size() > static_cast<size_t>(i)) d = gpu.nvidia_detail()[static_cast<size_t>(i)];
       t += (several ? "GPU" + std::to_string(n) + ": " : std::string()) + "NVIDIA\nCore usage: " +
            (d.percent < 0 ? std::string("--") : std::to_string(d.percent)) + "%" + gpu_detail_lines(d, false);
     }

@@ -111,7 +111,9 @@ struct BarConfig {
   // The Desktop taskbar's elements: the saved order and the hidden ones, by name (see taskbar_layout.hpp: unknown names are dropped on use,
   // missing ones are added, so an older file keeps working). Empty order = the default one.
   std::vector<std::string> taskbar_order;
-  std::vector<std::string> taskbar_hidden;
+  // CPU, RAM, GPU and disk are off by default: the Task Manager (Ctrl+Shift+Esc, or right-click the taskbar) shows them, and the bar costs less.
+  // A file that lists `taskbar_hidden = []` shows them again.
+  std::vector<std::string> taskbar_hidden = {"metrics"};
   bool taskbar_autohide = false;   // slides away until the pointer touches its screen edge
   bool start_centered = false;     // Windows 11 style: start button, pinned apps and window buttons centred
   bool taskbar_labels = true;      // window buttons show the title beside the icon; off: icon only

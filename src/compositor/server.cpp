@@ -2284,6 +2284,8 @@ void Server::reload_keybinds_config() {
   resolved_keybinds_.tiling_mod = keybinds_config_.tiling_modifier == "super" ? kModLogo : kModAlt;
   resolved_keybinds_.desktop_terminal = resolve_combo(keybinds_config_.desktop_terminal, defaults.desktop_terminal, "desktop_terminal");
   resolved_keybinds_.desktop_browser = resolve_combo(keybinds_config_.desktop_browser, defaults.desktop_browser, "desktop_browser");
+  resolved_keybinds_.desktop_task_manager =
+      resolve_combo(keybinds_config_.desktop_task_manager, defaults.desktop_task_manager, "desktop_task_manager");
   resolved_keybinds_.desktop_file_manager =
       resolve_combo(keybinds_config_.desktop_file_manager, defaults.desktop_file_manager, "desktop_file_manager");
   resolved_keybinds_.desktop_text_editor =

@@ -63,6 +63,7 @@ struct KeybindsConfig {
   std::string desktop_browser = "super+shift+b";       // default web browser (Settings -> Default Apps)
   std::string desktop_file_manager = "super+shift+e";  // default file manager
   std::string desktop_text_editor = "super+shift+t";   // default text editor
+  std::string desktop_task_manager = "ctrl+shift+Escape";  // the Task Manager (fleetwm-taskmgr), as on Windows
   // The frame-time / FPS / RAM overlay (Alt+Shift+I in the Tiling layout).
   std::string desktop_debug_overlay = "ctrl+alt+i";
   // Windows-style snapping with the arrow keys (Desktop layout): left/right half,

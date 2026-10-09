@@ -70,6 +70,7 @@ std::vector<ShortcutEntry> build_shortcut_list(const KeybindsConfig& b, WindowLa
   add("Applications", desktop ? format_key_combo(b.desktop_terminal) : format_alt_combo(b.terminal),
       "Open a terminal", true);
   if (desktop) {  // Desktop-layout app shortcuts (not bound in Tiling)
+    add("Applications", format_key_combo(b.desktop_task_manager), "Open the Task Manager", true);
     add("Applications", format_key_combo(b.desktop_browser), "Open the web browser", true);
     add("Applications", format_key_combo(b.desktop_file_manager), "Open the file manager", true);
     add("Applications", format_key_combo(b.desktop_text_editor), "Open the text editor", true);

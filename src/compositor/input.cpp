@@ -418,7 +418,8 @@ void keyboard_key(wl_listener* listener, void* data) {
           spawn_terminal(server->default_apps_config().terminal_command.c_str());
           handled = true;
         } else if (desktop) {
-          const char* cmd = is(binds.desktop_browser, sym)        ? "fleetwm-launcher --default browser"
+          const char* cmd = is(binds.desktop_task_manager, sym)   ? "fleetwm-taskmgr"
+                            : is(binds.desktop_browser, sym)      ? "fleetwm-launcher --default browser"
                             : is(binds.desktop_file_manager, sym) ? "fleetwm-launcher --default files"
                             : is(binds.desktop_text_editor, sym)  ? "fleetwm-launcher --default editor"
                                                                   : nullptr;

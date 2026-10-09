@@ -143,6 +143,7 @@ KeybindsConfig load_keybinds_config() {
   if (auto v = table["start_menu_key"].value<std::string>()) config.start_menu_key = *v;
   if (auto v = table["desktop_terminal"].value<std::string>()) config.desktop_terminal = *v;
   if (auto v = table["desktop_browser"].value<std::string>()) config.desktop_browser = *v;
+  if (auto v = table["desktop_task_manager"].value<std::string>()) config.desktop_task_manager = *v;
   if (auto v = table["desktop_file_manager"].value<std::string>()) config.desktop_file_manager = *v;
   if (auto v = table["desktop_text_editor"].value<std::string>()) config.desktop_text_editor = *v;
   if (auto v = table["desktop_debug_overlay"].value<std::string>()) config.desktop_debug_overlay = *v;
@@ -199,6 +200,7 @@ void save_keybinds_config(const KeybindsConfig& config) {
   table.insert_or_assign("start_menu_key", config.start_menu_key);
   table.insert_or_assign("desktop_terminal", config.desktop_terminal);
   table.insert_or_assign("desktop_browser", config.desktop_browser);
+  table.insert_or_assign("desktop_task_manager", config.desktop_task_manager);
   table.insert_or_assign("desktop_file_manager", config.desktop_file_manager);
   table.insert_or_assign("desktop_text_editor", config.desktop_text_editor);
   table.insert_or_assign("desktop_debug_overlay", config.desktop_debug_overlay);

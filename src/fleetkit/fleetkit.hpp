@@ -11,6 +11,7 @@
 #include <wayland-client.h>
 #include <xkbcommon/xkbcommon.h>
 
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -121,6 +122,11 @@ class Surface {
   std::function<void()> on_closed;
 
   void queue_draw();
+  // True when the last frame was sent more than `ms` ago and the compositor has not said it was shown: a minimised, hidden or fully covered
+  // window gets no frame callbacks, so programs that only matter while visible (the Task Manager) can stop sampling.
+  bool frame_stalled(int ms) const {
+    return frame_pending_ && std::chrono::steady_clock::now() - frame_sent_ > std::chrono::milliseconds(ms);
+  }
   // Redraws only this rectangle (logical px): on_draw runs with a clip set to it and the rest of
   // the picture is carried over from the last frame, so a ticking clock costs a strip, not a bar.
   // Any queue_draw() before the next frame upgrades it to a full redraw.
@@ -162,6 +168,7 @@ class Surface {
   xdg_toplevel* xt_ = nullptr;
   int pending_w_ = 0, pending_h_ = 0;
   wl_callback* frame_cb_ = nullptr;
+  std::chrono::steady_clock::time_point frame_sent_{};
   Buffer bufs_[2];
   int width_ = 0, height_ = 0, scale_ = 1;
   bool configured_ = false, dirty_ = false, frame_pending_ = false;
