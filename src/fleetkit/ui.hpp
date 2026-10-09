@@ -55,7 +55,10 @@ class Ui {
   bool wants_another_frame() const { return again_; }
 
   // ---- input (feed from Surface callbacks) ----
-  void pointer_motion(double x, double y);
+  // Returns true when this move can change what is drawn: the pointer crossed the edge of a rectangle that the last
+  // frame tested it against (see hovered()), a button is held, or the frame used the pointer position directly
+  // (a canvas, an open dialog). Callers repaint only then; 100 moves inside one button cost no frame.
+  bool pointer_motion(double x, double y);
   void pointer_button(double x, double y, uint32_t button, bool pressed);
   void pointer_leave();
   void scroll(double dy);
@@ -161,6 +164,7 @@ class Ui {
   bool click_widget(int id, const UiRect& r);  // press+release inside r; also sets focus
   bool key_activate(int id);                   // Space/Enter on the focused widget
   bool hovered(const UiRect& r) const;
+  void use_pointer_directly() { motion_all_ = true; }
   int next_id() { return ++id_; }
   bool focused(int id) const { return focus_id_ == id; }
   void register_focusable_if(int id, bool enabled);
@@ -195,6 +199,9 @@ class Ui {
   int focus_id_ = 0;
   std::vector<int> focusables_, last_focusables_, modal_focusables_;
   bool dirty_ = false;
+  // Rectangles (window coordinates, clipped) that the current frame tested the pointer against.
+  mutable std::vector<UiRect> hit_log_;
+  bool motion_all_ = false;  // the frame read the pointer position in a way the log cannot answer
   bool again_ = false;
   bool mark(bool v) {
     if (v) again_ = true;

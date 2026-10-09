@@ -234,7 +234,7 @@ int main(int argc, char** argv) {
     P.draw(cr, w, h);
   };
   P.surface->on_motion = [&P](double x, double y) {
-    P.ui.pointer_motion(x, y);
+    if (!P.ui.pointer_motion(x, y)) return;
     P.redraw();
   };
   P.surface->on_leave = [&P] {

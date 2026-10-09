@@ -40,8 +40,7 @@ void FmWindow::on_motion(double x, double y) {
   mx_ = x;
   my_ = y;
   if (dlg_ != Dlg::None && ui_) {
-    ui_->pointer_motion(x - dlg_rect_.x, y - dlg_rect_.y);
-    schedule_redraw();
+    if (ui_->pointer_motion(x - dlg_rect_.x, y - dlg_rect_.y)) schedule_redraw();
     return;
   }
   bool redraw = false;

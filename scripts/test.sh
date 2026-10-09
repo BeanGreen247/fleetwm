@@ -22,14 +22,14 @@ BUILD_DIR="${BUILD_DIR:-${ROOT}/build-test}"
 
 declare -A AREAS=(
   [theme]='ParseHexColor.*:ThemeName.*:ThemeTest.*:TitlebarNames.*:WindowLayoutNames.*:ThemeHome.*'
-  [bar]='PowerMode.*:BarLayout.*:TaskbarPosition.*:BarConfigTest.*:BatterySourceReadingTest.*'
+  [bar]='PowerMode.*:BarLayout.*:TaskbarPosition.*:BarConfigTest.*:BatterySourceReadingTest.*:TickPlan.*'
   [keybinds]='KeybindsConfigTest.*'
   [geometry]='ResizeEdges.*:ResizedBox.*:Cascade.*:TitlebarLayout.*:TitlebarStrip.*:TitlebarHit.*:TitleX.*:TaskbarSlots.*:SnapZoneAt.*:SnapBox.*:CaptionButtons.*:TitlebarDraw.*'
   [windows]='WindowList.*'
   [shortcuts]='FormatAltCombo.*:FormatAltShiftCombo.*:ShortcutList.*'
   [ipc]='ExtractJsonStringField.*:IpcSocketPathTest.*:IpcClient.*:IpcClientWithServerTest.*'
   [config]='WallpaperConfigTest.*:DefaultAppsTest.*:OutputConfigTest.*'
-  [fleetkit]='DesktopEntryExec.*:FleetkitColor.*:GlassCache.*'
+  [fleetkit]='DesktopEntryExec.*:FleetkitColor.*:GlassCache.*:UiMotion.*'
   [popups]='PopupSpot.*:SingleInstance.*:AudioInstaller.*:PopupDismissal.*'
   [fm]='Fm*'
   [build]='PgoTraining.*:PgoTrainingShim.*'
