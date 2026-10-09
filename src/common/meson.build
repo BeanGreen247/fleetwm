@@ -73,6 +73,8 @@ libcommon_core = static_library(
     'theme.cpp',
     'ipc_client.cpp',
     'bar_config.cpp',
+    'taskbar_layout.cpp',
+    'taskbar_layout.cpp',
     'wallpaper_config.cpp',
     'output_config.cpp',
     'default_apps.cpp',

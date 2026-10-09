@@ -43,6 +43,7 @@
 #include "keyboard_tab.hpp"
 #include "mouse_config.hpp"
 #include "bluetooth_tab.hpp"
+#include "taskbar_layout.hpp"
 #include "network_tab.hpp"
 #include "mimeapps.hpp"
 #include "theme.hpp"
@@ -186,7 +187,7 @@ struct Settings {
 
   int tab = 0;
   double scroll[24] = {};
-  std::vector<std::string> tab_names{"Theme", "Bar", "Wallpaper", "Display", "Network", "Bluetooth", "Keyboard", "Mouse", "Power", "Date & Time", "Default Apps", "Audio", "Performance", "File Manager", "Desktop Icons", "About"};
+  std::vector<std::string> tab_names{"Theme", "Taskbar", "Wallpaper", "Display", "Network", "Bluetooth", "Keyboard", "Mouse", "Power", "Date & Time", "Default Apps", "Audio", "Performance", "File Manager", "Desktop Icons", "About"};
 
   // network
   std::unique_ptr<NetworkTab> net_tab;
@@ -456,26 +457,6 @@ struct Settings {
 
   void tab_datetime(cairo_t*) {
     if (!tinfo.loaded) load_time_info();
-
-    ui.section("Clock");
-    ui.row("Time format");
-    int f24 = bar.clock.use_24h ? 0 : 1;
-    if (ui.segmented({"24-hour", "12-hour"}, &f24)) {
-      bar.clock.use_24h = f24 == 0;
-      save_bar();
-    }
-    ui.newline();
-    struct {
-      const char* label;
-      bool* field;
-    } toggles[] = {{"Show seconds", &bar.clock.show_seconds}, {"Show date", &bar.clock.show_date},
-                   {"Show year", &bar.clock.show_year},       {"Show month", &bar.clock.show_month},
-                   {"Show day", &bar.clock.show_day}};
-    for (auto& t : toggles) {
-      ui.row("");
-      if (ui.checkbox(t.label, t.field)) save_bar();
-      ui.newline(-2);
-    }
 
     ui.space(8);
     ui.section("Time zone");
@@ -1034,6 +1015,8 @@ struct Settings {
     ui.newline();
   }
 
+  int pin_add_sel = 0;
+
   void tab_bar(cairo_t*) {
     const bool tiling = config.window_layout == WindowLayout::Tiling;
     const bool desktop = !tiling;
@@ -1043,6 +1026,7 @@ struct Settings {
     ui.newline();
     ui.space(6);
 
+    auto top_bar = [&] {
     ui.section(tiling ? "Top bar (Tiling layout)" : "Top bar (Tiling layout, not in use)");
     ui.row("Bar layout");
     // Display order differs from the enum order: Capsules first (the default).
@@ -1091,6 +1075,8 @@ struct Settings {
     if (ui.checkbox("Rounded workspace buttons", &bar.workspace_colors.buttons_rounded, tiling)) save_bar();
     ui.newline();
 
+    };
+    auto task_bar = [&] {
     ui.space(8);
     ui.section(desktop ? "Taskbar (Desktop layout)" : "Taskbar (Desktop layout, not in use)");
     ui.row("Taskbar position");
@@ -1103,7 +1089,145 @@ struct Settings {
     ui.row("Window buttons");
     if (ui.checkbox("Rounded corners", &bar.taskbar_rounded, desktop)) save_bar();
     ui.newline();
-    ui.paragraph("Start menu, one button per window, and the clock and status widgets on the right.", true);
+    ui.row("Window titles");
+    if (ui.toggle(&bar.taskbar_labels, desktop)) save_bar();
+    ui.label(bar.taskbar_labels ? "Icon and title" : "Icon only", true);
+    ui.newline();
+    ui.row("Start menu in the middle");
+    if (ui.toggle(&bar.start_centered, desktop)) save_bar();
+    ui.label("Like Windows 11: start button, pinned apps and windows centred", true);
+    ui.newline();
+    ui.row("Hide until the pointer arrives");
+    if (ui.toggle(&bar.taskbar_autohide, desktop)) save_bar();
+    ui.label(bar.taskbar_autohide ? "Windows use the whole screen" : "Always visible", true);
+    ui.newline();
+
+    ui.space(6);
+    ui.label("Parts of the taskbar", true);
+    ui.newline();
+    ui.paragraph("Show or hide each part and put them in the order you like. The window list takes the space that is left. Parts of the left side stay on the left and the system area stays on the right.");
+    {
+      const std::vector<TbElement> order = tb_normalize_order(bar.taskbar_order);
+      std::vector<TbElement> hidden = tb_normalize_hidden(bar.taskbar_hidden);
+      auto zone = [&](bool main_zone, const char* title) {
+        ui.label(title, true);
+        ui.newline();
+        for (TbElement e : order) {
+          if (tb_is_main_zone(e) != main_zone) continue;
+          ui.row(tb_element_label(e));
+          const auto it = std::find(hidden.begin(), hidden.end(), e);
+          bool visible = it == hidden.end();
+          if (ui.toggle(&visible, desktop)) {
+            if (visible) hidden.erase(it);
+            else hidden.push_back(e);
+            bar.taskbar_order = tb_names(order);
+            bar.taskbar_hidden = tb_names(hidden);
+            save_bar();
+          }
+          ui.same_line();
+          if (ui.button("Up", desktop)) {
+            std::vector<TbElement> moved = order;
+            if (tb_move(&moved, e, -1)) {
+              bar.taskbar_order = tb_names(moved);
+              bar.taskbar_hidden = tb_names(hidden);
+              save_bar();
+            }
+          }
+          ui.same_line();
+          if (ui.button("Down", desktop)) {
+            std::vector<TbElement> moved = order;
+            if (tb_move(&moved, e, +1)) {
+              bar.taskbar_order = tb_names(moved);
+              bar.taskbar_hidden = tb_names(hidden);
+              save_bar();
+            }
+          }
+          ui.newline();
+        }
+      };
+      zone(true, "Left side");
+      ui.space(4);
+      zone(false, "System area");
+      ui.space(4);
+      ui.row("");
+      if (ui.button("Restore the default", desktop)) {
+        bar.taskbar_order.clear();
+        bar.taskbar_hidden.clear();
+        save_bar();
+      }
+      ui.newline();
+    }
+
+    ui.space(6);
+    ui.label("Pinned apps", true);
+    ui.newline();
+    ui.paragraph("A pinned app has an icon button on the taskbar that starts it, or brings its window forward when it is already open.");
+    for (size_t i = 0; i < bar.pinned_apps.size(); ++i) {
+      std::string name = bar.pinned_apps[i];
+      for (const DesktopEntry& de : entries)
+        if (de.id == bar.pinned_apps[i]) name = de.name;
+      ui.row(name);
+      if (ui.button("Remove", desktop)) {
+        bar.pinned_apps.erase(bar.pinned_apps.begin() + static_cast<long>(i));
+        save_bar();
+        break;
+      }
+      ui.newline();
+    }
+    {
+      std::vector<std::string> names;
+      std::vector<const DesktopEntry*> candidates;
+      for (const DesktopEntry& de : entries) {
+        if (std::find(bar.pinned_apps.begin(), bar.pinned_apps.end(), de.id) != bar.pinned_apps.end()) continue;
+        names.push_back(de.name);
+        candidates.push_back(&de);
+      }
+      if (!names.empty()) {
+        ui.row("Add an app");
+        pin_add_sel = std::clamp(pin_add_sel, 0, static_cast<int>(names.size()) - 1);
+        ui.dropdown(names, &pin_add_sel, 260);
+        ui.same_line();
+        if (ui.button("Add", desktop, true)) {
+          bar.pinned_apps.push_back(candidates[static_cast<size_t>(pin_add_sel)]->id);
+          save_bar();
+        }
+        ui.newline();
+      }
+    }
+
+    };
+    if (desktop) {
+      task_bar();
+      ui.space(8);
+      top_bar();
+    } else {
+      top_bar();
+      task_bar();
+    }
+
+    ui.space(8);
+    ui.section("Clock");
+    ui.label("Used by the taskbar and by the top bar of the Tiling layout.", true);
+    ui.newline();
+    ui.row("Time format");
+    int f24 = bar.clock.use_24h ? 0 : 1;
+    if (ui.segmented({"24-hour", "12-hour"}, &f24)) {
+      bar.clock.use_24h = f24 == 0;
+      save_bar();
+    }
+    ui.newline();
+    struct {
+      const char* label;
+      bool* field;
+    } toggles[] = {{"Show seconds", &bar.clock.show_seconds}, {"Show date", &bar.clock.show_date},
+                   {"Show year", &bar.clock.show_year},       {"Show month", &bar.clock.show_month},
+                   {"Show day", &bar.clock.show_day}};
+    for (auto& t : toggles) {
+      ui.row("");
+      if (ui.checkbox(t.label, t.field)) save_bar();
+      ui.newline(-2);
+    }
+
   }
 
   void tab_wallpaper(cairo_t* cr) {

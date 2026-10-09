@@ -3,6 +3,8 @@
 #include <cairo.h>
 #include <gtest/gtest.h>
 
+#include "taskbar_layout.hpp"
+
 #include <cstdint>
 #include <fstream>
 #include <sstream>
@@ -90,9 +92,9 @@ TEST(TaskbarLayout, VolumeIsAnIconAfterTheKeyboardLayoutAndBeforeTheNetworkIcon)
 
 TEST(TaskbarLayout, ClockIsTheLastItemAndTheDesktopTaskbarHasNoPowerButton) {
   const std::string src = bar_source();
-  EXPECT_NE(src.find("const double clock_x = W - kMargin - clock_w, right_x = clock_x - 18 - right_w;"), std::string::npos);
-  EXPECT_NE(src.find("if (taskbar) {\n      power_rect = {};\n      return rx - kRightGap;"), std::string::npos);
-  EXPECT_NE(src.find("power_rect = {};  // no power button on the taskbar"), std::string::npos);
+  EXPECT_EQ(tb_default_order().back(), TbElement::Clock);  // the clock is the last element of the default taskbar
+  EXPECT_NE(src.find("start_rect = power_rect = vol_rect"), std::string::npos) << "the taskbar clears power_rect: it has no power button";
+  EXPECT_EQ(src.find("draw_power_glyph(cr, cx"), std::string::npos);
   EXPECT_EQ(src.find("draw_power_glyph(cr, W / 2.0, y + kBtn / 2"), std::string::npos);
 }
 

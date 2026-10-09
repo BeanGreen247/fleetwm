@@ -27,6 +27,9 @@
 #include <vector>
 
 #include "quit_signals.hpp"
+#include "bluetooth_glyph.hpp"
+#include "bt_backend.hpp"
+#include "taskbar_layout.hpp"
 #include "tick_plan.hpp"
 #include "bar_config.hpp"
 #include "desktop_entry.hpp"
@@ -219,7 +222,7 @@ struct Bar {
   int kb_current = 0;
   net::Device net_dev;  // the card the network icon stands for
   bool net_have = false;
-  Rect ws_rect[10], vol_rect, power_rect, battery_rect, ram_rect, cpu_rect, gpu_rect, disk_rect;
+  Rect ws_rect[10], vol_rect, power_rect, battery_rect, ram_rect, cpu_rect, gpu_rect, disk_rect, bt_rect;
   int tooltip_for = 0;  // 1 battery, 2 RAM, 3 CPU, 4 GPU, 5 disk, 6 volume, 1000+id window
   std::vector<Rect> tray_rects;
   int hover_power = 0;
@@ -235,6 +238,22 @@ struct Bar {
   TaskbarPosition tb_pos = TaskbarPosition::Bottom;
   std::vector<WindowEntry> windows;  // every window the compositor reported
   std::vector<WindowEntry> shown;    // the ones the taskbar lists: this workspace's, plus pinned
+  std::vector<WindowEntry> shown_unpinned;  // `shown` without the windows a pinned-app button stands for: what the window list draws
+
+  // Pinned apps (bar.toml `pinned`): an icon button each, which starts the app or focuses its window.
+  struct PinnedApp {
+    std::string id;        // desktop entry id, "firefox.desktop"
+    std::string name;
+    std::string icon_key;  // the app id kit::app_icon() resolves to the icon
+    kit::DesktopEntry entry;
+    bool running = false, focused = false, minimized = false;
+    uint32_t win_id = 0;
+  };
+  std::vector<PinnedApp> pinned;
+  std::vector<Rect> pinned_rects;
+  int hover_pinned = -1;
+  std::vector<kit::DesktopEntry> desktop_entries;
+  bool desktop_entries_loaded = false;
   Rect start_rect;
   std::vector<Rect> win_rects;  // parallel to `windows` (zero-size = not shown)
   int hover_win = -1;           // index into `windows`
@@ -250,6 +269,55 @@ struct Bar {
     for (const WindowEntry& w : windows) {
       if (mine && !w.output.empty() && w.output != mine->connector) continue;
       if (w.pinned || w.workspace == active_workspace) shown.push_back(w);
+    }
+    resolve_pinned();
+  }
+
+  static bool window_is_app(const kit::DesktopEntry& de, const std::string& app_id) {
+    if (app_id.empty()) return false;
+    const std::string a = kit::lower_ascii(app_id);
+    std::string id = kit::lower_ascii(de.id);
+    if (id.size() > 8 && id.compare(id.size() - 8, 8, ".desktop") == 0) id.resize(id.size() - 8);
+    return a == id || a == kit::lower_ascii(kit::exec_basename(de)) || a == kit::lower_ascii(de.name);
+  }
+
+  // Turns bar.toml's `pinned` ids into buttons, and hands each the first window of its app on this workspace; the window list shows the rest.
+  void resolve_pinned() {
+    if (!desktop_entries_loaded) {
+      desktop_entries_loaded = true;
+      desktop_entries = kit::load_desktop_entries();
+    }
+    pinned.clear();
+    for (const std::string& id : config.pinned_apps) {
+      const kit::DesktopEntry* found = nullptr;
+      for (const kit::DesktopEntry& de : desktop_entries)
+        if (de.id == id) {
+          found = &de;
+          break;
+        }
+      if (!found) continue;  // uninstalled: keep it in the file, show nothing
+      PinnedApp pa;
+      pa.id = id;
+      pa.name = found->name;
+      pa.entry = *found;
+      std::string key = kit::lower_ascii(id);
+      if (key.size() > 8 && key.compare(key.size() - 8, 8, ".desktop") == 0) key.resize(key.size() - 8);
+      pa.icon_key = key;
+      pinned.push_back(std::move(pa));
+    }
+    shown_unpinned.clear();
+    std::vector<bool> claimed(pinned.size(), false);
+    for (const WindowEntry& w : shown) {
+      bool taken = false;
+      for (size_t i = 0; i < pinned.size() && !taken; ++i) {
+        if (claimed[i] || !window_is_app(pinned[i].entry, w.app_id)) continue;
+        claimed[i] = taken = true;
+        pinned[i].running = true;
+        pinned[i].focused = w.focused;
+        pinned[i].minimized = w.minimized;
+        pinned[i].win_id = w.id;
+      }
+      if (!taken) shown_unpinned.push_back(w);
     }
   }
 
@@ -329,7 +397,6 @@ struct Bar {
   }
   // Desktop taskbar: CPU/RAM/GPU/Disk collapse into a 2x2 grid in a smaller font.
   static constexpr double kSmallFont = 11.5, kGridGap = 6;
-  bool compact_stats() const { return taskbar && !vertical(); }
   double small_w(Metrics& m, const std::string& s) { return measure_text(m.cr, s, kSmallFont).width; }
   void grid_columns(Metrics& m, double* col_a, double* col_b) {
     *col_a = std::max(small_w(m, cpu_text), small_w(m, gpu_text));
@@ -350,20 +417,11 @@ struct Bar {
   double right_total(Metrics& m) {
     double t = 0;
     int children = 0;
-    if (compact_stats()) {
-      double a, b;
-      grid_columns(m, &a, &b);
-      t += a + b + kGridGap + kStatPad;
+    t += vol_w(m) + kStatPad;
+    ++children;
+    for (const std::string* s : {&cpu_text, &ram_text, &gpu_text, &disk_text}) {
+      t += m.text_w(*s) + kStatPad;
       ++children;
-      t += vol_w(m) + kStatPad;
-      ++children;
-    } else {
-      t += vol_w(m) + kStatPad;
-      ++children;
-      for (const std::string* s : {&cpu_text, &ram_text, &gpu_text, &disk_text}) {
-        t += m.text_w(*s) + kStatPad;
-        ++children;
-      }
     }
     t += tray_total();
     ++children;  // tray box always participates in the spacing
@@ -373,6 +431,10 @@ struct Bar {
     }
     if (net_have) {
       t += kNetW;
+      ++children;
+    }
+    if (bt_state.available) {
+      t += kBtW;
       ++children;
     }
     t += kModeW + battery_w(m);  // power-mode glyph + battery/plug, shown on every machine
@@ -683,28 +745,10 @@ struct Bar {
       draw_vol(cr, rx + kStatPad / 2, H / 2.0);
       rx += w + kStatPad + kRightGap;
     };
-    if (compact_stats()) {
-      double col_a, col_b;
-      grid_columns(m, &col_a, &col_b);
-      const double cell_h = H / 2.0;
-      const TextExtents se = measure_text(cr, "Ag", kSmallFont);
-      const double r0 = (cell_h - se.height) / 2.0 + se.ascent, r1 = cell_h + r0;
-      const double x0 = rx + kStatPad / 2, x1 = x0 + col_a + kGridGap;
-      cpu_rect = {rx, 0, col_a + kGridGap, cell_h};
-      gpu_rect = {rx, cell_h, col_a + kGridGap, cell_h};
-      ram_rect = {x1 - kGridGap / 2, 0, col_b + kStatPad, cell_h};
-      disk_rect = {x1 - kGridGap / 2, cell_h, col_b + kStatPad, cell_h};
-      draw_stat(cr, m, cpu_text, x0, r0, kSmallFont);
-      draw_stat(cr, m, gpu_text, x0, r1, kSmallFont);
-      draw_stat(cr, m, ram_text, x1, r0, kSmallFont);
-      draw_stat(cr, m, disk_text, x1, r1, kSmallFont);
-      rx += col_a + col_b + kGridGap + kStatPad + kRightGap;
-    } else {
-      stat(cpu_text, &cpu_rect);
-      stat(ram_text, &ram_rect);
-      stat(gpu_text, &gpu_rect);
-      stat(disk_text, &disk_rect);
-    }
+    stat(cpu_text, &cpu_rect);
+    stat(ram_text, &ram_rect);
+    stat(gpu_text, &gpu_rect);
+    stat(disk_text, &disk_rect);
 
     // Tray icons.
     const auto& items = tray->items();
@@ -743,6 +787,13 @@ struct Bar {
     } else {
       net_rect = {};
     }
+    if (bt_state.available) {
+      bt_rect = {rx, 0, kBtW, static_cast<double>(H)};
+      draw_bluetooth(cr, rx + kBtW / 2, H / 2.0, icon_fg());
+      rx += kBtW + kRightGap;
+    } else {
+      bt_rect = {};
+    }
     draw_mode_glyph(cr, rx + kModeW / 2, H / 2.0, icon_fg());
     rx += kModeW + kRightGap;
     const double bw_total = battery_w(m);
@@ -757,10 +808,6 @@ struct Bar {
     }
     rx += bw_total + kRightGap;
 
-    if (taskbar) {
-      power_rect = {};
-      return rx - kRightGap;
-    }
     // Power button: a bare glyph that lights up on hover (no filled box).
     const double pbh = kWsH, pby = (H - pbh) / 2.0;
     power_rect = {rx, pby, kPowerW, pbh};
@@ -844,6 +891,45 @@ struct Bar {
     if (changed) apply_layout_if_island();
     return changed;
   }
+
+  // ---- Bluetooth: state from BlueZ over D-Bus, pushed by its signals (nothing is polled) ----
+  static constexpr double kBtW = 18 + kStatPad;
+  std::unique_ptr<bt::Backend> bt_backend;
+  bt::State bt_state;
+  int bt_watch = 0, bt_refresh_timer = 0;
+
+  void start_bluetooth() {
+    bt_backend = bt::Backend::open();
+    if (!bt_backend) return;
+    bt_backend->on_change = [this] {  // a burst of property changes (a device's signal strength) becomes one read
+      if (bt_refresh_timer) return;
+      bt_refresh_timer = app.add_oneshot(400, [this] {
+        bt_refresh_timer = 0;
+        if (update_bluetooth()) redraw();
+      });
+    };
+    bt_watch = app.watch_fd(bt_backend->bus_fd(), [this] { bt_backend->process(); });
+    update_bluetooth();
+  }
+
+  bool update_bluetooth() {
+    if (!bt_backend) return false;
+    const bt::State st = bt_backend->read();
+    const bool changed = st.available != bt_state.available || st.adapter.powered != bt_state.adapter.powered ||
+                         bt::glyph_for(st) != bt::glyph_for(bt_state) || bt::tooltip_text(st) != bt::tooltip_text(bt_state);
+    bt_state = st;
+    if (changed) apply_layout_if_island();
+    return changed;
+  }
+
+  void draw_bluetooth(cairo_t* cr, double cx, double cy, const Color& c) {
+    const bt::Glyph g = bt::glyph_for(bt_state);
+    const BluetoothState st = g == bt::Glyph::Off ? BluetoothState::Off : g == bt::Glyph::On ? BluetoothState::On : BluetoothState::Connected;
+    draw_cached_glyph(cr, cx - 14, cy - 12, {8, static_cast<int>(st), glyph_rgb(c.r, c.g, c.b), 28, 24},
+                      [&](cairo_t* gc, double x, double y) { draw_bluetooth_glyph(gc, x + 2, y, 16, st, c.r, c.g, c.b); });
+  }
+
+  std::string bt_tooltip_text() { return bt::tooltip_text(bt_state) + "\n\nClick to open Bluetooth settings"; }
 
   // Asked fresh on every hover so it reflects NetworkManager, wpa_supplicant or the bare kernel view.
   std::string net_tooltip_text() {
@@ -1002,50 +1088,282 @@ struct Bar {
       case TaskbarPosition::Right: cairo_rectangle(cr, 0, 0, 1, H); break;
     }
     cairo_fill(cr);
-    if (vertical()) draw_taskbar_vertical(cr, m, W, H);
-    else draw_taskbar_horizontal(cr, m, W, H);
+    draw_taskbar_elements(cr, m, W, H);
   }
 
-  void draw_taskbar_horizontal(cairo_t* cr, Metrics& m, int W, int H) {
-    const TextExtents fe = measure_text(cr, "Ag", kFont);
-    const double base = (H - fe.height) / 2.0 + fe.ascent;
-    const double btn_r = pal.rounded ? kWsH / 2.0 : 0;
+  // ---- the Desktop taskbar: one list of elements for both orientations (see taskbar_layout.hpp) ----
+  static constexpr double kBtn = 44, kStat = 38, kRow = 28, kClockRowV = 46;
+  static constexpr double kPinnedBtnH = 34;  // horizontal pinned-app button width
 
-    // Clock: time on top, date below (just the time, centered, when no date is shown).
-    const size_t split = clock_text.find("  ");
-    const std::string time_line = split == std::string::npos ? clock_text : clock_text.substr(0, split);
-    const std::string date_line = split == std::string::npos ? "" : clock_text.substr(split + 2);
-    const double time_w = measure_text(cr, time_line, kFont, true).width;
-    const double date_w = date_line.empty() ? 0 : measure_text(cr, date_line, kSmallFont).width;
-    const double clock_w = std::max(time_w, date_w);
-    const double right_w = right_total(m);
-    const double clock_x = W - kMargin - clock_w, right_x = clock_x - 18 - right_w;  // the clock is the last item
-    clock_rect = {clock_x - kClockPad, 0, clock_w + 2 * kClockPad, static_cast<double>(H)};
-    clock_w_drawn = clock_w;
-    if (date_line.empty()) {
-      draw_text(cr, time_line, clock_x + (clock_w - time_w) / 2, base, kFont, pal.accent, true);
-    } else {
-      const TextExtents te = measure_text(cr, time_line, kFont, true), de = measure_text(cr, date_line, kSmallFont);
-      const double block = te.height + 1 + de.height, top = (H - block) / 2.0;
-      draw_text(cr, time_line, clock_x + (clock_w - time_w) / 2, top + te.ascent, kFont, pal.accent, true);
-      draw_text(cr, date_line, clock_x + (clock_w - date_w) / 2, top + te.height + 1 + de.ascent, kSmallFont,
-                with_alpha(icon_fg(), 0.95));
+  // Natural size along the taskbar's axis of one element (0: nothing to show, it takes no room).
+  double tb_natural(TbElement e, Metrics& m, double clock_w) {
+    const bool v = vertical();
+    switch (e) {
+      case TbElement::Start: return v ? kBtn : 46;
+      case TbElement::Workspaces: {
+        const size_t n = ws_visible().size();
+        if (n == 0) return 0;
+        return v ? static_cast<double>((n + 1) / 2) * 29 - 3 : static_cast<double>(n) * 29 - 3;
+      }
+      case TbElement::Pinned: {
+        const size_t n = pinned.size();
+        return n == 0 ? 0 : v ? static_cast<double>(n) * (kBtn + 4) - 4 : static_cast<double>(n) * (kPinnedBtnH + 2) - 2;
+      }
+      case TbElement::Windows:
+        return shown_unpinned.empty() ? 0 : static_cast<double>(shown_unpinned.size()) * ((v ? kBtn : 200.0) + 4);
+      case TbElement::Metrics: {
+        if (v) return 2 * kStat;
+        double a, b;
+        grid_columns(m, &a, &b);
+        return a + b + kGridGap + kStatPad;
+      }
+      case TbElement::Tray: {
+        const size_t n = tray->items().size();
+        return n == 0 ? 0 : v ? static_cast<double>(n) * kRow : tray_total();
+      }
+      case TbElement::Layout: return kb_layouts.empty() ? 0 : v ? kRow : layout_pill_w(m);
+      case TbElement::Volume: return v ? kRow : kSpeakerW + kStatPad;
+      case TbElement::Network: return !net_have ? 0 : v ? kRow : kNetW;
+      case TbElement::Bluetooth: return !bt_state.available ? 0 : v ? kRow : kBtW;
+      case TbElement::Mode: return v ? kRow : kModeW;
+      case TbElement::Battery: return v ? kRow : battery_w(m);
+      case TbElement::Clock: return v ? kClockRowV : clock_w;
     }
-    draw_status_group(cr, m, right_x, H, base, btn_r);
+    return 0;
+  }
 
-    start_rect = {6, 4, 46, static_cast<double>(H - 8)};
-    draw_start_button(cr, start_rect);
+  void clear_tb_rects() {
+    start_rect = power_rect = vol_rect = battery_rect = ram_rect = cpu_rect = gpu_rect = disk_rect = net_rect = layout_rect = bt_rect = Rect{};
+    clock_rect = Rect{};
+    for (Rect& r : ws_rect) r = Rect{};
+    tray_rects.clear();
+    pinned_rects.assign(pinned.size(), Rect{});
+    win_rects.assign(shown_unpinned.size(), Rect{});
+  }
 
-    // Workspace buttons right after the start button, then the window list.
-    const double pager_end = draw_pager(cr, start_rect.x + start_rect.w + 10, (H - 26) / 2.0, 26, 26, false);
-    const double x0 = pager_end + 12, avail = right_x - 16 - x0;
-    win_rects.assign(shown.size(), Rect{});
-    if (shown.empty() || avail < 44) return;
-    const geom::TaskbarSlots slots = geom::taskbar_slots(avail, shown.size());
-    const double bw = slots.bw;
-    for (size_t i = 0; i < slots.fit; ++i) {
-      win_rects[i] = {x0 + i * (bw + 4), 4, bw, static_cast<double>(H - 8)};
-      draw_window_button(cr, win_rects[i], shown[i], static_cast<int>(i) == hover_win, bw >= 96);
+  void draw_taskbar_elements(cairo_t* cr, Metrics& m, int W, int H) {
+    const bool v = vertical();
+    const double clock_w = clock_width_now();
+    const std::vector<TbElement> order = tb_normalize_order(config.taskbar_order);
+    const std::vector<TbElement> hidden = tb_normalize_hidden(config.taskbar_hidden);
+    std::vector<TbItem> items;
+    for (TbElement e : order) {
+      if (std::find(hidden.begin(), hidden.end(), e) != hidden.end()) continue;
+      items.push_back({e, tb_natural(e, m, clock_w)});
+    }
+    TbLayoutParams p;
+    p.length = v ? H : W;
+    p.margin = 6;
+    p.gap = v ? 4 : 10;
+    p.min_windows = v ? kBtn : 44;
+    p.centered_start = config.start_centered;
+    const std::vector<TbSlot> slots = tb_layout(items, p);
+    clear_tb_rects();
+    const double cross = v ? W : H;
+    const TextExtents fe = measure_text(cr, "Ag", kFont);
+    for (const TbSlot& s : slots) {
+      // The element's box: `s` along the axis, the whole bar across it.
+      const Rect box = v ? Rect{0, s.pos, static_cast<double>(W), s.size} : Rect{s.pos, 0, s.size, static_cast<double>(H)};
+      draw_tb_element(cr, m, s.id, box, cross, fe);
+    }
+  }
+
+  // Draws one element inside `box` and records the rectangles clicks and tooltips use.
+  void draw_tb_element(cairo_t* cr, Metrics& m, TbElement e, const Rect& box, double cross, const TextExtents& fe) {
+    const bool v = vertical();
+    const double bx = 6, bw = cross - 12;  // the cross-axis inset the vertical bar uses
+    const double cx = box.x + box.w / 2, cy = box.y + box.h / 2;
+    const double base = (box.h - fe.height) / 2.0 + fe.ascent + box.y;
+    const Color ic = icon_fg();
+    switch (e) {
+      case TbElement::Start:
+        start_rect = v ? Rect{bx, box.y, bw, box.h} : Rect{box.x, 4, box.w, box.h - 8};
+        draw_start_button(cr, start_rect);
+        break;
+      case TbElement::Workspaces:
+        if (v) draw_pager(cr, bx + (bw - 2 * 30 - 3) / 2, box.y, 30, 26, true);
+        else draw_pager(cr, box.x, (box.h - 26) / 2.0, 26, 26, false);
+        break;
+      case TbElement::Pinned:
+        for (size_t i = 0; i < pinned.size(); ++i) {
+          const double d = static_cast<double>(i) * ((v ? kBtn : kPinnedBtnH) + (v ? 4 : 2));
+          pinned_rects[i] = v ? Rect{bx + 4, box.y + d, bw - 8, kBtn} : Rect{box.x + d, 4, kPinnedBtnH, box.h - 8};
+          draw_pinned_button(cr, pinned_rects[i], pinned[i], static_cast<int>(i) == hover_pinned);
+        }
+        break;
+      case TbElement::Windows: {
+        if (shown_unpinned.empty()) break;
+        if (v) {
+          for (size_t i = 0; i < shown_unpinned.size(); ++i) {
+            const double wy = box.y + static_cast<double>(i) * (kBtn + 4);
+            if (wy + kBtn > box.y + box.h) break;
+            win_rects[i] = {bx + 4, wy, bw - 8, kBtn};
+            draw_window_button(cr, win_rects[i], shown_unpinned[i], static_cast<int>(i) == hover_win, false);
+          }
+        } else {
+          const geom::TaskbarSlots slots = geom::taskbar_slots(box.w, shown_unpinned.size());
+          for (size_t i = 0; i < slots.fit; ++i) {
+            win_rects[i] = {box.x + static_cast<double>(i) * (slots.bw + 4), 4, slots.bw, box.h - 8};
+            draw_window_button(cr, win_rects[i], shown_unpinned[i], static_cast<int>(i) == hover_win, config.taskbar_labels && slots.bw >= 96);
+          }
+        }
+        break;
+      }
+      case TbElement::Metrics:
+        if (v) {
+          cpu_rect = {bx, box.y, bw / 2, kStat};
+          ram_rect = {bx + bw / 2, box.y, bw / 2, kStat};
+          gpu_rect = {bx, box.y + kStat, bw / 2, kStat};
+          disk_rect = {bx + bw / 2, box.y + kStat, bw / 2, kStat};
+          draw_stat_vertical(cr, m, cpu_text, cpu_rect);
+          draw_stat_vertical(cr, m, ram_text, ram_rect);
+          draw_stat_vertical(cr, m, gpu_text, gpu_rect);
+          draw_stat_vertical(cr, m, disk_text, disk_rect);
+        } else {
+          double col_a, col_b;
+          grid_columns(m, &col_a, &col_b);
+          const double cell_h = box.h / 2.0;
+          const TextExtents se = measure_text(cr, "Ag", kSmallFont);
+          const double r0 = (cell_h - se.height) / 2.0 + se.ascent, r1 = cell_h + r0;
+          const double x0 = box.x + kStatPad / 2, x1 = x0 + col_a + kGridGap;
+          cpu_rect = {box.x, 0, col_a + kGridGap, cell_h};
+          gpu_rect = {box.x, cell_h, col_a + kGridGap, cell_h};
+          ram_rect = {x1 - kGridGap / 2, 0, col_b + kStatPad, cell_h};
+          disk_rect = {x1 - kGridGap / 2, cell_h, col_b + kStatPad, cell_h};
+          draw_stat(cr, m, cpu_text, x0, r0, kSmallFont);
+          draw_stat(cr, m, gpu_text, x0, r1, kSmallFont);
+          draw_stat(cr, m, ram_text, x1, r0, kSmallFont);
+          draw_stat(cr, m, disk_text, x1, r1, kSmallFont);
+        }
+        break;
+      case TbElement::Tray: {
+        const auto& items = tray->items();
+        tray_rects.assign(items.size(), Rect{});
+        for (size_t i = 0; i < items.size(); ++i) {
+          const double ix = v ? (cross - kTrayIcon) / 2.0 : box.x + static_cast<double>(i) * (kTrayIcon + kTraySpacing);
+          const double iy = v ? box.y + static_cast<double>(i) * kRow + (kRow - kTrayIcon) / 2 : (box.h - kTrayIcon) / 2.0;
+          tray_rects[i] = {ix, iy, kTrayIcon, kTrayIcon};
+          if (!items[i].icon) continue;
+          cairo_save(cr);
+          cairo_translate(cr, ix, iy);
+          cairo_scale(cr, kTrayIcon / cairo_image_surface_get_width(items[i].icon), kTrayIcon / cairo_image_surface_get_height(items[i].icon));
+          cairo_set_source_surface(cr, items[i].icon, 0, 0);
+          cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_BEST);
+          cairo_paint(cr);
+          cairo_restore(cr);
+        }
+        break;
+      }
+      case TbElement::Layout: {
+        layout_rect = v ? Rect{bx, box.y, bw, box.h} : box;
+        Metrics pm{cr};
+        const double lw = v ? std::min(bw, layout_pill_w(pm)) : box.w;
+        draw_layout_pill(cr, pm, v ? (cross - lw) / 2.0 : box.x, cy, lw);
+        break;
+      }
+      case TbElement::Volume:
+        vol_rect = v ? Rect{bx, box.y, bw, box.h} : box;
+        draw_speaker(cr, cx, cy, ic);
+        break;
+      case TbElement::Network:
+        net_rect = v ? Rect{bx, box.y, bw, box.h} : box;
+        draw_net_glyph(cr, cx, cy, 16);
+        break;
+      case TbElement::Bluetooth:
+        bt_rect = v ? Rect{bx, box.y, bw, box.h} : box;
+        draw_bluetooth(cr, cx, cy, ic);
+        break;
+      case TbElement::Mode:
+        draw_mode_glyph(cr, cx, cy, ic);
+        break;
+      case TbElement::Battery:
+        battery_rect = v ? Rect{bx, box.y, bw, box.h} : box;
+        if (v) {  // narrow: the icon alone
+          if (battery.available) {
+            if (battery.charging || on_ac) draw_plug(cr, cx - 15, cy, ic);
+            draw_battery(cr, cx - 13, cy - 7, ic);
+          } else {
+            draw_plug(cr, cx, cy, ic);
+          }
+        } else if (battery.available) {
+          if (battery.charging || on_ac) draw_plug(cr, box.x + kStatPad / 2 + kPlugW / 2.0, cy, ic);
+          draw_battery(cr, box.x + kStatPad / 2 + kPlugW, cy - 7, ic);
+          draw_text(cr, battery_percent_text(), box.x + kBatteryW + 2, base, kFont, pal.fg_primary);
+        } else {
+          draw_plug(cr, box.x + kBatteryW / 2, cy, ic);
+        }
+        break;
+      case TbElement::Clock: {
+        const size_t split = clock_text.find("  ");
+        const std::string time_line = split == std::string::npos ? clock_text : clock_text.substr(0, split);
+        const std::string date_line = split == std::string::npos ? "" : clock_text.substr(split + 2);
+        const double time_w = measure_text(cr, time_line, kFont, true).width;
+        if (v) {
+          const TextExtents te = measure_text(cr, time_line, kFont, true);
+          draw_text(cr, time_line, (cross - te.width) / 2, box.y + 8 + te.ascent, kFont, pal.accent, true);
+          if (!date_line.empty()) {
+            const double dw = measure_text(cr, date_line, 10.5).width;
+            draw_text(cr, date_line, (cross - dw) / 2, box.y + 10 + te.height + 8, 10.5, with_alpha(ic, 0.95));
+          }
+          clock_rect = {0, box.y, cross, box.h};
+          clock_w_drawn = box.w;
+          break;
+        }
+        const double date_w = date_line.empty() ? 0 : measure_text(cr, date_line, kSmallFont).width;
+        const double clock_w = std::max(time_w, date_w);
+        const double clock_x = box.x + (box.w - clock_w) / 2;
+        clock_rect = {clock_x - kClockPad, 0, clock_w + 2 * kClockPad, box.h};
+        clock_w_drawn = clock_w;
+        if (date_line.empty()) {
+          draw_text(cr, time_line, clock_x + (clock_w - time_w) / 2, base, kFont, pal.accent, true);
+        } else {
+          const TextExtents te = measure_text(cr, time_line, kFont, true), de = measure_text(cr, date_line, kSmallFont);
+          const double block = te.height + 1 + de.height, top = (box.h - block) / 2.0;
+          draw_text(cr, time_line, clock_x + (clock_w - time_w) / 2, top + te.ascent, kFont, pal.accent, true);
+          draw_text(cr, date_line, clock_x + (clock_w - date_w) / 2, top + te.height + 1 + de.ascent, kSmallFont, with_alpha(ic, 0.95));
+        }
+        break;
+      }
+    }
+  }
+
+  // An icon-only button for a pinned app: lit while its window is focused, with a line under it while it runs.
+  void draw_pinned_button(cairo_t* cr, const Rect& r, const PinnedApp& pa, bool hover) {
+    const bool active = pa.running && pa.focused && !pa.minimized;
+    const double radius = config.taskbar_rounded && pal.rounded ? 8 : 0;
+    if (active || hover) {
+      rounded_rect(cr, r.x, r.y, r.w, r.h, radius);
+      set_source(cr, with_alpha(pal.accent, active ? 0.22 : 0.12));
+      cairo_fill(cr);
+    }
+    const double isz = vertical() ? 28 : 22;
+    const double ix = r.x + (r.w - isz) / 2, iy = r.y + (r.h - isz) / 2;
+    if (cairo_surface_t* icon = app_icon(pa.icon_key, 48)) {
+      cairo_save(cr);
+      cairo_translate(cr, ix, iy);
+      cairo_scale(cr, isz / cairo_image_surface_get_width(icon), isz / cairo_image_surface_get_height(icon));
+      cairo_set_source_surface(cr, icon, 0, 0);
+      cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_BEST);
+      cairo_paint_with_alpha(cr, pa.minimized ? 0.5 : 1.0);
+      cairo_restore(cr);
+    } else {
+      cairo_arc(cr, ix + isz / 2, iy + isz / 2, isz / 2, 0, 2 * M_PI);
+      set_source(cr, with_alpha(pal.accent, 0.22));
+      cairo_fill(cr);
+      std::string letter = pa.name.empty() ? "?" : pa.name.substr(0, 1);
+      letter[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(letter[0])));
+      const TextExtents le = measure_text(cr, letter, isz * 0.55, true);
+      draw_text(cr, letter, ix + (isz - le.width) / 2, iy + (isz - le.height) / 2 + le.ascent, isz * 0.55, pal.accent, true);
+    }
+    if (pa.running) {  // the same indicator the window buttons have
+      set_source(cr, active ? pal.accent : with_alpha(icon_fg(), 0.7));
+      if (!vertical()) {
+        rounded_rect(cr, r.x + (r.w - 14) / 2, r.y + r.h - 3, 14, 2, 1);
+      } else {
+        const double bxx = tb_pos == TaskbarPosition::Left ? r.x - 5 : r.x + r.w + 3;
+        rounded_rect(cr, bxx, r.y + (r.h - 14) / 2, 2, 14, 1);
+      }
+      cairo_fill(cr);
     }
   }
 
@@ -1062,97 +1380,10 @@ struct Bar {
               na ? with_alpha(soft_fg(), 1.0) : pal.fg_primary);
   }
 
-  void draw_taskbar_vertical(cairo_t* cr, Metrics& m, int W, int H) {
-    const double bx = 6, bw = W - 12;
-    constexpr double kBtn = 44, kStat = 38, kClock = 46, kBat = 30, kTrayRow = 28, kNetRow = 28, kLayoutRow = 28, kVolRow = 28;
-    const size_t tray_n = tray->items().size();
-    const double cluster_h = kClock + kBat + kStat * 2 + kVolRow + tray_n * kTrayRow + (net_have ? kNetRow : 0) +
-                             (kb_layouts.empty() ? 0 : kLayoutRow);  // metrics: 2x2 grid, then tray, layout, volume, network, mode and battery, clock
-    double y = H - 6 - cluster_h;
-
-    // Status cluster, top-down from `y`.
-    cpu_rect = {bx, y, bw / 2, kStat};
-    ram_rect = {bx + bw / 2, y, bw / 2, kStat};
-    gpu_rect = {bx, y + kStat, bw / 2, kStat};
-    disk_rect = {bx + bw / 2, y + kStat, bw / 2, kStat};
-    draw_stat_vertical(cr, m, cpu_text, cpu_rect);
-    draw_stat_vertical(cr, m, ram_text, ram_rect);
-    draw_stat_vertical(cr, m, gpu_text, gpu_rect);
-    draw_stat_vertical(cr, m, disk_text, disk_rect);
-    y += 2 * kStat;
-    const auto& items = tray->items();
-    tray_rects.assign(items.size(), Rect{});
-    for (size_t i = 0; i < items.size(); ++i) {
-      const double ix = (W - kTrayIcon) / 2.0, iy = y + (kTrayRow - kTrayIcon) / 2;
-      tray_rects[i] = {ix, iy, kTrayIcon, kTrayIcon};
-      if (items[i].icon) {
-        cairo_save(cr);
-        cairo_translate(cr, ix, iy);
-        cairo_scale(cr, kTrayIcon / cairo_image_surface_get_width(items[i].icon),
-                    kTrayIcon / cairo_image_surface_get_height(items[i].icon));
-        cairo_set_source_surface(cr, items[i].icon, 0, 0);
-        cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_BEST);
-        cairo_paint(cr);
-        cairo_restore(cr);
-      }
-      y += kTrayRow;
-    }
-    if (!kb_layouts.empty()) {
-      layout_rect = {bx, y, bw, kLayoutRow};
-      Metrics pm{cr};
-      const double lw = std::min(bw, layout_pill_w(pm));
-      draw_layout_pill(cr, pm, (W - lw) / 2.0, y + kLayoutRow / 2, lw);
-      y += kLayoutRow;
-    } else {
-      layout_rect = {};
-    }
-    vol_rect = {bx, y, bw, kVolRow};  // speaker icon alone, after the keyboard layout
-    draw_speaker(cr, W / 2.0, y + kVolRow / 2, icon_fg());
-    y += kVolRow;
-    if (net_have) {
-      net_rect = {bx, y, bw, kNetRow};
-      draw_net_glyph(cr, W / 2.0, y + kNetRow / 2, 16);
-      y += kNetRow;
-    } else {
-      net_rect = {};
-    }
-    // Power-mode glyph and battery/plug on one row.
-    draw_mode_glyph(cr, W / 2.0 - 17, y + kBat / 2, icon_fg());
-    battery_rect = {W / 2.0 - 4, y, W / 2.0 - 2, kBat};
-    const double bcx = W / 2.0 + 12;
-    if (battery.available) {
-      if (battery.charging || on_ac) draw_plug(cr, bcx - 15, y + kBat / 2, icon_fg());
-      draw_battery(cr, bcx - 13, y + (kBat - 14) / 2.0, icon_fg());
-    } else {
-      draw_plug(cr, bcx, y + kBat / 2, icon_fg());
-    }
-    y += kBat;
-    // Clock: time over date.
-    const size_t gap = clock_text.find("  ");
-    const std::string time_line = gap == std::string::npos ? clock_text : clock_text.substr(0, gap);
-    const std::string date_line = gap == std::string::npos ? "" : clock_text.substr(gap + 2);
-    const TextExtents te = measure_text(cr, time_line, kFont, true);
-    draw_text(cr, time_line, (W - te.width) / 2, y + 8 + te.ascent, kFont, pal.accent, true);
-    if (!date_line.empty()) {
-      const double dw = measure_text(cr, date_line, 10.5).width;
-      draw_text(cr, date_line, (W - dw) / 2, y + 10 + te.height + 8, 10.5, with_alpha(icon_fg(), 0.95));
-    }
-    y += kClock;
-    power_rect = {};  // no power button on the taskbar: Shut down is in the start menu
-
-    // Start button and window buttons.
-    start_rect = {bx, 6, bw, kBtn};
-    draw_start_button(cr, start_rect);
-    // Workspace buttons in two columns under the start button, then the window list.
-    const double pager_end = draw_pager(cr, bx + (bw - 2 * 30 - 3) / 2, start_rect.y + start_rect.h + 10, 30, 26, true);
-    const double top = pager_end + 12, limit = H - 6 - cluster_h - 8;
-    win_rects.assign(shown.size(), Rect{});
-    for (size_t i = 0; i < shown.size(); ++i) {
-      const double wy = top + i * (kBtn + 4);
-      if (wy + kBtn > limit) break;
-      win_rects[i] = {bx + 4, wy, bw - 8, kBtn};
-      draw_window_button(cr, win_rects[i], shown[i], static_cast<int>(i) == hover_win, false);
-    }
+  void start_pinned(const PinnedApp& pa) {
+    const std::vector<std::string> argv = kit::exec_argv(pa.entry);
+    if (argv.empty()) return;
+    if (!kit::spawn_detached(argv, pa.entry.path)) std::fprintf(stderr, "fleetwm-bar: failed to start %s\n", pa.id.c_str());
   }
 
   // The launcher toggles itself (a second launch closes the first) and reads the
@@ -1589,6 +1820,7 @@ struct Bar {
       case 5: return disk_tooltip_text();
       case 7: return net_tooltip_text();
       case 8: return layout_tooltip_text();
+      case 9: return bt_tooltip_text();
       default: return vol_tooltip_text();
     }
   }
@@ -1787,10 +2019,17 @@ struct Bar {
     if (!pressed) return;
     if (taskbar) {
       if (b == kBtnLeft && start_rect.hit(x, y)) return spawn_start_menu();
-      for (size_t i = 0; i < win_rects.size() && i < shown.size(); ++i) {
+      for (size_t i = 0; i < pinned_rects.size() && i < pinned.size(); ++i) {
+        if (!pinned_rects[i].hit(x, y)) continue;
+        const PinnedApp& pa = pinned[i];
+        if (b == kBtnLeft && pa.running) ipc.send_command("WINDOW_TOGGLE " + std::to_string(pa.win_id));
+        else if (b == kBtnLeft || b == kBtnMiddle) start_pinned(pa);  // a second window: middle click always starts a new one
+        return;
+      }
+      for (size_t i = 0; i < win_rects.size() && i < shown_unpinned.size(); ++i) {
         if (!win_rects[i].hit(x, y)) continue;
-        if (b == kBtnLeft) ipc.send_command("WINDOW_TOGGLE " + std::to_string(shown[i].id));
-        else if (b == kBtnMiddle) ipc.send_command("WINDOW_CLOSE " + std::to_string(shown[i].id));
+        if (b == kBtnLeft) ipc.send_command("WINDOW_TOGGLE " + std::to_string(shown_unpinned[i].id));
+        else if (b == kBtnMiddle) ipc.send_command("WINDOW_CLOSE " + std::to_string(shown_unpinned[i].id));
         return;
       }
     }
@@ -1808,6 +2047,7 @@ struct Bar {
       if (vol_rect.hit(x, y)) return spawn("fleetwm-audiomixer");
       if (battery_rect.hit(x, y)) return spawn_settings_page("power");
       if (net_have && net_rect.hit(x, y)) return spawn_settings_page("network");
+      if (bt_state.available && bt_rect.hit(x, y)) return spawn_settings_page("bluetooth");
       if (power_rect.hit(x, y)) return spawn("fleetwm-powermenu");
     }
     for (size_t i = 0; i < tray_rects.size(); ++i)
@@ -1843,8 +2083,15 @@ struct Bar {
     }
     if (taskbar) {
       int hw = -1;
-      for (size_t i = 0; i < win_rects.size() && i < shown.size(); ++i)
+      for (size_t i = 0; i < win_rects.size() && i < shown_unpinned.size(); ++i)
         if (win_rects[i].hit(x, y)) hw = static_cast<int>(i);
+      int hp = -1;
+      for (size_t i = 0; i < pinned_rects.size(); ++i)
+        if (pinned_rects[i].hit(x, y)) hp = static_cast<int>(i);
+      if (hp != hover_pinned) {
+        hover_pinned = hp;
+        redraw();
+      }
       int hws = -1;
       for (int i = 0; i < 10; ++i)
         if (ws_rect[i].w > 0 && ws_rect[i].hit(x, y)) hws = i;
@@ -1859,11 +2106,11 @@ struct Bar {
         redraw();
       }
     }
-    const Rect* rects[] = {&battery_rect, &ram_rect, &cpu_rect, &gpu_rect, &disk_rect, &vol_rect, &net_rect, &layout_rect};
+    const Rect* rects[] = {&battery_rect, &ram_rect, &cpu_rect, &gpu_rect, &disk_rect, &vol_rect, &net_rect, &layout_rect, &bt_rect};
     int want = 0;  // 1..6 = rects above (index + 1); 1000 + id = a window button
     Rect r;
-    for (int i = 0; i < 8; ++i)
-      if (rects[i]->hit(x, y) && (i != 6 || net_have) && (i != 7 || !kb_layouts.empty())) {
+    for (int i = 0; i < 9; ++i)
+      if (rects[i]->hit(x, y) && (i != 6 || net_have) && (i != 7 || !kb_layouts.empty()) && (i != 8 || bt_state.available)) {
         want = i + 1;
         r = *rects[i];
       }
@@ -1872,9 +2119,14 @@ struct Bar {
         want = 2000 + static_cast<int>(i);
         r = tray_rects[i];
       }
-    if (taskbar && hover_win >= 0 && hover_win < static_cast<int>(shown.size())) {
-      want = 1000 + static_cast<int>(shown[static_cast<size_t>(hover_win)].id);
+    if (taskbar && hover_win >= 0 && hover_win < static_cast<int>(shown_unpinned.size())) {
+      want = 1000 + static_cast<int>(shown_unpinned[static_cast<size_t>(hover_win)].id);
       r = win_rects[static_cast<size_t>(hover_win)];
+    }
+    if (taskbar && hover_pinned >= 0 && hover_pinned < static_cast<int>(pinned.size())) {
+      const PinnedApp& pa = pinned[static_cast<size_t>(hover_pinned)];
+      want = pa.running ? 1000 + static_cast<int>(pa.win_id) : 3000 + hover_pinned;
+      r = pinned_rects[static_cast<size_t>(hover_pinned)];
     }
     if (want != tooltip_for) {
       hide_tooltip();
@@ -1890,14 +2142,20 @@ struct Bar {
   }
 
   void show_tooltip(const Rect& r, int kind) {
-    if (kind >= 2000) {  // a tray item: ask it for its text at this moment
+    if (kind >= 2000 && kind < 3000) {  // a tray item: ask it for its text at this moment
       const size_t index = static_cast<size_t>(kind - 2000);
       tray->tooltip(index, [this, r, kind](std::string text) {
         if (tooltip_for == kind && !tooltip && !text.empty()) place_tooltip(r, text);
       });
       return;
     }
-    const std::string text = kind >= 1000 ? window_tooltip(static_cast<uint32_t>(kind - 1000)) : tooltip_text(kind);
+    std::string text;
+    if (kind >= 3000) {
+      const size_t i = static_cast<size_t>(kind - 3000);
+      if (i < pinned.size()) text = pinned[i].name;
+    } else {
+      text = kind >= 1000 ? window_tooltip(static_cast<uint32_t>(kind - 1000)) : tooltip_text(kind);
+    }
     if (text.empty()) return;
     place_tooltip(r, text);
     if (kind >= 2 && kind <= 5)  // live numbers: replace the picture each second (the new one is made before the old goes)
@@ -1992,7 +2250,8 @@ int main(int argc, char** argv) {
   B.surface->on_motion = [&B](double x, double y) { B.on_motion(x, y); };
   B.surface->on_leave = [&B] {
     B.hide_tooltip();
-    if (B.hover_power || B.hover_win >= 0 || B.hover_start || B.hover_workspace >= 0) {
+    if (B.hover_power || B.hover_win >= 0 || B.hover_start || B.hover_workspace >= 0 || B.hover_pinned >= 0) {
+      B.hover_pinned = -1;
       B.hover_workspace = -1;
       B.hover_power = 0;
       B.hover_win = -1;
@@ -2027,6 +2286,7 @@ int main(int argc, char** argv) {
   if (const char* d = std::getenv("FLEETWM_BATTERY_DIR")) B.battery_dir = d;  // test hook
   B.update_battery();
   B.update_network();
+  B.start_bluetooth();
   B.start_ticks();
   B.clock_tick();
   B.apply_layout();

@@ -56,10 +56,10 @@ struct TitlebarConfig {
   ButtonSide buttons_side = ButtonSide::Right;
   TitleAlign title_align = TitleAlign::Left;
   bool show_pin = true;
-  bool show_icon = true;   // the application's icon at the window-menu end of the titlebar (Windows 7 style)
   bool show_minimize = true;
   bool show_maximize = true;
   int frame_px = 8;        // 0..16, the Windows 7 style frame around a window with a titlebar (0 = none)
+  bool show_icon = true;   // the application's icon at the window-menu end of the titlebar (Windows 7 style)
 };
 
 std::string button_side_to_string(ButtonSide side);
