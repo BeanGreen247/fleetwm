@@ -1129,13 +1129,18 @@ void FmWindow::paint_content() {
   const Rect saved = lay_.content;
   hover_item_ = -1;
   if (mx_ >= r.x && my_ >= r.y && mx_ < r.x + r.w && my_ < r.y + r.h && !dialog_open() && !menu_open()) hover_item_ = index_at(m, static_cast<int>(mx_ - r.x), static_cast<int>(my_ - r.y), b.scroll_x, b.scroll_y);
-  for (size_t g = 0; g < m.group_starts.size() && m.mode == ViewMode::Details; ++g) {
-    if (m.group_starts[g] < first - 1 || m.group_starts[g] > last + 1) continue;
+  for (size_t g = 0; g < m.group_starts.size() && (m.mode == ViewMode::Details || m.grid_grouped()); ++g) {
+    if (m.group_starts[g] < first - 1 || m.group_starts[g] > last + 1) {
+      // A heading above its first item can be on screen with no item of its group in the range (icon views): test the strip itself.
+      if (!m.grid_grouped()) continue;
+      const ItemRect probe = group_header_rect(m, static_cast<int>(g), b.scroll_x, b.scroll_y);
+      if (probe.y + probe.h < m.header_h || probe.y > r.h) continue;
+    }
     const ItemRect hr = group_header_rect(m, static_cast<int>(g), b.scroll_x, b.scroll_y);
     const std::string lab = b.group_labels[g] + " (" + std::to_string((g + 1 < m.group_starts.size() ? m.group_starts[g + 1] : m.count) - m.group_starts[g]) + ")";
     text(lab, 8, hr.y + hr.h / 2.0, font_px() + 1, col_.accent, true);
     cairo_move_to(cr_, 8 + text_w(lab, font_px() + 1, true) + 10, hr.y + hr.h / 2.0 + 0.5);
-    cairo_line_to(cr_, std::max(m.cell_w, lay_.content.w) - 16, hr.y + hr.h / 2.0 + 0.5);
+    cairo_line_to(cr_, std::max(m.grid_grouped() ? m.view_w : m.cell_w, lay_.content.w) - 16, hr.y + hr.h / 2.0 + 0.5);
     kit::set_source(cr_, col_.head_sep);
     cairo_set_line_width(cr_, 1);
     cairo_stroke(cr_);

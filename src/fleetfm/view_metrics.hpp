@@ -18,6 +18,12 @@ struct ViewMetrics {
   // Details view with "Group by": the item index where each group starts. A group has a heading row above its first item, so row = item +
   // (groups started at or before it). Empty = no grouping. Other views list items without headings.
   std::vector<int> group_starts;
+  // The icon and tile views group too: each group is a full-width heading with its own grid of cells under it, every group starting on a new
+  // row. group_head_y / group_items_y are where each heading and each group's first row of cells sit (content coordinates, below the column
+  // heading); group_head_h is the heading's height. Empty for the other views.
+  std::vector<int> group_head_y, group_items_y;
+  int group_head_h = 0;
+  bool grid_grouped() const { return !group_head_y.empty(); }
   ViewMode mode = ViewMode::Details;
   int count = 0;
   int view_w = 0, view_h = 0;      // the content area
@@ -32,10 +38,14 @@ struct ViewMetrics {
 // `row_h` is the details/list row height; `icon_px` the icon edge of icon modes; `font_px` sizes the labels.
 ViewMetrics compute_metrics(ViewMode mode, int count, int view_w, int view_h, int icon_px, int row_h, int font_px, int header_h = 0, int details_width = 0,
                             const std::vector<int>* group_starts = nullptr);
+// True for the views that lay items out as a grid of cells (icons and tiles).
+bool is_grid_mode(ViewMode mode);
+// The group an item is in (grouped views), or -1.
+int group_of_item(const ViewMetrics& m, int item);
 // Which row a grouped Details item is on, and the other way: is_header / group index when the row is a heading, else the item index.
 int row_of_item(const ViewMetrics& m, int item);
 void row_info(const ViewMetrics& m, int row, bool* is_header, int* index);
-// Where the heading row of group g is.
+// Where the heading of group g is (Details: one row; the icon views: a full-width strip of group_head_h).
 ItemRect group_header_rect(const ViewMetrics& m, int g, int scroll_x, int scroll_y);
 
 ItemRect item_rect(const ViewMetrics& m, int index, int scroll_x, int scroll_y);
