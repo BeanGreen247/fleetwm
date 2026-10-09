@@ -360,3 +360,19 @@ Decision: the remaining timer alignment (clock/stats/network/battery to one tick
 ## 19. Install time on the VM (owner's screenshot, 2026-10-08 20:39, `~/Pictures/Screenshots/Screenshot_20261008_203902.png`)
 
 `install.sh` on the dev VM (2 vCPU i5-8500 KVM, Debian 13, all packages already present), version 0.4.0-43 around `572a00a`: total 6 min 35 s = dependencies 23 s (0 packages set up), instrumented build 2 min 51 s, training run 1 min 32 s, optimized build 1 min 45 s, install and set-up 4 s; 738 tests from 102 suites in 881 ms; 31005 source lines built twice at 225 lines/s; disk write 612.9 MB/s, disk read 496.4 MB/s; installed size 2.5 MB. The summary's line "Parallel speedup 0s of CPU in 276s = 0.00x speedup on 2 cores" is a measurement bug (the CPU-time counter read 0 s), not a real result: the two builds ran 276 s of wall time and used the cores. Not measured: the same install on the Celeron laptop (the owner ran it there too; no screenshot of its summary yet).
+
+## 20. Round of 2026-10-09: the open small items, measured
+
+Rig for all rows: dev PC (Nobara, 8 cores), Debian 13 container with the headless compositor, files in `perflog/2026-10-09/`. Laptop (Celeron) numbers are still open for every row.
+
+- **IPC buffer test (item 1).** `ipcbuf.c`, 256 MB over a Unix stream socketpair and a pipe, best of 7, interleaved (`ipcbuf-devpc.txt`). Socket: kernel default buffer 4 KB reads 2.75 GB/s, 64 KB reads 5.99 GB/s;
+  SO_SNDBUF/SO_RCVBUF of 256 KB, 1 MB, 4 MB: 5.4-5.6 GB/s (no gain, within noise). Pipe: default 64 KB reads 2.66 GB/s, `F_SETPIPE_SZ` 1 MB 3.69, 4 MB 4.46 GB/s (up to 1.7x, but run-to-run spread is large).
+  Fleetwm's IPC carries lines of tens to hundreds of bytes (the 4096-byte recv buffer of section 9 is already past the knee), no pipe in Fleetwm moves bulk data, so nothing to change. Not measured on the Celeron.
+- **Pointer-motion repaint log (item 2).** `Ui::pointer_motion()` (the fleetkit toolkit behind Settings, Shortcuts, the language picker and the file manager's dialogs) used to ask for a frame on every move. It now
+  returns true only when the pointer crossed the edge of a rectangle the last frame tested it against, a button is held, or the frame read the pointer directly (canvas, open dialog). Counted, not timed:
+  `tests/test_ui_motion.cpp` makes 20 moves inside one button: 20 frames before, 0 after; crossing an edge still repaints. The bar, start menu and titlebar buttons already compared the hovered item before repainting
+  (`Bar::on_motion`, `Launcher::on_motion`), so they needed nothing. Time per frame saved was not measured (static reasoning).
+- **Bar timer alignment (item 3): REJECTED, measured.** One shared timerfd, jobs on multiples of their period (clock, stats 2 s, disk 5 s, network 5 s, battery 15 s). On paper 0.6 timer wake-ups/s against 1.0. Measured idle bar
+  (`bar-timers-ab.txt`, 3 interleaved runs each): old 2.11 / 1.95 / 1.81 wake-ups/s, shared 2.13 / 2.21 / 2.10; CPU and RSS identical. A first version was worse (2.15-2.43) because the timer fired up to 1 ms early and woke twice per tick;
+  with a 1 ms margin it is equal. The timers are a small part of the roughly 2 wake-ups/s (the rest are Wayland events and frame callbacks), so there is nothing to win; removed again, as section 18 predicted.
+- **Parallel speedup 0.00x in the install summary (item 7).** `times` run inside `$(...)` reports the fresh subshell; the installer now reads its own child CPU from `/proc/$$/stat` (cutime + cstime). Checked with a 3 s busy loop: 3.0 s.

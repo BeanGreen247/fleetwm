@@ -971,26 +971,6 @@ int App::add_oneshot(int ms, std::function<void()> cb) {
   return next_id_++;
 }
 
-int App::add_rearmable(std::function<void()> cb) {
-  const int fd = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC | TFD_NONBLOCK);
-  watches_.push_back({next_id_, fd, true, false, std::move(cb)});
-  return next_id_++;
-}
-
-void App::arm(int id, int ms) {
-  for (const Watch& w : watches_) {
-    if (w.id != id) continue;
-    itimerspec its{};
-    if (ms >= 0) {
-      its.it_value.tv_sec = ms / 1000;
-      its.it_value.tv_nsec = (ms % 1000) * 1000000L;
-      if (its.it_value.tv_sec == 0 && its.it_value.tv_nsec == 0) its.it_value.tv_nsec = 1;  // all zero would disarm
-    }
-    timerfd_settime(w.fd, 0, &its, nullptr);
-    return;
-  }
-}
-
 void App::unwatch(int id) {
   for (size_t i = 0; i < watches_.size(); ++i)
     if (watches_[i].id == id) {
