@@ -159,7 +159,33 @@ void sort_entries(const DirListing& names, std::vector<Entry>* entries, SortKey 
     if (r == 0) return a < b;                                         // equal in every way: keep the listing's order
     return ascending ? r < 0 : r > 0;
   };
-  std::sort(idx.begin(), idx.end(), cmp);
+  if (key == SortKey::Name) {
+    // Most comparisons are decided by the first bytes of the two keys. Sorting 24-byte records that carry the first 16 bytes keeps the sort inside
+    // the cache; the entries and the key arena are only touched when two prefixes are equal. 8 bytes were not enough (names like IMG_00123 share
+    // the first 7: 1.3 million fallbacks per sort of 100,000 names; 16 bytes: 18,000). perflog/2026-10-09/dirbench, findings section 20.
+    struct Rec {
+      uint64_t prefix, prefix2;
+      uint32_t i;
+      uint32_t folder;  // 1 when folders sort first and this one is a folder
+    };
+    std::vector<Rec> recs(n);
+    for (size_t i = 0; i < n; ++i) {
+      const std::string_view k = bytes(static_cast<uint32_t>(i));
+      uint64_t p = 0, p2 = 0;
+      for (size_t b = 0; b < 8; ++b) p = (p << 8) | (b < k.size() ? static_cast<unsigned char>(k[b]) : 0u);
+      for (size_t b = 8; b < 16; ++b) p2 = (p2 << 8) | (b < k.size() ? static_cast<unsigned char>(k[b]) : 0u);
+      recs[i] = {p, p2, static_cast<uint32_t>(i), folders_first && names.is_dir(es[i]) ? 1u : 0u};
+    }
+    std::sort(recs.begin(), recs.end(), [&](const Rec& a, const Rec& b) {
+      if (a.folder != b.folder) return a.folder > b.folder;
+      if (a.prefix != b.prefix) return ascending ? a.prefix < b.prefix : a.prefix > b.prefix;
+      if (a.prefix2 != b.prefix2) return ascending ? a.prefix2 < b.prefix2 : a.prefix2 > b.prefix2;
+      return cmp(a.i, b.i);
+    });
+    for (size_t i = 0; i < n; ++i) idx[i] = recs[i].i;
+  } else {
+    std::sort(idx.begin(), idx.end(), cmp);
+  }
   std::vector<Entry> out;
   out.reserve(n);
   for (uint32_t i : idx) out.push_back(es[i]);

@@ -40,6 +40,7 @@ Changes, in the order they were made, each kept only because it measured better:
    (490,000 pairs). Sort of 100,000 names 64 -> 47 ms (keys 4 ms, sort 32 ms, permute 2 ms). The sort is now 40 % of the open time; a
    prefix-key array that fits the cache is the next step and would be worth about 20 ms (estimated, not built: 84 ms is already under the
    100 ms mark where a delay starts to be felt).
+   **Built 2026-10-09:** sort records carry the first 16 key bytes; 100,300 names list + sort 93-98 ms -> 59 ms (`perflog/2026-10-09/12-sort-prefix-ab.txt`); an 8-byte prefix gained only 5-9 ms because names like `IMG_00123` share their first 7 key bytes.
 
 ## 2. Drawing
 
@@ -96,7 +97,7 @@ when the disk is quiet and loses when the disk stalls (the shared VM disk did, r
 (the page cache cannot vouch for the media); `direct_verify = false` reads through the cache and is faster and weaker.
 
 What was **not** done: overlapping the read-back of the first chunks with the writing of the later ones (about 2 s on a fast disk, nothing on a
-USB stick whose bus is the limit), and a single pass for tiny files. Both are listed in the open items.
+USB stick whose bus is the limit), and a single pass for tiny files. Decision 2026-10-09: the overlap stays out. An O_DIRECT read of a range that is still dirty in the page cache can see old bytes, so every chunk would need `sync_file_range` (write and wait) before it is read back, which is the fsync cost again in smaller pieces; the upper bound on the 1 GiB rows above is 2 s of 17 s, and the only protection against a false mismatch is the one thing the feature is for.
 
 ## 5. Flags
 

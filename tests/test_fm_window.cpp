@@ -587,6 +587,16 @@ TEST_F(FmWindowTest, EveryDialogDrawsInsideTheWindow) {
   EXPECT_EQ(win_->dialog_name(), "checksums");
 }
 
+TEST_F(FmWindowTest, OtherApplicationOpensThePickerAndItDrawsAndCloses) {
+  make();
+  const std::string file = (work_ / "a.txt").string();
+  win_->run(Cmd::OpenWith, 0, file);
+  frame();
+  EXPECT_EQ(win_->dialog_name(), "open-with");
+  win_->close_dialog_for_test();
+  EXPECT_EQ(win_->dialog_name(), "");
+}
+
 TEST_F(FmWindowTest, ComputerViewListsDrivesAndTheMenuOffersEject) {
   make();
   Volume stick;

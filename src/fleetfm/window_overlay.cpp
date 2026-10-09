@@ -280,6 +280,7 @@ void FmWindow::paint_dialog() {
     case Dlg::Errors: dw = 640; dh = 380; break;
     case Dlg::ConfirmDelete: dw = 460; dh = 200; break;
     case Dlg::ConfirmEmptyTrash: dw = 440; dh = 180; break;
+    case Dlg::OpenWith: dw = 480; dh = 440; break;
     default: break;
   }
   dw = std::min(dw, W_ - 24);
@@ -314,6 +315,7 @@ void FmWindow::paint_dialog() {
     case Dlg::Checksums: dialog_checksums(*ui_, dw, dh); break;
     case Dlg::Errors: dialog_errors(*ui_, dw, dh); break;
     case Dlg::ConfirmEmptyTrash: dialog_confirm_empty_trash(*ui_, dw, dh); break;
+    case Dlg::OpenWith: dialog_open_with(*ui_, dw, dh); break;
     default: break;
   }
   ui_->end();

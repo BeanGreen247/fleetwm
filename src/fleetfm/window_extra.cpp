@@ -92,6 +92,8 @@ std::vector<MenuItem> FmWindow::open_with_items(const std::string& path, bool is
         open_with_list_.push_back(e);
       }
   }
+  if (!out.empty()) out.push_back(MenuItem::sep());
+  out.push_back(item("Other application...", Cmd::OpenWith, 0, path));
   return out;
 }
 
