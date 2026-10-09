@@ -22,7 +22,7 @@ BUILD_DIR="${BUILD_DIR:-${ROOT}/build-test}"
 
 declare -A AREAS=(
   [theme]='ParseHexColor.*:ThemeName.*:ThemeTest.*:TitlebarNames.*:WindowLayoutNames.*:ThemeHome.*'
-  [bar]='PowerMode.*:BarLayout.*:TaskbarPosition.*:BarConfigTest.*:BatterySourceReadingTest.*:TickPlan.*'
+  [bar]='PowerMode.*:BarLayout.*:TaskbarPosition.*:BarConfigTest.*:BatterySourceReadingTest.*'
   [keybinds]='KeybindsConfigTest.*'
   [geometry]='ResizeEdges.*:ResizedBox.*:Cascade.*:TitlebarLayout.*:TitlebarStrip.*:TitlebarHit.*:TitleX.*:TaskbarSlots.*:SnapZoneAt.*:SnapBox.*:CaptionButtons.*:TitlebarDraw.*:TitlebarIcon.*'
   [windows]='WindowList.*'

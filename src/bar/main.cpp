@@ -31,7 +31,6 @@
 #include "ctx_menu.hpp"
 #include "bt_backend.hpp"
 #include "taskbar_layout.hpp"
-#include "tick_plan.hpp"
 #include "bar_config.hpp"
 #include "desktop_entry.hpp"
 #include "app_icon.hpp"
@@ -472,29 +471,28 @@ struct Bar {
     if (taskbar) {
       constexpr uint32_t T = ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP, B = ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM,
                          L = ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT, R = ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT;
-      surface->set_margins(0, 0, 0, 0);
       switch (tb_pos) {
         case TaskbarPosition::Bottom:
           surface->set_anchor(B | L | R);
           surface->set_size(0, kTaskbarThickness);
-          surface->set_exclusive_zone(kTaskbarThickness);
           break;
         case TaskbarPosition::Top:
           surface->set_anchor(T | L | R);
           surface->set_size(0, kTaskbarThickness);
-          surface->set_exclusive_zone(kTaskbarThickness);
           break;
         case TaskbarPosition::Left:
           surface->set_anchor(L | T | B);
           surface->set_size(kTaskbarWidth, 0);
-          surface->set_exclusive_zone(kTaskbarWidth);
           break;
         case TaskbarPosition::Right:
           surface->set_anchor(R | T | B);
           surface->set_size(kTaskbarWidth, 0);
-          surface->set_exclusive_zone(kTaskbarWidth);
           break;
       }
+      // Always visible: it reserves its strip. Auto-hide: it reserves nothing and slides away (see below).
+      slide_off = config.taskbar_autohide && !pointer_in_bar ? tb_thickness() - 1 : 0;
+      slide_target = slide_off;
+      apply_slide();
       island = false;
       surface->queue_draw();
       return;
@@ -1381,6 +1379,82 @@ struct Bar {
               na ? with_alpha(soft_fg(), 1.0) : pal.fg_primary);
   }
 
+  // ---- auto-hide: the taskbar slides off its edge (a negative margin) leaving one pixel the pointer can touch ----
+  bool pointer_in_bar = false;
+  int slide_off = 0, slide_target = 0;  // how many px of the bar are off the screen now, and where it is heading
+  int slide_timer = 0, hide_timer = 0;
+
+  int tb_thickness() const { return vertical() ? kTaskbarWidth : kTaskbarThickness; }
+
+  void apply_slide() {
+    if (!surface) return;
+    const int m = -slide_off;
+    const int zone = config.taskbar_autohide ? 0 : tb_thickness();
+    surface->set_exclusive_zone(zone);
+    switch (tb_pos) {  // margin order: top, right, bottom, left
+      case TaskbarPosition::Bottom: surface->set_margins(0, 0, m, 0); break;
+      case TaskbarPosition::Top: surface->set_margins(m, 0, 0, 0); break;
+      case TaskbarPosition::Left: surface->set_margins(0, 0, 0, m); break;
+      case TaskbarPosition::Right: surface->set_margins(0, m, 0, 0); break;
+    }
+  }
+
+  void slide_to(int target) {
+    if (!taskbar || !config.taskbar_autohide) return;
+    slide_target = target;
+    if (slide_timer || slide_off == slide_target) return;
+    slide_timer = app.add_timer(16, [this] {
+      const int step = std::max(4, tb_thickness() / 5);
+      slide_off = slide_off < slide_target ? std::min(slide_target, slide_off + step) : std::max(slide_target, slide_off - step);
+      apply_slide();
+      if (slide_off == slide_target) {
+        app.unwatch(slide_timer);
+        slide_timer = 0;
+      }
+    });
+  }
+
+  // A popup the taskbar opened (start menu, volume mixer, power menu, right-click menu) keeps it from sliding away under the pointer.
+  static bool popup_running() {
+    static const char* const names[] = {"fleetwm-launcher", "fleetwm-ctxmenu", "fleetwm-audiomixer", "fleetwm-powermenu"};
+    std::error_code ec;
+    for (const auto& e : std::filesystem::directory_iterator("/proc", ec)) {
+      const std::string d = e.path().filename().string();
+      if (d.empty() || !std::isdigit(static_cast<unsigned char>(d[0]))) continue;
+      std::ifstream in(e.path() / "comm");
+      std::string comm;
+      if (!std::getline(in, comm)) continue;
+      for (const char* n : names)
+        if (comm == n) return true;
+    }
+    return false;
+  }
+
+  void autohide_pointer_entered() {
+    pointer_in_bar = true;
+    if (hide_timer) {
+      app.unwatch(hide_timer);
+      hide_timer = 0;
+    }
+    slide_to(0);
+  }
+
+  void autohide_pointer_left() {
+    pointer_in_bar = false;
+    if (!config.taskbar_autohide || hide_timer) return;
+    hide_timer = app.add_oneshot(600, [this] { check_hide(); });
+  }
+
+  void check_hide() {
+    hide_timer = 0;
+    if (pointer_in_bar || !config.taskbar_autohide) return;
+    if (popup_running()) {  // look again in a moment
+      hide_timer = app.add_oneshot(1000, [this] { check_hide(); });
+      return;
+    }
+    slide_to(tb_thickness() - 1);
+  }
+
   // ---- the right-click menu (fleetwm-ctxmenu) ----
   static bool program_exists(const char* name) {
     const char* path = std::getenv("PATH");
@@ -1957,8 +2031,7 @@ struct Bar {
   // is not woken (and the compositor not made to composite a frame) once a
   // second: with seconds hidden the clock redraws once a minute, aligned to
   // the minute boundary; stats refresh every 2 s and only redraw on change.
-  TickPlan ticks;
-  int tick_timer = 0, job_clock = 0, job_stats = 0, job_disk = 0, job_net = 0, job_battery = 0;
+  int clock_timer = 0;
 
   void clock_update() {
     if (set_if_changed(clock_text, format_clock())) {
@@ -1971,50 +2044,22 @@ struct Bar {
     }
   }
 
-  static long wall_ms() {
+  void schedule_clock() {
+    if (clock_timer) {
+      app.unwatch(clock_timer);
+      clock_timer = 0;
+    }
     timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
-    return static_cast<long>(ts.tv_sec) * 1000 + ts.tv_nsec / 1000000;
-  }
-
-  // One timer for the clock, the metrics, the disk, the network and the battery: each job runs on a multiple of its
-  // period, so they share the same second and the bar wakes once for all of them (TickPlan).
-  void arm_ticks() {
-    const long w = ticks.wait_ms(wall_ms());
-    app.arm(tick_timer, w < 0 ? -1 : static_cast<int>(w));
-  }
-
-  void run_ticks() {
-    for (const int job : ticks.take_due(wall_ms())) {
-      if (job == job_clock) {
-        clock_update();
-      } else if (job == job_stats) {
-        stats_tick();
-      } else if (job == job_disk) {
-        if (update_disk()) redraw();
-      } else if (job == job_net) {
-        if (update_network()) redraw();
-      } else if (job == job_battery) {
-        if (update_battery()) redraw();
-      }
-    }
-    arm_ticks();
-  }
-
-  void start_ticks() {
-    const long now = wall_ms();
-    job_clock = ticks.add(config.clock.show_seconds ? 1000 : 60000, now);
-    job_stats = ticks.add(2000, now);
-    job_disk = ticks.add(5000, now);
-    job_net = ticks.add(5000, now);
-    job_battery = ticks.add(15000, now);
-    tick_timer = app.add_rearmable([this] { run_ticks(); });
-    arm_ticks();
-  }
-
-  void schedule_clock() {  // the clock's period follows the "show seconds" setting
-    ticks.set_period(job_clock, config.clock.show_seconds ? 1000 : 60000, wall_ms());
-    arm_ticks();
+    const long period = config.clock.show_seconds ? 1000 : 60000;
+    const long now_ms = static_cast<long>(ts.tv_sec) * 1000 + ts.tv_nsec / 1000000;
+    long wait = period - now_ms % period;
+    if (wait < 30) wait += period;
+    clock_timer = app.add_oneshot(static_cast<int>(wait), [this] {
+      clock_timer = 0;
+      clock_update();
+      schedule_clock();
+    });
   }
 
   void stats_tick() {
@@ -2156,6 +2201,7 @@ struct Bar {
   }
 
   void on_motion(double x, double y) {
+    if (!pointer_in_bar) autohide_pointer_entered();
     const int h = power_rect.hit(x, y) ? 1 : 0;
     if (h != hover_power) {
       hover_power = h;
@@ -2330,6 +2376,7 @@ int main(int argc, char** argv) {
   B.surface->on_motion = [&B](double x, double y) { B.on_motion(x, y); };
   B.surface->on_leave = [&B] {
     B.hide_tooltip();
+    B.autohide_pointer_left();
     if (B.hover_power || B.hover_win >= 0 || B.hover_start || B.hover_workspace >= 0 || B.hover_pinned >= 0) {
       B.hover_pinned = -1;
       B.hover_workspace = -1;
@@ -2367,11 +2414,20 @@ int main(int argc, char** argv) {
   B.update_battery();
   B.update_network();
   B.start_bluetooth();
-  B.start_ticks();
   B.clock_tick();
   B.apply_layout();
   B.try_connect();
 
+  B.app.add_timer(2000, [&B] { B.stats_tick(); });
+  B.app.add_timer(5000, [&B] {
+    if (B.update_disk()) B.redraw();
+  });
+  B.app.add_timer(15000, [&B] {
+    if (B.update_battery()) B.redraw();
+  });
+  B.app.add_timer(5000, [&B] {
+    if (B.update_network()) B.redraw();
+  });
   B.app.on_outputs_changed = [&B] { B.apply_layout(); };
 
   kit::watch_dirs(B.app,

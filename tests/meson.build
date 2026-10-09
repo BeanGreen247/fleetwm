@@ -22,7 +22,6 @@ fleetwm_test_sources = files(
   'test_hw_stats.cpp',
   'test_prewarm.cpp',
   'test_fleetkit.cpp',
-  'test_tick_plan.cpp',
   'test_ui_motion.cpp',
   'test_glass_tint.cpp',
   'test_bt_types.cpp',
@@ -84,7 +83,7 @@ test('fleetwm-unit-tests', fleetwm_unit_tests, protocol: 'gtest')
 # slices scripts/test.sh offers). The full binary above still runs everything.
 test_areas = {
   'theme': 'ParseHexColor.*:ThemeName.*:ThemeTest.*:TitlebarNames.*:WindowLayoutNames.*:ThemeHome.*',
-  'bar': 'PowerMode.*:BarLayout.*:TaskbarPosition.*:BarConfigTest.*:BatterySourceReadingTest.*:TickPlan.*',
+  'bar': 'PowerMode.*:BarLayout.*:TaskbarPosition.*:BarConfigTest.*:BatterySourceReadingTest.*',
   'keybinds': 'KeybindsConfigTest.*',
   'geometry': 'ResizeEdges.*:ResizedBox.*:Cascade.*:TitlebarLayout.*:TitlebarStrip.*:TitlebarHit.*:TitleX.*:TaskbarSlots.*:SnapZoneAt.*:SnapBox.*:CaptionButtons.*:TitlebarDraw.*:TitlebarIcon.*',
   'windows': 'WindowList.*',
