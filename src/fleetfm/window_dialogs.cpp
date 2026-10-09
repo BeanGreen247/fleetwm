@@ -4,6 +4,7 @@
 #include <filesystem>
 
 #include "file_ops.hpp"
+#include "mimeapps.hpp"
 #include "version.hpp"
 #include "window.hpp"
 
@@ -280,6 +281,62 @@ void FmWindow::dialog_confirm_delete(Ui& ui, double w, double h) {
     dlg_text_.clear();
     close_dialog();
     do_delete(delete_paths_, delete_permanent_);
+  }
+}
+
+void FmWindow::dialog_open_with(Ui& ui, double w, double h) {
+  ui.set_margins(24, 16, 24);
+  ui.set_label_width(90);
+  ui.title("Open with");
+  if (!apps_loaded_) {
+    apps_ = kit::load_desktop_entries();
+    apps_loaded_ = true;
+  }
+  const std::string file = fs::path(open_with_path_).filename().string();
+  ui.label(fit(file, w - 60, 13), true);
+  ui.newline();
+  ui.row("Find");
+  const std::string before = open_with_filter_;
+  ui.text_entry(&open_with_filter_, w - 140);
+  ui.newline();
+  if (open_with_filter_ != before) open_with_sel_ = 0;
+  // Applications whose name contains what was typed (case blind), alphabetical; the list shows nine at a time, typing narrows it.
+  auto lower = [](std::string s) {
+    for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return s;
+  };
+  const std::string needle = lower(open_with_filter_);
+  std::vector<int> hits;
+  for (size_t i = 0; i < apps_.size(); ++i)
+    if (needle.empty() || lower(apps_[i].name).find(needle) != std::string::npos) hits.push_back(static_cast<int>(i));
+  std::sort(hits.begin(), hits.end(), [&](int a, int b) { return lower(apps_[static_cast<size_t>(a)].name) < lower(apps_[static_cast<size_t>(b)].name); });
+  std::vector<std::string> names;
+  const size_t shown = std::min<size_t>(hits.size(), 9);
+  for (size_t i = 0; i < shown; ++i) names.push_back(apps_[static_cast<size_t>(hits[i])].name);
+  if (open_with_sel_ >= static_cast<int>(names.size())) open_with_sel_ = 0;
+  const double top = ui.cursor_y();
+  if (names.empty()) {
+    ui.paragraph("No application matches.", true);
+  } else {
+    ui.nav(names, &open_with_sel_, {16, top, w - 32, 9 * 32.0});
+  }
+  ui.set_cursor_y(top + 9 * 32.0 + 6);
+  if (hits.size() > shown) {
+    ui.label(std::to_string(hits.size() - shown) + " more: type to narrow the list", true);
+    ui.newline();
+  }
+  const std::string mime = mime_type_for(file, false);
+  ui.checkbox("Always open " + mime + " files with this application", &open_with_always_, !names.empty());
+  ui.newline();
+  const int hit = footer(ui, w, h, {"Cancel", "Open"}, 1);
+  if (hit == 0) close_dialog();
+  if (hit == 1 && !names.empty()) {
+    const kit::DesktopEntry& e = apps_[static_cast<size_t>(hits[static_cast<size_t>(open_with_sel_)])];
+    std::vector<std::string> argv = kit::exec_argv(e);
+    argv.push_back(open_with_path_);
+    if (open_with_always_) kit::mime_set_default(mime, e.id);
+    close_dialog();
+    if (!spawn_detached(argv)) show_message("Open with", "The program could not be started.", true);
   }
 }
 

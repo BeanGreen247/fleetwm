@@ -197,7 +197,7 @@ class FmWindow {
     int arg2 = 0;
   };
 
-  enum class Dlg { None, About, Properties, Connect, Nextcloud, Conflict, ConfirmDelete, Message, Checksums, Errors, ConfirmEmptyTrash };
+  enum class Dlg { None, About, Properties, Connect, Nextcloud, Conflict, ConfirmDelete, Message, Checksums, Errors, ConfirmEmptyTrash, OpenWith };
 
   struct ThumbKey {
     std::string path;
@@ -312,6 +312,9 @@ class FmWindow {
   std::vector<kit::DesktopEntry> apps_;
   bool apps_loaded_ = false;
   std::vector<kit::DesktopEntry> open_with_list_;
+  std::string open_with_path_, open_with_filter_;  // the "Other application..." picker
+  int open_with_sel_ = 0;
+  bool open_with_always_ = false;
   std::vector<MenuItem> open_with_items(const std::string& path, bool is_dir);
   std::vector<MenuItem> send_to_items();
   void run_archive(bool extract, int kind, const std::vector<std::string>& paths);
@@ -362,6 +365,7 @@ class FmWindow {
   void dialog_about(kit::Ui& ui, double w, double h);
   void dialog_properties(kit::Ui& ui, double w, double h);
   void dialog_connect(kit::Ui& ui, double w, double h);
+  void dialog_open_with(kit::Ui& ui, double w, double h);
   void dialog_nextcloud(kit::Ui& ui, double w, double h);
   void dialog_conflict(kit::Ui& ui, double w, double h);
   void dialog_confirm_delete(kit::Ui& ui, double w, double h);

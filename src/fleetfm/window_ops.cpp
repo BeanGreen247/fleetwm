@@ -651,6 +651,13 @@ void FmWindow::run(Cmd c, int arg, const std::string& sarg) {
       toast("Location copied");
       break;
     }
+    case Cmd::OpenWith:
+      open_with_path_ = sarg;
+      open_with_filter_.clear();
+      open_with_sel_ = 0;
+      open_with_always_ = false;
+      open_dialog(Dlg::OpenWith);
+      break;
     case Cmd::OpenWithApp:
       if (arg >= 0 && arg < static_cast<int>(open_with_list_.size())) {
         std::vector<std::string> argv = kit::exec_argv(open_with_list_[arg]);
@@ -1261,6 +1268,7 @@ std::string FmWindow::dialog_name() const {
     case Dlg::Checksums: return "checksums";
     case Dlg::Errors: return "errors";
     case Dlg::ConfirmEmptyTrash: return "confirm-empty-trash";
+    case Dlg::OpenWith: return "open-with";
   }
   return "";
 }

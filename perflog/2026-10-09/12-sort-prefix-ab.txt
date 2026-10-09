@@ -1,0 +1,11 @@
+Name sort with 16-byte key prefixes (src/fleetfm/dir_listing.cpp sort_entries) against the previous comparator, interleaved, median of 15 runs each, 3 sessions.
+Folder: 100,300 entries (names like IMG_00123.jpg, report_123_final_v2.txt, Alpha-123.md, random words; 300 folders), ext4 on the dev PC (i5, 8 threads, Nobara).
+Command: dirbench-old/dirbench-new DIR 15  (build: g++ -O2 -std=c++20 -Isrc/fleetfm -Isrc/common perflog/2026-10-09/dirbench.cpp src/fleetfm/dir_listing.cpp src/fleetfm/natural_sort.cpp -lcrypto)
+fm-lazy = list (names only) + name sort, what the window waits for:
+  old: 92.07 96.50 97.89 (first A/B with an 8-byte prefix: 87.9 88.6 90.9)    93.23 97.66 97.57
+  new (16 bytes): 58.95 59.30 58.64
+fm-names (listing only, no sort): 31 to 33 ms in both: the whole gain is in the sort (about 62 -> 27 ms).
+Phases of the new sort (perflog scratch phases16): keys 5.3 ms, records 1.5, sort 12.0, permute 1.4; full-key fallbacks per sort 18,014 (8-byte prefix: 1,305,146).
+Estimate in docs/FILE_MANAGER_PERFORMANCE.md was "about 20 ms"; measured 35 to 38 ms because names that share their first 7 bytes (IMG_) made the 8-byte version pointless.
+Correctness: tests/test_fm_listing.cpp NameSortMatchesTheReferenceOrderOnTrickyNames (1,500 colliding names, ascending and descending, folders first or not) against a plain natural_compare sort;
+a mutation (prefix2 direction flipped) makes it fail.

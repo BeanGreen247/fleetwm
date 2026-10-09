@@ -5,7 +5,11 @@
 #include <filesystem>
 #include <fstream>
 
+#include <algorithm>
+#include <set>
+
 #include "dir_listing.hpp"
+#include "natural_sort.hpp"
 
 using namespace fleetwm::fm;
 namespace fs = std::filesystem;
@@ -97,6 +101,56 @@ TEST_F(FmListing, NameSortIsNaturalAndFoldersComeFirst) {
   sort_listing(&l, SortKey::Name, false);
   EXPECT_EQ(l.name(l.entries[0]), "zdir");  // folders stay on top
   EXPECT_EQ(l.name(l.entries[1]), "file10");
+}
+
+// The name sort compares 16-byte key prefixes first and falls back to the full key; it must give exactly the order of a plain natural compare.
+TEST_F(FmListing, NameSortMatchesTheReferenceOrderOnTrickyNames) {
+  unsigned seed = 12345;
+  auto rnd = [&](unsigned n) {
+    seed = seed * 1103515245u + 12345u;
+    return (seed >> 8) % n;
+  };
+  // Names built to collide on long prefixes, differ by case, leading zeros, digit runs of different length, and one being a prefix of another.
+  const char* stems[] = {"IMG_", "img_", "report_final_version_", "Report_Final_Version_", "a", "A", "file", "File", "x-0", ""};
+  std::set<std::string> names;
+  while (names.size() < 1500) {
+    std::string n = stems[rnd(10)];
+    const unsigned parts = 1 + rnd(3);
+    for (unsigned k = 0; k < parts; ++k) {
+      switch (rnd(4)) {
+        case 0: n += std::to_string(rnd(300)); break;
+        case 1: n += "00" + std::to_string(rnd(30)); break;
+        case 2: n += static_cast<char>('a' + rnd(3)); break;
+        default: n += static_cast<char>('A' + rnd(3)); break;
+      }
+    }
+    if (rnd(5) == 0) n += ".txt";
+    if (n.empty() || n == "." || n == "..") continue;
+    names.insert(n);
+  }
+  size_t k = 0;
+  for (const std::string& n : names) {
+    if (k++ % 9 == 0) fs::create_directory(dir_ / n);
+    else file(n);
+  }
+  for (bool ascending : {true, false})
+    for (bool folders_first : {true, false}) {
+      DirListing l;
+      ASSERT_TRUE(list_dir(dir_, {false, true}, &l));
+      sort_listing(&l, SortKey::Name, ascending, folders_first);
+      std::vector<std::pair<bool, std::string>> want;  // (is folder, name)
+      DirListing plain;
+      ASSERT_TRUE(list_dir(dir_, {false, true}, &plain));
+      for (const Entry& e : plain.entries) want.push_back({plain.is_dir(e), std::string(plain.name(e))});
+      std::sort(want.begin(), want.end(), [&](const auto& a, const auto& b) {
+        if (folders_first && a.first != b.first) return a.first;
+        const int c = natural_compare(a.second, b.second);
+        return ascending ? c < 0 : c > 0;
+      });
+      ASSERT_EQ(l.entries.size(), want.size());
+      for (size_t i = 0; i < want.size(); ++i)
+        ASSERT_EQ(std::string(l.name(l.entries[i])), want[i].second) << "position " << i << " ascending " << ascending << " folders first " << folders_first;
+    }
 }
 
 TEST_F(FmListing, SortBySizeAndType) {
