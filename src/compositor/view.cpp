@@ -8,6 +8,7 @@
 #include <cstring>
 #include <vector>
 
+#include "app_icon.hpp"
 #include "glass_backdrop.hpp"
 #include "output.hpp"
 #include "server.hpp"
@@ -329,15 +330,25 @@ void View::update_titlebar() {
   if (!title) title = "";
   const int height = titlebar_height();
   const int bar_w = content_w + 2 * thickness;  // as wide as the window, over the frame's sides
+  cairo_surface_t* icon = nullptr;
+  if (server->theme_config().titlebar.show_icon) {
+    const char* app_id = window_app_id() ? window_app_id() : "";
+    if (!icon_known_ || icon_app_id_ != app_id) {
+      icon_known_ = true;
+      icon_app_id_ = app_id;
+      icon_ = icon_app_id_.empty() ? nullptr : fleetwm::kit::app_icon(icon_app_id_, 48);
+    }
+    icon = icon_;
+  }
   if (bar_w == titlebar_w_ && height == titlebar_h_ && focused == rendered_.focused &&
       maximized == rendered_.maximized && pinned == rendered_.pinned &&
-      hover_button == rendered_.hover_button && pressed_button == rendered_.pressed_button && rendered_.title == title &&
+      hover_button == rendered_.hover_button && pressed_button == rendered_.pressed_button && rendered_.title == title && icon == rendered_.icon &&
       server->theme_config().glass == rendered_.glass && round_corners() == rendered_.round_corners) {
     return;
   }
   titlebar_w_ = bar_w;
   titlebar_h_ = height;
-  rendered_ = {title, focused, maximized, pinned, hover_button, pressed_button, server->theme_config().glass, round_corners()};
+  rendered_ = {title, icon, focused, maximized, pinned, hover_button, pressed_button, server->theme_config().glass, round_corners()};
   if (wlr_buffer* buffer = render_titlebar(bar_w, rendered_, server->theme_config().titlebar)) {
     wlr_scene_buffer_set_buffer(titlebar, buffer);
     wlr_buffer_drop(buffer);

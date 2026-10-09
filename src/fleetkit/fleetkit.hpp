@@ -45,10 +45,14 @@ struct Palette {
   Color fg_primary{0.804, 0.839, 0.957}, fg_secondary{0.651, 0.678, 0.784};
   Color accent{0.537, 0.706, 0.980};
   bool rounded = true;  // theme.toml corner_style
+  // The colours of glass surfaces, from the tint engine (glass_tint.hpp): the bar, menus, tooltips and the Alt+Tab panel;
+  // a focused and an unfocused titlebar and window frame. The defaults are the theme's own colours.
+  Color glass_surface{0.118, 0.118, 0.180}, glass_title{0.147, 0.167, 0.245}, glass_title_idle{0.094, 0.094, 0.145};
   // How opaque the background of a Fleetwm window (Ui::begin) is: 1 normally, less with Glass effects, where the compositor puts
   // the frosted wallpaper behind the window (compositor/glass_backdrop.hpp). Programs that paint their own background ignore it.
   double window_alpha = 1.0;
 };
+// Reads themes/<theme>.css and the accent override, then the glass tint (glass_tint.hpp) from theme.glass_tint.
 Palette load_palette(const ThemeConfig& theme);
 
 // ---- text helpers (cairo toy text API: fontconfig "Sans", no Pango/GLib) ----

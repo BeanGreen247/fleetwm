@@ -531,7 +531,7 @@ struct Launcher {
     // is the only part that differs.
     if (glass) {
       GlassStyle st;
-      st.tint = mix(pal.bg_primary, pal.accent, 0.18);
+      st.tint = mix(pal.glass_surface, pal.accent, 0.10);
       st.tint_alpha = 0.60;
       st.radius = frame_r;
       paint_glass(cr, backdrop, this->out_w > 0 ? this->out_w : out_w, this->out_h > 0 ? this->out_h : out_h,

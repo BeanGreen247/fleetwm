@@ -42,6 +42,7 @@
 #include "cursor_draw.hpp"
 #include "keyboard_tab.hpp"
 #include "mouse_config.hpp"
+#include "bluetooth_tab.hpp"
 #include "network_tab.hpp"
 #include "mimeapps.hpp"
 #include "theme.hpp"
@@ -184,11 +185,12 @@ struct Settings {
   DefaultAppsConfig default_apps;
 
   int tab = 0;
-  double scroll[16] = {};
-  std::vector<std::string> tab_names{"Theme", "Bar", "Wallpaper", "Display", "Network", "Keyboard", "Mouse", "Power", "Date & Time", "Default Apps", "Audio", "Performance", "File Manager", "Desktop Icons", "About"};
+  double scroll[24] = {};
+  std::vector<std::string> tab_names{"Theme", "Bar", "Wallpaper", "Display", "Network", "Bluetooth", "Keyboard", "Mouse", "Power", "Date & Time", "Default Apps", "Audio", "Performance", "File Manager", "Desktop Icons", "About"};
 
   // network
   std::unique_ptr<NetworkTab> net_tab;
+  std::unique_ptr<BluetoothTab> bt_tab;
   std::unique_ptr<KeyboardTab> kb_tab;
 
   // power
@@ -788,7 +790,7 @@ struct Settings {
   }
 
   // --------------------------------------------------------------- tabs --
-  void tab_theme(cairo_t*) {
+  void tab_theme(cairo_t* cr) {
     ui.row("Theme");
     int t = static_cast<int>(config.theme);
     if (ui.segmented({"Dark", "Catppuccin", "Dracula", "OLED Black", "Light"}, &t)) {
@@ -817,6 +819,43 @@ struct Settings {
     if (ui.checkbox("Translucent frames and menus", &config.glass)) save_theme();
     ui.newline();
     ui.paragraph("The bar, the taskbar, titlebars, the start menu and the Alt+Tab panel get a see-through, frosted look. Off is flat and matte.", true);
+    ui.row("Glass tint");
+    int tint_mode = static_cast<int>(config.glass_tint.mode);
+    if (ui.dropdown({"Windows 7 blue", "Pick a colour", "From the wallpaper", "Theme colours"}, &tint_mode, 220)) {
+      config.glass_tint.mode = static_cast<GlassTintMode>(tint_mode);
+      save_theme();
+    }
+    ui.newline();
+    if (config.glass_tint.mode == GlassTintMode::Custom) {
+      ui.row("Tint colour");
+      if (ui.color_button(&config.glass_tint.hex)) save_theme();
+      ui.newline();
+    }
+    if (config.glass_tint.mode != GlassTintMode::Theme) {
+      ui.row("Colour intensity");
+      int intensity = config.glass_tint.intensity;
+      if (ui.slider(&intensity, 0, 100, 220)) {
+        config.glass_tint.intensity = intensity;
+        save_theme();
+      }
+      ui.newline();
+    }
+    {  // what the glass looks like with this tint: the menu/bar colour, then a focused and an unfocused titlebar
+      UiRect sw;
+      ui.canvas(22, &sw);
+      const kit::Color chips[3] = {pal.glass_surface, pal.glass_title, pal.glass_title_idle};
+      for (int i = 0; i < 3; ++i) {
+        kit::rounded_rect(cr, sw.x + i * 62, sw.y, 56, sw.h, pal.rounded ? 5 : 0);
+        kit::set_source(cr, chips[i]);
+        cairo_fill_preserve(cr);
+        kit::set_source(cr, pal.fg_secondary);
+        cairo_set_line_width(cr, 1);
+        cairo_stroke(cr);
+      }
+      ui.label("Bar and menus, active window, inactive window", true);
+      ui.newline();
+    }
+    ui.paragraph("The colour behind the see-through frames, the taskbar and menus. From the wallpaper picks the colour most of the wallpaper's colourful parts share and follows it when the wallpaper changes.", true);
     const bool tiling = config.window_layout == WindowLayout::Tiling;
     const bool desktop = !tiling;
     ui.paragraph(tiling ? "Tiling: windows tile automatically; keyboard shortcuts drive everything (Alt+Shift+/ lists them)."
@@ -887,6 +926,9 @@ struct Settings {
     if (ui.checkbox("Pin", &tb.show_pin, desktop)) save_theme();
     if (ui.checkbox("Minimize", &tb.show_minimize, desktop)) save_theme();
     if (ui.checkbox("Maximize", &tb.show_maximize, desktop)) save_theme();
+    ui.newline();
+    ui.row("Application icon");
+    if (ui.toggle(&tb.show_icon, desktop)) save_theme();
     ui.newline();
   }
 
@@ -1328,15 +1370,16 @@ struct Settings {
       case 2: tab_wallpaper(cr); break;
       case 3: tab_display(cr); break;
       case 4: net_tab->draw(ui, cr); break;
-      case 5: kb_tab->draw(ui, cr); break;
-      case 6: tab_mouse(cr); break;
-      case 7: tab_power(cr); break;
-      case 8: tab_datetime(cr); break;
-      case 9: tab_default_apps(cr); break;
-      case 10: tab_audio(cr); break;
-      case 11: tab_performance(cr); break;
-      case 12: tab_file_manager(cr); break;
-      case 13: tab_desktop_icons(cr); break;
+      case 5: bt_tab->draw(ui, cr); break;
+      case 6: kb_tab->draw(ui, cr); break;
+      case 7: tab_mouse(cr); break;
+      case 8: tab_power(cr); break;
+      case 9: tab_datetime(cr); break;
+      case 10: tab_default_apps(cr); break;
+      case 11: tab_audio(cr); break;
+      case 12: tab_performance(cr); break;
+      case 13: tab_file_manager(cr); break;
+      case 14: tab_desktop_icons(cr); break;
       default: tab_about(cr); break;
     }
     ui.space(24);
@@ -1366,6 +1409,7 @@ int main(int argc, char** argv) {
   S.mouse = load_mouse_config();
   S.apply_theme();
   S.net_tab = std::make_unique<NetworkTab>(S.app, [&S] { S.redraw(); });
+  S.bt_tab = std::make_unique<BluetoothTab>(S.app, [&S] { S.redraw(); });
   // `fleetwm-settings --page power` opens on that page (the bar's battery icon uses it).
   for (int i = 1; i + 1 < argc; ++i) {
     if (std::string(argv[i]) == "--page") {

@@ -68,6 +68,7 @@ wlr_buffer* render_titlebar(int width, const TitlebarState& st, const TitlebarCo
 
   kit::TitlebarPaint paint;
   paint.title = st.title;
+  paint.icon = st.icon;
   paint.focused = st.focused;
   paint.maximized = st.maximized;
   paint.pinned = st.pinned;

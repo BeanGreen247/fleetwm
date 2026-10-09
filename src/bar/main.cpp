@@ -30,6 +30,7 @@
 #include "tick_plan.hpp"
 #include "bar_config.hpp"
 #include "desktop_entry.hpp"
+#include "app_icon.hpp"
 #include "icon_theme.hpp"
 #include "window_geometry.hpp"
 #include "window_list.hpp"
@@ -155,7 +156,7 @@ struct Bar {
   void bar_surface(cairo_t* cr, double x, double y, double w, double h, double radius, double sx, double sy, double flat_alpha) {
     if (glass) {
       GlassStyle st;
-      st.tint = pal.bg_primary;
+      st.tint = pal.glass_surface;
       st.tint_alpha = 0.55;
       st.radius = radius;
       paint_glass(cr, backdrop, monitor_width(), monitor_height(), sx, sy, x, y, w, h, st);
@@ -239,9 +240,6 @@ struct Bar {
   int hover_win = -1;           // index into `windows`
   bool hover_start = false;
   int hover_workspace = -1;
-  std::map<std::string, cairo_surface_t*> win_icons;
-  std::map<std::string, std::string> app_icon_names;  // lower-case app id / exec / name -> icon
-  bool app_icons_loaded = false;
 
   // The taskbar lists the current workspace's windows (and pinned ones, which are on
   // every workspace); the rest appear when you switch to their workspace.
@@ -864,39 +862,14 @@ struct Bar {
   }
 
   // ------------------------------------------------------------- taskbar --
-  static std::string lower(std::string v) {
-    std::transform(v.begin(), v.end(), v.begin(), [](unsigned char c) { return std::tolower(c); });
-    return v;
-  }
 
   static Color with_alpha(Color c, double a) {
     c.a = a;
     return c;
   }
 
-  // Icon for a window, found through the desktop entries (id / Exec / Name) and
-  // falling back to the app id as an icon name. Cached; nullptr = none found.
-  cairo_surface_t* window_icon(const std::string& app_id) {
-    const auto cached = win_icons.find(app_id);
-    if (cached != win_icons.end()) return cached->second;
-    if (!app_icons_loaded) {
-      app_icons_loaded = true;
-      for (const DesktopEntry& de : load_desktop_entries()) {
-        if (de.icon.empty()) continue;
-        std::string id = lower(de.id);
-        if (id.size() > 8 && id.compare(id.size() - 8, 8, ".desktop") == 0) id.resize(id.size() - 8);
-        app_icon_names.emplace(id, de.icon);
-        app_icon_names.emplace(lower(exec_basename(de)), de.icon);
-        app_icon_names.emplace(lower(de.name), de.icon);
-      }
-    }
-    cairo_surface_t* icon = nullptr;
-    const auto named = app_icon_names.find(lower(app_id));
-    if (named != app_icon_names.end()) icon = load_icon(named->second, 48);
-    if (!icon && !app_id.empty()) icon = load_icon(app_id, 48);
-    win_icons[app_id] = icon;
-    return icon;
-  }
+  // Icon for a window (kit::app_icon: desktop entries, then the app id as an icon name). nullptr = none found.
+  cairo_surface_t* window_icon(const std::string& app_id) { return app_icon(app_id, 48); }
 
   void draw_window_icon(cairo_t* cr, const WindowEntry& w, double x, double y, double size) {
     const double alpha = w.minimized ? 0.5 : 1.0;

@@ -88,7 +88,7 @@ void WindowSwitcher::show(const std::vector<View*>& order, size_t selected) {
     // is drawn once per Alt+Tab step, so this costs nothing while idle.
     cairo_surface_t* backdrop = kit::load_backdrop();
     kit::GlassStyle st;
-    st.tint = pal.bg_primary;
+    st.tint = pal.glass_surface;
     st.tint_alpha = 0.62;
     st.radius = 14;
     kit::paint_glass(cr, backdrop, area.width, area.height, (area.width - panel_w) / 2.0, (area.height - panel_h) / 2.0, 0, 0,

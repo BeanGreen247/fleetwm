@@ -204,6 +204,15 @@ if command -v aplay >/dev/null 2>&1 && aplay -l 2>/dev/null | grep -q '^card'; t
   systemctl --user try-restart wireplumber.service pipewire.service pipewire-pulse.service >/dev/null 2>&1 || true
 fi
 
+# Bluetooth: bluez is the service the bar's Bluetooth icon and Settings -> Bluetooth talk to over D-Bus, and
+# libspa-0.2-bluetooth lets PipeWire play sound to Bluetooth headphones and speakers. Best effort: a machine
+# without a Bluetooth adapter simply never uses them, and the service is only switched on when an adapter exists.
+apt_install bluez libspa-0.2-bluetooth || echo "warning: bluez could not be installed; the Bluetooth controls will show no adapter"
+if [[ -d /sys/class/bluetooth ]] && ls /sys/class/bluetooth 2>/dev/null | grep -q .; then
+  sudo systemctl enable --now bluetooth.service >/dev/null 2>&1 || true
+  systemctl --user try-restart wireplumber.service >/dev/null 2>&1 || true
+fi
+
 # runtime dependency for the bar's power menu (fleetwm-powermenu):
 # systemd-logind refuses Sleep/Reboot/Shut down for a non-root caller
 # without a running polkit to authorize the request, regardless of
@@ -395,7 +404,7 @@ echo "==> Adding $(whoami) to device-access groups (input/video/render/audio)"
 # systems that gate them separately from video. Only add groups that
 # actually exist on this system -- not all of these exist on every distro
 # or hardware configuration.
-for group in input video render audio plugdev netdev; do
+for group in input video render audio plugdev netdev bluetooth; do
   if getent group "${group}" >/dev/null 2>&1; then
     sudo usermod -aG "${group}" "$(whoami)"
   fi

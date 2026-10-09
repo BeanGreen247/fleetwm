@@ -56,6 +56,7 @@ struct TitlebarConfig {
   ButtonSide buttons_side = ButtonSide::Right;
   TitleAlign title_align = TitleAlign::Left;
   bool show_pin = true;
+  bool show_icon = true;   // the application's icon at the window-menu end of the titlebar (Windows 7 style)
   bool show_minimize = true;
   bool show_maximize = true;
   int frame_px = 8;        // 0..16, the Windows 7 style frame around a window with a titlebar (0 = none)
@@ -73,6 +74,22 @@ struct AccentColor {
   bool auto_extract = true;
   std::string hex = "#89b4fa";
 };
+
+// Where the colour of glass surfaces (titlebars, window frames, the bar, menus, tooltips) comes from.
+//   Aero      the Windows 7 sky blue, fixed
+//   Custom    the colour the user picked (`hex`)
+//   Wallpaper the dominant colour of the current wallpaper, worked out again whenever the wallpaper changes
+//   Theme     no tint: the theme's own background colours (what Fleetwm looked like before the tint engine)
+enum class GlassTintMode { Aero, Custom, Wallpaper, Theme };
+
+struct GlassTintConfig {
+  GlassTintMode mode = GlassTintMode::Aero;
+  std::string hex = "#4a86c8";  // used by Custom
+  int intensity = 60;           // 0..100: how strongly the tint colours the glass (Windows' "colour intensity")
+};
+
+std::string glass_tint_mode_to_string(GlassTintMode mode);
+GlassTintMode glass_tint_mode_from_string(const std::string& s);
 
 struct ThemeConfig {
   CornerStyle corner_style = CornerStyle::Rounded;
@@ -128,6 +145,7 @@ struct ThemeConfig {
   // Glass effects (Desktop layout): translucent window frames, taskbar, start menu and window
   // switcher with a soft sheen and a frosted backdrop. Off = matte, flat surfaces. On by default (Windows 7 Aero look).
   bool glass = true;
+  GlassTintConfig glass_tint;  // [glass_tint] in theme.toml
 };
 
 // Path helpers. Resolution order: $XDG_CONFIG_HOME/fleetwm/theme.toml (or
