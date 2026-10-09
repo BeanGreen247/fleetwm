@@ -12,6 +12,29 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
 - Fleetwm's own windows (Settings, Shortcuts, language picker) have an opaque body again; with Glass effects only the frame (titlebar, borders), bar, taskbar and menus are translucent. The frosted backdrop behind those windows is retired.
 - Window edge redrawn from real Windows 7 screenshots: a dark outline with a light line inside it, both following corners of radius 6 (was 4, with a clipped straight line that looked cut off).
 
+### Added: desktop icons and the desktop menu (`fleetwm-desktop`)
+- Desktop layout: the icons of `~/Desktop` plus Computer, Home and Trash, and the Windows 7 right-click menu (View, Sort by, Refresh, Paste, New, Display settings,
+  Personalize) with "Show desktop icons" to hide them. Tiling layout: no icons and no menu, a small card with the keys for the shortcut list (`docs/DESKTOP.md`).
+- File manager: clipboard and drag and drop with other programs; a plain drop asks Copy (default), Move, symbolic link or hard link; Windows 7 style right-click menus with
+  submenus and the Linux extras (Open with, Send to, Compress, Extract, Copy location, terminal here); Group by; preview pane; tooltips; Undo; computers on the network.
+- PGO: `fleetwm-fm --train DIR` and a training phase for the file manager and the desktop menus.
+
+### Added: file manager (`fleetwm-fm`)
+- A native C++ file manager, GTK-free like the rest of Fleetwm (`docs/FILE_MANAGER.md`): Windows 7 Explorer layout and behaviour by default, switchable
+  to Windows 10, Mac Finder, Caja, Nautilus, Nemo, Thunar, PCManFM and Dolphin styles; tabs; breadcrumb address bar; search as you type; all eight view
+  modes; thumbnails; Computer view with free-space bars; trash that follows the freedesktop.org specification; properties and checksums; a Folder Options
+  dialog with every setting saved live to `~/.config/fleetwm/fleetfm.toml`. Icons, including the application icon, are drawn in code.
+- Copy and move check their result: each file is written under a temporary name, flushed, read back from the device (`O_DIRECT`) and compared by checksum
+  with the source before it gets its real name; a move removes the original only after that. Automatic checksum choice (SHA-256, SHA-512 or BLAKE2b, whichever
+  is fastest on the machine). Windows 7 style progress card with speed, time remaining, pause, cancel and a speed graph.
+- Safe eject: refuses while a transfer or a program uses the drive (and lists the programs), flushes, unmounts through udisks, powers the disk off, and says
+  "can now be safely removed". Unmounted removable partitions are listed and mount with a double-click.
+- Network places through GVfs: SMB, SFTP/SSH, FTP, WebDAV including Nextcloud and ownCloud, NFS, AFP, MTP, AFC, cameras. Not run against real servers here.
+- `fleetwm-fm --screenshot` renders the window without a compositor; `--write-icon` writes the icon; `docs/FILE_MANAGER_PERFORMANCE.md` has the measurements.
+- A folder of 100,000 files is listed and sorted in 84 ms (232 ms first, std::filesystem 438 ms): sizes and dates are read for the drawn rows only and names sort
+  by precomputed keys. A verified copy of 20,000 small files takes 4.8 s instead of 529 s (one flush per batch, parallel read-back). 25 to 35 MB resident, no idle CPU.
+- `src/common/child_signals.hpp` includes `<initializer_list>` (it failed to compile in a plain debug build).
+
 ### Added
 - Start-up prewarm: every program learns once which pages of which files it uses while starting, and the compositor asks the kernel to read
   those ahead before it starts the bar, the wallpaper and the lock applet (`~/.cache/fleetwm/prewarm/`, off with `FLEETWM_PREWARM=off`).

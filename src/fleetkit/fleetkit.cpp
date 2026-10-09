@@ -530,10 +530,34 @@ bool App::connect() {
           app->offer_mimes_[offer];  // created empty; mimes follow
           wl_data_offer_add_listener(offer, &ol, app);
         },
-        [](void*, wl_data_device*, uint32_t, wl_surface*, wl_fixed_t, wl_fixed_t, wl_data_offer*) {},
-        [](void*, wl_data_device*) {},
-        [](void*, wl_data_device*, uint32_t, wl_fixed_t, wl_fixed_t) {},
-        [](void*, wl_data_device*) {},
+        // enter: a drag arrived over one of our surfaces
+        [](void* d, wl_data_device*, uint32_t serial, wl_surface* surf, wl_fixed_t x, wl_fixed_t y, wl_data_offer* offer) {
+          auto* app = static_cast<App*>(d);
+          app->drag_offer_ = offer;
+          app->drag_surface_ = app->find(surf);
+          app->drag_serial_ = serial;
+          app->drag_x_ = wl_fixed_to_double(x);
+          app->drag_y_ = wl_fixed_to_double(y);
+          app->drag_update();
+        },
+        [](void* d, wl_data_device*) {  // leave
+          auto* app = static_cast<App*>(d);
+          if (app->drag_surface_ && app->drag_surface_->on_drag_leave) app->drag_surface_->on_drag_leave();
+          if (app->drag_offer_ && !app->drag_dropped_) {
+            app->offer_mimes_.erase(app->drag_offer_);
+            wl_data_offer_destroy(app->drag_offer_);
+          }
+          app->drag_offer_ = nullptr;
+          app->drag_surface_ = nullptr;
+          app->drag_dropped_ = false;
+        },
+        [](void* d, wl_data_device*, uint32_t, wl_fixed_t x, wl_fixed_t y) {  // motion
+          auto* app = static_cast<App*>(d);
+          app->drag_x_ = wl_fixed_to_double(x);
+          app->drag_y_ = wl_fixed_to_double(y);
+          app->drag_update();
+        },
+        [](void* d, wl_data_device*) { static_cast<App*>(d)->drag_drop(); },  // drop
         [](void* d, wl_data_device*, wl_data_offer* offer) {
           auto* app = static_cast<App*>(d);
           if (app->selection_) {
@@ -608,8 +632,9 @@ void App::setup_seat() {
                 app->repeat_key_ = 0;
               },
               // key
-              [](void* d2, wl_keyboard*, uint32_t, uint32_t, uint32_t key, uint32_t state) {
+              [](void* d2, wl_keyboard*, uint32_t serial, uint32_t, uint32_t key, uint32_t state) {
                 auto* app = static_cast<App*>(d2);
+                app->last_serial_ = serial;
                 if (!app->xkb_state_ || !app->kb_focus_) return;
                 const xkb_keycode_t kc = key + 8;
                 const bool pressed = state == WL_KEYBOARD_KEY_STATE_PRESSED;
@@ -687,8 +712,9 @@ void App::setup_seat() {
                 if (app->ptr_focus_ && app->ptr_focus_->on_motion)
                   app->ptr_focus_->on_motion(app->ptr_x_, app->ptr_y_);
               },
-              [](void* d2, wl_pointer*, uint32_t, uint32_t, uint32_t button, uint32_t state) {
+              [](void* d2, wl_pointer*, uint32_t serial, uint32_t, uint32_t button, uint32_t state) {
                 auto* app = static_cast<App*>(d2);
+                app->last_serial_ = serial;
                 if (app->ptr_focus_ && app->ptr_focus_->on_button)
                   app->ptr_focus_->on_button(app->ptr_x_, app->ptr_y_, button,
                                              state == WL_POINTER_BUTTON_STATE_PRESSED);
@@ -725,19 +751,28 @@ void App::key_repeat_tick() {
 }
 
 void App::paste_text(std::function<void(const std::string&)> cb) {
+  paste_mime({"text/plain;charset=utf-8", "UTF8_STRING", "text/plain", "TEXT", "STRING"}, [cb = std::move(cb)](const std::string&, const std::string& data) { cb(data); });
+}
+
+void App::paste_mime(const std::vector<std::string>& wanted, std::function<void(const std::string& mime, const std::string& data)> done) {
   if (!selection_) {
-    cb("");
+    done("", "");
     return;
   }
-  const auto& mimes = offer_mimes_[selection_];
-  const char* chosen = nullptr;
-  for (const char* want : {"text/plain;charset=utf-8", "UTF8_STRING", "text/plain", "TEXT", "STRING"}) {
+  read_offer(selection_, wanted, 262144, std::move(done));
+}
+
+void App::read_offer(wl_data_offer* offer, const std::vector<std::string>& wanted, size_t cap, std::function<void(const std::string&, const std::string&)> cb2) {
+  const auto& mimes = offer_mimes_[offer];
+  std::string chosen;
+  for (const std::string& want : wanted) {
     if (std::find(mimes.begin(), mimes.end(), want) != mimes.end()) {
       chosen = want;
       break;
     }
   }
-  if (!chosen) {
+  auto cb = [cb2, chosen](const std::string& text) { cb2(text.empty() ? std::string() : chosen, text); };
+  if (chosen.empty()) {
     cb("");
     return;
   }
@@ -746,7 +781,7 @@ void App::paste_text(std::function<void(const std::string&)> cb) {
     cb("");
     return;
   }
-  wl_data_offer_receive(selection_, chosen, fds[1]);
+  wl_data_offer_receive(offer, chosen.c_str(), fds[1]);
   close(fds[1]);
   wl_display_flush(display_);
   struct Reader {
@@ -755,12 +790,12 @@ void App::paste_text(std::function<void(const std::string&)> cb) {
   };
   auto reader = std::make_shared<Reader>();
   const int rfd = fds[0];
-  reader->id = watch_fd(rfd, [this, reader, rfd, cb = std::move(cb)]() mutable {
+  reader->id = watch_fd(rfd, [this, reader, rfd, cap, cb = std::move(cb)]() mutable {
     char buf[4096];
     for (;;) {
       const ssize_t n = read(rfd, buf, sizeof buf);
       if (n > 0) {
-        if (reader->data.size() < 65536) reader->data.append(buf, static_cast<size_t>(n));
+        if (reader->data.size() < cap) reader->data.append(buf, static_cast<size_t>(n));
         continue;
       }
       if (n < 0 && errno == EAGAIN) return;  // wait for more
@@ -780,6 +815,119 @@ void App::paste_text(std::function<void(const std::string&)> cb) {
         unwatch(reader->id);
         return;
       }
+  });
+}
+
+// ---- clipboard out and drag source -----------------------------------------------------------------------------------
+
+namespace {
+struct SourceData {
+  std::map<std::string, std::string> formats;
+  App* app = nullptr;
+  std::function<void(bool, uint32_t)> finished;  // drag only: (performed, action)
+  bool is_drag = false;
+  uint32_t action = 0;
+};
+}  // namespace
+
+wl_data_source* App::make_source(const std::map<std::string, std::string>& formats, bool drag, std::function<void(bool, uint32_t)> finished) {
+  if (!data_manager_) return nullptr;
+  wl_data_source* src = wl_data_device_manager_create_data_source(data_manager_);
+  auto* sd = new SourceData{formats, this, std::move(finished), drag, 0};
+  static const wl_data_source_listener sl = {
+      [](void*, wl_data_source*, const char*) {},  // target
+      [](void* d, wl_data_source*, const char* mime, int32_t fd) {  // send
+        auto* sdp = static_cast<SourceData*>(d);
+        auto it = sdp->formats.find(mime);
+        if (it != sdp->formats.end()) {
+          const std::string& data = it->second;
+          size_t off = 0;
+          while (off < data.size()) {
+            const ssize_t n = write(fd, data.data() + off, data.size() - off);
+            if (n <= 0) break;
+            off += static_cast<size_t>(n);
+          }
+        }
+        close(fd);
+      },
+      [](void* d, wl_data_source* s) {  // cancelled
+        auto* sdp = static_cast<SourceData*>(d);
+        if (sdp->is_drag && sdp->finished) sdp->finished(false, 0);
+        if (sdp->app->clip_source_ == s) sdp->app->clip_source_ = nullptr;
+        if (sdp->app->drag_source_ == s) sdp->app->drag_source_ = nullptr;
+        wl_data_source_destroy(s);
+        delete sdp;
+      },
+      [](void* d, wl_data_source*) {  // dnd_drop_performed
+        auto* sdp = static_cast<SourceData*>(d);
+        (void)sdp;
+      },
+      [](void* d, wl_data_source* s) {  // dnd_finished
+        auto* sdp = static_cast<SourceData*>(d);
+        if (sdp->finished) sdp->finished(true, sdp->action);
+        if (sdp->app->drag_source_ == s) sdp->app->drag_source_ = nullptr;
+        wl_data_source_destroy(s);
+        delete sdp;
+      },
+      [](void* d, wl_data_source*, uint32_t action) { static_cast<SourceData*>(d)->action = action; }};  // action
+  wl_data_source_add_listener(src, &sl, sd);
+  for (const auto& [mime, data] : formats) wl_data_source_offer(src, mime.c_str());
+  return src;
+}
+
+bool App::set_clipboard(const std::map<std::string, std::string>& formats) {
+  if (!data_device_ || last_serial_ == 0) return false;
+  wl_data_source* src = make_source(formats, false, nullptr);
+  if (!src) return false;
+  wl_data_device_set_selection(data_device_, src, last_serial_);
+  clip_source_ = src;
+  wl_display_flush(display_);
+  return true;
+}
+
+bool App::start_drag(Surface& origin, const std::map<std::string, std::string>& formats, bool allow_move, std::function<void(bool performed, bool moved)> done) {
+  if (!data_device_ || last_serial_ == 0 || drag_source_) return false;
+  auto fin = [done = std::move(done)](bool performed, uint32_t action) {
+    if (done) done(performed, action == WL_DATA_DEVICE_MANAGER_DND_ACTION_MOVE);
+  };
+  wl_data_source* src = make_source(formats, true, std::move(fin));
+  if (!src) return false;
+  wl_data_source_set_actions(src, WL_DATA_DEVICE_MANAGER_DND_ACTION_COPY | (allow_move ? WL_DATA_DEVICE_MANAGER_DND_ACTION_MOVE : 0));
+  wl_data_device_start_drag(data_device_, src, origin.wl(), nullptr, last_serial_);
+  drag_source_ = src;
+  wl_display_flush(display_);
+  return true;
+}
+
+// A drag is over one of our surfaces: ask the surface whether it takes it, and tell the source what we would do.
+void App::drag_update() {
+  if (!drag_offer_) return;
+  bool ok = false;
+  uint32_t action = WL_DATA_DEVICE_MANAGER_DND_ACTION_COPY;
+  const auto& mimes = offer_mimes_[drag_offer_];
+  const bool has_uris = std::find(mimes.begin(), mimes.end(), "text/uri-list") != mimes.end();
+  if (drag_surface_ && drag_surface_->on_drag_motion && has_uris) ok = drag_surface_->on_drag_motion(drag_x_, drag_y_, &action);
+  if (ok) {
+    wl_data_offer_accept(drag_offer_, drag_serial_, "text/uri-list");
+    wl_data_offer_set_actions(drag_offer_, action | WL_DATA_DEVICE_MANAGER_DND_ACTION_COPY, action);
+  } else {
+    wl_data_offer_accept(drag_offer_, drag_serial_, nullptr);
+  }
+}
+
+void App::drag_drop() {
+  if (!drag_offer_ || !drag_surface_) return;
+  drag_dropped_ = true;
+  wl_data_offer* offer = drag_offer_;
+  Surface* surf = drag_surface_;
+  const double x = drag_x_, y = drag_y_;
+  read_offer(offer, {"text/uri-list"}, 1 << 20, [this, offer, surf, x, y](const std::string& mime, const std::string& data) {
+    if (!mime.empty() && surf->on_drop) surf->on_drop(x, y, data);
+    wl_data_offer_finish(offer);
+    offer_mimes_.erase(offer);
+    wl_data_offer_destroy(offer);
+    if (drag_offer_ == offer) drag_offer_ = nullptr;
+    drag_dropped_ = false;
   });
 }
 

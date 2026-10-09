@@ -18,3 +18,10 @@ option(
   value: false,
   description: 'Build the pure-unit-test suite in tests/ (requires gtest, fetched via wrapdb if not found on the system)',
 )
+
+option(
+  'benchmarks',
+  type: 'boolean',
+  value: false,
+  description: 'Build the file manager benchmarks in perflog/2026-10-09 (folder listing, copy engine, window frames); never installed',
+)

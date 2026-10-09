@@ -1,0 +1,14 @@
+# uicompare 2026-10-09T06:11:49Z Intel(R) Core(TM) i5-8500 CPU @ 3.00GHz (2 cores; the VM also runs the owner's desktop, so CPU numbers carry that noise)
+--- /home/kenny/.cache/fmbench/d1000
+fleetwm-fm RSS  25672 kB  peak  25672 kB  threads  2  CPU until settled  0.03 s  CPU over 5 idle seconds  0.01 s
+caja       RSS  25572 kB  peak  75984 kB  threads  5  CPU until settled  1.94 s  CPU over 5 idle seconds  0.00 s
+--- /home/kenny/.cache/fmbench/d100000
+fleetwm-fm RSS  34948 kB  peak  39912 kB  threads  2  CPU until settled  0.13 s  CPU over 5 idle seconds  0.00 s
+caja       RSS  58280 kB  peak  76140 kB  threads  5  CPU until settled  0.30 s  CPU over 5 idle seconds  0.00 s
+--- second pass (caches warm for both)
+--- /home/kenny/.cache/fmbench/d1000
+fleetwm-fm RSS  25700 kB  peak  25700 kB  threads  2  CPU until settled  0.02 s  CPU over 5 idle seconds  0.00 s
+caja       RSS  57764 kB  peak  75836 kB  threads  5  CPU until settled  0.28 s  CPU over 5 idle seconds  0.00 s
+--- /home/kenny/.cache/fmbench/d100000
+fleetwm-fm RSS  34932 kB  peak  40072 kB  threads  2  CPU until settled  0.14 s  CPU over 5 idle seconds  0.00 s
+caja       RSS  58160 kB  peak  76128 kB  threads  5  CPU until settled  0.28 s  CPU over 5 idle seconds  0.01 s

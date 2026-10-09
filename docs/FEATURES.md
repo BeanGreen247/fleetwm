@@ -42,6 +42,11 @@ The original feature list. The README has the short version.
   popup, fuzzy search over installed applications (via `GDesktopAppInfo`)
   with a category hint per result, plus a "Run Command" fallback for
   typed shell commands
+- File manager (`fleetwm-fm`, see `docs/FILE_MANAGER.md`): Windows 7 style by default, other styles in its settings; tabs, search, thumbnails,
+  verified copies (checksum read back from the device), safe eject, network places (SMB, SFTP, FTP, WebDAV/Nextcloud, NFS) and a freedesktop trash,
+  drawn in code (no GTK, no image files)
+- Desktop (`fleetwm-desktop`, docs/DESKTOP.md): in the Desktop layout the icons of `~/Desktop` and a Windows 7 style right-click menu (View, Sort by, New,
+  Personalize, show/hide icons); in the Tiling layout a small card showing the keys for the shortcut list
 - XWayland support for legacy X11 apps
 - Debug overlay (`Alt+Shift+I`): a per-output frame-time bar graph plus
   live renderer backend/FPS/RAM/CPU-MHz text, for actually seeing render

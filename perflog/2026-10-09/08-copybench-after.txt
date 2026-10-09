@@ -1,0 +1,51 @@
+# copybench after the changes (batched flush, parallel read-back, BLAKE2b auto, writeback started early) 2026-10-09T06:01:18Z
+# Intel(R) Core(TM) i5-8500 CPU @ 3.00GHz, ext4 on a virtual disk (dd write+fsync 137 MB/s), build-bench release; 3 runs each; the source is in the page cache
+--- 1 GiB file, run 1
+cp                    0.714 s
+fm no verify          0.624 s  1721.1 MB/s  files 1  verified 0  mismatches 0  err
+cp + sha256sum x2     5.615 s
+fm verify (O_DIRECT)  22.604 s  47.5 MB/s  files 1  verified 1  mismatches 0  erro
+fm verify (page cache)13.702 s  78.4 MB/s  files 1  verified 1  mismatches 0  erro
+--- 1 GiB file, run 2
+cp                    1.646 s
+fm no verify          3.706 s  289.7 MB/s  files 1  verified 0  mismatches 0  erro
+cp + sha256sum x2     8.082 s
+fm verify (O_DIRECT)  20.552 s  52.2 MB/s  files 1  verified 1  mismatches 0  erro
+fm verify (page cache)17.095 s  62.8 MB/s  files 1  verified 1  mismatches 0  erro
+--- 1 GiB file, run 3
+cp                    0.920 s
+fm no verify          2.913 s  368.5 MB/s  files 1  verified 0  mismatches 0  erro
+cp + sha256sum x2     15.246 s
+fm verify (O_DIRECT)  16.245 s  66.1 MB/s  files 1  verified 1  mismatches 0  erro
+fm verify (page cache)13.456 s  79.8 MB/s  files 1  verified 1  mismatches 0  erro
+--- 20000 files of 4 KiB, run 1
+cp -r                 0.724 s
+fm no verify          1.325 s  61.8 MB/s  files 20000  verified 0  mismatches 0  e
+fm verify (O_DIRECT)  4.802 s  17.1 MB/s  files 20000  verified 20000  mismatches 
+--- 20000 files of 4 KiB, run 2
+cp -r                 0.765 s
+fm no verify          1.300 s  63.0 MB/s  files 20000  verified 0  mismatches 0  e
+fm verify (O_DIRECT)  4.975 s  16.5 MB/s  files 20000  verified 20000  mismatches 
+--- 20000 files of 4 KiB, run 3
+cp -r                 0.692 s
+fm no verify          1.267 s  64.7 MB/s  files 20000  verified 0  mismatches 0  e
+fm verify (O_DIRECT)  5.040 s  16.3 MB/s  files 20000  verified 20000  mismatches 
+# 1 GiB file again, with a sync before every run so no earlier run's dirty pages are flushed by the next one's fsync (same host, 2026-10-09T06:04:18Z)
+--- run 1
+cp                    1.519 s
+fm no verify          1.066 s  1007.2 MB/s  files 1  verified 0  mismatches 0  err
+cp + sync + sha256sum 15.019 s
+fm verify (O_DIRECT)  15.085 s  71.2 MB/s  files 1  verified 1  mismatches 0  errors 0  phases(1 discover 2 copy 3 verify 4 flush 5 
+fm verify (page cache)14.566 s  73.7 MB/s  files 1  verified 1  mismatches 0  errors 0  phases(1 discover 2 copy 3 verify 4 flush 5 
+--- run 2
+cp                    0.747 s
+fm no verify          3.877 s  276.9 MB/s  files 1  verified 0  mismatches 0  erro
+cp + sync + sha256sum 13.294 s
+fm verify (O_DIRECT)  22.414 s  47.9 MB/s  files 1  verified 1  mismatches 0  errors 0  phases(1 discover 2 copy 3 verify 4 flush 5 
+fm verify (page cache)20.353 s  52.8 MB/s  files 1  verified 1  mismatches 0  errors 0  phases(1 discover 2 copy 3 verify 4 flush 5 
+--- run 3
+cp                    0.680 s
+fm no verify          0.986 s  1088.8 MB/s  files 1  verified 0  mismatches 0  err
+cp + sync + sha256sum 14.174 s
+fm verify (O_DIRECT)  29.109 s  36.9 MB/s  files 1  verified 1  mismatches 0  errors 0  phases(1 discover 2 copy 3 verify 4 flush 5 
+fm verify (page cache)17.630 s  60.9 MB/s  files 1  verified 1  mismatches 0  errors 0  phases(1 discover 2 copy 3 verify 4 flush 5 

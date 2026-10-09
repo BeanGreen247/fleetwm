@@ -108,6 +108,11 @@ class Surface {
   // focused another window): popups use it to close themselves.
   std::function<void()> on_keyboard_leave;
   std::function<void(double dx, double dy)> on_scroll;
+  // Drag and drop: something is dragged over the surface (return true to take it; *action may be set to a WL_DATA_DEVICE_MANAGER_DND_ACTION_*, copy or
+  // move), it left, or it was dropped (`uri_list` is the text/uri-list the source sent).
+  std::function<bool(double x, double y, uint32_t* action)> on_drag_motion;
+  std::function<void()> on_drag_leave;
+  std::function<void(double x, double y, const std::string& uri_list)> on_drop;
   std::function<void(int w, int h)> on_configure;
   std::function<void()> on_closed;
 
@@ -201,6 +206,12 @@ class App {
   // `cb` on the main loop with it (empty string if there is none). Input
   // methods typically call this on Ctrl+V / Shift+Insert. Capped at 64 KiB.
   void paste_text(std::function<void(const std::string&)> cb);
+  // Reads the clipboard in the first of `wanted` mime types it offers ("" and "" when it has none); up to 256 KiB.
+  void paste_mime(const std::vector<std::string>& wanted, std::function<void(const std::string& mime, const std::string& data)> done);
+  // Makes `formats` (mime type -> bytes) the clipboard. Needs a recent key press or click to have happened (Wayland asks for its serial).
+  bool set_clipboard(const std::map<std::string, std::string>& formats);
+  // Starts dragging `formats` from `origin`; `done` says whether it was dropped somewhere and whether the target moved instead of copied.
+  bool start_drag(Surface& origin, const std::map<std::string, std::string>& formats, bool allow_move, std::function<void(bool performed, bool moved)> done);
 
   wl_display* display() const { return display_; }
   wl_compositor* compositor() const { return compositor_; }
@@ -235,6 +246,17 @@ class App {
   Surface* find(wl_surface* s) const;
   void setup_seat();
   void key_repeat_tick();
+  void drag_update();
+  void drag_drop();
+  wl_data_source* make_source(const std::map<std::string, std::string>& formats, bool drag, std::function<void(bool, uint32_t)> finished);
+  void read_offer(wl_data_offer* offer, const std::vector<std::string>& wanted, size_t cap, std::function<void(const std::string&, const std::string&)> cb);
+  uint32_t last_serial_ = 0, drag_serial_ = 0;
+  wl_data_offer* drag_offer_ = nullptr;
+  Surface* drag_surface_ = nullptr;
+  double drag_x_ = 0, drag_y_ = 0;
+  bool drag_dropped_ = false;
+  wl_data_source* clip_source_ = nullptr;
+  wl_data_source* drag_source_ = nullptr;
 
 
   wl_display* display_ = nullptr;

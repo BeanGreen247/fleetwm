@@ -1,0 +1,19 @@
+# copybench 2026-10-09T05:35:41Z Intel(R) Core(TM) i5-8500 CPU @ 3.00GHz ext4 /dev/sda1 (virtual disk), source in page cache after the first run; 3 runs each, seconds
+--- big file 1 GiB, run 1
+/bin/bash: line 13: /usr/bin/time: No such file or directory
+fm no verify          4.304 s  249.5 MB/s  files 1  verified 0  mismatches 0  errors 0
+fm verify O_DIRECT    19.987 s  53.7 MB/s  files 1  verified 1  mismatches 0  errors 0
+fm verify page cache  13.666 s  78.6 MB/s  files 1  verified 1  mismatches 0  errors 0
+/bin/bash: line 13: /usr/bin/time: No such file or directory
+--- big file 1 GiB, run 2
+/bin/bash: line 13: /usr/bin/time: No such file or directory
+fm no verify          1.229 s  873.4 MB/s  files 1  verified 0  mismatches 0  errors 0
+fm verify O_DIRECT    17.983 s  59.7 MB/s  files 1  verified 1  mismatches 0  errors 0
+fm verify page cache  15.533 s  69.1 MB/s  files 1  verified 1  mismatches 0  errors 0
+/bin/bash: line 13: /usr/bin/time: No such file or directory
+--- big file 1 GiB, run 3
+/bin/bash: line 13: /usr/bin/time: No such file or directory
+fm no verify          0.614 s  1748.7 MB/s  files 1  verified 0  mismatches 0  errors 0
+fm verify O_DIRECT    16.759 s  64.1 MB/s  files 1  verified 1  mismatches 0  errors 0
+fm verify page cache  11.652 s  92.1 MB/s  files 1  verified 1  mismatches 0  errors 0
+/bin/bash: line 13: /usr/bin/time: No such file or directory

@@ -81,6 +81,7 @@ ui_item "libinput libxkbcommon libdrm" "keyboard, mouse and touchpad input, key 
 ui_item "libegl/libgles2 libpixman" "OpenGL ES drawing (GPU) and the software fallback"
 ui_item "libpipewire libpam libsystemd" "sound volume, password check for the lock screen, session and power control"
 ui_item "libjemalloc2" "a faster memory allocator for the compositor"
+ui_item "libssl-dev" "checksums for the file manager's verified copies (libcrypto)"
 ui_live plain "Refreshing the package lists" "$(mktemp)" apt_update
 
 # NOTE: this is deliberately several separate `apt-get install` calls,
@@ -101,6 +102,7 @@ apt_install \
   libpipewire-0.3-dev \
   libpam0g-dev \
   libsystemd-dev \
+  libssl-dev \
   libjemalloc2
 
 ui_step "Installing drawing, font, language and cursor support" \
@@ -160,6 +162,11 @@ ui_step "Installing dark/light theme support for other programs" \
   "What: the desktop portal, Adwaita dark theme, and the Qt theme plugins that follow GTK." \
   "Why:  when you switch the Fleetwm theme between light and dark, Chromium, Thunar, Qt and GTK programs" \
   "      read that setting from these pieces and switch with it."
+# The file manager (fleetwm-fm): drives that mount and eject without a password (udisks2), network places (GVfs: SMB, SFTP, FTP,
+# WebDAV/Nextcloud, NFS, phones; gvfs-fuse shows them as ordinary folders), opening files with their default program (xdg-utils).
+# Best effort: the file manager works on local folders without them.
+apt_install udisks2 gvfs gvfs-backends gvfs-fuse xdg-utils ||
+  echo "warning: some file manager helpers could not be installed; network places and safe eject may not work"
 # Dark/light mode for other toolkits: the portal (settings backend that Chromium and
 # libadwaita read), an Adwaita dark theme for GTK 3, the Qt platform themes that follow GTK,
 # and the D-Bus pieces that start the portal. Best effort.

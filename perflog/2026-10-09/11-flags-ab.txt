@@ -1,0 +1,13 @@
+# build flags A/B on the listing + sort code (dir_listing.cpp, natural_sort.cpp), 100000 entries on ext4, median of 15 runs, three sessions each, machine otherwise quiet; 2026-10-09
+== o2
+fm-names 28.57 ms  fm-lazy 88.50 ms
+fm-names 28.35 ms  fm-lazy 87.67 ms
+fm-names 29.84 ms  fm-lazy 85.26 ms
+== o3
+fm-names 27.90 ms  fm-lazy 76.13 ms
+fm-names 29.09 ms  fm-lazy 85.25 ms
+fm-names 27.61 ms  fm-lazy 75.48 ms
+== native-lto
+fm-names 27.23 ms  fm-lazy 77.17 ms
+fm-names 27.07 ms  fm-lazy 74.10 ms
+fm-names 27.29 ms  fm-lazy 78.41 ms
