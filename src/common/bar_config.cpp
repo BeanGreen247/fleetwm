@@ -137,9 +137,11 @@ BarConfig load_bar_config() {
   }
   if (auto v = table["taskbar_rounded"].value<bool>()) config.taskbar_rounded = *v;
   auto read_names = [&](const char* key, std::vector<std::string>* out) {
-    if (toml::array* a = table[key].as_array())
+    if (toml::array* a = table[key].as_array()) {
+      out->clear();  // a list in the file replaces the default
       for (const toml::node& n : *a)
         if (auto s = n.value<std::string>()) out->push_back(*s);
+    }
   };
   read_names("taskbar_order", &config.taskbar_order);
   read_names("taskbar_hidden", &config.taskbar_hidden);

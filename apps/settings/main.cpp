@@ -1152,7 +1152,7 @@ struct Settings {
       ui.row("");
       if (ui.button("Restore the default", desktop)) {
         bar.taskbar_order.clear();
-        bar.taskbar_hidden.clear();
+        bar.taskbar_hidden = BarConfig{}.taskbar_hidden;
         save_bar();
       }
       ui.newline();

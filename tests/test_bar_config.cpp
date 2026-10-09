@@ -436,7 +436,7 @@ TEST_F(BarConfigTest, TaskbarRoundedDefaultsOnAndRoundTrips) {
 TEST_F(BarConfigTest, TaskbarOptionsDefaults) {
   const BarConfig c;
   EXPECT_TRUE(c.taskbar_order.empty());
-  EXPECT_TRUE(c.taskbar_hidden.empty());
+  EXPECT_EQ(c.taskbar_hidden, (std::vector<std::string>{"metrics"}));  // the Task Manager has the numbers
   EXPECT_TRUE(c.pinned_apps.empty());
   EXPECT_FALSE(c.taskbar_autohide);
   EXPECT_FALSE(c.start_centered);
@@ -476,6 +476,18 @@ TEST_F(BarConfigTest, WrongTypesInTheListsAreSkipped) {
   const BarConfig c = load_bar_config();
   EXPECT_EQ(c.taskbar_order, (std::vector<std::string>{"start", "clock"}));
   EXPECT_TRUE(c.pinned_apps.empty());
+}
+
+TEST_F(BarConfigTest, ExplicitEmptyHiddenListShowsTheMetricsAgain) {
+  std::filesystem::create_directories(dir_ / "fleetwm");
+  std::ofstream(dir_ / "fleetwm" / "bar.toml") << "taskbar_hidden = []\n";
+  EXPECT_TRUE(load_bar_config().taskbar_hidden.empty());
+}
+
+TEST_F(BarConfigTest, FileWithoutTheKeyKeepsTheMetricsHidden) {
+  std::filesystem::create_directories(dir_ / "fleetwm");
+  std::ofstream(dir_ / "fleetwm" / "bar.toml") << "taskbar_position = \"top\"\n";
+  EXPECT_EQ(load_bar_config().taskbar_hidden, (std::vector<std::string>{"metrics"}));
 }
 
 }  // namespace fleetwm

@@ -225,7 +225,7 @@ set_look() {
 }
 #   set_bar <layout> <power_mode> <taskbar_position> <seconds true|false>
 set_bar() {
-  printf 'layout = "%s"\npower_mode = "%s"\ntaskbar_position = "%s"\n[clock]\nshow_seconds = %s\nshow_date = true\nuse_24h = true\n' \
+  printf 'layout = "%s"\npower_mode = "%s"\ntaskbar_position = "%s"\ntaskbar_hidden = []\n[clock]\nshow_seconds = %s\nshow_date = true\nuse_24h = true\n' \
     "$1" "$2" "$3" "$4" > "${CONF_DIR}/bar.toml.tmp" && mv "${CONF_DIR}/bar.toml.tmp" "${CONF_DIR}/bar.toml"
   sleep 0.35
 }
@@ -595,6 +595,8 @@ phase_windows_and_settings() {
   done
   open_window "${BUILD_DIR}/apps/shortcuts/fleetwm-shortcuts"
   open_window "${BUILD_DIR}/apps/langpicker/fleetwm-langpicker"
+  open_window "${BUILD_DIR}/apps/ctxmenu/fleetwm-ctxmenu" --edge bottom --at 500 --item "Close window|ipc|WINDOW_CLOSE 0" --item "Pin to taskbar|pin|none.desktop" --item - --item "Taskbar settings|exec|true"
+  open_window "${BUILD_DIR}/apps/taskmgr/fleetwm-taskmgr" --tab "$([[ $((settings_visits % 2)) -eq 0 ]] && echo performance || echo processes)"
   if have foot; then
     open_window foot -e sh -c 'i=0; while [ $i -lt 4000 ]; do echo "fleetwm training line $i the quick brown fox jumps over the lazy dog"; i=$((i+1)); done; sleep 30'
     open_window foot

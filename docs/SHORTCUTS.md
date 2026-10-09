@@ -42,6 +42,7 @@ and the shell's readline Alt+letter bindings):
 | Keys | Action | Setting |
 | --- | --- | --- |
 | Ctrl+Alt+T | Open a terminal | `desktop_terminal` |
+| Ctrl+Shift+Esc | Task Manager | `desktop_task_manager` |
 | Super+Shift+B | Default web browser | `desktop_browser` |
 | Super+Shift+E | Default file manager | `desktop_file_manager` |
 | Super+Shift+T | Default text editor | `desktop_text_editor` |

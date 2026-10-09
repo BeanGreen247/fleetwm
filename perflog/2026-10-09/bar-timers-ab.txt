@@ -7,3 +7,9 @@ first version (timer armed for the exact remaining ms):
 after arming +1 ms (the timer fired up to 1 ms early, found nothing due and woke again):
   old: 2.11 1.95 1.81              new: 2.13 2.21 2.10
 CPU 0-1 ms/s in both, RSS 14.2 MB in both. No win above run-to-run spread (about 0.15), so the shared timer was removed again.
+
+Task Manager own cost (idle, window shown, headless rig, 8-core dev PC, 60 s after 8 s settle; perflog/2026-10-09/idle.sh BIN 60 "--tab X"):
+  Processes tab (per-process scan every second, ~14 processes): 2.1-2.8 wakeups/s, 4 ms CPU/s (0.4%), RSS 15.2 MB
+  Performance tab (graphs, per-core, latency every 5th tick, audio every 30th): 3.5-4.3 wakeups/s, 7-8 ms CPU/s (0.75%), RSS 15.3 MB
+  First version (latency sampled every tick, audio quantum every 10 ticks): Performance tab 6.1 wakeups/s, 9 ms CPU/s.
+  The bar is 14.2 MB RSS in the same rig, so most of the figure is the shared libraries (cairo, fonts, wayland), not the program.

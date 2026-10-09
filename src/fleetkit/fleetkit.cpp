@@ -382,6 +382,7 @@ void Surface::render() {
   last_ = b;
   b->busy = true;
   frame_pending_ = true;
+  frame_sent_ = std::chrono::steady_clock::now();
   frame_cb_ = wl_surface_frame(surface_);
   static const wl_callback_listener fl = {[](void* d, wl_callback* cb, uint32_t) {
     auto* s = static_cast<Surface*>(d);
