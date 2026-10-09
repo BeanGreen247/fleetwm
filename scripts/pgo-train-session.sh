@@ -327,7 +327,7 @@ ensure_running "${BUILD_DIR}/apps/desktop/fleetwm-desktop"
 spawn_client "${BUILD_DIR}/apps/audiomixer/fleetwm-audiomixer"
 sleep 0.6
 
-SETTINGS_PAGES=(theme bar wallpaper display network keyboard mouse power date default audio performance file desktop about)
+SETTINGS_PAGES=(theme taskbar wallpaper display network bluetooth keyboard mouse power date default audio performance file desktop about)
 round=0
 
 # ---- virtual desktops: windows on several of them, every workspace visited, windows sent between them ----------------
@@ -341,7 +341,7 @@ phase_workspaces() {
   for w in 2 3 4; do
     send_ipc "WORKSPACE $w"
     sleep 0.1
-    if (( w == 2 )); then open_window "${BUILD_DIR}/apps/settings/fleetwm-settings" --page bar; fi
+    if (( w == 2 )); then open_window "${BUILD_DIR}/apps/settings/fleetwm-settings" --page taskbar; fi
     if (( w == 3 )); then open_window foot; fi
     if (( w == 4 )); then open_window "${BUILD_DIR}/apps/langpicker/fleetwm-langpicker"; fi
     wait_windows $((w + 1)) 3
@@ -503,7 +503,7 @@ phase_tiling() {
   have wtype || return 0
   echo "    tiling: three windows, focus and pinned borders, float, close, send to workspace"
   open_window foot
-  open_window "${BUILD_DIR}/apps/settings/fleetwm-settings" --page bar
+  open_window "${BUILD_DIR}/apps/settings/fleetwm-settings" --page taskbar
   open_window "${BUILD_DIR}/apps/shortcuts/fleetwm-shortcuts"
   wait_windows 3 4
   sleep 0.2
@@ -768,7 +768,7 @@ while time_left; do
   (( r == 2 )) && time_left && timed phase_small_screen
   # Flip the layout while windows are open, so the relayout and snap paths run with real content.
   if time_left; then
-    open_window "${BUILD_DIR}/apps/settings/fleetwm-settings" --page bar
+    open_window "${BUILD_DIR}/apps/settings/fleetwm-settings" --page taskbar
     open_window "${BUILD_DIR}/apps/shortcuts/fleetwm-shortcuts"
     wait_windows 2 3
     if [[ "${combo[0]}" == tiling ]]; then

@@ -433,4 +433,49 @@ TEST_F(BarConfigTest, TaskbarRoundedDefaultsOnAndRoundTrips) {
   EXPECT_FALSE(load_bar_config().taskbar_rounded);
 }
 
+TEST_F(BarConfigTest, TaskbarOptionsDefaults) {
+  const BarConfig c;
+  EXPECT_TRUE(c.taskbar_order.empty());
+  EXPECT_TRUE(c.taskbar_hidden.empty());
+  EXPECT_TRUE(c.pinned_apps.empty());
+  EXPECT_FALSE(c.taskbar_autohide);
+  EXPECT_FALSE(c.start_centered);
+  EXPECT_TRUE(c.taskbar_labels);
+}
+
+TEST_F(BarConfigTest, TaskbarOptionsRoundTrip) {
+  BarConfig c;
+  c.taskbar_order = {"start", "pinned", "windows", "clock"};
+  c.taskbar_hidden = {"metrics", "layout"};
+  c.pinned_apps = {"firefox.desktop", "org.gnome.Nautilus.desktop"};
+  c.taskbar_autohide = true;
+  c.start_centered = true;
+  c.taskbar_labels = false;
+  save_bar_config(c);
+  const BarConfig back = load_bar_config();
+  EXPECT_EQ(back.taskbar_order, c.taskbar_order);
+  EXPECT_EQ(back.taskbar_hidden, c.taskbar_hidden);
+  EXPECT_EQ(back.pinned_apps, c.pinned_apps);
+  EXPECT_TRUE(back.taskbar_autohide);
+  EXPECT_TRUE(back.start_centered);
+  EXPECT_FALSE(back.taskbar_labels);
+}
+
+TEST_F(BarConfigTest, OlderFileWithoutTaskbarOptionsStillLoads) {
+  std::filesystem::create_directories(dir_ / "fleetwm");
+  std::ofstream(dir_ / "fleetwm" / "bar.toml") << "taskbar_position = \"top\"\ntaskbar_workspaces = 6\n";
+  const BarConfig c = load_bar_config();
+  EXPECT_EQ(c.taskbar_position, TaskbarPosition::Top);
+  EXPECT_TRUE(c.taskbar_order.empty());
+  EXPECT_TRUE(c.taskbar_labels);
+}
+
+TEST_F(BarConfigTest, WrongTypesInTheListsAreSkipped) {
+  std::filesystem::create_directories(dir_ / "fleetwm");
+  std::ofstream(dir_ / "fleetwm" / "bar.toml") << "taskbar_order = [\"start\", 5, \"clock\"]\npinned = \"firefox.desktop\"\n";
+  const BarConfig c = load_bar_config();
+  EXPECT_EQ(c.taskbar_order, (std::vector<std::string>{"start", "clock"}));
+  EXPECT_TRUE(c.pinned_apps.empty());
+}
+
 }  // namespace fleetwm

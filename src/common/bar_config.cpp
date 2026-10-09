@@ -136,6 +136,17 @@ BarConfig load_bar_config() {
     config.taskbar_workspaces = std::clamp(static_cast<int>(*v), 1, 10);
   }
   if (auto v = table["taskbar_rounded"].value<bool>()) config.taskbar_rounded = *v;
+  auto read_names = [&](const char* key, std::vector<std::string>* out) {
+    if (toml::array* a = table[key].as_array())
+      for (const toml::node& n : *a)
+        if (auto s = n.value<std::string>()) out->push_back(*s);
+  };
+  read_names("taskbar_order", &config.taskbar_order);
+  read_names("taskbar_hidden", &config.taskbar_hidden);
+  read_names("pinned", &config.pinned_apps);
+  if (auto v = table["taskbar_autohide"].value<bool>()) config.taskbar_autohide = *v;
+  if (auto v = table["start_centered"].value<bool>()) config.start_centered = *v;
+  if (auto v = table["taskbar_labels"].value<bool>()) config.taskbar_labels = *v;
   if (auto v = table["taskbar_position"].value<std::string>()) {
     config.taskbar_position = taskbar_position_from_string(*v);
   }
@@ -174,6 +185,17 @@ void save_bar_config(const BarConfig& config) {
   table.insert_or_assign("taskbar_position", taskbar_position_to_string(config.taskbar_position));
   table.insert_or_assign("taskbar_workspaces", static_cast<int64_t>(config.taskbar_workspaces));
   table.insert_or_assign("taskbar_rounded", config.taskbar_rounded);
+  auto write_names = [&](const char* key, const std::vector<std::string>& names) {
+    toml::array a;
+    for (const std::string& n : names) a.push_back(n);
+    table.insert_or_assign(key, std::move(a));
+  };
+  write_names("taskbar_order", config.taskbar_order);
+  write_names("taskbar_hidden", config.taskbar_hidden);
+  write_names("pinned", config.pinned_apps);
+  table.insert_or_assign("taskbar_autohide", config.taskbar_autohide);
+  table.insert_or_assign("start_centered", config.start_centered);
+  table.insert_or_assign("taskbar_labels", config.taskbar_labels);
 
   std::ofstream out(path);
   if (!out) {

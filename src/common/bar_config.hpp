@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 namespace fleetwm {
 
@@ -107,6 +108,14 @@ struct BarConfig {
   int taskbar_workspaces = 4;
   // Desktop taskbar: rounded window buttons. Sharp corners in theme.toml still win.
   bool taskbar_rounded = true;
+  // The Desktop taskbar's elements: the saved order and the hidden ones, by name (see taskbar_layout.hpp: unknown names are dropped on use,
+  // missing ones are added, so an older file keeps working). Empty order = the default one.
+  std::vector<std::string> taskbar_order;
+  std::vector<std::string> taskbar_hidden;
+  bool taskbar_autohide = false;   // slides away until the pointer touches its screen edge
+  bool start_centered = false;     // Windows 11 style: start button, pinned apps and window buttons centred
+  bool taskbar_labels = true;      // window buttons show the title beside the icon; off: icon only
+  std::vector<std::string> pinned_apps;  // desktop entry ids ("firefox.desktop") with an icon button on the taskbar
 };
 
 std::string power_mode_to_string(PowerMode mode);
