@@ -4,7 +4,7 @@
 BUILD=/w/build-dev
 export XDG_RUNTIME_DIR=/tmp/rt HOME=/tmp/h WLR_BACKENDS=headless WLR_RENDERER=pixman LANG=C.UTF-8 LC_ALL=C.UTF-8
 rm -rf /tmp/rt /tmp/h; mkdir -p /tmp/rt /tmp/h/.config/fleetwm /w/shots; chmod 700 /tmp/rt
-export PATH=$BUILD/src/bar:$BUILD/apps/settings:$BUILD/apps/launcher:$BUILD/src/wallpaper:$BUILD/apps/audiomixer:$BUILD/apps/powermenu:$BUILD/apps/fleetfm:$BUILD/apps/desktop:$BUILD/apps/shortcuts:$BUILD/apps/langpicker:$PATH
+export PATH=$BUILD/src/bar:$BUILD/apps/settings:$BUILD/apps/launcher:$BUILD/src/wallpaper:$BUILD/apps/audiomixer:$BUILD/apps/powermenu:$BUILD/apps/fleetfm:$BUILD/apps/desktop:$BUILD/apps/shortcuts:$BUILD/apps/langpicker:$BUILD/apps/ctxmenu:$PATH
 cat > /tmp/inner.sh <<'IN'
 CONF=$HOME/.config/fleetwm
 cfg() { printf '%s\n' "$2" > $CONF/$1.tmp && mv $CONF/$1.tmp $CONF/$1; sleep ${3:-0.6}; }
