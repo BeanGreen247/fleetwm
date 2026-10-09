@@ -1095,11 +1095,11 @@ struct Settings {
     ui.newline();
     ui.row("Start menu in the middle");
     if (ui.toggle(&bar.start_centered, desktop)) save_bar();
-    ui.label("Like Windows 11: start button, pinned apps and windows centred", true);
+    ui.label(bar.start_centered ? "Centred, like Windows 11" : "At the left edge", true);
     ui.newline();
     ui.row("Hide until the pointer arrives");
     if (ui.toggle(&bar.taskbar_autohide, desktop)) save_bar();
-    ui.label(bar.taskbar_autohide ? "Windows use the whole screen" : "Always visible", true);
+    ui.label(bar.taskbar_autohide ? "Hidden until needed" : "Always visible", true);
     ui.newline();
 
     ui.space(6);
