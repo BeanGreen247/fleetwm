@@ -1,0 +1,5 @@
+# copybench small files: 20000 x 4 KiB, before the batching fix (2026-10-09, i5-8500 VM, ext4 on a virtual disk)
+cp -r                 0.8 s
+fm no verify          1.5 s    (20000 files, 53 MB/s)
+fm verify O_DIRECT    529 s    (fsync and an O_DIRECT read-back per file: 26 ms each on this virtual disk; the second run was stopped)
+# The first run printed one trace entry per phase change (thousands); the poller now stops after 160 characters.

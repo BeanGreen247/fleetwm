@@ -60,7 +60,8 @@ TEST(PgoTraining, StartsEveryDesktopProgramThatCanRunOnAVirtualScreen) {
   const std::string script = tr_read(tr_root() / "scripts/pgo-train-session.sh");
   for (const char* program : {"src/bar/fleetwm-bar", "src/wallpaper/fleetwm-wallpaper", "apps/lockapplet/fleetwm-lockapplet",
                               "apps/audiomixer/fleetwm-audiomixer", "apps/settings/fleetwm-settings", "apps/launcher/fleetwm-launcher",
-                              "apps/powermenu/fleetwm-powermenu", "apps/shortcuts/fleetwm-shortcuts", "apps/langpicker/fleetwm-langpicker"}) {
+                              "apps/powermenu/fleetwm-powermenu", "apps/shortcuts/fleetwm-shortcuts", "apps/langpicker/fleetwm-langpicker",
+                              "apps/desktop/fleetwm-desktop", "apps/fleetfm/fleetwm-fm"}) {
     EXPECT_NE(script.find(program), std::string::npos) << program << " is never started by the training run";
     const std::string dir = std::string(program).substr(0, std::string(program).rfind('/'));
     EXPECT_TRUE(tr_fs::is_directory(tr_root() / dir)) << dir << ": the training script names a program that no longer exists";

@@ -318,6 +318,7 @@ ensure_running() {
 ensure_running "${BUILD_DIR}/src/bar/fleetwm-bar"
 ensure_running "${BUILD_DIR}/src/wallpaper/fleetwm-wallpaper"
 ensure_running "${BUILD_DIR}/apps/lockapplet/fleetwm-lockapplet"
+ensure_running "${BUILD_DIR}/apps/desktop/fleetwm-desktop"
 spawn_client "${BUILD_DIR}/apps/audiomixer/fleetwm-audiomixer"
 sleep 0.6
 
@@ -623,6 +624,38 @@ phase_menus() {
   close_windows
 }
 
+# The file manager: a scripted run of the whole window without a screen (every style, view, search, verified copy, undo, dialogs; about two
+# seconds, `fleetwm-fm --train`), then a real window on a folder, and on the desktop the Windows 7 menu of fleetwm-desktop: the View submenu,
+# an icon's menu, a double click on an icon (which starts the file manager). Needs nothing the other phases do not.
+phase_files_and_desktop() {
+  echo "    file manager and desktop: scripted run, a real window, the desktop menus"
+  timeout 90 "${BUILD_DIR}/apps/fleetfm/fleetwm-fm" --train "${RUNTIME_DIR}/fmtrain" >/dev/null 2>&1 || echo "    WARNING: fleetwm-fm --train failed" | tee -a "${RUNTIME_DIR}/crashes.log"
+  mkdir -p "${HOME}/Desktop" "${RUNTIME_DIR}/fmwork/sub"
+  local f
+  for f in notes.txt photo.png report.pdf song.mp3; do : > "${HOME}/Desktop/$f"; : > "${RUNTIME_DIR}/fmwork/$f"; done
+  open_window "${BUILD_DIR}/apps/fleetfm/fleetwm-fm" "${RUNTIME_DIR}/fmwork"
+  wait_windows 1 3
+  sleep 0.5
+  keys "n"; keys -k Down -k Down -k Up; keys -k F2; keys -k Escape
+  keys -M ctrl -k t -m ctrl; sleep 0.2; keys -M ctrl -k w -m ctrl
+  keys -M ctrl -k h -m ctrl; keys -M ctrl -k h -m ctrl
+  keys -M alt -k Left -m alt; sleep 0.1
+  ptr rclick 640 300; sleep 0.2; escape
+  sleep 0.2
+  close_windows
+  # the desktop (Desktop layout rounds only: in the Tiling layout the program shows just the shortcut card)
+  if [[ "$1" == desktop ]]; then
+    sleep 0.3
+    ptr rclick 900 500; sleep 0.25
+    ptr abs 930 516; sleep 0.2; ptr abs 1000 540; sleep 0.2     # View, then into its submenu
+    ptr click 1000 540; sleep 0.2                                 # a View choice
+    ptr rclick 900 500; sleep 0.2; ptr abs 930 541; sleep 0.2; ptr abs 1000 541; sleep 0.15; escape      # Sort by
+    ptr rclick 60 60; sleep 0.2; escape                           # an icon's menu
+    ptr click 60 60; sleep 0.1; ptr dclick 60 60; sleep 0.6       # open: starts the file manager
+    sleep 0.3; close_windows
+  fi
+}
+
 phase_ipc_and_layouts() {
   echo "    layouts: keyboard layout, idle inhibit, window queries"
   next_layout
@@ -696,6 +729,8 @@ while time_left; do
   # Settings phase (rounds 1, 2 and 4) show all thirteen pages (five each).
   if (( DO_WORKSPACES[r] )); then timed phase_workspaces; else send_ipc "WORKSPACE 1"; send_ipc "WORKSPACE 2"; send_ipc "WORKSPACE 0"; fi
   time_left && timed phase_icons
+  # the file manager and the desktop menus: early, in the first two rounds (one desktop, one tiling), so a slow machine's short run still reaches them
+  (( r == 0 || r == 1 )) && time_left && timed phase_files_and_desktop "${combo[0]}"
   if [[ "${combo[0]}" == desktop ]]; then
     if [[ "$edge" == bottom ]]; then
       time_left && timed phase_window_elements "${FRAMES[$r]}" 0

@@ -1,0 +1,5 @@
+# dirbench (after lazy stat + sort keys) 2026-10-09T05:32:07Z  host: Intel(R) Core(TM) i5-8500 CPU @ 3.00GHz  cores 2  kernel 6.12.107+deb13-amd64
+/home/kenny/.cache/fmbench/d1000     1000 entries  median of 15 runs (ms):  fm     1.81   fm-names     0.27   fm-lazy     0.50   stdfs     4.04   posix     1.97   (stdfs/fm 2.23x, posix/fm 1.09x, stdfs/fm-lazy 8.15x)  [2]
+/home/kenny/.cache/fmbench/d10000    10000 entries  median of 15 runs (ms):  fm    20.30   fm-names     2.75   fm-lazy     6.28   stdfs    42.79   posix    24.11   (stdfs/fm 2.11x, posix/fm 1.19x, stdfs/fm-lazy 6.81x)  [6]
+/home/kenny/.cache/fmbench/d100000   100000 entries  median of 15 runs (ms):  fm   227.13   fm-names    28.10   fm-lazy    84.29   stdfs   438.40   posix   228.51   (stdfs/fm 1.93x, posix/fm 1.01x, stdfs/fm-lazy 5.20x)  [4]
+/tmp/user/1002/claude-1002/-home-kenny-git-fleetwm/4edd2ee0-3ace-46e0-8bdc-21832e749b0c/scratchpad/bench/d100000   100000 entries  median of 15 runs (ms):  fm   188.81   fm-names    17.34   fm-lazy    58.33   stdfs   469.58   posix   225.11   (stdfs/fm 2.49x, posix/fm 1.19x, stdfs/fm-lazy 8.05x)  [4]

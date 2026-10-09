@@ -30,7 +30,7 @@ int main(int argc, char** argv) {
   {
     const char* bindir = std::getenv("FLEETWM_PREWARM_BINDIR");  // a test build run from its own directory
     std::vector<std::pair<std::string, std::string>> programs;
-    for (const char* helper : {"fleetwm-bar", "fleetwm-wallpaper", "fleetwm-lockapplet"})
+    for (const char* helper : {"fleetwm-bar", "fleetwm-wallpaper", "fleetwm-desktop", "fleetwm-lockapplet"})
       programs.emplace_back(std::string(bindir && *bindir ? bindir : FLEETWM_BINDIR) + "/" + helper, helper);
     fleetwm::prewarm::prewarm_programs_async(std::move(programs));
   }

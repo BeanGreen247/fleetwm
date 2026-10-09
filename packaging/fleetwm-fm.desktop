@@ -1,0 +1,17 @@
+[Desktop Entry]
+Type=Application
+Name=File Manager
+GenericName=File Manager
+Comment=Browse files and drives, copy with verification, eject safely, open network places
+Exec=fleetwm-fm %U
+Icon=fleetwm-fm
+Terminal=false
+Categories=System;FileTools;FileManager;Utility;
+MimeType=inode/directory;x-scheme-handler/smb;x-scheme-handler/sftp;x-scheme-handler/ftp;x-scheme-handler/davs;x-scheme-handler/nfs;
+Keywords=files;folders;drives;usb;eject;copy;samba;nextcloud;
+StartupWMClass=dev.fleetwm.FileManager
+Actions=new-window;
+
+[Desktop Action new-window]
+Name=New Window
+Exec=fleetwm-fm

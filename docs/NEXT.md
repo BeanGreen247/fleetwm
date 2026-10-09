@@ -79,3 +79,15 @@ Added later 2026-10-08: prewarm is now asynchronous (the 36-44 ms regression is 
 ## End of 2026-10-08 (kept in sync with the memory bank note `projects/fleetwm-state-2026-10-08-end-of-day.md`)
 Done since the Celeron round: Windows 7 frame defaults from real screenshots (`docs/WINDOWS7_FRAME_REFERENCE.md`), glass on by default with opaque window bodies, `--version`/`--help` with the author credit on every program, a damaged config file keeps the defaults, children start with a clean signal mask (Ctrl+C and git work in terminals opened from the start menu), the default terminal keeps its arguments (Lestrix Lite), install time on the VM recorded (findings section 19).
 Open: greeter-side prewarm (needs a privilege-dropped read; owner decides), application icon in the titlebar, Aero blue glass colour, `STATS_BUILD_CPU` is 0 in the install summary (scripts/install-stats.sh, "Parallel speedup 0.00x"), key-to-pixel latency, Lestrix under Fleetwm, libinput on a real mouse, mobile data, NetworkManager, real monitor hotplug, multi-monitor stages 5-6, a 0.5.0 release (version bump, changelog, tag, GitHub release).
+
+## File manager and desktop (2026-10-09, owner request: `fleetwm-fm`, `fleetwm-desktop`)
+Built on the VM, not committed. What it is: `docs/FILE_MANAGER.md`, `docs/DESKTOP.md`; what was measured: `docs/FILE_MANAGER_PERFORMANCE.md` (raw files in `perflog/2026-10-09/`).
+1,007 tests pass (260 file manager and desktop tests); AddressSanitizer + UndefinedBehaviorSanitizer and ThreadSanitizer (94 window and transfer tests) were repeated on this final code and are clean. To test on the VM: `scripts/build-pgo-auto.sh` (the training now runs
+`fleetwm-fm --train` and a desktop menu phase), then install, then look at both layouts.
+Open, most important first:
+1. Network places were never run against a real Samba, SFTP, FTP or Nextcloud server; eject and mounting never on a real USB stick.
+2. Clipboard and drag and drop with a second Wayland program were never run (only the unit tests with a fake host).
+3. Native FTP/SFTP/WebDAV/SMB clients: a rewrite of the data path (see FILE_MANAGER.md). Not started.
+4. Group by in the icon views, "Other application..." under Open with, a Settings page for `desktop.toml` (the shortcut card can only be turned off in the file).
+5. Performance next steps with an estimate: prefix-key array for the 100,000-name sort (about 20 ms), overlap read-back with writing for big files.
+6. The pointer was never moved by a real mouse in a running session; everything was driven by tests and the headless compositor.

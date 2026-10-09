@@ -115,6 +115,7 @@ gles2_dep = dependency('glesv2')
 
 subdir('src/common')
 subdir('src/fleetkit')
+subdir('src/fleetfm')
 subdir('src/netmgr')
 subdir('src/compositor')
 subdir('src/bar')
@@ -124,6 +125,8 @@ subdir('src/wallpaper')
 subdir('apps/powermenu')
 subdir('apps/audiomixer')
 subdir('apps/shortcuts')
+subdir('apps/fleetfm')
+subdir('apps/desktop')
 subdir('apps/lockapplet')
 subdir('apps/langpicker')
 if get_option('greeter')
@@ -154,6 +157,12 @@ install_data(
 # search results, no special-casing needed in app_index.cpp).
 install_data(
   'packaging/fleetwm-settings.desktop',
+  install_dir: get_option('prefix') / 'share' / 'applications',
+)
+
+# The file manager: a desktop entry for launchers, Default apps (it handles inode/directory) and the network schemes.
+install_data(
+  'packaging/fleetwm-fm.desktop',
   install_dir: get_option('prefix') / 'share' / 'applications',
 )
 

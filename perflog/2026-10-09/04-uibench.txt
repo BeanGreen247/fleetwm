@@ -1,0 +1,17 @@
+# uibench 2026-10-09T05:33:16Z host: Intel(R) Core(TM) i5-8500 CPU @ 3.00GHz build-bench release commit 2f7a6fb+tree, XDG_CONFIG_HOME fresh
+folder /home/kenny/.cache/fmbench/d1000: 1000 entries shown
+start() to listed: 4.6 ms   RSS 7920 kB -> 21716 kB (+14127 bytes per entry)
+  details       frame median: top 1.44 ms   scrolling 1.48 ms   pointer moving 1.49 ms
+  list          frame median: top 1.46 ms   scrolling 1.46 ms   pointer moving 1.48 ms
+  medium icons  frame median: top 1.24 ms   scrolling 1.39 ms   pointer moving 1.34 ms
+  large icons   frame median: top 1.10 ms   scrolling 1.14 ms   pointer moving 1.09 ms
+  tiles         frame median: top 1.22 ms   scrolling 1.28 ms   pointer moving 1.20 ms
+  content       frame median: top 1.12 ms   scrolling 1.26 ms   pointer moving 1.12 ms
+folder /home/kenny/.cache/fmbench/d100000: 100000 entries shown
+start() to listed: 94.0 ms   RSS 7924 kB -> 35088 kB (+278 bytes per entry)
+  details       frame median: top 1.49 ms   scrolling 1.59 ms   pointer moving 1.51 ms
+  list          frame median: top 1.51 ms   scrolling 1.56 ms   pointer moving 1.51 ms
+  medium icons  frame median: top 1.29 ms   scrolling 1.55 ms   pointer moving 1.30 ms
+  large icons   frame median: top 1.18 ms   scrolling 1.24 ms   pointer moving 1.25 ms
+  tiles         frame median: top 1.39 ms   scrolling 1.37 ms   pointer moving 1.37 ms
+  content       frame median: top 1.25 ms   scrolling 1.26 ms   pointer moving 1.24 ms

@@ -2,7 +2,7 @@
 
 Fleetwm is a small, fast Wayland desktop for Debian and Ubuntu, built on
 [wlroots](https://gitlab.freedesktop.org/wlroots/wlroots). It comes with its own bar, settings
-app, app launcher, wallpaper, power menu, lock screen, audio mixer and login screen. GTK, Qt and
+app, app launcher, wallpaper, power menu, lock screen, audio mixer, file manager and login screen. GTK, Qt and
 X11 apps all run on it. It is early software, so expect rough edges.
 
 You can use it in two ways and switch at any time in Settings:

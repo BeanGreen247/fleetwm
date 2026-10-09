@@ -9,6 +9,8 @@
 #include <signal.h>
 #include <spawn.h>
 
+#include <initializer_list>
+
 namespace fleetwm {
 
 // Async-signal-safe: usable between fork() and exec().

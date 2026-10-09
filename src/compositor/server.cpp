@@ -1119,7 +1119,7 @@ bool Server::debug_remove_output(const std::string& name) {
 void Server::start_output_helpers(wlr_output* out) {
   if (!out || !out->name || output_helper_pids_.count(out->name)) return;
   std::vector<pid_t>& pids = output_helper_pids_[out->name];
-  for (const char* program : {"fleetwm-bar", "fleetwm-wallpaper"}) {
+  for (const char* program : {"fleetwm-bar", "fleetwm-wallpaper", "fleetwm-desktop"}) {
     const pid_t pid = spawn_with_output(program, out->name);
     if (pid > 0) pids.push_back(pid);
   }

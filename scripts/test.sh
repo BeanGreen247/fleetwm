@@ -31,6 +31,7 @@ declare -A AREAS=(
   [config]='WallpaperConfigTest.*:DefaultAppsTest.*:OutputConfigTest.*'
   [fleetkit]='DesktopEntryExec.*:FleetkitColor.*:GlassCache.*'
   [popups]='PopupSpot.*:SingleInstance.*:AudioInstaller.*:PopupDismissal.*'
+  [fm]='Fm*'
   [build]='PgoTraining.*:PgoTrainingShim.*'
   [power]='PowerActions.*:PowerPolkitRule.*:PowerInstaller.*:PowerIcons.*:PolkitRules.*:PolkitRuleBehaviour.*'
 )
@@ -45,6 +46,7 @@ declare -A AREA_HELP=(
   [config]='wallpaper, default apps, outputs'
   [fleetkit]='toolkit helpers: colors, desktop entries'
   [popups]='volume mixer placement, single instance and closing on an outside click, and the sound packages the installer adds'
+  [fm]='the file manager: listing, copy and verify, mounts and eject, trash, search, styles, window sessions'
   [build]='the profile-guided build: training run length and coverage'
   [power]='power menu: commands, the polkit rule and its installer step, icon drawing'
 )

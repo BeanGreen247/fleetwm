@@ -1,0 +1,8 @@
+# dirbench 2026-10-09T05:25:29Z  host: Intel(R) Core(TM) i5-8500 CPU @ 3.00GHz  cores 2  kernel 6.12.107+deb13-amd64
+# build: meson release (-O3), commit 2f7a6fb + working tree; data: ext4 /home and tmpfs /tmp, files created empty (stat cost dominates)
+/home/kenny/.cache/fmbench/d1000     1000 entries  median of 15 runs (ms):  fm     1.86   fm-names     0.27   stdfs     4.02   posix     1.97   (stdfs/fm 2.16x, posix/fm 1.06x)  [3]
+/home/kenny/.cache/fmbench/d10000    10000 entries  median of 15 runs (ms):  fm    21.67   fm-names     2.75   stdfs    42.72   posix    22.85   (stdfs/fm 1.97x, posix/fm 1.05x)  [2]
+/home/kenny/.cache/fmbench/d100000   100000 entries  median of 15 runs (ms):  fm   232.05   fm-names    28.60   stdfs   437.00   posix   225.28   (stdfs/fm 1.88x, posix/fm 0.97x)  [6]
+/tmp/user/1002/claude-1002/-home-kenny-git-fleetwm/4edd2ee0-3ace-46e0-8bdc-21832e749b0c/scratchpad/bench/d1000     1000 entries  median of 15 runs (ms):  fm     1.59   fm-names     0.10   stdfs     4.22   posix     2.03   (stdfs/fm 2.66x, posix/fm 1.28x)  [3]
+/tmp/user/1002/claude-1002/-home-kenny-git-fleetwm/4edd2ee0-3ace-46e0-8bdc-21832e749b0c/scratchpad/bench/d10000    10000 entries  median of 15 runs (ms):  fm    17.91   fm-names     1.65   stdfs    46.10   posix    22.76   (stdfs/fm 2.57x, posix/fm 1.27x)  [2]
+/tmp/user/1002/claude-1002/-home-kenny-git-fleetwm/4edd2ee0-3ace-46e0-8bdc-21832e749b0c/scratchpad/bench/d100000   100000 entries  median of 15 runs (ms):  fm   187.09   fm-names    17.09   stdfs   464.46   posix   222.82   (stdfs/fm 2.48x, posix/fm 1.19x)  [6]
