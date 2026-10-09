@@ -15,6 +15,7 @@ namespace fleetwm::kit {
 
 struct TitlebarPaint {
   std::string title;
+  cairo_surface_t* icon = nullptr;  // the application icon, drawn beside the title (not owned); nullptr = none
   bool focused = false;
   bool maximized = false;
   bool pinned = false;
@@ -25,6 +26,10 @@ struct TitlebarPaint {
   geom::TitlebarLayout layout;  // where the caption buttons are and the span the title may use
   geom::TitleAlignment align = geom::TitleAlignment::Center;
 };
+
+// The size of the application icon in a titlebar of this height, and the room it takes (icon plus the gap to the title).
+double titlebar_icon_size(int bar_height);
+inline double titlebar_icon_room(int bar_height) { return titlebar_icon_size(bar_height) + 12; }
 
 // Paints the whole bar into `cr` (an ARGB surface of width x height, initially transparent). In the Desktop layout the
 // bar is as wide as the window and carries no frame of its own: the frame (draw_frame_strip) starts under it.

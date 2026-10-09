@@ -2426,6 +2426,9 @@ int server_theme_watch_readable(int fd, uint32_t, void* data) {
       auto* event = reinterpret_cast<struct inotify_event*>(buf + offset);
       if (event->len > 0 && std::strcmp(event->name, "theme.toml") == 0) {
         got_theme_event = true;
+      } else if (event->len > 0 && std::strcmp(event->name, "wallpaper.toml") == 0 &&
+                 server->theme_config().glass_tint.mode == GlassTintMode::Wallpaper) {
+        got_theme_event = true;  // the glass tint follows the wallpaper: take it again
       } else if (event->len > 0 && std::strcmp(event->name, "default_apps.toml") == 0) {
         got_default_apps_event = true;
       } else if (event->len > 0 && std::strcmp(event->name, "keybinds.toml") == 0) {

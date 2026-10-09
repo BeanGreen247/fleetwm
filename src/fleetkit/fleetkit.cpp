@@ -1,4 +1,5 @@
 #include "fleetkit.hpp"
+#include "glass_tint.hpp"
 
 #include "backdrop.hpp"
 
@@ -80,6 +81,7 @@ Palette load_palette(const ThemeConfig& theme) {
     else if (name == "accent_color") p.accent = c;
   }
   if (!theme.accent.auto_extract) p.accent = parse_color(theme.accent.hex, p.accent);
+  apply_glass_tint(p, theme.glass_tint);
   return p;
 }
 
@@ -1126,7 +1128,7 @@ Tooltip::Tooltip(App& app, const Palette& pal, const std::string& text, int x, i
   surface_->on_draw = [p, lines, asc, backdrop, out_w, out_h, screen_x, screen_y](cairo_t* c, int sw, int sh) {
     if (backdrop) {
       GlassStyle st;
-      st.tint = p.bg_primary;
+      st.tint = p.glass_surface;
       st.tint_alpha = 0.72;  // a little more tint than the bar: tooltips are small and must stay readable
       st.radius = p.rounded ? 6 : 0;
       paint_glass(c, backdrop.get(), out_w, out_h, screen_x, screen_y, 0.5, 0.5, sw - 1, sh - 1, st);

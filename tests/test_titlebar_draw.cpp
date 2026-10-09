@@ -380,6 +380,83 @@ uint32_t td_px(TdImage& img, int x, int y) {
 }
 int td_alpha(TdImage& img, int x, int y) { return td_px(img, x, y) >> 24; }
 
+
+// ---- the application icon -------------------------------------------------------------------------------------
+
+namespace {
+// A solid red square standing in for an application icon.
+cairo_surface_t* td_icon(int size) {
+  cairo_surface_t* s = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, size, size);
+  cairo_t* cr = cairo_create(s);
+  cairo_set_source_rgb(cr, 1, 0, 0);
+  cairo_paint(cr);
+  cairo_destroy(cr);
+  return s;
+}
+
+bool td_is_red(const unsigned char* px) { return px[2] > 200 && px[1] < 60 && px[0] < 60; }  // BGRA
+}  // namespace
+
+TEST(TitlebarIcon, DrawnAtTheEndWithoutButtons) {
+  cairo_surface_t* icon = td_icon(48);
+  TdImage with(520, 32), without(520, 32);
+  td::TitlebarPaint p = td_paint(520, false);
+  td_draw(without, p);
+  p.icon = icon;
+  td_draw(with, p);
+  const double sz = td::titlebar_icon_size(32);
+  const int y = 16;
+  int red = 0;
+  for (int x = 0; x < 80; ++x) red += td_is_red(with.data() + y * with.stride() + x * 4) ? 1 : 0;
+  EXPECT_GE(red, static_cast<int>(sz) - 2);  // the icon's width in red pixels on its middle row
+  for (int x = 0; x < 80; ++x) EXPECT_FALSE(td_is_red(without.data() + y * without.stride() + x * 4));
+  // The icon is at the left edge: nothing red near the buttons on the right.
+  for (int x = 400; x < 520; ++x) EXPECT_FALSE(td_is_red(with.data() + y * with.stride() + x * 4));
+  cairo_surface_destroy(icon);
+}
+
+TEST(TitlebarIcon, TitleMakesRoomForIt) {
+  cairo_surface_t* icon = td_icon(48);
+  td::TitlebarPaint p = td_paint(520, false);
+  p.align = geom::TitleAlignment::Left;
+  TdImage a(520, 32), b(520, 32);
+  td_draw(a, p);
+  p.icon = icon;
+  td_draw(b, p);
+  // First column (after the icon's room) where the title text starts, from the lightest pixel on the row band of the text.
+  auto first_text_x = [](TdImage& img, int from) {
+    for (int x = from; x < 300; ++x)
+      for (int y = 8; y < 24; ++y) {
+        const unsigned char* px = img.data() + y * img.stride() + x * 4;
+        if (px[0] > 150 && px[1] > 150 && px[2] > 150) return x;
+      }
+    return -1;
+  };
+  const int icon_end = static_cast<int>(td::titlebar_icon_room(32)) + 6;
+  EXPECT_GT(first_text_x(b, icon_end - 4), 0);
+  EXPECT_GE(first_text_x(b, 0), first_text_x(a, 0) + 8) << "with an icon the text starts further right";
+  cairo_surface_destroy(icon);
+}
+
+TEST(TitlebarIcon, NoRoomMeansNoIcon) {
+  cairo_surface_t* icon = td_icon(48);
+  TdImage narrow(110, 32);
+  td::TitlebarPaint p = td_paint(110, false);
+  p.icon = icon;
+  td_draw(narrow, p);
+  bool any = false;
+  for (int y = 0; y < 32 && !any; ++y)
+    for (int x = 0; x < 110; ++x) any = any || td_is_red(narrow.data() + y * narrow.stride() + x * 4);
+  EXPECT_FALSE(any);
+  cairo_surface_destroy(icon);
+}
+
+TEST(TitlebarIcon, SizeFollowsTheBarAndStaysInRange) {
+  EXPECT_EQ(td::titlebar_icon_size(30), 17);
+  EXPECT_EQ(td::titlebar_icon_size(20), 14);
+  EXPECT_EQ(td::titlebar_icon_size(64), 24);
+}
+
 }  // namespace
 
 TEST(TitlebarDraw, FlatFrameIsOpaqueAndGlassFrameIsTranslucent) {

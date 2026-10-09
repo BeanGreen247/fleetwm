@@ -298,6 +298,10 @@ class View {
   int titlebar_w_ = -1;
   int titlebar_h_ = -1;
   TitlebarState rendered_;
+  // The application icon for the titlebar: looked up when the app id changes, not on every commit.
+  std::string icon_app_id_;
+  cairo_surface_t* icon_ = nullptr;
+  bool icon_known_ = false;
   // The sides and bottom of the Windows 7 style frame (the top is part of the titlebar buffer).
   wlr_scene_buffer* frame_left_ = nullptr;
   wlr_scene_buffer* frame_right_ = nullptr;

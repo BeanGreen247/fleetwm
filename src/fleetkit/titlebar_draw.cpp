@@ -285,7 +285,7 @@ void draw_window_edge(cairo_t* cr, double x0, double y0, double x1, double y1, d
 
 void draw_frame_strip(cairo_t* cr, int width, int height, FrameEdge edge, bool focused, bool glass, const Palette& pal,
                       bool round_bottom) {
-  const Color bg = focused ? tb_mix(pal.bg_secondary, pal.accent, 0.12) : pal.bg_secondary;
+  const Color bg = glass ? (focused ? pal.glass_title : pal.glass_title_idle) : (focused ? tb_mix(pal.bg_secondary, pal.accent, 0.12) : pal.bg_secondary);
   const bool left = edge == FrameEdge::Left, right = edge == FrameEdge::Right;
   cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
   if (glass) cairo_set_source_rgba(cr, bg.r, bg.g, bg.b, focused ? 0.74 : 0.56);
@@ -329,8 +329,11 @@ void draw_frame_strip(cairo_t* cr, int width, int height, FrameEdge edge, bool f
   }
 }
 
+double titlebar_icon_size(int bar_height) { return std::clamp(std::round(bar_height * 0.55), 14.0, 24.0); }
+
 void draw_titlebar(cairo_t* cr, int width, int height, const TitlebarPaint& p, const Palette& pal) {
-  const Color bg = p.focused ? tb_mix(pal.bg_secondary, pal.accent, 0.12) : pal.bg_secondary;
+  const Color bg = p.glass ? (p.focused ? pal.glass_title : pal.glass_title_idle)
+                           : (p.focused ? tb_mix(pal.bg_secondary, pal.accent, 0.12) : pal.bg_secondary);
   const Color fg = p.focused ? pal.fg_primary : pal.fg_secondary;
   const bool glass_look = p.glass;  // read before the buttons, which are drawn the same either way
 
@@ -345,9 +348,29 @@ void draw_titlebar(cairo_t* cr, int width, int height, const TitlebarPaint& p, c
     cairo_fill(cr);
   }
 
-  // Title, ellipsized to the span the buttons leave free.
+  // The application icon sits at the end of the bar that has no buttons; the title gives up that room.
+  geom::TitlebarLayout lay = p.layout;
+  if (p.icon && lay.title_x1 - lay.title_x0 > titlebar_icon_room(height) + 40) {
+    const double sz = titlebar_icon_size(height), room = titlebar_icon_room(height);
+    const bool icon_left = lay.title_x0 < width / 2.0;  // the buttons are on the right: the icon takes the left edge
+    const double ix = icon_left ? lay.title_x0 + 6 : lay.title_x1 - 6 - sz;
+    const double iw = cairo_image_surface_get_width(p.icon), ih = cairo_image_surface_get_height(p.icon);
+    if (iw > 0 && ih > 0) {
+      cairo_save(cr);
+      cairo_translate(cr, ix, (height - sz) / 2.0);
+      cairo_scale(cr, sz / iw, sz / ih);
+      cairo_set_source_surface(cr, p.icon, 0, 0);
+      cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_BEST);
+      cairo_paint_with_alpha(cr, p.focused ? 1.0 : 0.65);
+      cairo_restore(cr);
+    }
+    if (icon_left) lay.title_x0 += room;
+    else lay.title_x1 -= room;
+  }
+
+  // Title, ellipsized to the span the buttons (and the icon) leave free.
   const double font = std::clamp(height * 0.4, 11.0, 16.0);
-  const double avail = p.layout.title_x1 - p.layout.title_x0;
+  const double avail = lay.title_x1 - lay.title_x0;
   std::string text = p.title;
   if (avail > 20 && !text.empty()) {
     bool cut = false;
@@ -360,7 +383,7 @@ void draw_titlebar(cairo_t* cr, int width, int height, const TitlebarPaint& p, c
     }
     if (cut) text += "...";
     const TextExtents te = measure_text(cr, text, font, p.focused);
-    const double x = geom::title_x(p.layout, te.width, p.align, width);
+    const double x = geom::title_x(lay, te.width, p.align, width);
     draw_text(cr, text, x, (height - te.height) / 2.0 + te.ascent - 0.5, font, fg, p.focused);
   }
 

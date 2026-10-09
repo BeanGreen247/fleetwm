@@ -30,6 +30,23 @@ std::string themes_dir() {
   return std::string(FLEETWM_SYSCONF_DIR) + "/themes";
 }
 
+std::string glass_tint_mode_to_string(GlassTintMode mode) {
+  switch (mode) {
+    case GlassTintMode::Custom: return "custom";
+    case GlassTintMode::Wallpaper: return "wallpaper";
+    case GlassTintMode::Theme: return "theme";
+    case GlassTintMode::Aero: break;
+  }
+  return "aero";
+}
+
+GlassTintMode glass_tint_mode_from_string(const std::string& s) {
+  if (s == "custom") return GlassTintMode::Custom;
+  if (s == "wallpaper") return GlassTintMode::Wallpaper;
+  if (s == "theme") return GlassTintMode::Theme;
+  return GlassTintMode::Aero;
+}
+
 std::string theme_name_to_string(ThemeName theme) {
   switch (theme) {
     case ThemeName::Dark: return "dark";
@@ -134,6 +151,7 @@ ThemeConfig load_theme_config() {
     if (auto v = (*t)["buttons_side"].value<std::string>()) tb.buttons_side = button_side_from_string(*v);
     if (auto v = (*t)["title_align"].value<std::string>()) tb.title_align = title_align_from_string(*v);
     if (auto v = (*t)["show_pin"].value<bool>()) tb.show_pin = *v;
+    if (auto v = (*t)["show_icon"].value<bool>()) tb.show_icon = *v;
     if (auto v = (*t)["show_minimize"].value<bool>()) tb.show_minimize = *v;
     if (auto v = (*t)["show_maximize"].value<bool>()) tb.show_maximize = *v;
     if (auto v = (*t)["frame_px"].value<int64_t>()) tb.frame_px = std::clamp(static_cast<int>(*v), 0, 16);
@@ -171,6 +189,15 @@ ThemeConfig load_theme_config() {
     config.show_debug_overlay_on_startup = *v;
   }
   if (auto v = table["glass_effects"].value<bool>()) config.glass = *v;
+  if (auto* t = table["glass_tint"].as_table()) {
+    GlassTintConfig& g = config.glass_tint;
+    if (auto v = (*t)["mode"].value<std::string>()) g.mode = glass_tint_mode_from_string(*v);
+    if (auto v = (*t)["color"].value<std::string>()) {
+      float rgba[4];
+      if (parse_hex_color(*v, rgba)) g.hex = *v;  // a malformed colour keeps the default
+    }
+    if (auto v = (*t)["intensity"].value<int64_t>()) g.intensity = std::clamp(static_cast<int>(*v), 0, 100);
+  }
 
   return config;
 }
@@ -201,6 +228,12 @@ void save_theme_config(const ThemeConfig& config) {
   table.insert_or_assign("show_debug_overlay_on_startup", config.show_debug_overlay_on_startup);
   table.insert_or_assign("glass_effects", config.glass);
 
+  toml::table glass_tint;
+  glass_tint.insert_or_assign("mode", glass_tint_mode_to_string(config.glass_tint.mode));
+  glass_tint.insert_or_assign("color", config.glass_tint.hex);
+  glass_tint.insert_or_assign("intensity", static_cast<int64_t>(config.glass_tint.intensity));
+  table.insert_or_assign("glass_tint", std::move(glass_tint));
+
   const TitlebarConfig& tb = config.titlebar;
   toml::table titlebar;
   titlebar.insert_or_assign("height", static_cast<int64_t>(tb.height));
@@ -209,6 +242,7 @@ void save_theme_config(const ThemeConfig& config) {
   titlebar.insert_or_assign("buttons_side", button_side_to_string(tb.buttons_side));
   titlebar.insert_or_assign("title_align", title_align_to_string(tb.title_align));
   titlebar.insert_or_assign("show_pin", tb.show_pin);
+  titlebar.insert_or_assign("show_icon", tb.show_icon);
   titlebar.insert_or_assign("show_minimize", tb.show_minimize);
   titlebar.insert_or_assign("show_maximize", tb.show_maximize);
   titlebar.insert_or_assign("frame_px", static_cast<int64_t>(tb.frame_px));

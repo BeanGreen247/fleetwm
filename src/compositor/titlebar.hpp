@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cairo.h>
+
 #include <string>
 
 #include "theme.hpp"
@@ -25,6 +27,7 @@ void titlebar_backdrop_color(float rgba[4]);
 
 struct TitlebarState {
   std::string title;
+  cairo_surface_t* icon = nullptr;  // from kit::app_icon (owned by its cache); nullptr = none or turned off
   bool focused = false;
   bool maximized = false;
   bool pinned = false;
