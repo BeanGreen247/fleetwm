@@ -137,6 +137,23 @@ void FmWindow::apply_style_colors() {
   font_cache_.clear();
 }
 
+void FmWindow::reload_config(FmSettings fresh, kit::Palette theme) {
+  const bool style_changed = fresh.style != s_.style;
+  const bool regroup = fresh.group_by != s_.group_by;
+  fresh.last_location = s_.last_location;
+  fresh.open_tabs = s_.open_tabs;
+  fresh.window_w = s_.window_w;
+  fresh.window_h = s_.window_h;
+  s_ = std::move(fresh);
+  theme_ = std::move(theme);
+  if (ui_) ui_->set_palette(theme_);
+  for (Browser& t : tabs_) {
+    if (style_changed) t.mode = s_.default_view;
+    if (regroup) t.group_by = s_.group_by;
+  }
+  apply_settings();
+}
+
 void FmWindow::apply_settings() {
   if (s_.columns.empty()) s_.columns = default_columns();
   apply_style_colors();

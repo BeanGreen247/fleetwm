@@ -26,6 +26,7 @@
 #include "quit_signals.hpp"
 #include "audio_mixer.hpp"
 #include "bar_config.hpp"
+#include "config_backup.hpp"
 #include "battery_reading.hpp"
 #include "power_config.hpp"
 #include "settings_pages.hpp"
@@ -211,6 +212,11 @@ struct Settings {
   // display
   std::vector<DispMon> mons;
   std::string disp_status;
+
+  // backup (About tab)
+  std::string backup_path = std::string(std::getenv("HOME") ? std::getenv("HOME") : "") + "/fleetwm-config.tar.gz";
+  std::string backup_status;
+  bool backup_all = false;
   IpcClient ipc;
   int ipc_watch = 0;
   bool disp_requested = false;
@@ -1267,6 +1273,27 @@ struct Settings {
     ui.newline();
     ui.label("License: MIT", true);
     ui.newline();
+    ui.space(10);
+    ui.section("Backup");
+    ui.paragraph("All settings are saved to one tar.gz file and can be loaded back. An import keeps the previous settings in a fleetwm.bak-DATE folder next to the settings folder.");
+    ui.row("File");
+    ui.text_entry(&backup_path, 380);
+    ui.newline();
+    ui.row("Machine specific");
+    ui.checkbox("Include displays and saved servers", &backup_all);
+    ui.newline();
+    const bool have_path = !backup_path.empty();
+    fleetwm::BackupOptions opt;
+    opt.include_machine_specific = backup_all;
+    if (ui.button("Export", have_path)) backup_status = fleetwm::export_config(backup_path, opt).message;
+    if (ui.button("Import", have_path)) {
+      backup_status = fleetwm::import_config(backup_path, opt).message;
+      reload_from_disk();
+    }
+    ui.newline();
+    if (!backup_status.empty()) {
+      ui.paragraph(backup_status);
+    }
   }
 
   // ---------------------------------------------------------------- draw --

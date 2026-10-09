@@ -271,7 +271,6 @@ void FmWindow::paint_dialog() {
   add_region({0, 0, W_, H_}, R::DlgButton, -1);
   int dw = 440, dh = 220;
   switch (dlg_) {
-    case Dlg::Settings: dw = 760; dh = 560; break;
     case Dlg::About: dw = 460; dh = 360; break;
     case Dlg::Properties: dw = 420; dh = 500; break;
     case Dlg::Connect: dw = 520; dh = 420; break;
@@ -305,7 +304,6 @@ void FmWindow::paint_dialog() {
   cairo_translate(cr_, dlg_rect_.x, dlg_rect_.y);
   ui_->begin(cr_, dw, dh);
   switch (dlg_) {
-    case Dlg::Settings: dialog_settings(*ui_, dw, dh); break;
     case Dlg::About: dialog_about(*ui_, dw, dh); break;
     case Dlg::Properties: dialog_properties(*ui_, dw, dh); break;
     case Dlg::Connect: dialog_connect(*ui_, dw, dh); break;

@@ -539,14 +539,37 @@ TEST_F(FmWindowTest, ChangingTheStyleSwitchesTheLayoutAndIsSaved) {
   EXPECT_EQ(win_->tab().mode, ViewMode::Details);
 }
 
+TEST_F(FmWindowTest, OptionsOpenTheFileManagerPageOfTheSettingsApp) {
+  std::string page;
+  Host h;
+  h.now = [this] { return clock_; };
+  h.open_settings = [&](const std::string& p) { page = p; };
+  win_ = std::make_unique<FmWindow>(h, FmSettings{}, kit::Palette{});
+  win_->start(work_.string());
+  win_->wait_idle();
+  win_->run(Cmd::Settings);
+  EXPECT_EQ(page, "File Manager");
+  EXPECT_EQ(win_->dialog_name(), "");  // no options window of its own
+}
+
+TEST_F(FmWindowTest, SettingsChangedInTheSettingsAppReachAnOpenWindow) {
+  make();
+  win_->settings().window_w = 900;
+  win_->settings().last_location = "/somewhere";
+  FmSettings fresh;
+  fresh.show_hidden = true;
+  fresh.colour_scheme = ColorScheme::Dark;
+  fresh.window_w = 1;  // the window's own size wins
+  win_->reload_config(fresh, kit::Palette{});
+  frame();
+  EXPECT_TRUE(win_->settings().show_hidden);
+  EXPECT_EQ(win_->settings().colour_scheme, ColorScheme::Dark);
+  EXPECT_EQ(win_->settings().window_w, 900);
+  EXPECT_EQ(win_->settings().last_location, "/somewhere");
+}
+
 TEST_F(FmWindowTest, EveryDialogDrawsInsideTheWindow) {
   make();
-  for (int page = 0; page < 8; ++page) {
-    win_->show_settings_page(page);
-    frame();
-    EXPECT_EQ(win_->dialog_name(), "settings");
-  }
-  win_->close_dialog_for_test();
   for (Cmd c : {Cmd::About, Cmd::ConnectServer, Cmd::AddNextcloud}) {
     win_->run(c);
     frame();
@@ -841,12 +864,6 @@ TEST_F(FmWindowTest, DialogsAndMenusStayInsideA1024x768Window) {
   make();
   select("a.txt");
   auto inside = [](const Rect& r) { return r.x >= 0 && r.y >= 0 && r.x + r.w <= 1024 && r.y + r.h <= 768 && r.w > 0 && r.h > 0; };
-  for (int page = 0; page < 8; ++page) {
-    win_->show_settings_page(page);
-    frame();
-    EXPECT_TRUE(inside(win_->dialog_rect())) << "settings page " << page;
-  }
-  win_->close_dialog_for_test();
   for (Cmd c : {Cmd::About, Cmd::ConnectServer, Cmd::AddNextcloud, Cmd::Properties}) {
     win_->run(c);
     frame();
@@ -864,7 +881,7 @@ TEST_F(FmWindowTest, DialogsAndMenusStayInsideA1024x768Window) {
     key(XKB_KEY_Escape);
   }
   // the same at the smallest window the compositor lets this program have (min size 640x420)
-  win_->show_settings_page(1);
+  win_->run(Cmd::About);
   frame(640, 420);
   const Rect r = win_->dialog_rect();
   EXPECT_LE(r.x + r.w, 640);

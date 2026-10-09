@@ -10,7 +10,7 @@ Written 2026-10-09. What was measured is in `docs/FILE_MANAGER_PERFORMANCE.md`; 
 fleetwm-fm [FOLDER|URI ...]              each argument opens in a tab
 fleetwm-fm --screenshot out.png [--size 1024x768] [--style windows7|windows10|mac|caja|nautilus|nemo|thunar|pcmanfm|dolphin]
                                 [--view details|list|small_icons|medium_icons|large_icons|extra_large_icons|tiles|content]
-                                [--show settings|about|properties|connect|nextcloud|menu-view|menu-organize|menu-context|tabs|select] [FOLDER]
+                                [--show about|properties|connect|nextcloud|menu-view|menu-organize|menu-context|tabs|select] [FOLDER]
 fleetwm-fm --write-icon out.png [SIZE]   the application icon as a PNG
 fleetwm-fm --version | --help            with the author credit and the project link, like every Fleetwm program
 ```
@@ -62,7 +62,7 @@ Network (Windows 10's "Network locations") and mounted ones under Computer with 
 file system: `$XDG_DATA_HOME/Trash`; another drive: `<drive>/.Trash-<uid>` (a rename, so trashing from a USB stick is instant and the file
 stays on the stick). Restore refuses to overwrite. If a file cannot be trashed the window offers permanent deletion.
 
-**Settings** (Ctrl+, or Organize > Folder and search options; every change is saved at once to `~/.config/fleetwm/fleetfm.toml`).
+**Settings** live in the Settings app, page File Manager (Ctrl+, or Organize > Folder and search options opens it; the file manager has no options window of its own). Every change is saved at once to `~/.config/fleetwm/fleetfm.toml`, and open file manager windows follow it, and the Theme page, while they run.
 General (style, open folders in same window / own window / new tab, single or double click, navigation pane contents, start location,
 reopen tabs), View (default view, hidden files, extensions, full path in the title, check boxes, thumbnails and their size limit,
 per-folder views, stripes, compact rows, type-to-select or type-to-search, details pane, status bar, menu bar never / Alt / always, sorting,

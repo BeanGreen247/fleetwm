@@ -59,6 +59,7 @@ fleetwm_test_sources = files(
   'test_fm_lineedit.cpp',
   'test_fm_window.cpp',
   'test_fm_desktop.cpp',
+  'test_config_backup.cpp',
 )
 
 fleetwm_unit_tests = executable(
@@ -82,7 +83,7 @@ test_areas = {
   'windows': 'WindowList.*',
   'shortcuts': 'FormatAltCombo.*:FormatAltShiftCombo.*:ShortcutList.*',
   'ipc': 'ExtractJsonStringField.*:IpcSocketPathTest.*:IpcClient.*:IpcClientWithServerTest.*',
-  'config': 'WallpaperConfigTest.*:DefaultAppsTest.*:OutputConfigTest.*',
+  'config': 'WallpaperConfigTest.*:DefaultAppsTest.*:OutputConfigTest.*:ConfigBackup.*',
   'fleetkit': 'DesktopEntryExec.*:FleetkitColor.*:GlassCache.*',
   'network': 'NetworkParse.*:SystemDevices.*:WpaFixture.*',
   'keyboard': 'KeyboardConfigTest.*:KeyboardNames.*:XkbRules.*:Locales.*',

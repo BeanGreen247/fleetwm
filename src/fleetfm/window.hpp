@@ -47,6 +47,7 @@ struct Host {
   std::function<void(std::function<void(const std::string&)>)> paste_text;
   std::function<void(const std::string&)> new_window;             // open a folder in another window
   std::function<void()> quit;
+  std::function<void(const std::string& page)> open_settings;    // the options live in the Settings app: show that page there
   std::function<double()> now;                                    // seconds, monotonic
   std::function<void(const std::string& text)> set_clipboard_text;
   // The system clipboard as files: what other file managers put there (x-special/gnome-copied-files, text/uri-list) and read.
@@ -132,7 +133,6 @@ class FmWindow {
   const FmSettings& settings() const { return s_; }
   Rect item_screen_rect(int index) const;                              // where item `index` of the current tab is drawn (window coordinates)
   std::string dialog_name() const;                                    // "" or "settings", "about", "conflict" ...
-  void show_settings_page(int page);
   const std::vector<std::unique_ptr<Job>>& jobs_for_test() const { return jobs_; }
   void close_dialog_for_test() { close_dialog(); }
   std::vector<std::string> menu_labels() const {
@@ -156,6 +156,8 @@ class FmWindow {
   void set_window_size(int w, int h) { s_.window_w = w; s_.window_h = h; }
   void save_session();                                                // remembers the last folder and the open tabs
   void screenshot_setup(const std::string& what);                     // headless screenshots: open a dialog or a menu
+  // The Settings app changed fleetfm.toml or theme.toml: take the new values, keep what this window owns (size, tabs, last place).
+  void reload_config(FmSettings fresh, kit::Palette theme);
   void apply_settings();                                              // after settings() was edited: rebuild colours, layout, lists
   Browser& tab() { return tabs_[cur_]; }
   const Browser& tab() const { return tabs_[cur_]; }
@@ -195,7 +197,7 @@ class FmWindow {
     int arg2 = 0;
   };
 
-  enum class Dlg { None, Settings, About, Properties, Connect, Nextcloud, Conflict, ConfirmDelete, Message, Checksums, Errors, ConfirmEmptyTrash };
+  enum class Dlg { None, About, Properties, Connect, Nextcloud, Conflict, ConfirmDelete, Message, Checksums, Errors, ConfirmEmptyTrash };
 
   struct ThumbKey {
     std::string path;
@@ -357,7 +359,6 @@ class FmWindow {
   const Volume* volume_for_path(const std::string& path) const;
 
   // ----- dialogs (window_dialogs.cpp) -----
-  void dialog_settings(kit::Ui& ui, double w, double h);
   void dialog_about(kit::Ui& ui, double w, double h);
   void dialog_properties(kit::Ui& ui, double w, double h);
   void dialog_connect(kit::Ui& ui, double w, double h);
@@ -475,8 +476,6 @@ class FmWindow {
   // dialogs
   Dlg dlg_ = Dlg::None;
   std::unique_ptr<kit::Ui> ui_;
-  int settings_page_ = 0;
-  double settings_scroll_ = 0;
   double checksum_scroll_ = 0;
   std::string compare_hash_;
   std::string dlg_title_, dlg_text_;

@@ -4,7 +4,6 @@
 #include <filesystem>
 
 #include "file_ops.hpp"
-#include "fm_settings_ui.hpp"
 #include "version.hpp"
 #include "window.hpp"
 
@@ -35,63 +34,6 @@ int footer(Ui& ui, double w, double h, const std::vector<std::string>& labels, i
 }
 
 }  // namespace
-
-// ---------------------------------------------------------------------------------------------------------------------
-// settings
-// ---------------------------------------------------------------------------------------------------------------------
-
-void FmWindow::dialog_settings(Ui& ui, double w, double h) {
-  const std::vector<std::string>& pages = fm_settings_pages();
-  const double side = 170;
-  {
-    const kit::Palette& p = ui.palette();
-    cairo_rectangle(cr_, 0, 0, side, h);
-    kit::set_source(cr_, p.bg_secondary);
-    cairo_fill(cr_);
-    kit::draw_text(cr_, "Folder Options", 16, 34, 15, p.fg_primary, true);
-  }
-  ui.nav(pages, &settings_page_, {0, 50, side, h - 50});
-  ui.set_margins(24, 8, 24);
-  ui.set_label_width(150);
-  ui.begin_scroll({side, 0, w - side, h - 56}, &settings_scroll_);
-  ui.space(8);
-  ui.title(pages[static_cast<size_t>(settings_page_)]);
-  const FmSettingsResult r = draw_fm_settings_page(ui, s_, settings_page_);
-  ui.space(24);
-  ui.end_scroll();
-  if (r.view_changed) tab().mode = s_.default_view;
-  if (r.style_changed)
-    for (Browser& t : tabs_) t.mode = s_.default_view;
-  if (r.regroup)
-    for (Browser& t : tabs_) {
-      t.group_by = s_.group_by;
-      t.rebuild();
-    }
-  if (r.clear_history) {
-    for (Browser& t : tabs_) {
-      t.back.clear();
-      t.forward.clear();
-    }
-    closed_tabs_.clear();
-    folder_views_.clear();
-    toast("History cleared");
-  }
-  if (r.changed) {
-    apply_settings();
-    save_settings();
-  }
-  if (r.connect) {
-    close_dialog();
-    run(Cmd::ConnectServer);
-    return;
-  }
-  if (r.nextcloud) {
-    close_dialog();
-    run(Cmd::AddNextcloud);
-    return;
-  }
-  if (footer(ui, w, h, {"Close"}) == 0) close_dialog();
-}
 
 // ---------------------------------------------------------------------------------------------------------------------
 // about
