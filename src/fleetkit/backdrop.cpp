@@ -155,14 +155,14 @@ void paint_backdrop(cairo_t* cr, cairo_surface_t* bd, int out_w, int out_h, doub
   cairo_restore(cr);
 }
 
-cairo_surface_t* load_backdrop() {
+cairo_surface_t* load_backdrop(bool recheck) {
   // One decoded copy per process, re-checked against the wallpaper at most every two seconds: a
   // caller that asks on every Alt+Tab step no longer reads and decodes the PNG each time.
   static cairo_surface_t* shared = nullptr;
   static std::string shared_key;
   static std::chrono::steady_clock::time_point checked;
   const auto now = std::chrono::steady_clock::now();
-  if (shared && now - checked < std::chrono::seconds(2)) return cairo_surface_reference(shared);
+  if (shared && !recheck && now - checked < std::chrono::seconds(2)) return cairo_surface_reference(shared);
   const std::string key = source_key(load_wallpaper_config());
   checked = now;
   if (shared && key == shared_key) return cairo_surface_reference(shared);

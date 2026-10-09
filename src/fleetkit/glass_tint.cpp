@@ -97,7 +97,7 @@ Color tint_from_pixels(const uint8_t* px, int w, int h) {
 Color wallpaper_tint() {
   static cairo_surface_t* cached_for = nullptr;  // identity of the shared backdrop the answer belongs to
   static Color cached = aero_blue();
-  cairo_surface_t* bd = load_backdrop();
+  cairo_surface_t* bd = load_backdrop(true);  // a palette is built right after the wallpaper or the setting changed
   if (!bd) return aero_blue();
   if (bd != cached_for) {
     cairo_surface_flush(bd);
