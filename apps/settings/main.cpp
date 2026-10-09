@@ -30,6 +30,8 @@
 #include "power_config.hpp"
 #include "settings_pages.hpp"
 #include "default_apps.hpp"
+#include "desktop.hpp"
+#include "fm_settings_ui.hpp"
 #include "terminal_launch.hpp"
 #include "ipc_client.hpp"
 #include "desktop_entry.hpp"
@@ -181,8 +183,8 @@ struct Settings {
   DefaultAppsConfig default_apps;
 
   int tab = 0;
-  double scroll[13] = {};
-  std::vector<std::string> tab_names{"Theme", "Bar", "Wallpaper", "Display", "Network", "Keyboard", "Mouse", "Power", "Date & Time", "Default Apps", "Audio", "Performance", "About"};
+  double scroll[16] = {};
+  std::vector<std::string> tab_names{"Theme", "Bar", "Wallpaper", "Display", "Network", "Keyboard", "Mouse", "Power", "Date & Time", "Default Apps", "Audio", "Performance", "File Manager", "Desktop Icons", "About"};
 
   // network
   std::unique_ptr<NetworkTab> net_tab;
@@ -194,6 +196,9 @@ struct Settings {
   BatteryReading battery;
   PowerConfig power;
   MouseConfig mouse;
+  fleetwm::fm::FmSettings fm_cfg;       // fleetwm-fm: fleetfm.toml
+  fleetwm::fm::DesktopConfig desktop_cfg;  // fleetwm-desktop: desktop.toml
+  int fm_page = 0;
 
   // default apps
   std::vector<DesktopEntry> entries;
@@ -250,6 +255,8 @@ struct Settings {
     default_apps = load_default_apps_config();
     power = load_power_config();
     mouse = load_mouse_config();
+    fm_cfg = fleetwm::fm::load_fm_settings();
+    desktop_cfg = fleetwm::fm::load_desktop_config();
     if (kb_tab) kb_tab->reload();
     apply_theme();
     redraw();
@@ -1216,6 +1223,31 @@ struct Settings {
     ui.newline();
   }
 
+  void tab_file_manager(cairo_t*) {
+    ui.tabs(fleetwm::fm::fm_settings_pages(), &fm_page);
+    ui.space(6);
+    const fleetwm::fm::FmSettingsResult r = fleetwm::fm::draw_fm_settings_page(ui, fm_cfg, fm_page);
+    if (r.changed) {
+      try {
+        fleetwm::fm::save_fm_settings(fm_cfg);  // the open file manager windows pick this up from the file
+      } catch (const std::exception& e) {
+        std::fprintf(stderr, "fleetwm-settings: %s\n", e.what());
+      }
+    }
+    if (r.connect) spawn_detached({"fleetwm-fm", "--connect"});
+    else if (r.nextcloud) spawn_detached({"fleetwm-fm", "--nextcloud"});
+  }
+
+  void tab_desktop_icons(cairo_t*) {
+    if (fleetwm::fm::draw_desktop_settings(ui, desktop_cfg)) {
+      try {
+        fleetwm::fm::save_desktop_config(desktop_cfg);
+      } catch (const std::exception& e) {
+        std::fprintf(stderr, "fleetwm-settings: %s\n", e.what());
+      }
+    }
+  }
+
   void tab_about(cairo_t*) {
     ui.section("fleetwm");
     ui.paragraph("A custom wlroots-based Wayland compositor and desktop shell (bar, settings, launcher, wallpaper, greeter).");
@@ -1276,6 +1308,8 @@ struct Settings {
       case 9: tab_default_apps(cr); break;
       case 10: tab_audio(cr); break;
       case 11: tab_performance(cr); break;
+      case 12: tab_file_manager(cr); break;
+      case 13: tab_desktop_icons(cr); break;
       default: tab_about(cr); break;
     }
     ui.space(24);
@@ -1298,6 +1332,8 @@ int main(int argc, char** argv) {
   S.config = load_theme_config();
   S.bar = load_bar_config();
   S.wallpaper = load_wallpaper_config();
+  S.fm_cfg = fleetwm::fm::load_fm_settings();
+  S.desktop_cfg = fleetwm::fm::load_desktop_config();
   S.default_apps = load_default_apps_config();
   S.power = load_power_config();
   S.mouse = load_mouse_config();

@@ -322,7 +322,7 @@ ensure_running "${BUILD_DIR}/apps/desktop/fleetwm-desktop"
 spawn_client "${BUILD_DIR}/apps/audiomixer/fleetwm-audiomixer"
 sleep 0.6
 
-SETTINGS_PAGES=(theme bar wallpaper display network keyboard mouse power date default audio performance about)
+SETTINGS_PAGES=(theme bar wallpaper display network keyboard mouse power date default audio performance file desktop about)
 round=0
 
 # ---- virtual desktops: windows on several of them, every workspace visited, windows sent between them ----------------

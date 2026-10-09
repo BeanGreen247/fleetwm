@@ -49,6 +49,20 @@ libfleetfm_icons_dep = declare_dependency(
   dependencies: [cairo_for_fm, libfleetfm_core_dep],
 )
 
+# The settings widgets (file manager and desktop), used by the Settings app and by the file manager's fallback Folder Options window.
+libfleetfm_settings_ui = static_library(
+  'fleetfm-settings-ui',
+  files('fm_settings_ui.cpp'),
+  include_directories: include_directories('.'),
+  dependencies: [libfleetkit_dep, libfleetfm_icons_dep, libfleetfm_core_dep],
+)
+libfleetfm_settings_ui_dep = declare_dependency(
+  link_with: libfleetfm_settings_ui,
+  include_directories: include_directories('.'),
+  dependencies: [libfleetkit_dep, libfleetfm_icons_dep, libfleetfm_core_dep],
+)
+
+
 # The window: tabs, panes, views, dialogs, transfers. Depends on the fleetkit toolkit (cairo text, the immediate-mode widgets used
 # in the dialogs) but not on Wayland itself, so it renders headless for screenshots and tests.
 libfleetfm_window = static_library(
@@ -64,7 +78,7 @@ libfleetfm_window = static_library(
     'window_dialogs.cpp',
   ),
   include_directories: include_directories('.'),
-  dependencies: [libfleetkit_dep, libfleetfm_icons_dep, libfleetfm_core_dep],
+  dependencies: [libfleetkit_dep, libfleetfm_icons_dep, libfleetfm_core_dep, libfleetfm_settings_ui_dep],
   cpp_args: ['-D_GNU_SOURCE'],
 )
 libfleetfm_window_dep = declare_dependency(
