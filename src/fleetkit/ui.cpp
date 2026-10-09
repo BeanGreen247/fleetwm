@@ -20,6 +20,7 @@ namespace {
 constexpr double kFont = 13.5;
 constexpr uint32_t kBtnLeft = 0x110;
 constexpr double kGap = 8;
+constexpr size_t kHitLogMax = 512;  // more tested rectangles than this: repaint on every move instead
 
 Color mix(const Color& a, const Color& b, double t) {
   return {a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t, 1.0};
@@ -108,6 +109,8 @@ void Ui::begin(cairo_t* cr, double w, double h) {
   h_ = h;
   id_ = 0;
   again_ = false;
+  hit_log_.clear();
+  motion_all_ = false;
   last_focusables_ = focusables_;
   focusables_.clear();
   modal_blocked_ = picker_open_ || file_open_ || dd_open_;
@@ -149,6 +152,7 @@ void Ui::begin(cairo_t* cr, double w, double h) {
 }
 
 void Ui::end() {
+  if (picker_open_ || file_open_ || dd_open_) motion_all_ = true;  // dialogs read the pointer directly
   if (picker_open_) {
     modal_focusables_.clear();
     in_modal_ = true;
@@ -181,10 +185,14 @@ void Ui::end() {
 
 // -------------------------------------------------------------------- input --
 
-void Ui::pointer_motion(double x, double y) {
+bool Ui::pointer_motion(double x, double y) {
+  const double ox = mx_, oy = my_;
   mx_ = x;
   my_ = y;
-  dirty_ = true;
+  bool need = down_ || motion_all_ || hit_log_.size() > kHitLogMax;
+  for (size_t i = 0; !need && i < hit_log_.size(); ++i) need = hit_log_[i].hit(ox, oy) != hit_log_[i].hit(x, y);
+  if (need) dirty_ = true;
+  return need;
 }
 
 void Ui::pointer_button(double x, double y, uint32_t button, bool pressed) {
@@ -230,7 +238,14 @@ bool Ui::visible(const UiRect& r) const {
 }
 
 bool Ui::hovered(const UiRect& r) const {
-  return input_ok() && clip_.hit(mx_, my_) && r.hit(mx_ - ox_, my_ - oy_);
+  if (!input_ok()) return false;
+  if (hit_log_.size() <= kHitLogMax) {
+    // Remember where the answer can flip: this rectangle in window coordinates, cut to the visible clip.
+    const double x0 = std::max(r.x + ox_, clip_.x), y0 = std::max(r.y + oy_, clip_.y);
+    const double x1 = std::min(r.x + ox_ + r.w, clip_.x + clip_.w), y1 = std::min(r.y + oy_ + r.h, clip_.y + clip_.h);
+    if (x1 > x0 && y1 > y0) hit_log_.push_back({x0, y0, x1 - x0, y1 - y0});
+  }
+  return clip_.hit(mx_, my_) && r.hit(mx_ - ox_, my_ - oy_);
 }
 
 UiRect Ui::place(double w, double h) {
@@ -1037,6 +1052,7 @@ Ui::CanvasEvent Ui::canvas(double height, UiRect* rect) {
   const UiRect r{left_, cy_, w_ - left_ - right_, height};
   *rect = r;
   cy_ += height + 8;
+  motion_all_ = true;  // the canvas gets the pointer position every frame
   CanvasEvent ev;
   if (press_pending_ && input_ok() && clip_.hit(press_pos_.x, press_pos_.y) &&
       r.hit(press_pos_.x - ox_, press_pos_.y - oy_)) {

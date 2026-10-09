@@ -27,6 +27,7 @@
 #include <vector>
 
 #include "quit_signals.hpp"
+#include "tick_plan.hpp"
 #include "bar_config.hpp"
 #include "desktop_entry.hpp"
 #include "icon_theme.hpp"
@@ -1672,7 +1673,8 @@ struct Bar {
   // is not woken (and the compositor not made to composite a frame) once a
   // second: with seconds hidden the clock redraws once a minute, aligned to
   // the minute boundary; stats refresh every 2 s and only redraw on change.
-  int clock_timer = 0;
+  TickPlan ticks;
+  int tick_timer = 0, job_clock = 0, job_stats = 0, job_disk = 0, job_net = 0, job_battery = 0;
 
   void clock_update() {
     if (set_if_changed(clock_text, format_clock())) {
@@ -1685,22 +1687,50 @@ struct Bar {
     }
   }
 
-  void schedule_clock() {
-    if (clock_timer) {
-      app.unwatch(clock_timer);
-      clock_timer = 0;
-    }
+  static long wall_ms() {
     timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
-    const long period = config.clock.show_seconds ? 1000 : 60000;
-    const long now_ms = static_cast<long>(ts.tv_sec) * 1000 + ts.tv_nsec / 1000000;
-    long wait = period - now_ms % period;
-    if (wait < 30) wait += period;
-    clock_timer = app.add_oneshot(static_cast<int>(wait), [this] {
-      clock_timer = 0;
-      clock_update();
-      schedule_clock();
-    });
+    return static_cast<long>(ts.tv_sec) * 1000 + ts.tv_nsec / 1000000;
+  }
+
+  // One timer for the clock, the metrics, the disk, the network and the battery: each job runs on a multiple of its
+  // period, so they share the same second and the bar wakes once for all of them (TickPlan).
+  void arm_ticks() {
+    const long w = ticks.wait_ms(wall_ms());
+    app.arm(tick_timer, w < 0 ? -1 : static_cast<int>(w));
+  }
+
+  void run_ticks() {
+    for (const int job : ticks.take_due(wall_ms())) {
+      if (job == job_clock) {
+        clock_update();
+      } else if (job == job_stats) {
+        stats_tick();
+      } else if (job == job_disk) {
+        if (update_disk()) redraw();
+      } else if (job == job_net) {
+        if (update_network()) redraw();
+      } else if (job == job_battery) {
+        if (update_battery()) redraw();
+      }
+    }
+    arm_ticks();
+  }
+
+  void start_ticks() {
+    const long now = wall_ms();
+    job_clock = ticks.add(config.clock.show_seconds ? 1000 : 60000, now);
+    job_stats = ticks.add(2000, now);
+    job_disk = ticks.add(5000, now);
+    job_net = ticks.add(5000, now);
+    job_battery = ticks.add(15000, now);
+    tick_timer = app.add_rearmable([this] { run_ticks(); });
+    arm_ticks();
+  }
+
+  void schedule_clock() {  // the clock's period follows the "show seconds" setting
+    ticks.set_period(job_clock, config.clock.show_seconds ? 1000 : 60000, wall_ms());
+    arm_ticks();
   }
 
   void stats_tick() {
@@ -2024,20 +2054,11 @@ int main(int argc, char** argv) {
   if (const char* d = std::getenv("FLEETWM_BATTERY_DIR")) B.battery_dir = d;  // test hook
   B.update_battery();
   B.update_network();
+  B.start_ticks();
   B.clock_tick();
   B.apply_layout();
   B.try_connect();
 
-  B.app.add_timer(2000, [&B] { B.stats_tick(); });
-  B.app.add_timer(5000, [&B] {
-    if (B.update_disk()) B.redraw();
-  });
-  B.app.add_timer(15000, [&B] {
-    if (B.update_battery()) B.redraw();
-  });
-  B.app.add_timer(5000, [&B] {
-    if (B.update_network()) B.redraw();
-  });
   B.app.on_outputs_changed = [&B] { B.apply_layout(); };
 
   kit::watch_dirs(B.app,

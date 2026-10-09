@@ -199,6 +199,10 @@ class App {
   int add_timer(int ms, std::function<void()> cb, bool fire_now = false);
   // One-shot timer.
   int add_oneshot(int ms, std::function<void()> cb);
+  // One timerfd that stays registered and is re-armed with arm(): a job that sets its next wake-up after every run
+  // does not create and close a timerfd each time. Starts disarmed.
+  int add_rearmable(std::function<void()> cb);
+  void arm(int id, int ms);  // fire once, `ms` from now; ms < 0 disarms
   // Thread-safe: runs `fn` on the main loop thread (e.g. results coming from
   // PipeWire's own thread). Valid after connect().
   void post(std::function<void()> fn);

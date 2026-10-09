@@ -142,7 +142,7 @@ int main(int argc, char** argv) {
   S.surface = std::make_unique<Surface>(S.app, cfg);
   S.surface->on_draw = [&S](cairo_t* cr, int w, int h) { S.draw(cr, w, h); };
   S.surface->on_motion = [&S](double x, double y) {
-    S.ui.pointer_motion(x, y);
+    if (!S.ui.pointer_motion(x, y)) return;
     S.redraw();
   };
   S.surface->on_leave = [&S] {
