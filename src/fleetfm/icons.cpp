@@ -550,7 +550,8 @@ void emblem_folder(cairo_t* cr, IconKind k) {
 }
 
 void app(cairo_t* cr) {
-  // Our own mark: a glass-blue folder with a bright check disc, so the file manager reads as "folders that are verified".
+  // Our mark combines a Caja-like folder silhouette, Finder-like face cues, and a small
+  // four-pane Windows reference so it remains recognisable as a file manager at 16 px.
   shadow(cr, 0.5, 0.92, 0.42, 0.045);
   cairo_new_path(cr);
   cairo_move_to(cr, 0.06, 0.82);
@@ -564,36 +565,40 @@ void app(cairo_t* cr) {
   cairo_close_path(cr);
   fill_v(cr, rgb(0x2f5f9e), rgb(0x173a6a), 0.12, 0.82, true);
   stroke(cr, rgb(0x0e2849), 0.02);
-  round_rect(cr, 0.11, 0.26, 0.78, 0.28, 0.02);
-  set(cr, rgb(0xf2f7ff));
+  cairo_new_path(cr);
+  cairo_move_to(cr, 0.07, 0.83);
+  cairo_line_to(cr, 0.07, 0.36);
+  cairo_curve_to(cr, 0.07, 0.33, 0.09, 0.31, 0.12, 0.31);
+  cairo_line_to(cr, 0.88, 0.31);
+  cairo_curve_to(cr, 0.91, 0.31, 0.93, 0.33, 0.93, 0.36);
+  cairo_line_to(cr, 0.93, 0.83);
+  cairo_close_path(cr);
+  fill_v(cr, rgb(0x83d1ff), rgb(0x277ac7), 0.31, 0.83, true);
+  stroke(cr, rgb(0x14518f), 0.02);
+  // Four light panes: a restrained Windows reference inside the folder face.
+  for (int row = 0; row < 2; ++row)
+    for (int col = 0; col < 2; ++col) {
+      round_rect(cr, 0.20 + col * 0.16, 0.43 + row * 0.12, 0.13, 0.09, 0.012);
+      set(cr, {1, 1, 1}, 0.86);
+      cairo_fill(cr);
+    }
+  // Finder-like eyes and smile, kept large enough to survive small icon rasterisation.
+  cairo_arc(cr, 0.57, 0.66, 0.028, 0, 2 * M_PI);
+  cairo_arc(cr, 0.73, 0.66, 0.028, 0, 2 * M_PI);
+  set(cr, rgb(0x103f78));
   cairo_fill(cr);
   cairo_new_path(cr);
-  cairo_move_to(cr, 0.04, 0.88);
-  cairo_line_to(cr, 0.04, 0.38);
-  cairo_curve_to(cr, 0.04, 0.35, 0.06, 0.34, 0.09, 0.34);
-  cairo_line_to(cr, 0.91, 0.34);
-  cairo_curve_to(cr, 0.94, 0.34, 0.96, 0.35, 0.96, 0.38);
-  cairo_line_to(cr, 0.96, 0.88);
-  cairo_close_path(cr);
-  fill_v(cr, rgb(0x7fc4f8), rgb(0x2d86d6), 0.34, 0.88, true);
-  stroke(cr, rgb(0x14518f), 0.02);
-  cairo_move_to(cr, 0.09, 0.345);
-  cairo_line_to(cr, 0.91, 0.345);
-  cairo_line_to(cr, 0.91, 0.52);
-  cairo_curve_to(cr, 0.6, 0.48, 0.35, 0.58, 0.09, 0.55);
-  cairo_close_path(cr);
-  set(cr, {1, 1, 1}, 0.35);
-  cairo_fill(cr);
-  // the check disc
-  cairo_arc(cr, 0.72, 0.72, 0.19, 0, 2 * M_PI);
-  fill_v(cr, rgb(0x8be36a), rgb(0x2f9e2f), 0.53, 0.91, true);
-  stroke(cr, {1, 1, 1}, 0.03);
-  cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
-  cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND);
-  cairo_move_to(cr, 0.62, 0.725);
-  cairo_line_to(cr, 0.70, 0.80);
-  cairo_line_to(cr, 0.83, 0.64);
-  stroke(cr, {1, 1, 1}, 0.045);
+  cairo_move_to(cr, 0.55, 0.72);
+  cairo_curve_to(cr, 0.61, 0.79, 0.70, 0.79, 0.76, 0.72);
+  stroke(cr, rgb(0x103f78), 0.026);
+  // A soft highlight joins the folder tab and the face without adding a badge.
+  cairo_move_to(cr, 0.10, 0.37);
+  cairo_line_to(cr, 0.90, 0.37);
+  stroke(cr, {1, 1, 1}, 0.018, 0.42);
+  /*
+  // The old verification badge was intentionally removed: the icon now identifies the
+  // application itself instead of implying that every copy operation has completed.
+  */
 }
 
 }  // namespace
