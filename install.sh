@@ -19,15 +19,18 @@ print_credit() {
 }
 
 print_help() {
-  printf 'Usage: %s [--clean]\n\n%s %s\n' "${PROGRAM_NAME}" "${PROGRAM_NAME}" "${PROJECT_VERSION_STRING}"
+  printf 'Usage: %s [--install] [--clean]\n\n%s %s\n' "${PROGRAM_NAME}" "${PROGRAM_NAME}" "${PROJECT_VERSION_STRING}"
   print_credit
-  printf '\nOptions:\n  --clean  remove Fleetwm build files and generated cache before compiling\n  --help, -h\n           show this help and exit\n  --version, -V\n           show the version, author, and project link and exit\n'
+  printf '\nOptions:\n  --install run the full install (the default with no arguments)\n  --clean   remove Fleetwm build files and generated cache, then exit\n  --help, -h\n            show this help and exit\n  --version, -V\n            show the version, author, and project link and exit\n'
 }
 
 CLEAN_BUILD=0
+INSTALL_BUILD=0
+if (( $# == 0 )); then INSTALL_BUILD=1; fi
 for arg in "$@"; do
   case "${arg}" in
     --clean) CLEAN_BUILD=1 ;;
+    --install) INSTALL_BUILD=1 ;;
     -h|--help)
       print_help
       exit 0
@@ -39,7 +42,7 @@ for arg in "$@"; do
       ;;
     *)
       echo "error: unknown option: ${arg}" >&2
-      printf 'Usage: %s [--clean]\n' "${PROGRAM_NAME}" >&2
+      printf 'Usage: %s [--install] [--clean]\n' "${PROGRAM_NAME}" >&2
       exit 2
       ;;
   esac
@@ -84,6 +87,11 @@ done
 if (( CLEAN_BUILD )); then
   echo "==> Removing Fleetwm build caches for a clean rebuild"
   rm -rf "${SCRIPT_DIR}/build-pgo" "${SCRIPT_DIR}/build-test" "${SCRIPT_DIR}/build"
+fi
+
+if (( ! INSTALL_BUILD )); then
+  echo "Build cleanup complete. No installation was requested. Use --install to install Fleetwm."
+  exit 0
 fi
 
 ui_step "Enabling Debian's non-free software sources" \
