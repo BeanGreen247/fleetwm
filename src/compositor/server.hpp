@@ -291,6 +291,9 @@ class Server {
   void revert_output_mode(Output* output);
   bool apply_output_setting(const std::string& name, const OutputSetting& setting,
                             std::string* error);
+  const DisplaySettings& display_settings() const { return display_settings_; }
+  Output* primary_output() const;
+  bool apply_display_settings(const DisplaySettings& settings, std::string* error);
 
   // Current theme.toml contents, loaded at init() and kept fresh by an
   // inotify watch on the config file (see theme_watch_fd_ below) -- any
@@ -612,6 +615,7 @@ class Server {
   void update_snap_preview(View* view);
   void hide_snap_preview();
   OutputSettings output_settings_;
+  DisplaySettings display_settings_;
   void reconfigure_layer_surfaces(wlr_output* wlr_out);
   pid_t spawn_locker();
   std::vector<std::chrono::steady_clock::time_point> locker_respawns_;

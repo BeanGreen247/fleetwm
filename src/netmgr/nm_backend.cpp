@@ -306,6 +306,11 @@ class NmBackend : public Backend {
            sd_bus_message_open_container(m, 'v', "s") >= 0 && sd_bus_message_append(m, "s", value) >= 0 &&
            sd_bus_message_close_container(m) >= 0 && sd_bus_message_close_container(m) >= 0;
   }
+  bool append_bool_entry(sd_bus_message* m, const char* key, bool value) {
+    return sd_bus_message_open_container(m, 'e', "sv") >= 0 && sd_bus_message_append(m, "s", key) >= 0 &&
+           sd_bus_message_open_container(m, 'v', "b") >= 0 && sd_bus_message_append(m, "b", value ? 1 : 0) >= 0 &&
+           sd_bus_message_close_container(m) >= 0 && sd_bus_message_close_container(m) >= 0;
+  }
 
   bool connect(const std::string& device, const std::string& ssid, const std::string& password, std::string* error) override {
     const std::string dev = device_path(device);
@@ -346,7 +351,8 @@ class NmBackend : public Backend {
     // connection
     ok = ok && sd_bus_message_open_container(m, 'e', "sa{sv}") >= 0 && sd_bus_message_append(m, "s", "connection") >= 0 &&
          sd_bus_message_open_container(m, 'a', "{sv}") >= 0 && append_string_entry(m, "type", "802-11-wireless") &&
-         append_string_entry(m, "id", ssid.c_str()) && sd_bus_message_close_container(m) >= 0 &&
+         append_string_entry(m, "id", ssid.c_str()) && append_bool_entry(m, "autoconnect", true) &&
+         sd_bus_message_close_container(m) >= 0 &&
          sd_bus_message_close_container(m) >= 0;
     // 802-11-wireless: the name as raw bytes
     ok = ok && sd_bus_message_open_container(m, 'e', "sa{sv}") >= 0 && sd_bus_message_append(m, "s", "802-11-wireless") >= 0 &&

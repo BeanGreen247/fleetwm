@@ -14,6 +14,16 @@ namespace fleetwm {
 
 namespace {
 
+void hw_trim(std::string* s) {
+  const size_t first = s->find_first_not_of(" \t");
+  const size_t last = s->find_last_not_of(" \t");
+  if (first == std::string::npos) {
+    s->clear();
+  } else {
+    *s = s->substr(first, last - first + 1);
+  }
+}
+
 long long read_ll(const std::string& path) {
   long long v = -1;
   std::ifstream f(path);
@@ -34,6 +44,82 @@ std::string first_hwmon(const std::string& device_dir) {
 }
 
 }  // namespace
+
+CpuInfo parse_cpuinfo(const std::string& text) {
+  CpuInfo out;
+  std::istringstream in(text);
+  std::string line;
+  while (std::getline(in, line)) {
+    const size_t colon = line.find(':');
+    if (colon == std::string::npos) continue;
+    std::string key = line.substr(0, colon), value = line.substr(colon + 1);
+    hw_trim(&key);
+    hw_trim(&value);
+    if (key == "model name" && out.model.empty()) out.model = value;
+    else if (key == "processor") ++out.logical_threads;
+    else if (key == "cpu MHz" && out.mhz == 0) out.mhz = static_cast<int>(std::strtod(value.c_str(), nullptr) + 0.5);
+    else if (key == "cpu cores" && out.physical_cores == 0) out.physical_cores = std::atoi(value.c_str());
+  }
+  return out;
+}
+
+std::vector<MemoryModule> parse_memory_devices(const std::string& text) {
+  std::vector<MemoryModule> out;
+  MemoryModule current;
+  bool in_device = false, installed = false;
+  auto finish = [&] {
+    if (in_device && installed && current.size_mb > 0) out.push_back(current);
+    current = {};
+    installed = false;
+  };
+  std::istringstream in(text);
+  std::string line;
+  while (std::getline(in, line)) {
+    std::string header = line;
+    hw_trim(&header);
+    if (header == "Memory Device") {
+      finish();
+      in_device = true;
+      continue;
+    }
+    if (!in_device) continue;
+    const size_t colon = line.find(':');
+    if (colon == std::string::npos) continue;
+    std::string key = line.substr(0, colon), value = line.substr(colon + 1);
+    hw_trim(&key);
+    hw_trim(&value);
+    if (key == "Size") {
+      if (value.rfind("No Module", 0) == 0) installed = false;
+      else { current.size_mb = std::atoll(value.c_str()) * (value.find("GB") != std::string::npos ? 1024 : 1); installed = true; }
+    } else if (key == "Locator") current.locator = value;
+    else if (key == "Manufacturer") current.manufacturer = value;
+    else if (key == "Part Number") current.part_number = value;
+    else if (key == "Type") current.type = value;
+    else if (key == "Speed") current.speed_mhz = std::atoi(value.c_str());
+  }
+  finish();
+  return out;
+}
+
+std::vector<DriveInfo> parse_drive_inventory(const std::string& text) {
+  std::vector<DriveInfo> out;
+  std::istringstream in(text);
+  std::string line;
+  while (std::getline(in, line)) {
+    std::istringstream row(line);
+    DriveInfo d;
+    std::getline(row, d.name, '\t');
+    std::string size;
+    std::getline(row, size, '\t');
+    d.size_bytes = std::atoll(size.c_str());
+    std::getline(row, d.model, '\t');
+    std::getline(row, d.vendor, '\t');
+    std::getline(row, d.serial, '\t');
+    std::getline(row, d.transport, '\t');
+    if (!d.name.empty()) out.push_back(std::move(d));
+  }
+  return out;
+}
 
 std::vector<CpuTimes> parse_proc_stat_cores(const std::string& text) {
   std::vector<CpuTimes> cores;

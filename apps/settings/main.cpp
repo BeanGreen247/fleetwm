@@ -50,6 +50,7 @@
 #include "version.hpp"
 #include "ui.hpp"
 #include "wallpaper_config.hpp"
+#include "output_config.hpp"
 
 namespace {
 
@@ -214,6 +215,7 @@ struct Settings {
 
   // display
   std::vector<DispMon> mons;
+  DisplaySettings display;
   std::string disp_status;
 
   // backup (About tab)
@@ -527,6 +529,10 @@ struct Settings {
       m.ex = m.x;
       m.ey = m.y;
       collecting.push_back(std::move(m));
+    } else if (tag == "DISPLAY") {
+      int all = 1;
+      in >> display.primary_output >> all;
+      display.taskbar_all_displays = all != 0;
     } else if (tag == "MODE" && in_list && !collecting.empty()) {
       DispMode md;
       int cur = 0, pref = 0;
@@ -562,6 +568,13 @@ struct Settings {
     if (!ipc.is_connected()) return;
     ipc.send_command("OUTPUT_SET " + name + " " + std::to_string(w) + " " + std::to_string(h) + " " +
                      std::to_string(r) + " " + std::to_string(x) + " " + std::to_string(y));
+  }
+
+  void send_display_settings() {
+    connect_ipc();
+    if (!ipc.is_connected() || display.primary_output.empty()) return;
+    ipc.send_command("DISPLAY_SET " + display.primary_output + " " +
+                     (display.taskbar_all_displays ? "1" : "0"));
   }
 
   void apply_monitor(DispMon& m) {
@@ -661,6 +674,25 @@ struct Settings {
       ui.newline();
       return;
     }
+
+    ui.row("Primary display");
+    std::vector<std::string> display_names;
+    for (const auto& m : mons) display_names.push_back(m.name);
+    int primary = 0;
+    for (size_t i = 0; i < display_names.size(); ++i)
+      if (display_names[i] == display.primary_output) primary = static_cast<int>(i);
+    if (ui.dropdown(display_names, &primary, 190)) {
+      display.primary_output = display_names[static_cast<size_t>(primary)];
+      send_display_settings();
+    }
+    ui.newline();
+    ui.row("Taskbar");
+    int taskbar_scope = display.taskbar_all_displays ? 0 : 1;
+    if (ui.segmented({"All displays", "Primary only"}, &taskbar_scope)) {
+      display.taskbar_all_displays = taskbar_scope == 0;
+      send_display_settings();
+    }
+    ui.newline();
 
     // Arrangement canvas: drag a monitor to move it; edges and centres snap.
     ui.paragraph("Drag the screens to arrange them. Edges and centres snap to the neighbouring screen.");

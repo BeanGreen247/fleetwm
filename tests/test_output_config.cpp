@@ -38,6 +38,13 @@ TEST_F(OutputConfigTest, PositionOnlyKeepsPreferredMode) {
   EXPECT_TRUE(out.at("eDP-1").has_pos);
 }
 
+TEST_F(OutputConfigTest, RoundTripsDisplayPreferences) {
+  save_display_settings({"DP-1", false});
+  const DisplaySettings out = load_display_settings();
+  EXPECT_EQ(out.primary_output, "DP-1");
+  EXPECT_FALSE(out.taskbar_all_displays);
+}
+
 TEST_F(OutputConfigTest, CorruptFileIsIgnored) {
   save_output_settings({{"DP-1", {1920, 1080, 0, false, 0, 0}}});
   std::ofstream(output_config_path()) << "this is [not valid toml";

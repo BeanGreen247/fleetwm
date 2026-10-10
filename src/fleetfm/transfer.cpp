@@ -524,7 +524,90 @@ bool Transfer::copy_file(const Item& it, std::string* final_dst) {
     char* buf = static_cast<char*>(io_buf_);
     uint64_t flushed_to = 0;
     constexpr uint64_t kStartWriteback = 16u << 20;
-    for (;;) {
+    const bool pipeline = it.size >= std::max<uint64_t>(opt_.big_file_bytes, 8u << 20);
+    if (pipeline) {
+      // Keep the source read/hash on this thread while a second thread drains a
+      // two-buffer queue to the destination. This overlaps storage reads with
+      // writes without sharing the output offset or the hashing state.
+      struct Slot {
+        std::vector<char> data;
+        size_t size = 0;
+        bool ready = false;
+      } slots[2];
+      for (Slot& slot : slots) slot.data.resize(opt_.block_bytes);
+      std::mutex pipe_mu;
+      std::condition_variable pipe_cv;
+      bool producer_done = false, pipe_error = false;
+      std::string pipe_why;
+      std::thread writer([&] {
+        size_t index = 0;
+        for (;;) {
+          std::unique_lock<std::mutex> lock(pipe_mu);
+          pipe_cv.wait(lock, [&] { return slots[index].ready || producer_done; });
+          if (!slots[index].ready) break;
+          Slot& slot = slots[index];
+          lock.unlock();
+          if (!write_all(out, slot.data.data(), slot.size)) {
+            lock.lock();
+            pipe_error = true;
+            pipe_why = std::strerror(errno);
+            slot.ready = false;
+            pipe_cv.notify_all();
+            return;
+          }
+          lock.lock();
+          slot.ready = false;
+          lock.unlock();
+          pipe_cv.notify_all();
+          index ^= 1u;
+        }
+      });
+      size_t index = 0;
+      for (;;) {
+        if (cancel_ || !wait_if_paused()) {
+          ok = false;
+          break;
+        }
+        Slot& slot = slots[index];
+        {
+          std::unique_lock<std::mutex> lock(pipe_mu);
+          pipe_cv.wait(lock, [&] { return !slot.ready || pipe_error; });
+          if (pipe_error) {
+            ok = false;
+            why = pipe_why;
+            break;
+          }
+        }
+        const ssize_t n = ::read(in_fd, slot.data.data(), slot.data.size());
+        if (n < 0 && errno == EINTR) continue;
+        if (n < 0) {
+          ok = false;
+          why = std::strerror(errno);
+          break;
+        }
+        if (n == 0) break;
+        src_hash.update(slot.data.data(), static_cast<size_t>(n));
+        {
+          std::lock_guard<std::mutex> lock(pipe_mu);
+          slot.size = static_cast<size_t>(n);
+          slot.ready = true;
+        }
+        pipe_cv.notify_all();
+        note_chunk(static_cast<uint64_t>(n));
+        copied += static_cast<uint64_t>(n);
+        index ^= 1u;
+      }
+      {
+        std::lock_guard<std::mutex> lock(pipe_mu);
+        producer_done = true;
+      }
+      pipe_cv.notify_all();
+      writer.join();
+      if (pipe_error && ok) {
+        ok = false;
+        why = pipe_why;
+      }
+    } else for (;;) {
       if (cancel_ || !wait_if_paused()) {
         if (unreported) note(unreported, 0);
         abort_file("");
