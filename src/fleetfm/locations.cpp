@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
+#include <map>
 #include <fstream>
 #include <stdexcept>
 
@@ -253,6 +254,82 @@ std::string gvfs_mount_dir_name(const Uri& u) {
   return n;
 }
 
+namespace {
+struct MountName {
+  std::string kind;
+  std::map<std::string, std::string> keys;
+};
+MountName parse_mount_name(const std::string& dir) {
+  MountName m;
+  const size_t colon = dir.find(':');
+  if (colon == std::string::npos) return m;
+  m.kind = dir.substr(0, colon);
+  size_t i = colon + 1;
+  while (i <= dir.size()) {
+    size_t comma = dir.find(',', i);
+    if (comma == std::string::npos) comma = dir.size();
+    const std::string kv = dir.substr(i, comma - i);
+    const size_t eq = kv.find('=');
+    if (eq != std::string::npos) m.keys[kv.substr(0, eq)] = percent_decode(kv.substr(eq + 1));
+    i = comma + 1;
+  }
+  return m;
+}
+std::string lower_text(std::string s) {
+  for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  return s;
+}
+}  // namespace
+
+std::string find_mount_dir(const std::string& gvfs_dir, const Uri& u) {
+  const std::string scheme = u.scheme == "ssh" || u.scheme == "fish" ? "sftp" : u.scheme;
+  const std::string kind = scheme == "smb" ? "smb-share" : scheme == "davs" ? "dav" : scheme == "ftps" || scheme == "ftpis" ? "ftp" : scheme == "afp" ? "afp-volume" : scheme;
+  std::string wanted_share;
+  if (scheme == "smb") {
+    wanted_share = u.path;
+    if (!wanted_share.empty() && wanted_share[0] == '/') wanted_share.erase(0, 1);
+    const size_t slash = wanted_share.find('/');
+    if (slash != std::string::npos) wanted_share.resize(slash);
+  }
+  std::string path = u.path;
+  while (path.size() > 1 && path.back() == '/') path.pop_back();
+  std::error_code ec;
+  std::string best;
+  size_t best_prefix = 0;
+  int best_user = -1;
+  for (const auto& e : fs::directory_iterator(gvfs_dir, ec)) {
+    const std::string name = e.path().filename().string();
+    const MountName m = parse_mount_name(name);
+    if (m.kind != kind) continue;
+    auto get = [&](const char* k) {
+      const auto it = m.keys.find(k);
+      return it == m.keys.end() ? std::string() : it->second;
+    };
+    const std::string host = get(scheme == "smb" ? "server" : "host");
+    if (lower_text(host) != lower_text(u.host)) continue;
+    if (scheme == "smb" && lower_text(get("share")) != lower_text(wanted_share)) continue;
+    if (!u.user.empty() && get("user") != u.user) continue;
+    if (u.port && !get("port").empty() && std::atoi(get("port").c_str()) != u.port) continue;
+    size_t prefix_len = 0;
+    if (kind == "dav") {
+      if ((get("ssl") == "true") != (scheme == "davs")) continue;
+      const std::string prefix = get("prefix");
+      if (!prefix.empty() && prefix != "/") {
+        // the mount covers this folder and everything below it
+        if (path.compare(0, prefix.size(), prefix) != 0 || (path.size() > prefix.size() && path[prefix.size()] != '/')) continue;
+        prefix_len = prefix.size();
+      }
+    }
+    const int user_score = u.user.empty() ? (get("user").empty() ? 1 : 0) : 1;  // no user asked for: a mount without one is the closer match
+    if (best.empty() || prefix_len > best_prefix || (prefix_len == best_prefix && user_score > best_user)) {
+      best = e.path().string();
+      best_prefix = prefix_len;
+      best_user = user_score;
+    }
+  }
+  return best;
+}
+
 std::string gvfs_friendly_name(std::string_view dir) {
   const size_t colon = dir.find(':');
   if (colon == std::string_view::npos) return std::string(dir);
@@ -330,9 +407,10 @@ MountOutcome mount_location(const Uri& u, const Credentials& c, CommandRunner& r
     r.error = "Unknown address";
     return r;
   }
-  const std::string dir = gvfs_dir + "/" + gvfs_mount_dir_name(u);
   std::error_code ec;
-  if (fs::exists(dir, ec)) {
+  std::string dir = find_mount_dir(gvfs_dir, u);
+  if (dir.empty() && fs::exists(gvfs_dir + "/" + gvfs_mount_dir_name(u), ec)) dir = gvfs_dir + "/" + gvfs_mount_dir_name(u);
+  if (!dir.empty()) {
     r.ok = true;
     r.path = dir;
     return r;
@@ -346,10 +424,14 @@ MountOutcome mount_location(const Uri& u, const Credentials& c, CommandRunner& r
   // the address for sftp / ftp / dav, so only the password is asked).
   std::string input;
   if (!c.anonymous) {
-    if (u.scheme == "smb") input = (c.user.empty() ? "\n" : c.user + "\n") + (c.domain.empty() ? "WORKGROUP" : c.domain) + "\n" + c.password + "\n";
+    // The user is in the address when there is one, so gio asks for the domain and the password only (checked against a real Samba, 2026-10-09);
+    // without a user it asks for the user first, and an empty answer takes the login name.
+    if (u.scheme == "smb") input = (with_user.user.empty() ? "\n" : "") + (c.domain.empty() ? "WORKGROUP" : c.domain) + "\n" + c.password + "\n";
     else if (!c.password.empty()) input = c.password + "\n";
   }
   const RunResult rr = run.run(argv, input, 60000);
+  dir = find_mount_dir(gvfs_dir, u);
+  if (dir.empty()) dir = gvfs_dir + "/" + gvfs_mount_dir_name(u);
   if (rr.status != 0 && !fs::exists(dir, ec)) {
     r.error = rr.output;
     while (!r.error.empty() && (r.error.back() == '\n' || r.error.back() == ' ')) r.error.pop_back();
