@@ -371,8 +371,11 @@ void FmWindow::open_special(PlaceKind k, bool remember) {
 }
 
 void FmWindow::open_remote(const Uri& u, bool remember) {
-  const std::string dir = gvfs_root(static_cast<unsigned>(::getuid())) + "/" + gvfs_mount_dir_name(u);
-  auto enter = [this, u, dir, remember] {
+  const std::string root = gvfs_root(static_cast<unsigned>(::getuid()));
+  std::string existing = find_mount_dir(root, u);
+  if (existing.empty()) existing = root + "/" + gvfs_mount_dir_name(u);
+  const std::string dir = existing;
+  auto enter = [this, u, remember](const std::string& dir) {
     Browser& b = tab();
     stop_search();
     if (remember) b.remember_current(history_limit());
@@ -397,7 +400,7 @@ void FmWindow::open_remote(const Uri& u, bool remember) {
   };
   std::error_code ec;
   if (fs::exists(dir, ec)) {
-    enter();
+    enter(dir);
     return;
   }
   // Not mounted yet: ask GVfs (it may prompt for a password; the Connect dialog collects one first).
@@ -405,7 +408,7 @@ void FmWindow::open_remote(const Uri& u, bool remember) {
   schedule_redraw();
   auto alive = alive_;
   CommandRunner* r = runner ? runner : &system_runner();
-  spawn_loader([this, u, r, alive, enter, dir] {
+  spawn_loader([this, u, r, alive, enter] {
     Credentials c;
     c.user = u.user;
     c.password = u.password;
@@ -414,7 +417,7 @@ void FmWindow::open_remote(const Uri& u, bool remember) {
       connecting_ = false;
       if (o.ok) {
         refresh_volumes();
-        enter();
+        enter(o.path);
       } else {
         // Ask for credentials in the Connect dialog, prefilled.
         connect_uri_ = uri_to_string(u);

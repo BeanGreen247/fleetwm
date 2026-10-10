@@ -154,7 +154,7 @@ TEST(FmMountLocation, AnswersThePromptsAndReturnsTheFolder) {
   EXPECT_EQ(f.calls[0][0], "gio");
   EXPECT_EQ(f.calls[0][1], "mount");
   EXPECT_EQ(f.calls[0].back(), "smb://anna@nas/media");
-  EXPECT_EQ(f.inputs[0], "anna\nHOME\ns3cret\n");
+  EXPECT_EQ(f.inputs[0], "HOME\ns3cret\n");  // the user is in the address, so gio asks for the domain and the password only
   // already mounted: no second call
   const MountOutcome again = mount_location(u, c, f, gv.string());
   EXPECT_TRUE(again.ok);
@@ -183,6 +183,46 @@ TEST(FmMountLocation, FailureCarriesTheMessageAndNeverTheCommandLinePassword) {
   EXPECT_TRUE(mount_location(parse_uri("ftp://ftp.example.com/"), anon, f, gv.string()).ok);
   EXPECT_EQ(f.calls.back()[2], "--anonymous");
   EXPECT_EQ(f.inputs.back(), "");
+  fs::remove_all(gv);
+}
+
+// The folder names below are the ones a real GVfs 1.57 (Debian 13) made when the file manager mounted local Samba, vsftpd, sshd and Apache WebDAV servers.
+TEST(FmFindMountDir, MatchesWhatGvfsReallyCalledThem) {
+  const fs::path gv = fs::temp_directory_path() / ("fm-gvfs3-" + std::to_string(::getpid()));
+  fs::remove_all(gv);
+  for (const char* d : {"dav:host=localhost,ssl=false,user=netuser,prefix=%2Fdav", "smb-share:server=localhost,share=media,user=netuser", "smb-share:server=localhost,share=pub",
+                        "sftp:host=localhost,user=netuser", "ftp:host=localhost,user=netuser", "dav:host=cloud.example.com,ssl=true,user=anna,prefix=%2Fremote.php%2Fdav%2Ffiles%2Fanna"})
+    fs::create_directories(gv / d);
+  const std::string g = gv.string();
+  auto base = [&](const std::string& p) { return p.empty() ? std::string("(none)") : fs::path(p).filename().string(); };
+  EXPECT_EQ(base(find_mount_dir(g, parse_uri("dav://netuser@localhost/dav"))), "dav:host=localhost,ssl=false,user=netuser,prefix=%2Fdav");
+  EXPECT_EQ(base(find_mount_dir(g, parse_uri("dav://netuser@localhost/dav/sub/dir"))), "dav:host=localhost,ssl=false,user=netuser,prefix=%2Fdav") << "a mount covers what is below its prefix";
+  EXPECT_EQ(base(find_mount_dir(g, parse_uri("dav://netuser@localhost/davx"))), "(none)") << "a longer name is not below the prefix";
+  EXPECT_EQ(base(find_mount_dir(g, parse_uri("davs://netuser@localhost/dav"))), "(none)") << "secure and plain are different mounts";
+  EXPECT_EQ(base(find_mount_dir(g, parse_uri("davs://anna@cloud.example.com/remote.php/dav/files/anna/"))),
+            "dav:host=cloud.example.com,ssl=true,user=anna,prefix=%2Fremote.php%2Fdav%2Ffiles%2Fanna");
+  EXPECT_EQ(base(find_mount_dir(g, parse_uri("smb://netuser@localhost/media/sub"))), "smb-share:server=localhost,share=media,user=netuser");
+  EXPECT_EQ(base(find_mount_dir(g, parse_uri("smb://LOCALHOST/PUB"))), "smb-share:server=localhost,share=pub") << "host and share compare without regard to case";
+  EXPECT_EQ(base(find_mount_dir(g, parse_uri("smb://localhost/media"))), "smb-share:server=localhost,share=media,user=netuser") << "no user asked for: the only mount of that share";
+  EXPECT_EQ(base(find_mount_dir(g, parse_uri("smb://localhost/other"))), "(none)");
+  EXPECT_EQ(base(find_mount_dir(g, parse_uri("sftp://netuser@localhost/srv/share"))), "sftp:host=localhost,user=netuser");
+  EXPECT_EQ(base(find_mount_dir(g, parse_uri("ssh://netuser@localhost/"))), "sftp:host=localhost,user=netuser");
+  EXPECT_EQ(base(find_mount_dir(g, parse_uri("sftp://someone@localhost/"))), "(none)") << "another user is another mount";
+  EXPECT_EQ(base(find_mount_dir(g, parse_uri("ftp://netuser@localhost/"))), "ftp:host=localhost,user=netuser");
+  EXPECT_EQ(base(find_mount_dir(g, parse_uri("nfs://localhost/x"))), "(none)");
+  EXPECT_EQ(find_mount_dir((gv / "missing").string(), parse_uri("ftp://localhost/")), "");
+  fs::remove_all(gv);
+}
+
+TEST(FmFindMountDir, TwoMountsOfOneHostPreferTheLongerPrefixThenTheUserless) {
+  const fs::path gv = fs::temp_directory_path() / ("fm-gvfs4-" + std::to_string(::getpid()));
+  fs::remove_all(gv);
+  for (const char* d : {"dav:host=h,ssl=false,prefix=%2Fa", "dav:host=h,ssl=false,prefix=%2Fa%2Fb", "ftp:host=h", "ftp:host=h,user=bob"})
+    fs::create_directories(gv / d);
+  EXPECT_EQ(fs::path(find_mount_dir(gv.string(), parse_uri("dav://h/a/b/c"))).filename().string(), "dav:host=h,ssl=false,prefix=%2Fa%2Fb");
+  EXPECT_EQ(fs::path(find_mount_dir(gv.string(), parse_uri("dav://h/a/x"))).filename().string(), "dav:host=h,ssl=false,prefix=%2Fa");
+  EXPECT_EQ(fs::path(find_mount_dir(gv.string(), parse_uri("ftp://h/"))).filename().string(), "ftp:host=h");
+  EXPECT_EQ(fs::path(find_mount_dir(gv.string(), parse_uri("ftp://bob@h/"))).filename().string(), "ftp:host=h,user=bob");
   fs::remove_all(gv);
 }
 

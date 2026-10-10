@@ -60,6 +60,9 @@ std::string gvfs_friendly_name(std::string_view dir_name);
 // For kernel mounts: //nas/media (cifs) -> "media (\\nas)", nas:/srv/x (nfs) -> "x (nas)", me@host:/p (sshfs) -> "p on host".
 std::string network_mount_label(std::string_view source, std::string_view fstype);
 std::string gvfs_root(unsigned uid);  // /run/user/<uid>/gvfs
+// The folder GVfs really made for `u` below `gvfs_dir` ("" when there is none). Found by what the name says (kind, host, share, user, port, prefix)
+// and not by rebuilding its spelling: GVfs adds keys such as `ssl=false` to WebDAV names and `user=` to SMB names, and the order is its own business.
+std::string find_mount_dir(const std::string& gvfs_dir, const Uri& u);
 
 struct Credentials {
   std::string user, password, domain;
