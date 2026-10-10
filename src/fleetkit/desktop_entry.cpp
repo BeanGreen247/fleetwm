@@ -154,6 +154,17 @@ void scan_dir(const std::string& base, const std::string& rel, std::set<std::str
 
 }  // namespace
 
+std::vector<DesktopEntry> fleetwm_builtin_desktop_entries() {
+  return {
+      {"fleetwm-settings.desktop", "", "Fleetwm Settings", "Fleetwm system settings", "fleetwm-settings",
+       "fleetwm-settings", "dev.fleetwm.Settings", "Settings;System;"},
+      {"fleetwm-taskmgr.desktop", "", "Fleetwm Task Manager", "Monitor processes and system performance",
+       "fleetwm-taskmgr", "fleetwm-taskmgr", "dev.fleetwm.TaskManager", "System;Monitor;Utility;"},
+      {"fleetwm-fm.desktop", "", "Fleetwm File Manager", "Browse files and places", "fleetwm-fm", "fleetwm-fm",
+       "dev.fleetwm.FileManager", "FileManager;Utility;"},
+  };
+}
+
 std::vector<DesktopEntry> load_desktop_entries() {
   std::vector<std::string> dirs;
   const char* xdh = std::getenv("XDG_DATA_HOME");
@@ -166,6 +177,11 @@ std::vector<DesktopEntry> load_desktop_entries() {
   std::set<std::string> seen;
   std::vector<DesktopEntry> out;
   for (const auto& d : dirs) scan_dir(d, "", &seen, &out);
+  for (const DesktopEntry& builtin : fleetwm_builtin_desktop_entries()) {
+    if (seen.count(builtin.id) || !on_path(exec_basename(builtin))) continue;
+    out.push_back(builtin);
+    seen.insert(builtin.id);
+  }
   return out;
 }
 

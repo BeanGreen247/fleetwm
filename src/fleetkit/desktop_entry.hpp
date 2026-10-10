@@ -27,6 +27,11 @@ struct DesktopEntry {
 // ones with the same id. Unsorted.
 std::vector<DesktopEntry> load_desktop_entries();
 
+// Built-in Fleetwm applications remain discoverable when an older install is
+// missing one of their desktop files. The loader only adds entries whose
+// executable is available on PATH.
+std::vector<DesktopEntry> fleetwm_builtin_desktop_entries();
+
 // Expands the Exec= line into an argv (field codes removed/substituted per the
 // spec: %f %F %u %U ... dropped, %i -> --icon X, %c -> name, %k -> file, %% -> %).
 std::vector<std::string> exec_argv(const DesktopEntry& e);
