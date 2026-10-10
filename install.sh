@@ -7,19 +7,39 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROGRAM_NAME="$(basename "$0")"
+PROJECT_VERSION="$(sed -n "s/^[[:space:]]*version:[[:space:]]*'\([^']*\)'.*/\1/p" "${SCRIPT_DIR}/meson.build" | head -1)"
+PROJECT_VERSION="${PROJECT_VERSION:-unknown}"
+PROJECT_REVISION="$(git -C "${SCRIPT_DIR}" describe --always --dirty --tags 2>/dev/null || printf '%s' unknown)"
+PROJECT_VERSION_STRING="${PROJECT_VERSION}"
+[[ -n "${PROJECT_REVISION}" && "${PROJECT_REVISION}" != unknown ]] && PROJECT_VERSION_STRING+=" (${PROJECT_REVISION})"
+
+print_credit() {
+  printf 'Copyright (c) 2026 Thomas Mozdren\nhttps://github.com/BeanGreen247/fleetwm\n'
+}
+
+print_help() {
+  printf 'Usage: %s [--clean]\n\n%s %s\n' "${PROGRAM_NAME}" "${PROGRAM_NAME}" "${PROJECT_VERSION_STRING}"
+  print_credit
+  printf '\nOptions:\n  --clean  remove Fleetwm build files and generated cache before compiling\n  --help, -h\n           show this help and exit\n  --version, -V\n           show the version, author, and project link and exit\n'
+}
 
 CLEAN_BUILD=0
 for arg in "$@"; do
   case "${arg}" in
     --clean) CLEAN_BUILD=1 ;;
     -h|--help)
-      echo "Usage: $0 [--clean]"
-      echo "  --clean  remove Fleetwm build directories before compiling"
+      print_help
+      exit 0
+      ;;
+    -V|--version)
+      printf '%s %s\n' "${PROGRAM_NAME}" "${PROJECT_VERSION_STRING}"
+      print_credit
       exit 0
       ;;
     *)
       echo "error: unknown option: ${arg}" >&2
-      echo "Usage: $0 [--clean]" >&2
+      printf 'Usage: %s [--clean]\n' "${PROGRAM_NAME}" >&2
       exit 2
       ;;
   esac

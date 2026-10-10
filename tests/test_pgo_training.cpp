@@ -53,6 +53,14 @@ TEST(PgoTraining, InstallerSupportsCleanBuildFlag) {
   EXPECT_NE(install.find("unknown option"), std::string::npos);
 }
 
+TEST(PgoTraining, InstallerInfoUsesProjectCredit) {
+  const std::string install = tr_read(tr_root() / "install.sh");
+  EXPECT_NE(install.find("Copyright (c) 2026 Thomas Mozdren"), std::string::npos);
+  EXPECT_NE(install.find("https://github.com/BeanGreen247/fleetwm"), std::string::npos);
+  EXPECT_NE(install.find("--version, -V"), std::string::npos);
+  EXPECT_NE(install.find("PROJECT_VERSION_STRING"), std::string::npos);
+}
+
 TEST(PgoTraining, RunsLongEnoughToCoverEverything) {
   const std::string driver = tr_read(tr_root() / "scripts/build-pgo-auto.sh");
   std::smatch m;
