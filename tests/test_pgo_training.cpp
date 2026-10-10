@@ -49,7 +49,10 @@ TEST(PgoTraining, ScriptsAreValidShell) {
 TEST(PgoTraining, InstallerSupportsCleanBuildFlag) {
   const std::string install = tr_read(tr_root() / "install.sh");
   EXPECT_NE(install.find("--clean"), std::string::npos);
+  EXPECT_NE(install.find("--install"), std::string::npos);
   EXPECT_NE(install.find("rm -rf \"${SCRIPT_DIR}/build-pgo\" \"${SCRIPT_DIR}/build-test\" \"${SCRIPT_DIR}/build\""), std::string::npos);
+  EXPECT_NE(install.find("if (( ! INSTALL_BUILD )); then"), std::string::npos);
+  EXPECT_NE(install.find("No installation was requested"), std::string::npos);
   EXPECT_NE(install.find("unknown option"), std::string::npos);
 }
 
