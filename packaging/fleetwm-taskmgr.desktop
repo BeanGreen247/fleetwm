@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Fleetwm Task Manager
+GenericName=Task Manager
+Comment=Monitor processes, hardware, and system performance
+Exec=fleetwm-taskmgr
+Icon=fleetwm-taskmgr
+Terminal=false
+Categories=System;Monitor;Utility;
+StartupWMClass=dev.fleetwm.TaskManager
+Keywords=processes;cpu;memory;ram;disk;gpu;performance;

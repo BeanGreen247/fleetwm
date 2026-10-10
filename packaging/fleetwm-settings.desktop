@@ -1,7 +1,10 @@
 [Desktop Entry]
 Name=Fleetwm Settings
-Comment=Configure fleetwm's theme, bar, and wallpaper
+Comment=Configure Fleetwm's theme, taskbar, displays, and devices
 Exec=fleetwm-settings
+Icon=fleetwm-settings
 Type=Application
 Categories=Settings;
 Terminal=false
+StartupWMClass=dev.fleetwm.Settings
+Keywords=theme;display;taskbar;network;bluetooth;
