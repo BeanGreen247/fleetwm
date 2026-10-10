@@ -60,16 +60,16 @@ TEST(FmIcons, DrawingIsDeterministic) {
     EXPECT_EQ(pixel_hash(a.get(k, 64)), pixel_hash(b.get(k, 64)));
 }
 
-TEST(FmIcons, TheApplicationIconIsBlueGlassWithAGreenCheck) {
+TEST(FmIcons, TheApplicationIconCombinesFolderWindowsAndFinderCues) {
   IconCache cache;
   cairo_surface_t* s = cache.get(IconKind::App, 256);
   EXPECT_GT(coverage(s), 0.55);
-  // the check disc is green at about (0.72, 0.72)
-  const uint32_t p = pixel(s, 256 * 72 / 100 + 20, 256 * 72 / 100 - 40);
-  const int g = (p >> 8) & 255, r = (p >> 16) & 255, b = p & 255;
-  EXPECT_GT(g, r) << "disc is green";
-  EXPECT_GT(g, b);
-  // the folder front panel is blue
+  // A light pane from the four-pane Windows reference is visible in the folder face.
+  const uint32_t pane = pixel(s, 256 * 25 / 100, 256 * 47 / 100);
+  EXPECT_GT((pane >> 16) & 255, 180);
+  EXPECT_GT((pane >> 8) & 255, 180);
+  EXPECT_GT(pane & 255, 180);
+  // The folder face remains blue and the mark is not the stock amber folder.
   const uint32_t q = pixel(s, 40, 200);
   EXPECT_GT(q & 255, (q >> 16) & 255) << "front panel is blue";
 }

@@ -100,6 +100,15 @@ TEST(ShortcutList, DesktopTerminalHasItsOwnKeysNotAltEnter) {
     EXPECT_NE(e.keys, "Alt+Enter") << "Alt+Enter must not be offered in the Desktop layout";
 }
 
+TEST(ShortcutList, WindowsTaskManagerShortcutIsDesktopOnly) {
+  const auto desktop = build_shortcut_list(KeybindsConfig{}, WindowLayout::Desktop);
+  const ShortcutEntry* taskmgr = find(desktop, "Task Manager");
+  ASSERT_NE(taskmgr, nullptr);
+  EXPECT_EQ(taskmgr->keys, "Ctrl+Shift+Esc");
+  EXPECT_TRUE(taskmgr->active);
+  EXPECT_EQ(find(build_shortcut_list(KeybindsConfig{}, WindowLayout::Tiling), "Task Manager"), nullptr);
+}
+
 TEST(ShortcutList, RemappedKeysShowUp) {
   KeybindsConfig b;
   b.launcher = "space";
