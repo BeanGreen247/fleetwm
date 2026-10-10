@@ -2,12 +2,15 @@
 // expansion, colour parsing, icon-less helpers.
 #include <gtest/gtest.h>
 
+#include <algorithm>
+
 #include "desktop_entry.hpp"
 #include "fleetkit.hpp"
 
 using fleetwm::kit::DesktopEntry;
 using fleetwm::kit::exec_argv;
 using fleetwm::kit::exec_basename;
+using fleetwm::kit::fleetwm_builtin_desktop_entries;
 using fleetwm::kit::parse_color;
 
 namespace {
@@ -65,6 +68,16 @@ TEST(DesktopEntryExec, CarriesStartupWindowClassForTaskbarMatching) {
   DesktopEntry e = entry("fleetwm-fm");
   e.startup_wm_class = "dev.fleetwm.FileManager";
   EXPECT_EQ(e.startup_wm_class, "dev.fleetwm.FileManager");
+}
+
+TEST(DesktopEntryDiscovery, DefinesFleetwmTaskManagerEntry) {
+  const auto entries = fleetwm_builtin_desktop_entries();
+  const auto it = std::find_if(entries.begin(), entries.end(), [](const DesktopEntry& e) {
+    return e.id == "fleetwm-taskmgr.desktop";
+  });
+  ASSERT_NE(it, entries.end());
+  EXPECT_EQ(it->exec, "fleetwm-taskmgr");
+  EXPECT_EQ(it->startup_wm_class, "dev.fleetwm.TaskManager");
 }
 
 TEST(FleetkitColor, ParsesRgbAndRgba) {
