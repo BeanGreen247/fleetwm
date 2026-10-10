@@ -51,6 +51,19 @@ TEST(HwStats, MachineInventoryParsers) {
   EXPECT_EQ(drives[0].size_bytes, 1000000);
 }
 
+TEST(HwStats, CpuCacheInventoryAndBandwidth) {
+  const auto caches = parse_cpu_cache_info(
+      "level: 1\ntype: Data\nsize: 32K\ncoherency_line_size: 64\nways_of_associativity: 8\nshared_cpu_list: 0,4\n\n"
+      "level: 3\ntype: Unified\nsize: 6144K\ncoherency_line_size: 64\nways_of_associativity: 12\nshared_cpu_list: 0-7\n\n"
+      "level: 1\ntype: Data\nsize: 32K\ncoherency_line_size: 64\nways_of_associativity: 8\nshared_cpu_list: 0,4\n");
+  ASSERT_EQ(caches.size(), 2u);
+  EXPECT_EQ(caches[0].level, 1);
+  EXPECT_EQ(caches[0].size, "32K");
+  EXPECT_EQ(caches[1].level, 3);
+  EXPECT_EQ(format_bandwidth_gbs(21.328e9), "21.3 GB/s");
+  EXPECT_EQ(format_bandwidth_gbs(0), "--");
+}
+
 TEST(HwStats, CorePercentsFromTwoSamples) {
   std::vector<CpuTimes> a{{0, 0}, {10, 100}}, b{{50, 100}, {10, 200}};
   auto p = core_percents(a, b);

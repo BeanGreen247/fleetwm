@@ -208,6 +208,14 @@ TEST(PowerInstaller, InstallsPolkitItself) {
   EXPECT_NE(pk, std::string::npos) << "without polkitd, systemctl suspend/reboot/poweroff are refused";
 }
 
+TEST(PowerInstaller, EnablesTaskManagerHardwareCounters) {
+  const std::string install = pm_read(pm_root() / "install.sh");
+  EXPECT_NE(install.find("kernel.perf_event_paranoid"), std::string::npos);
+  EXPECT_NE(install.find("/etc/sysctl.d/60-fleetwm-taskmgr.conf"), std::string::npos);
+  EXPECT_NE(install.find("sysctl -p \"${PERF_SYSCTL}\""), std::string::npos);
+  EXPECT_NE(install.find(".fleetwm-bak"), std::string::npos);
+}
+
 TEST(PowerInstaller, InstallsEveryRuleFileIntoPolkitsRulesDirectory) {
   const std::string install = pm_read(pm_root() / "install.sh");
   int rules = 0;

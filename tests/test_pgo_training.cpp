@@ -46,6 +46,13 @@ TEST(PgoTraining, ScriptsAreValidShell) {
   }
 }
 
+TEST(PgoTraining, InstallerSupportsCleanBuildFlag) {
+  const std::string install = tr_read(tr_root() / "install.sh");
+  EXPECT_NE(install.find("--clean"), std::string::npos);
+  EXPECT_NE(install.find("rm -rf \"${SCRIPT_DIR}/build-pgo\" \"${SCRIPT_DIR}/build-test\" \"${SCRIPT_DIR}/build\""), std::string::npos);
+  EXPECT_NE(install.find("unknown option"), std::string::npos);
+}
+
 TEST(PgoTraining, RunsLongEnoughToCoverEverything) {
   const std::string driver = tr_read(tr_root() / "scripts/build-pgo-auto.sh");
   std::smatch m;

@@ -41,6 +41,12 @@ void GpuMonitor::discover(const std::string& drm_root, bool check_nvidia) {
     GpuDevice g;
     g.driver = driver;
     g.device_dir = base + "/device";
+    {
+      std::ifstream speed(base + "/device/current_link_speed");
+      std::getline(speed, g.pcie_speed);
+      std::ifstream width(base + "/device/current_link_width");
+      width >> g.pcie_width;
+    }
     if (vendor_id == "0x1002") g.vendor = "AMD";
     else if (vendor_id == "0x8086") g.vendor = "Intel";
     else if (vendor_id == "0x10de") g.vendor = "NVIDIA";

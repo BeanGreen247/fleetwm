@@ -10,6 +10,8 @@
 #include <pwd.h>
 #include <signal.h>
 #include <sys/signalfd.h>
+#include <sys/syscall.h>
+#include <linux/perf_event.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -53,6 +55,65 @@ struct Rect {
   bool hit(double px, double py) const { return px >= x && px < x + w && py >= y && py < y + h; }
 };
 
+class CacheCounters {
+ public:
+  ~CacheCounters() {
+    if (references_ >= 0) close(references_);
+    if (misses_ >= 0) close(misses_);
+  }
+
+  void open() {
+    if (opened_) return;
+    opened_ = true;
+    references_ = create(PERF_COUNT_HW_CACHE_REFERENCES);
+    misses_ = create(PERF_COUNT_HW_CACHE_MISSES);
+    if (references_ < 0 || misses_ < 0) {
+      status_ = "hardware counters unavailable";
+      if (references_ >= 0) close(references_);
+      if (misses_ >= 0) close(misses_);
+      references_ = misses_ = -1;
+    } else {
+      status_ = "hardware counters available";
+    }
+  }
+
+  void sample() {
+    open();
+    if (references_ < 0 || misses_ < 0) return;
+    uint64_t refs = 0, misses = 0;
+    if (read(references_, &refs, sizeof refs) != sizeof refs || read(misses_, &misses, sizeof misses) != sizeof misses) return;
+    if (have_prev_ && refs >= prev_refs_ && misses >= prev_misses_ && refs > prev_refs_) {
+      const uint64_t ref_delta = refs - prev_refs_, miss_delta = std::min(misses - prev_misses_, ref_delta);
+      hit_rate_ = 100.0 * static_cast<double>(ref_delta - miss_delta) / static_cast<double>(ref_delta);
+    }
+    prev_refs_ = refs;
+    prev_misses_ = misses;
+    have_prev_ = true;
+  }
+
+  std::string status() const { return status_; }
+  double hit_rate() const { return hit_rate_; }
+
+ private:
+  static int create(uint64_t event) {
+    perf_event_attr attr{};
+    attr.size = sizeof attr;
+    attr.type = PERF_TYPE_HARDWARE;
+    attr.config = event;
+    attr.disabled = 0;
+    // The installer permits CPU-wide user-space counters. Keep kernel and hypervisor activity
+    // out of the displayed Fleetwm/application measurements.
+    attr.exclude_kernel = 1;
+    attr.exclude_hv = 1;
+    return static_cast<int>(syscall(__NR_perf_event_open, &attr, -1, 0, -1, 0));
+  }
+  int references_ = -1, misses_ = -1;
+  bool opened_ = false, have_prev_ = false;
+  uint64_t prev_refs_ = 0, prev_misses_ = 0;
+  double hit_rate_ = -1;
+  std::string status_ = "checking hardware counters";
+};
+
 // A /proc or sysfs file kept open and read again with pread.
 struct Reader {
   int fd = -1;
@@ -76,7 +137,7 @@ struct Reader {
   }
 };
 
-enum class Tab { Processes, Performance };
+enum class Tab { Processes, Performance, Cache };
 enum class Res { Cpu, Memory, Disk, Network, Gpu };
 
 struct TaskMgr {
@@ -117,8 +178,11 @@ struct TaskMgr {
   long uptime_s = 0;
   GpuMonitor gpu;
   CpuInfo cpu_info;
+  std::vector<CpuCacheInfo> cpu_caches;
   std::vector<MemoryModule> memory_modules;
   std::vector<DriveInfo> drives;
+  std::string cache_counter_status;
+  CacheCounters cache_counters;
   int ncpu = 1;
   long hz = 100;
   Clock::time_point last_sample;
@@ -132,6 +196,30 @@ struct TaskMgr {
     cpu_info = parse_cpuinfo(cpu_text.str());
     if (cpu_info.logical_threads == 0) cpu_info.logical_threads = std::max(1, static_cast<int>(sysconf(_SC_NPROCESSORS_ONLN)));
     if (cpu_info.physical_cores == 0) cpu_info.physical_cores = cpu_info.logical_threads;
+
+    std::string cache_text;
+    for (int i = 0; i < 16; ++i) {
+      const std::string base = "/sys/devices/system/cpu/cpu0/cache/index" + std::to_string(i);
+      std::ifstream level(base + "/level");
+      if (!level.good()) continue;
+      auto read = [&](const char* name) {
+        std::ifstream f(base + "/" + name);
+        std::string value;
+        std::getline(f, value);
+        return value;
+      };
+      cache_text += "level: " + read("level") + "\n";
+      cache_text += "type: " + read("type") + "\n";
+      cache_text += "size: " + read("size") + "\n";
+      cache_text += "coherency_line_size: " + read("coherency_line_size") + "\n";
+      cache_text += "ways_of_associativity: " + read("ways_of_associativity") + "\n";
+      cache_text += "shared_cpu_list: " + read("shared_cpu_list") + "\n\n";
+    }
+    cpu_caches = parse_cpu_cache_info(cache_text);
+    std::ifstream paranoia("/proc/sys/kernel/perf_event_paranoid");
+    int paranoid = 3;
+    paranoia >> paranoid;
+    cache_counter_status = paranoid <= 2 ? "hardware counters available" : "hardware counters restricted by kernel";
 
     // dmidecode is optional and is only called once at startup. It may be unavailable
     // for an unprivileged user; the page still shows kernel memory totals.
@@ -205,6 +293,8 @@ struct TaskMgr {
 
     gpu.sample([](std::function<void()> fn) { std::thread(std::move(fn)).detach(); }, [this](std::function<void()> fn) { app.post(std::move(fn)); });
     gpu_h.push(std::max(0, gpu.busiest_percent()));
+    cache_counters.sample();
+    if (cache_counters.status() == "hardware counters available") cache_counter_status = cache_counters.status();
 
     have_prev = true;
   }
@@ -361,9 +451,9 @@ struct TaskMgr {
     set_source(cr, pal.bg_primary);
     cairo_paint(cr);
     // Tabs.
-    const char* names[2] = {"Processes", "Performance"};
+    const char* names[3] = {"Processes", "Performance", "Cache"};
     double x = 12;
-    for (int i = 0; i < 2; ++i) {
+    for (int i = 0; i < 3; ++i) {
       const TextExtents te = measure_text(cr, names[i], 14, tab == static_cast<Tab>(i));
       tab_rect[i] = {x, 6, te.width + 28, kTabsH - 6};
       const bool on = tab == static_cast<Tab>(i);
@@ -377,7 +467,8 @@ struct TaskMgr {
     cairo_rectangle(cr, 0, kTabsH - 1, w, 1);
     cairo_fill(cr);
     if (tab == Tab::Processes) draw_processes(cr, w, h);
-    else draw_performance(cr, w, h);
+    else if (tab == Tab::Performance) draw_performance(cr, w, h);
+    else draw_cache(cr, w, h);
   }
 
   void draw_processes(cairo_t* cr, int w, int h) {
@@ -640,6 +731,58 @@ struct TaskMgr {
     }
   }
 
+  void draw_cache(cairo_t* cr, int w, int h) {
+    const double dx = 24, dw = w - 48;
+    double y = kTabsH + 24;
+    text_at(cr, "CPU cache and bandwidth", dx, y, 20, pal.fg_primary, true);
+    y += 34;
+    text_at(cr, cpu_info.model.empty() ? "Unknown processor" : cpu_info.model, dx, y, kFont, dim());
+    text_right(cr, cache_counter_status, dx + dw, y, kSmall, dim());
+    y += 28;
+    std::vector<std::pair<std::string, std::string>> entries;
+    for (const CpuCacheInfo& c : cpu_caches) {
+      std::string label = "L" + std::to_string(c.level) + " " + c.type;
+      std::string value = c.size;
+      if (c.line_bytes > 0) value += "  " + std::to_string(c.line_bytes) + " B line";
+      if (c.ways > 0) value += "  " + std::to_string(c.ways) + " way";
+      entries.emplace_back(label, value);
+    }
+    if (entries.empty()) entries.emplace_back("CPU cache", "topology unavailable");
+    info_grid(cr, dx, y, dw, entries);
+    y += static_cast<double>((entries.size() + 1) / 2) * 38 + 16;
+    text_at(cr, "Memory throughput", dx, y, 16, pal.fg_primary, true);
+    y += 24;
+    std::vector<std::pair<std::string, std::string>> memory;
+    for (const MemoryModule& m : memory_modules) {
+      const std::string label = m.locator.empty() ? "Memory module" : m.locator;
+      const double gbs = m.speed_mhz > 0 ? static_cast<double>(m.speed_mhz) * 8.0 / 1000.0 : 0;
+      memory.emplace_back(label, m.speed_mhz > 0 ? std::to_string(m.speed_mhz) + " MT/s  " + format_bandwidth_gbs(gbs * 1e9) : "speed unavailable");
+    }
+    if (memory.empty()) memory.emplace_back("RAM", "module speed unavailable");
+    info_grid(cr, dx, y, dw, memory);
+    y += static_cast<double>((memory.size() + 1) / 2) * 38 + 16;
+    text_at(cr, "Cache hit rate scopes", dx, y, 16, pal.fg_primary, true);
+    y += 24;
+    const std::string hit = cache_counters.hit_rate() >= 0 ? std::to_string(static_cast<int>(cache_counters.hit_rate() + 0.5)) + "% hit" : cache_counter_status;
+    info_grid(cr, dx, y, dw, {{"Overall", hit},
+                              {"Fleetwm apps", "requires perf access or instrumentation"},
+                              {"Per module", "requires symbols or instrumentation"},
+                              {"Per item", "requires explicit counters"}});
+    y += 88;
+    text_at(cr, "PCIe and GPU memory bandwidth", dx, y, 16, pal.fg_primary, true);
+    y += 24;
+    std::vector<std::pair<std::string, std::string>> gpus;
+    for (const GpuDevice& g : gpu.devices()) {
+      std::string value = g.pcie_speed.empty() ? "PCIe link unavailable" : g.pcie_speed + " x" + std::to_string(g.pcie_width);
+      gpus.emplace_back(g.vendor, value);
+    }
+    for (const GpuDetail& g : gpu.nvidia_detail())
+      gpus.emplace_back("NVIDIA memory", g.mem_mhz > 0 ? std::to_string(g.mem_mhz) + " MHz (bandwidth depends on bus width)" : "speed unavailable");
+    if (gpus.empty()) gpus.emplace_back("GPU", "PCIe and memory link data unavailable");
+    info_grid(cr, dx, y, dw, gpus);
+    (void)h;
+  }
+
   // ---------------------------------------------------------------- input --
   void select_by_index(long i) {
     if (rows.empty()) return;
@@ -666,7 +809,7 @@ struct TaskMgr {
 
   void on_button(double x, double y, uint32_t b, bool pressed) {
     if (!pressed || b != kBtnLeft) return;
-    for (int i = 0; i < 2; ++i)
+    for (int i = 0; i < 3; ++i)
       if (tab_rect[i].hit(x, y) && tab != static_cast<Tab>(i)) {
         tab = static_cast<Tab>(i);
         status.clear();
@@ -682,6 +825,7 @@ struct TaskMgr {
         }
       return;
     }
+    if (tab == Tab::Cache) return;
     if (end_btn.hit(x, y)) return end_task(false);
     if (force_btn.hit(x, y)) return end_task(true);
     const ProcColumn cols[6] = {ProcColumn::Name, ProcColumn::Pid, ProcColumn::Cpu, ProcColumn::Memory, ProcColumn::Disk, ProcColumn::User};
@@ -717,7 +861,7 @@ struct TaskMgr {
     if (!ev.pressed) return;
     switch (ev.sym) {
       case XKB_KEY_Tab:
-        tab = tab == Tab::Processes ? Tab::Performance : Tab::Processes;
+        tab = tab == Tab::Processes ? Tab::Performance : tab == Tab::Performance ? Tab::Cache : Tab::Processes;
         ticks = 0;
         tick();
         break;
@@ -756,7 +900,10 @@ int main(int argc, char** argv) {
   T.pal = load_palette(load_theme_config());
   T.hz = sysconf(_SC_CLK_TCK);
   for (int i = 1; i + 1 < argc; ++i)
-    if (std::strcmp(argv[i], "--tab") == 0) T.tab = std::strcmp(argv[i + 1], "performance") == 0 ? Tab::Performance : Tab::Processes;
+    if (std::strcmp(argv[i], "--tab") == 0) {
+      T.tab = std::strcmp(argv[i + 1], "performance") == 0 ? Tab::Performance :
+              std::strcmp(argv[i + 1], "cache") == 0 ? Tab::Cache : Tab::Processes;
+    }
   T.gpu.discover();
   T.read_inventory();
   T.gpu.on_nvidia_update = [&T] { T.surface->queue_draw(); };
