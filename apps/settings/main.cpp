@@ -1134,6 +1134,16 @@ struct Settings {
     ui.label(bar.taskbar_autohide ? "Hidden until needed" : "Always visible", true);
     ui.newline();
 
+    ui.row("Media applet");
+    int media_display = static_cast<int>(bar.media_display);
+    if (ui.segmented({"Controls", "Progress", "Waveform"}, &media_display, true)) {
+      bar.media_display = static_cast<MediaDisplay>(media_display);
+      save_bar();
+    }
+    ui.newline();
+    ui.paragraph("The applet follows the active MPRIS player. Left-click plays or pauses, middle-click skips, and right-click selects the next player. Waveform mode uses a lightweight beat animation.", true);
+    ui.newline();
+
     ui.space(6);
     ui.label("Parts of the taskbar", true);
     ui.newline();

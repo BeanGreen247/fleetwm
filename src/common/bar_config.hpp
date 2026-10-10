@@ -76,6 +76,8 @@ enum class BarLayout {
   Capsules,  // three floating pills: workspaces | clock | status (default)
 };
 
+enum class MediaDisplay { Controls, Progress, Waveform };
+
 // Which screen edge the Desktop-layout taskbar sits on (the Tiling layout keeps
 // the top bar styles above). Left and Right make a vertical taskbar.
 enum class TaskbarPosition {
@@ -118,6 +120,8 @@ struct BarConfig {
   bool start_centered = false;     // Windows 11 style: start button, pinned apps and window buttons centred
   bool taskbar_labels = true;      // window buttons show the title beside the icon; off: icon only
   std::vector<std::string> pinned_apps;  // desktop entry ids ("firefox.desktop") with an icon button on the taskbar
+  std::string media_player;        // MPRIS bus name or player identity; empty follows the active player
+  MediaDisplay media_display = MediaDisplay::Progress;
 };
 
 std::string power_mode_to_string(PowerMode mode);
@@ -128,6 +132,8 @@ TaskbarPosition taskbar_position_from_string(const std::string& s);
 
 std::string bar_layout_to_string(BarLayout layout);
 BarLayout bar_layout_from_string(const std::string& s);
+std::string media_display_to_string(MediaDisplay display);
+MediaDisplay media_display_from_string(const std::string& s);
 
 // Name powerprofilesctl itself expects ("balanced" | "performance" |
 // "power-saver"), distinct from the bar.toml string above.

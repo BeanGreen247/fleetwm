@@ -44,6 +44,13 @@ TEST(BarLayout, UnknownStringFallsBackToFull) {
   EXPECT_EQ(bar_layout_from_string(""), BarLayout::Capsules);
 }
 
+TEST(MediaDisplay, RoundTripsAllValues) {
+  for (MediaDisplay display : {MediaDisplay::Controls, MediaDisplay::Progress, MediaDisplay::Waveform}) {
+    EXPECT_EQ(media_display_from_string(media_display_to_string(display)), display);
+  }
+  EXPECT_EQ(media_display_from_string("unknown"), MediaDisplay::Progress);
+}
+
 // -- TaskbarPosition ---------------------------------------------------------
 
 TEST(TaskbarPosition, RoundTripsAllValues) {
@@ -459,6 +466,16 @@ TEST_F(BarConfigTest, TaskbarOptionsRoundTrip) {
   EXPECT_TRUE(back.taskbar_autohide);
   EXPECT_TRUE(back.start_centered);
   EXPECT_FALSE(back.taskbar_labels);
+}
+
+TEST_F(BarConfigTest, MediaSettingsRoundTrip) {
+  BarConfig config;
+  config.media_player = "org.mpris.MediaPlayer2.vlc.instance_1";
+  config.media_display = MediaDisplay::Waveform;
+  save_bar_config(config);
+  const BarConfig loaded = load_bar_config();
+  EXPECT_EQ(loaded.media_player, config.media_player);
+  EXPECT_EQ(loaded.media_display, MediaDisplay::Waveform);
 }
 
 TEST_F(BarConfigTest, OlderFileWithoutTaskbarOptionsStillLoads) {

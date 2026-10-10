@@ -3,6 +3,7 @@
 #include <filesystem>
 
 #include "file_ops.hpp"
+#include "menu_metrics.hpp"
 #include "window.hpp"
 
 namespace fs = std::filesystem;
@@ -62,14 +63,27 @@ void FmWindow::paint_overlays() {
 
 // One menu level. Returns its size and the row rectangles (for placing a submenu beside the row it belongs to).
 void FmWindow::paint_menu_level(const std::vector<MenuItem>& items, double* px_x, double* px_y, int hot, R kind, double* out_w, double* out_h, std::vector<Rect>* rows) {
-  const double px = font_px();
+  const bool fleet_theme = s_.colour_scheme == ColorScheme::FollowTheme;
+  const kit::MenuTheme shared = kit::menu_theme(theme_);
+  const double px = std::max(menu::kFontPx, static_cast<double>(font_px()));
+  const double row_h = menu::kRowHeight;
+  const double separator_h = menu::kSeparatorHeight;
+  const double outer_pad = menu::kOuterPadding;
+  const double item_inset = menu::kItemInset;
+  const Color menu_bg = fleet_theme ? shared.background : col_.menu_bg;
+  const Color menu_border = fleet_theme ? shared.border : col_.menu_border;
+  const Color menu_shadow = fleet_theme ? shared.shadow : col_.shadow;
+  const Color menu_hover = fleet_theme ? shared.hover : col_.menu_hot;
+  const Color menu_hover_border = fleet_theme ? shared.hover_border : col_.hot_border;
+  const double menu_radius = fleet_theme ? shared.radius : (s_.style == ViewStyle::Windows7 ? 3 : (style_->corner > 4 ? 8 : 2));
+  const double item_radius = fleet_theme ? shared.item_radius : 2;
   double w = 140;
   for (const MenuItem& it : items) {
     if (it.separator) continue;
     w = std::max(w, text_w(it.label, px, it.bold) + (it.shortcut.empty() ? 0 : text_w(it.shortcut, px) + 36) + 64);
   }
-  double h = 8;
-  for (const MenuItem& it : items) h += it.separator ? 9 : 25;
+  double h = 2 * outer_pad;
+  for (const MenuItem& it : items) h += it.separator ? separator_h : row_h;
   double x = *px_x, y = *px_y;
   if (x + w > W_ - 4) x = std::max(4.0, W_ - w - 4);
   if (y + h > H_ - 4) y = std::max(4.0, H_ - h - 4);
@@ -77,8 +91,8 @@ void FmWindow::paint_menu_level(const std::vector<MenuItem>& items, double* px_x
   *px_y = y;
   *out_w = w;
   *out_h = h;
-  box(x + 3, y + 3, w, h, 3, col_.shadow, col_.shadow, nullptr);
-  box(x, y, w, h, s_.style == ViewStyle::Windows7 ? 3 : (style_->corner > 4 ? 8 : 2), col_.menu_bg, col_.menu_bg, &col_.menu_border);
+  box(x + menu::kShadowOffset, y + menu::kShadowOffset, w, h, menu_radius, menu_shadow, menu_shadow, nullptr);
+  box(x, y, w, h, menu_radius, menu_bg, menu_bg, &menu_border);
   // the Windows 7 icon gutter: a slightly different strip at the left, with a thin line
   if (s_.style == ViewStyle::Windows7) {
     box(x + 1, y + 1, 26, h - 2, 2, col_.nav_bg, col_.nav_bg, nullptr);
@@ -89,25 +103,27 @@ void FmWindow::paint_menu_level(const std::vector<MenuItem>& items, double* px_x
     cairo_stroke(cr_);
   }
   add_region({static_cast<int>(x), static_cast<int>(y), static_cast<int>(w), static_cast<int>(h)}, kind, -1);
-  double cy = y + 4;
+  double cy = y + outer_pad;
   rows->assign(items.size(), Rect{});
   for (size_t i = 0; i < items.size(); ++i) {
     const MenuItem& it = items[i];
     if (it.separator) {
-      cairo_move_to(cr_, x + 32, cy + 4.5);
-      cairo_line_to(cr_, x + w - 6, cy + 4.5);
+      cairo_move_to(cr_, x + 32, cy + separator_h / 2);
+      cairo_line_to(cr_, x + w - 6, cy + separator_h / 2);
       kit::set_source(cr_, col_.head_sep);
       cairo_set_line_width(cr_, 1);
       cairo_stroke(cr_);
-      cy += 9;
+      cy += separator_h;
       continue;
     }
-    const Rect rr{static_cast<int>(x + 3), static_cast<int>(cy), static_cast<int>(w - 6), 25};
+    const Rect rr{static_cast<int>(x + item_inset), static_cast<int>(cy), static_cast<int>(w - 2 * item_inset), static_cast<int>(row_h)};
     (*rows)[i] = rr;
     const bool is_hot = static_cast<int>(i) == hot && it.enabled;
     const bool flat_hot = col_.hot_top.r == col_.hot_bot.r && col_.hot_top.g == col_.hot_bot.g && col_.hot_top.b == col_.hot_bot.b;
-    if (is_hot) box(rr.x, rr.y, rr.w, rr.h, 2, flat_hot ? col_.menu_hot : col_.hot_top, flat_hot ? col_.menu_hot : col_.hot_bot, &col_.hot_border);
-    const Color tc = !it.enabled ? col_.text_off : (is_hot && col_.menu_hot.r < 0.6 && !col_.dark && s_.style != ViewStyle::Windows7 && s_.style != ViewStyle::Windows10 ? col_.accent_text : col_.text);
+    if (is_hot) box(rr.x, rr.y, rr.w, rr.h, item_radius, fleet_theme ? menu_hover : (flat_hot ? col_.menu_hot : col_.hot_top),
+                    fleet_theme ? menu_hover : (flat_hot ? col_.menu_hot : col_.hot_bot), &menu_hover_border);
+    const Color tc = !it.enabled ? col_.text_off : (is_hot && fleet_theme ? shared.hover_text
+                                                                             : (is_hot && col_.menu_hot.r < 0.6 && !col_.dark && s_.style != ViewStyle::Windows7 && s_.style != ViewStyle::Windows10 ? col_.accent_text : col_.text));
     if (it.checked) {
       if (it.radio) {
         cairo_arc(cr_, x + 16, cy + 12.5, 3.5, 0, 2 * M_PI);
@@ -121,7 +137,7 @@ void FmWindow::paint_menu_level(const std::vector<MenuItem>& items, double* px_x
     if (!it.sub.empty()) glyph(19, x + w - 20, cy + 6, 12, tc);
     else if (!it.shortcut.empty()) text(it.shortcut, x + w - 12 - text_w(it.shortcut, px), cy + 12.5, px, col_.text_dim);
     add_region(rr, kind, static_cast<int>(i));
-    cy += 25;
+    cy += row_h;
   }
 }
 
@@ -286,8 +302,10 @@ void FmWindow::paint_dialog() {
   dw = std::min(dw, W_ - 24);
   dh = std::min(dh, H_ - 24);
   dlg_rect_ = {(W_ - dw) / 2, (H_ - dh) / 2, dw, dh};
-  box(dlg_rect_.x + 4, dlg_rect_.y + 5, dw, dh, 6, col_.shadow, col_.shadow, nullptr);
-  box(dlg_rect_.x, dlg_rect_.y, dw, dh, s_.style == ViewStyle::Windows7 ? 5 : 8, col_.window, col_.window, &col_.chrome_border);
+  const kit::MenuTheme shared = kit::menu_theme(theme_);
+  const double dialog_radius = s_.colour_scheme == ColorScheme::FollowTheme ? shared.radius : (s_.style == ViewStyle::Windows7 ? 5 : 8);
+  box(dlg_rect_.x + menu::kShadowOffset, dlg_rect_.y + menu::kShadowOffset + 2, dw, dh, dialog_radius, col_.shadow, col_.shadow, nullptr);
+  box(dlg_rect_.x, dlg_rect_.y, dw, dh, dialog_radius, col_.window, col_.window, &col_.chrome_border);
   add_region(dlg_rect_, R::DlgButton, -2);
   cairo_save(cr_);
   kit::Palette pal;

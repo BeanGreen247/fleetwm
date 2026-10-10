@@ -22,6 +22,7 @@
 #include "fleetkit.hpp"
 #include "ipc_client.hpp"
 #include "malloc_tuning.hpp"
+#include "menu_metrics.hpp"
 #include "popup_namespaces.hpp"
 #include "popup_spot.hpp"
 #include "prewarm.hpp"
@@ -37,11 +38,10 @@ using namespace fleetwm;
 using namespace fleetwm::kit;
 
 constexpr uint32_t kBtnLeft = 0x110;
-constexpr double kFont = 14.0, kRowH = 30, kSepH = 9, kPad = 6, kSide = 14;
-
 struct Menu {
   App app;
   Palette pal;
+  MenuTheme theme;
   std::unique_ptr<Surface> surface;
   std::vector<MenuItem> items;
   std::vector<double> top;  // y of each row inside the card
@@ -50,10 +50,10 @@ struct Menu {
 
   void layout() {
     top.clear();
-    double y = kPad;
+    double y = menu::kOuterPadding;
     for (const MenuItem& i : items) {
       top.push_back(y);
-      y += i.kind == MenuItem::Kind::Separator ? kSepH : kRowH;
+      y += i.kind == MenuItem::Kind::Separator ? menu::kSeparatorHeight : menu::kRowHeight;
     }
   }
 
@@ -61,7 +61,7 @@ struct Menu {
     const double cx = x - margin, cy = y - margin;
     for (size_t i = 0; i < items.size(); ++i) {
       if (items[i].kind == MenuItem::Kind::Separator) continue;
-      if (cy >= top[i] && cy < top[i] + kRowH && cx >= 0 && cx < surface_w() - 2.0 * margin) return static_cast<int>(i);
+      if (cy >= top[i] && cy < top[i] + menu::kRowHeight && cx >= 0 && cx < surface_w() - 2.0 * margin) return static_cast<int>(i);
     }
     return -1;
   }
@@ -73,38 +73,37 @@ struct Menu {
     cairo_set_source_rgba(cr, 0, 0, 0, 0);
     cairo_paint(cr);
     cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
-    const double x0 = margin, y0 = margin, r = pal.rounded ? 8 : 0;
+    const double x0 = margin, y0 = margin, r = theme.radius;
     // A soft shadow, then the card with a thin rim.
     for (int i = 4; i >= 1; --i) {
-      rounded_rect(cr, x0 - i + 0.5, y0 - i + 2.5, card_w + 2 * i - 1, card_h + 2 * i - 1, r + i);
-      cairo_set_source_rgba(cr, 0, 0, 0, 0.07);
+      rounded_rect(cr, x0 - i + 0.5, y0 - i + menu::kShadowOffset - i * 0.25, card_w + 2 * i - 1, card_h + 2 * i - 1, r + i);
+      set_source(cr, theme.shadow);
       cairo_fill(cr);
     }
     rounded_rect(cr, x0, y0, card_w, card_h, r);
-    Color bg = pal.bg_secondary;
-    bg.a = 0.97;
-    set_source(cr, bg);
+    set_source(cr, theme.background);
     cairo_fill(cr);
     rounded_rect(cr, x0 + 0.5, y0 + 0.5, card_w - 1, card_h - 1, r);
-    set_source(cr, Color{pal.fg_secondary.r, pal.fg_secondary.g, pal.fg_secondary.b, 0.35});
+    set_source(cr, theme.border);
     cairo_set_line_width(cr, 1);
     cairo_stroke(cr);
     for (size_t i = 0; i < items.size(); ++i) {
       const double y = y0 + top[i];
       if (items[i].kind == MenuItem::Kind::Separator) {
-        set_source(cr, Color{pal.fg_secondary.r, pal.fg_secondary.g, pal.fg_secondary.b, 0.28});
-        cairo_rectangle(cr, x0 + 8, y + kSepH / 2, card_w - 16, 1);
+        set_source(cr, Color{theme.secondary.r, theme.secondary.g, theme.secondary.b, 0.28});
+        cairo_rectangle(cr, x0 + 8, y + menu::kSeparatorHeight / 2, card_w - 16, 1);
         cairo_fill(cr);
         continue;
       }
       const bool on = static_cast<int>(i) == hover;
       if (on) {
-        rounded_rect(cr, x0 + 4, y, card_w - 8, kRowH, pal.rounded ? 5 : 0);
-        set_source(cr, pal.accent);
+        rounded_rect(cr, x0 + menu::kItemInset, y, card_w - 2 * menu::kItemInset, menu::kRowHeight, theme.item_radius);
+        set_source(cr, theme.hover);
         cairo_fill(cr);
       }
-      const TextExtents te = measure_text(cr, items[i].label, kFont);
-      draw_text(cr, items[i].label, x0 + kSide, y + (kRowH - te.height) / 2 + te.ascent, kFont, on ? pal.bg_primary : pal.fg_primary);
+      const TextExtents te = measure_text(cr, items[i].label, menu::kFontPx);
+      draw_text(cr, items[i].label, x0 + menu::kTextPadding, y + (menu::kRowHeight - te.height) / 2 + te.ascent, menu::kFontPx,
+                on ? theme.hover_text : theme.text);
     }
   }
 
@@ -193,6 +192,7 @@ int main(int argc, char** argv) {
   }
   if (M.items.empty()) return 2;
   M.pal = load_palette(load_theme_config());
+  M.theme = menu_theme(M.pal);
   M.layout();
   if (!M.app.connect()) return 1;
 
@@ -200,7 +200,7 @@ int main(int argc, char** argv) {
   cairo_surface_t* scratch = cairo_image_surface_create(CAIRO_FORMAT_A8, 1, 1);
   cairo_t* sc = cairo_create(scratch);
   int widest = 0;
-  for (const MenuItem& i : M.items) widest = std::max(widest, static_cast<int>(measure_text(sc, i.label, kFont).width));
+  for (const MenuItem& i : M.items) widest = std::max(widest, static_cast<int>(measure_text(sc, i.label, menu::kFontPx).width));
   cairo_destroy(sc);
   cairo_surface_destroy(scratch);
   const MenuSize size = ctx_menu_size(M.items, widest);

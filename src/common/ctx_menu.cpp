@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <sstream>
 
+#include "menu_metrics.hpp"
 #include "popup_spot.hpp"
 
 namespace fleetwm {
@@ -88,10 +89,10 @@ MenuSpot ctx_menu_spot(TaskbarPosition edge, int along, int menu_w, int menu_h, 
 }
 
 MenuSize ctx_menu_size(const std::vector<MenuItem>& items, int widest_label_px) {
-  constexpr int kRow = 30, kSep = 9, kPad = 6, kSide = 14;
-  int h = 2 * kPad;
-  for (const MenuItem& i : items) h += i.kind == MenuItem::Kind::Separator ? kSep : kRow;
-  return {std::max(160, widest_label_px + 2 * kSide + 2), h};
+  int h = static_cast<int>(2 * menu::kOuterPadding);
+  for (const MenuItem& i : items)
+    h += static_cast<int>(i.kind == MenuItem::Kind::Separator ? menu::kSeparatorHeight : menu::kRowHeight);
+  return {std::max(160, widest_label_px + static_cast<int>(2 * menu::kTextPadding) + 2), h};
 }
 
 }  // namespace fleetwm

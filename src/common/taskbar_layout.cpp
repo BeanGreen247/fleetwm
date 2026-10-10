@@ -24,6 +24,7 @@ constexpr Info kInfo[kTbElementCount] = {
     {TbElement::Bluetooth, "bluetooth", "Bluetooth"},
     {TbElement::Mode, "mode", "Power mode"},
     {TbElement::Battery, "battery", "Battery"},
+    {TbElement::Media, "media", "Media player"},
     {TbElement::Clock, "clock", "Clock"},
 };
 }  // namespace
