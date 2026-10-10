@@ -15,6 +15,7 @@ struct DesktopEntry {
   std::string comment;     // localized Comment=
   std::string exec;        // raw Exec=
   std::string icon;
+  std::string startup_wm_class;  // StartupWMClass used by the compositor app id
   std::string categories;  // raw Categories= ("A;B;")
   std::string path;        // Path= working directory
   bool terminal = false;

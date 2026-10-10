@@ -117,6 +117,7 @@ bool parse_file(const std::string& file, const std::string& id, DesktopEntry* ou
   out->comment = localized("Comment");
   out->exec = kv["Exec"];
   out->icon = kv["Icon"];
+  out->startup_wm_class = kv["StartupWMClass"];
   out->categories = kv["Categories"];
   out->path = kv["Path"];
   out->terminal = kv["Terminal"] == "true";

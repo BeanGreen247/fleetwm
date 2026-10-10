@@ -48,13 +48,14 @@ class Output {
   wl_listener request_state{};
   wl_listener destroy{};
 
-  // Adaptive render throttling (RenderMode::Custom, theme.hpp): tracks
+  // Adaptive render throttling (RenderMode::Custom, theme.hpp) and the
+  // deliberately low-power 24 FPS interactive drag cap: tracks
   // when this output last actually committed a frame, plus a lazily-
   // created one-shot timer that re-arms wlr_output_schedule_frame() once
   // the configured FPS interval has elapsed -- see output_frame()
   // (output.cpp) for the full mechanism. Unused/idle at zero cost
-  // whenever RenderMode is Synced (the default) or this output currently
-  // has a fullscreen view, which always bypasses the cap entirely.
+  // whenever RenderMode is Synced (the default) and no drag is active. A
+  // fullscreen view always bypasses both caps entirely.
   wl_event_source* fps_cap_timer = nullptr;
   timespec fps_cap_last_commit{};
   bool fps_cap_has_last_commit = false;

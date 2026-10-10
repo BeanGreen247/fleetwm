@@ -271,7 +271,8 @@ struct Bar {
     const std::string a = kit::lower_ascii(app_id);
     std::string id = kit::lower_ascii(de.id);
     if (id.size() > 8 && id.compare(id.size() - 8, 8, ".desktop") == 0) id.resize(id.size() - 8);
-    return a == id || a == kit::lower_ascii(kit::exec_basename(de)) || a == kit::lower_ascii(de.name);
+    return a == id || a == kit::lower_ascii(kit::exec_basename(de)) || a == kit::lower_ascii(de.name) ||
+           (!de.startup_wm_class.empty() && a == kit::lower_ascii(de.startup_wm_class));
   }
 
   // Turns bar.toml's `pinned` ids into buttons, and hands each the first window of its app on this workspace; the window list shows the rest.
