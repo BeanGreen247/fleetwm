@@ -953,7 +953,8 @@ void server_cursor_axis(wl_listener* listener, void* data) {
   server->note_activity();
   auto* event = static_cast<wlr_pointer_axis_event*>(data);
   wlr_seat_pointer_notify_axis(server->seat(), event->time_msec, event->orientation,
-                                event->delta, event->delta_discrete, event->source,
+                                event->delta * server->mouse_config_.scroll_lines / 3.0,
+                                static_cast<int32_t>(event->delta_discrete * server->mouse_config_.scroll_lines / 3.0), event->source,
                                 event->relative_direction);
 }
 

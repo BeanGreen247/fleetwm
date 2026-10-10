@@ -29,6 +29,7 @@
 #include "desktop_entry.hpp"
 #include "fleetkit.hpp"
 #include "icon_theme.hpp"
+#include "app_icon.hpp"
 #include "ipc_client.hpp"
 #include "popup_namespaces.hpp"
 #include "malloc_tuning.hpp"
@@ -351,7 +352,10 @@ struct Launcher {
   cairo_surface_t* icon_for(Entry& e) {
     if (!e.icon_tried) {
       e.icon_tried = true;
-      if (!e.de.icon.empty()) e.icon = load_icon(e.de.icon, 64);
+      // Fleetwm's own application marks are drawn in code. Other applications
+      // continue to use the desktop icon theme.
+      e.icon = app_icon(e.de.id, 64);
+      if (!e.icon && !e.de.icon.empty()) e.icon = load_icon(e.de.icon, 64);
     }
     return e.icon;
   }

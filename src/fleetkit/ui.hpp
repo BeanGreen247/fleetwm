@@ -18,6 +18,7 @@
 
 #include <cairo.h>
 
+#include <algorithm>
 #include <functional>
 #include <string>
 #include <vector>
@@ -62,6 +63,7 @@ class Ui {
   void pointer_button(double x, double y, uint32_t button, bool pressed);
   void pointer_leave();
   void scroll(double dy);
+  void set_scroll_lines(double lines) { scroll_lines_ = std::clamp(lines, 1.0, 20.0); }
   void key(const KeyEvent& ev);
   // Pastes text into the focused text entry (call with App::paste_text results).
   void paste(const std::string& text);
@@ -195,6 +197,8 @@ class Ui {
   Pt press_pos_{0, 0}, release_pos_{0, 0};
   int active_id_ = 0;  // widget that received the press
   double wheel_ = 0;
+  double scroll_lines_ = 3.0;
+  double nav_scroll_ = 0;
   std::vector<KeyEvent> keys_;
   int focus_id_ = 0;
   std::vector<int> focusables_, last_focusables_, modal_focusables_;

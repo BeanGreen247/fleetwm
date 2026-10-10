@@ -550,8 +550,8 @@ void emblem_folder(cairo_t* cr, IconKind k) {
 }
 
 void app(cairo_t* cr) {
-  // Our mark combines a Caja-like folder silhouette, Finder-like face cues, and a small
-  // four-pane Windows reference so it remains recognisable as a file manager at 16 px.
+  // Keep the application mark quiet and legible at small taskbar sizes: one folder,
+  // one blue face panel, and four simple panes. The runtime icon is always drawn here.
   shadow(cr, 0.5, 0.92, 0.42, 0.045);
   cairo_new_path(cr);
   cairo_move_to(cr, 0.06, 0.82);
@@ -563,7 +563,7 @@ void app(cairo_t* cr) {
   cairo_curve_to(cr, 0.92, 0.19, 0.94, 0.215, 0.94, 0.25);
   cairo_line_to(cr, 0.94, 0.82);
   cairo_close_path(cr);
-  fill_v(cr, rgb(0x2f5f9e), rgb(0x173a6a), 0.12, 0.82, true);
+  fill_v(cr, rgb(0x4f9fe6), rgb(0x173a6a), 0.12, 0.82, true);
   stroke(cr, rgb(0x0e2849), 0.02);
   cairo_new_path(cr);
   cairo_move_to(cr, 0.07, 0.83);
@@ -575,30 +575,17 @@ void app(cairo_t* cr) {
   cairo_close_path(cr);
   fill_v(cr, rgb(0x83d1ff), rgb(0x277ac7), 0.31, 0.83, true);
   stroke(cr, rgb(0x14518f), 0.02);
-  // Four light panes: a restrained Windows reference inside the folder face.
+  // Four light panes provide the Windows cue without a separate badge.
   for (int row = 0; row < 2; ++row)
     for (int col = 0; col < 2; ++col) {
       round_rect(cr, 0.20 + col * 0.16, 0.43 + row * 0.12, 0.13, 0.09, 0.012);
       set(cr, {1, 1, 1}, 0.86);
       cairo_fill(cr);
     }
-  // Finder-like eyes and smile, kept large enough to survive small icon rasterisation.
-  cairo_arc(cr, 0.57, 0.66, 0.028, 0, 2 * M_PI);
-  cairo_arc(cr, 0.73, 0.66, 0.028, 0, 2 * M_PI);
-  set(cr, rgb(0x103f78));
-  cairo_fill(cr);
-  cairo_new_path(cr);
-  cairo_move_to(cr, 0.55, 0.72);
-  cairo_curve_to(cr, 0.61, 0.79, 0.70, 0.79, 0.76, 0.72);
-  stroke(cr, rgb(0x103f78), 0.026);
-  // A soft highlight joins the folder tab and the face without adding a badge.
+  // A single highlight keeps the shape readable without adding a face or tick.
   cairo_move_to(cr, 0.10, 0.37);
   cairo_line_to(cr, 0.90, 0.37);
   stroke(cr, {1, 1, 1}, 0.018, 0.42);
-  /*
-  // The old verification badge was intentionally removed: the icon now identifies the
-  // application itself instead of implying that every copy operation has completed.
-  */
 }
 
 }  // namespace

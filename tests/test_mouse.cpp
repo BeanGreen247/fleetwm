@@ -17,6 +17,7 @@ TEST_F(MouseConfigTest, DefaultsToTheMiddleNotchWithPrecisionOn) {
   EXPECT_TRUE(c.enhanced_precision);
   EXPECT_FALSE(c.swap_buttons);
   EXPECT_FALSE(c.natural_scroll);
+  EXPECT_EQ(c.scroll_lines, kScrollLinesDefault);
 }
 
 TEST_F(MouseConfigTest, RoundTrips) {
@@ -25,14 +26,23 @@ TEST_F(MouseConfigTest, RoundTrips) {
   c.enhanced_precision = false;
   c.swap_buttons = true;
   c.natural_scroll = true;
+  c.scroll_lines = 8;
   save_mouse_config(c);
   EXPECT_EQ(load_mouse_config(), c);
   c.speed = 1;
   c.swap_buttons = false;
   c.natural_scroll = false;
+  c.scroll_lines = 2;
   c.enhanced_precision = true;
   save_mouse_config(c);
   EXPECT_EQ(load_mouse_config(), c);
+}
+
+TEST_F(MouseConfigTest, ScrollLinesAreClamped) {
+  write_config("mouse.toml", "scroll_lines = 99\n");
+  EXPECT_EQ(load_mouse_config().scroll_lines, kScrollLinesMax);
+  write_config("mouse.toml", "scroll_lines = 0\n");
+  EXPECT_EQ(load_mouse_config().scroll_lines, kScrollLinesMin);
 }
 
 TEST_F(MouseConfigTest, SpeedIsClampedToTheElevenNotchesWhenLoadedAndSaved) {

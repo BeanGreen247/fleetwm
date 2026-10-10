@@ -31,6 +31,8 @@ MouseConfig load_mouse_config() {
     if (auto v = root["enhanced_precision"].value<bool>()) config.enhanced_precision = *v;
     if (auto v = root["swap_buttons"].value<bool>()) config.swap_buttons = *v;
     if (auto v = root["natural_scroll"].value<bool>()) config.natural_scroll = *v;
+    if (auto v = root["scroll_lines"].value<int64_t>())
+      config.scroll_lines = std::clamp(static_cast<int>(*v), kScrollLinesMin, kScrollLinesMax);
   } catch (const toml::parse_error&) {
     return MouseConfig{};
   }
@@ -45,6 +47,7 @@ void save_mouse_config(const MouseConfig& config) {
   root.insert_or_assign("enhanced_precision", config.enhanced_precision);
   root.insert_or_assign("swap_buttons", config.swap_buttons);
   root.insert_or_assign("natural_scroll", config.natural_scroll);
+  root.insert_or_assign("scroll_lines", static_cast<int64_t>(std::clamp(config.scroll_lines, kScrollLinesMin, kScrollLinesMax)));
   const fs::path tmp = path.string() + ".tmp";  // write beside it, then rename: watchers never see half a file
   {
     std::ofstream out(tmp);

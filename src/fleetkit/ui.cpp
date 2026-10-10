@@ -1204,7 +1204,17 @@ bool Ui::nav(const std::vector<std::string>& names, int* current, UiRect area) {
     }
   }
   const double item_h = 36, pad = 10;
-  double y = area.y + pad;
+  const double content_h = pad * 2 + names.size() * (item_h + 2);
+  const double max_scroll = std::max(0.0, content_h - area.h);
+  if (wheel_ != 0 && input_ok() && area.hit(mx_, my_)) {
+    nav_scroll_ += wheel_ * 18.0 * scroll_lines_;
+    wheel_ = 0;
+  }
+  nav_scroll_ = std::clamp(nav_scroll_, 0.0, max_scroll);
+  cairo_save(cr_);
+  cairo_rectangle(cr_, area.x, area.y, area.w, area.h);
+  cairo_clip(cr_);
+  double y = area.y + pad - nav_scroll_;
   for (size_t i = 0; i < names.size(); ++i) {
     const UiRect it{area.x + pad, y, area.w - 2 * pad, item_h};
     if (press_pending_ && input_ok() && it.hit(press_pos_.x, press_pos_.y)) {
@@ -1226,7 +1236,12 @@ bool Ui::nav(const std::vector<std::string>& names, int* current, UiRect area) {
               sel ? pal_.fg_primary : pal_.fg_secondary, sel);
     y += item_h + 2;
   }
-  if (focused(id)) draw_focus_ring({area.x + pad, area.y + pad + (*current) * (item_h + 2), area.w - 2 * pad, item_h}, 10);
+  if (focused(id)) {
+    const double focus_y = area.y + pad + (*current) * (item_h + 2) - nav_scroll_;
+    if (focus_y + item_h >= area.y && focus_y <= area.y + area.h)
+      draw_focus_ring({area.x + pad, focus_y, area.w - 2 * pad, item_h}, 10);
+  }
+  cairo_restore(cr_);
   return mark(changed);
 }
 
@@ -1256,7 +1271,7 @@ void Ui::begin_scroll(UiRect view, double* offset) {
   const double max_off = std::max(0.0, content - view.h);
   const UiRect screen{ox_ + view.x, oy_ + view.y, view.w, view.h};  // pointer space
   if (wheel_ != 0 && input_ok() && screen.hit(mx_, my_)) {
-    *offset += wheel_ * 3.0;
+    *offset += wheel_ * 18.0 * scroll_lines_;
     wheel_ = 0;
   }
   *offset = std::clamp(*offset, 0.0, max_off);

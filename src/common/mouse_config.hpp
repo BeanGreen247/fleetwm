@@ -12,12 +12,14 @@
 namespace fleetwm {
 
 inline constexpr int kMouseSpeedMin = 1, kMouseSpeedMax = 11, kMouseSpeedDefault = 6;
+inline constexpr int kScrollLinesMin = 1, kScrollLinesMax = 20, kScrollLinesDefault = 3;
 
 struct MouseConfig {
   int speed = kMouseSpeedDefault;  // 1..11
   bool enhanced_precision = true;  // acceleration on
   bool swap_buttons = false;       // right button is the primary one
   bool natural_scroll = false;
+  int scroll_lines = kScrollLinesDefault;
   bool operator==(const MouseConfig&) const = default;
 };
 
