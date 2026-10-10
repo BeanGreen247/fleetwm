@@ -60,14 +60,20 @@ void output_frame(wl_listener* listener, void*) {
 
   View* fullscreen = fullscreen_view_on(output);
 
+  // Interactive drags use a fixed low-power 24 FPS cap on every hardware
+  // class. This keeps pointer motion responsive while leaving most GPU time
+  // available to the applications being moved. Custom FPS still applies
+  // when no drag is active. Neither cap applies to fullscreen content.
   // Custom FPS cap: only throttles ordinary desktop content, never a
   // fullscreen app/game (see fullscreen_view_on() above). Withholding
   // frame_done from clients below is what actually throttles them --
   // their next frame is gated on receiving it -- so a throttled tick
   // skips the commit/frame_done pair entirely and re-arms itself via a
   // timer for whenever the interval actually elapses.
-  if (fullscreen == nullptr && server->theme_config().render_mode == RenderMode::Custom) {
-    int fps = std::clamp(server->theme_config().custom_fps_lock, 24, 5000);
+  const bool drag_cap = fullscreen == nullptr && server->grab_active();
+  const bool custom_cap = fullscreen == nullptr && server->theme_config().render_mode == RenderMode::Custom;
+  if (drag_cap || custom_cap) {
+    const int fps = drag_cap ? 24 : std::clamp(server->theme_config().custom_fps_lock, 24, 5000);
     int interval_ms = std::max(1, 1000 / fps);
 
     timespec now{};

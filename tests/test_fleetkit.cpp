@@ -61,6 +61,12 @@ TEST(DesktopEntryExec, BasenameOfAbsolutePath) {
   EXPECT_EQ(exec_basename(entry("")), "");
 }
 
+TEST(DesktopEntryExec, CarriesStartupWindowClassForTaskbarMatching) {
+  DesktopEntry e = entry("fleetwm-fm");
+  e.startup_wm_class = "dev.fleetwm.FileManager";
+  EXPECT_EQ(e.startup_wm_class, "dev.fleetwm.FileManager");
+}
+
 TEST(FleetkitColor, ParsesRgbAndRgba) {
   const auto c = parse_color("#ff8000");
   EXPECT_DOUBLE_EQ(c.r, 1.0);

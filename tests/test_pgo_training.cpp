@@ -152,6 +152,13 @@ TEST(PgoTraining, TheInstallerTellsTheTruthAboutTheLength) {
   EXPECT_NE(install.find("training"), std::string::npos);
 }
 
+TEST(PgoTraining, WindowDraggingUsesTheLowPowerInteractiveFrameCap) {
+  const std::string output = tr_read(tr_root() / "src/compositor/output.cpp");
+  EXPECT_NE(output.find("server->grab_active()"), std::string::npos);
+  EXPECT_NE(output.find("drag_cap ? 24"), std::string::npos);
+  EXPECT_NE(output.find("fullscreen == nullptr && server->grab_active()"), std::string::npos);
+}
+
 // ---- the instrumented programs are the ones the training starts ---------------------------------------
 //
 // The compositor and the desktop start the bar, the wallpaper, the launcher and the rest by name. On a
