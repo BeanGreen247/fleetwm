@@ -196,10 +196,17 @@ struct Bar {
   double clock_width_now() {
     ensure_scratch();
     if (!taskbar) return measure_text(scratch, clock_text, kFont, true).width;
+    const ClockFormat& fmt = config.clock;
+    const std::string reserved_time = fmt.use_24h
+                                          ? (fmt.show_seconds ? "00:00:00" : "00:00")
+                                          : (fmt.show_seconds ? "12:00:00 PM" : "12:00 PM");
+    double reserved = measure_text(scratch, reserved_time, kFont, true).width;
+    if (fmt.show_date) reserved = std::max(reserved, measure_text(scratch, "00-00-0000", kSmallFont).width);
     const size_t split = clock_text.find("  ");
     const std::string t = split == std::string::npos ? clock_text : clock_text.substr(0, split);
     const std::string d = split == std::string::npos ? "" : clock_text.substr(split + 2);
-    return std::max(measure_text(scratch, t, kFont, true).width, d.empty() ? 0.0 : measure_text(scratch, d, kSmallFont).width);
+    return std::max({reserved, measure_text(scratch, t, kFont, true).width,
+                     d.empty() ? 0.0 : measure_text(scratch, d, kSmallFont).width});
   }
   std::vector<KeyboardLayout> kb_layouts;  // from the compositor (LAYOUTS lines)
   int kb_current = 0;
@@ -382,8 +389,8 @@ struct Bar {
   static constexpr double kSmallFont = 11.5, kGridGap = 6;
   double small_w(Metrics& m, const std::string& s) { return measure_text(m.cr, s, kSmallFont).width; }
   void grid_columns(Metrics& m, double* col_a, double* col_b) {
-    *col_a = std::max(small_w(m, cpu_text), small_w(m, gpu_text));
-    *col_b = std::max(small_w(m, ram_text), small_w(m, disk_text));
+    *col_a = std::max({small_w(m, cpu_text), small_w(m, gpu_text), small_w(m, "CPU 100%"), small_w(m, "GPU 100%")});
+    *col_b = std::max({small_w(m, ram_text), small_w(m, disk_text), small_w(m, "RAM 100%"), small_w(m, "Disk 100%")});
   }
 
   // The battery widget is the icon plus, when there is a battery, its percentage as text.
@@ -394,7 +401,7 @@ struct Bar {
   void draw_vol(cairo_t* cr, double x, double cy) { draw_speaker(cr, x + kSpeakerW / 2, cy, icon_fg()); }
 
   double battery_w(Metrics& m) {
-    return kBatteryW + (battery.available ? m.text_w(battery_percent_text()) + 6 : 0.0);
+    return kBatteryW + (battery.available ? std::max(m.text_w(battery_percent_text()), m.text_w("100%")) + 6 : 0.0);
   }
 
   double right_total(Metrics& m) {
@@ -1077,6 +1084,11 @@ struct Bar {
   static constexpr double kBtn = 44, kStat = 38, kRow = 28, kClockRowV = 46;
   static constexpr double kPinnedBtnH = kBtn;  // icon-only pinned buttons keep a comfortable Windows-style cell
 
+  double pinned_width(Metrics& m, const PinnedApp& pa) {
+    if (vertical() || !config.taskbar_labels) return kPinnedBtnH;
+    return std::clamp(m.text_w(pa.name.empty() ? pa.id : pa.name) + 48.0, kPinnedBtnH, 220.0);
+  }
+
   // Natural size along the taskbar's axis of one element (0: nothing to show, it takes no room).
   double tb_natural(TbElement e, Metrics& m, double clock_w) {
     const bool v = vertical();
@@ -1089,7 +1101,11 @@ struct Bar {
       }
       case TbElement::Pinned: {
         const size_t n = pinned.size();
-        return n == 0 ? 0 : v ? static_cast<double>(n) * (kBtn + 4) - 4 : static_cast<double>(n) * (kPinnedBtnH + 2) - 2;
+        if (n == 0) return 0;
+        if (v) return static_cast<double>(n) * (kBtn + 4) - 4;
+        double total = 0;
+        for (const PinnedApp& pa : pinned) total += pinned_width(m, pa);
+        return total + static_cast<double>(n - 1) * 2;
       }
       case TbElement::Windows: {
         if (shown_unpinned.empty()) return 0;
@@ -1172,10 +1188,20 @@ struct Bar {
         else draw_pager(cr, box.x, (box.h - 26) / 2.0, 26, 26, false);
         break;
       case TbElement::Pinned:
-        for (size_t i = 0; i < pinned.size(); ++i) {
-          const double d = static_cast<double>(i) * ((v ? kBtn : kPinnedBtnH) + (v ? 4 : 2));
-          pinned_rects[i] = v ? Rect{bx + 4, box.y + d, bw - 8, kBtn} : Rect{box.x + d, 4, kPinnedBtnH, box.h - 8};
-          draw_pinned_button(cr, pinned_rects[i], pinned[i], static_cast<int>(i) == hover_pinned);
+        if (v) {
+          for (size_t i = 0; i < pinned.size(); ++i) {
+            const double d = static_cast<double>(i) * (kBtn + 4);
+            pinned_rects[i] = {bx + 4, box.y + d, bw - 8, kBtn};
+            draw_pinned_button(cr, pinned_rects[i], pinned[i], static_cast<int>(i) == hover_pinned);
+          }
+        } else {
+          double d = 0;
+          for (size_t i = 0; i < pinned.size(); ++i) {
+            const double pw = pinned_width(m, pinned[i]);
+            pinned_rects[i] = {box.x + d, 4, pw, box.h - 8};
+            draw_pinned_button(cr, pinned_rects[i], pinned[i], static_cast<int>(i) == hover_pinned);
+            d += pw + 2;
+          }
         }
         break;
       case TbElement::Windows: {
@@ -1300,7 +1326,7 @@ struct Bar {
         const double clock_w = std::max(time_w, date_w);
         const double clock_x = box.x + (box.w - clock_w) / 2;
         clock_rect = {clock_x - kClockPad, 0, clock_w + 2 * kClockPad, box.h};
-        clock_w_drawn = clock_w;
+        clock_w_drawn = box.w;
         if (date_line.empty()) {
           draw_text(cr, time_line, clock_x + (clock_w - time_w) / 2, base, kFont, pal.accent, true);
         } else {
@@ -1314,7 +1340,7 @@ struct Bar {
     }
   }
 
-  // An icon-only button for a pinned app: lit while its window is focused, with a line under it while it runs.
+  // A pinned app button: compact icon-only when labels are hidden, or an Explorer-style icon+name button when labels are enabled.
   void draw_pinned_button(cairo_t* cr, const Rect& r, const PinnedApp& pa, bool hover) {
     const bool active = pa.running && pa.focused && !pa.minimized;
     const double radius = config.taskbar_rounded && pal.rounded ? 8 : 0;
@@ -1323,8 +1349,9 @@ struct Bar {
       set_source(cr, with_alpha(pal.accent, active ? 0.22 : 0.12));
       cairo_fill(cr);
     }
+    const bool with_title = config.taskbar_labels && !vertical();
     const double isz = vertical() ? 28 : 22;
-    const double ix = r.x + (r.w - isz) / 2, iy = r.y + (r.h - isz) / 2;
+    const double ix = with_title ? r.x + 9 : r.x + (r.w - isz) / 2, iy = r.y + (r.h - isz) / 2;
     if (cairo_surface_t* icon = app_icon(pa.icon_key, 48)) {
       cairo_save(cr);
       cairo_translate(cr, ix, iy);
@@ -1341,6 +1368,13 @@ struct Bar {
       letter[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(letter[0])));
       const TextExtents le = measure_text(cr, letter, isz * 0.55, true);
       draw_text(cr, letter, ix + (isz - le.width) / 2, iy + (isz - le.height) / 2 + le.ascent, isz * 0.55, pal.accent, true);
+    }
+    if (with_title) {
+      const double tx = ix + isz + 8;
+      const std::string label = fit_text(cr, pa.name.empty() ? pa.id : pa.name, kFont, r.x + r.w - 8 - tx);
+      const TextExtents te = measure_text(cr, label, kFont);
+      draw_text(cr, label, tx, r.y + (r.h - te.height) / 2 + te.ascent, kFont,
+                active ? pal.fg_primary : soft_fg(), active);
     }
     if (pa.running) {  // the same indicator the window buttons have
       set_source(cr, active ? pal.accent : with_alpha(icon_fg(), 0.7));
