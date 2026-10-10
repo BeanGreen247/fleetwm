@@ -93,6 +93,7 @@ libcommon_core = static_library(
     'power_config.cpp',
     'keyboard_config.cpp',
     'mouse_config.cpp',
+    'user_profile.cpp',
     'xkb_rules.cpp',
     'lock_tooltip.cpp',
     'app_appearance.cpp',

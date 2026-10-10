@@ -11,7 +11,9 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
+#include <chrono>
 #include <fstream>
 #include <functional>
 #include <cstdio>
@@ -42,6 +44,7 @@
 #include "cursor_draw.hpp"
 #include "keyboard_tab.hpp"
 #include "mouse_config.hpp"
+#include "user_profile.hpp"
 #include "bluetooth_tab.hpp"
 #include "taskbar_layout.hpp"
 #include "network_tab.hpp"
@@ -49,6 +52,7 @@
 #include "theme.hpp"
 #include "version.hpp"
 #include "ui.hpp"
+#include "image.hpp"
 #include "wallpaper_config.hpp"
 #include "output_config.hpp"
 
@@ -176,6 +180,9 @@ struct MimeRow {
 };
 
 struct Settings {
+  ~Settings() {
+    if (profile_surface) cairo_surface_destroy(profile_surface);
+  }
   App app;
   Palette pal;
   Ui ui{Palette{}};
@@ -188,7 +195,9 @@ struct Settings {
 
   int tab = 0;
   double scroll[24] = {};
-  std::vector<std::string> tab_names{"Theme", "Taskbar", "Wallpaper", "Display", "Network", "Bluetooth", "Keyboard", "Mouse", "Power", "Date & Time", "Default Apps", "Audio", "Performance", "File Manager", "Desktop Icons", "About"};
+  std::vector<std::string> tab_names{"Home", "Theme", "Taskbar", "Wallpaper", "Display", "Network", "Bluetooth", "Keyboard", "Mouse", "Power", "Date & Time", "Default Apps", "Audio", "Performance", "File Manager", "Desktop Icons", "About"};
+  UserProfile profile;
+  std::string profile_draft_name;
 
   // network
   std::unique_ptr<NetworkTab> net_tab;
@@ -240,6 +249,14 @@ struct Settings {
   bool master_available = false, master_muted = false;
   int master_value = 0;
   std::vector<common::AudioStream> streams;
+  std::string speaker_test_status;
+  int mouse_test_timer = 0;
+  int mouse_test_remaining = 0;
+  uint64_t mouse_test_events = 0;
+  double mouse_test_rate = 0;
+  std::string profile_image_loaded;
+  std::vector<uint8_t> profile_pixels;
+  cairo_surface_t* profile_surface = nullptr;
 
   // ------------------------------------------------------------ helpers --
   void redraw() { surface->queue_draw(); }
@@ -266,6 +283,8 @@ struct Settings {
     default_apps = load_default_apps_config();
     power = load_power_config();
     mouse = load_mouse_config();
+    profile = load_user_profile();
+    profile_draft_name = profile.display_name;
     fm_cfg = fleetwm::fm::load_fm_settings();
     desktop_cfg = fleetwm::fm::load_desktop_config();
     if (kb_tab) kb_tab->reload();
@@ -1098,7 +1117,7 @@ struct Settings {
       }
       ui.newline();
     }
-    if (any_override && ui.button("Reset to theme colors", tiling)) {
+    if (any_override && ui.button("Reset colors", tiling)) {
       for (auto& c : colors) c.field->clear();
       save_bar();
     }
@@ -1333,6 +1352,95 @@ struct Settings {
     }
   }
 
+  void save_profile() {
+    if (profile_draft_name.empty()) profile_draft_name = profile.display_name;
+    profile.display_name = profile_draft_name;
+    try { save_user_profile(profile); } catch (const std::exception&) {}
+  }
+
+  void refresh_profile_image() {
+    if (profile.icon_path == profile_image_loaded) return;
+    if (profile_surface) cairo_surface_destroy(profile_surface);
+    profile_surface = nullptr;
+    profile_pixels.clear();
+    profile_image_loaded = profile.icon_path;
+    if (profile.icon_path.empty()) return;
+    const kit::Image image = kit::load_image(profile.icon_path);
+    if (!image.ok()) return;
+    profile_pixels.resize(64 * 64 * 4);
+    kit::render_cover(image, 64, 64, profile_pixels.data());
+    profile_surface = cairo_image_surface_create_for_data(profile_pixels.data(), CAIRO_FORMAT_ARGB32, 64, 64, 64 * 4);
+  }
+
+  void start_mouse_test() {
+    mouse_test_events = 0;
+    mouse_test_rate = 0;
+    mouse_test_remaining = 5;
+    if (mouse_test_timer) app.unwatch(mouse_test_timer);
+    mouse_test_timer = app.add_timer(1000, [this] {
+      const int elapsed = 6 - mouse_test_remaining;
+      mouse_test_rate = static_cast<double>(mouse_test_events) / std::max(1, elapsed);
+      if (--mouse_test_remaining <= 0) {
+        app.unwatch(mouse_test_timer);
+        mouse_test_timer = 0;
+      }
+      redraw();
+    });
+  }
+
+  void tab_home(cairo_t*) {
+    ui.section("Welcome");
+    refresh_profile_image();
+    UiRect avatar;
+    ui.canvas(76, &avatar);
+    cairo_t* cr = ui.cr();
+    const Palette& p = ui.palette();
+    if (profile_surface) {
+      cairo_save(cr);
+      cairo_arc(cr, avatar.x + 38, avatar.y + 38, 30, 0, 2 * 3.141592653589793);
+      cairo_clip(cr);
+      cairo_set_source_surface(cr, profile_surface, avatar.x + 6, avatar.y + 6);
+      cairo_paint(cr);
+      cairo_restore(cr);
+    } else {
+      cairo_arc(cr, avatar.x + 38, avatar.y + 38, 30, 0, 2 * 3.141592653589793);
+      Color avatar_color = p.accent;
+      avatar_color.a = 0.85;
+      set_source(cr, avatar_color);
+      cairo_fill(cr);
+      std::string initials;
+      for (const char ch : profile.display_name) {
+        if (std::isalpha(static_cast<unsigned char>(ch))) initials += static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+        if (initials.size() == 2) break;
+      }
+      if (initials.empty()) initials = "F";
+      const TextExtents te = measure_text(cr, initials, 22, true);
+      draw_text(cr, initials, avatar.x + 38 - te.width / 2, avatar.y + 38 + (te.height - te.ascent) / 2, 22, p.bg_primary, true);
+    }
+    ui.paragraph("Fleetwm Settings keeps your desktop preferences in one place.");
+    ui.space(6);
+    ui.section("Your account");
+    ui.row("Display name");
+    ui.text_entry(&profile_draft_name, 300);
+    ui.newline();
+    ui.row("Profile icon");
+    if (ui.button("Choose image...")) ui.open_file_dialog("Choose profile image", profile.icon_path, {".png", ".jpg", ".jpeg", ".webp"});
+    ui.newline();
+    std::string chosen;
+    if (ui.take_file_result(&chosen)) profile.icon_path = chosen;
+    ui.paragraph(profile.icon_path.empty() ? "No image selected. Fleetwm will show your initials." : profile.icon_path, true);
+    if (ui.button("Save profile", !profile_draft_name.empty(), true)) save_profile();
+    ui.newline();
+    ui.space(8);
+    ui.section("Quick settings");
+    if (ui.button("Theme")) tab = 1;
+    if (ui.button("Display")) tab = 4;
+    if (ui.button("Mouse")) tab = 8;
+    if (ui.button("Audio")) tab = 12;
+    ui.newline();
+    ui.paragraph("The display name is shown by Fleetwm and does not change your Linux username.", true);
+  }
+
   // The pointer shapes, drawn by the same code the compositor uses, in the style the Glass effects setting picks.
   // Each finished picture is kept (the same cache the compositor has), so the tab does not redraw 14 pointers per frame.
   kit::CursorCache<cairo_surface_t*> cursor_previews;
@@ -1354,6 +1462,11 @@ struct Settings {
     ui.paragraph("Off: the pointer follows the mouse one to one at any speed.", true);
     ui.space(6);
     ui.section("Buttons and scrolling");
+    ui.row("Lines per wheel step");
+    if (ui.spin(&mouse.scroll_lines, kScrollLinesMin, kScrollLinesMax, 1)) save_mouse();
+    ui.newline();
+    ui.paragraph("Controls how far a wheel step moves in Fleetwm applications.", true);
+    ui.space(4);
     ui.row("Primary button");
     int primary = mouse.swap_buttons ? 1 : 0;
     if (ui.segmented({"Left", "Right"}, &primary)) {
@@ -1386,6 +1499,13 @@ struct Settings {
     ui.label(glass ? "Windows Aero style, with a shadow (Glass effects is on)."
                    : "The same pointers, flat (Glass effects is off).", true);
     ui.newline();
+    ui.section("Pointer event test");
+    ui.paragraph("Move the mouse while the test runs. This observed pointer event rate is a useful polling-rate estimate.", true);
+    if (ui.button(mouse_test_remaining ? "Testing..." : "Start 5 second test", !mouse_test_remaining)) start_mouse_test();
+    if (mouse_test_rate > 0) {
+      ui.newline();
+      ui.label(std::to_string(static_cast<int>(mouse_test_rate)) + " events per second", true);
+    }
   }
 
   void tab_audio(cairo_t*) {
@@ -1404,6 +1524,13 @@ struct Settings {
       std::snprintf(buf, sizeof buf, "%d", master_value);
       ui.newline();
     }
+    ui.space(6);
+    ui.section("Speaker test");
+    if (ui.button("Play test sound", master_available)) {
+      spawn_detached({"speaker-test", "-t", "sine", "-f", "440", "-l", "1"});
+      speaker_test_status = "Playing a short 440 Hz test tone";
+    }
+    if (!speaker_test_status.empty()) { ui.newline(); ui.label(speaker_test_status, true); }
     ui.space(6);
     ui.section("Applications");
     if (streams.empty()) {
@@ -1507,6 +1634,7 @@ struct Settings {
   // ---------------------------------------------------------------- draw --
   void draw(cairo_t* cr, int w, int h) {
     ui.begin(cr, w, h);
+    ui.set_scroll_lines(mouse.scroll_lines);
     // Sidebar.
     {
       const Palette& p = ui.palette();
@@ -1531,21 +1659,22 @@ struct Settings {
     ui.space(10);
     ui.title(tab_names[static_cast<size_t>(tab)]);
     switch (tab) {
-      case 0: tab_theme(cr); break;
-      case 1: tab_bar(cr); break;
-      case 2: tab_wallpaper(cr); break;
-      case 3: tab_display(cr); break;
-      case 4: net_tab->draw(ui, cr); break;
-      case 5: bt_tab->draw(ui, cr); break;
-      case 6: kb_tab->draw(ui, cr); break;
-      case 7: tab_mouse(cr); break;
-      case 8: tab_power(cr); break;
-      case 9: tab_datetime(cr); break;
-      case 10: tab_default_apps(cr); break;
-      case 11: tab_audio(cr); break;
-      case 12: tab_performance(cr); break;
-      case 13: tab_file_manager(cr); break;
-      case 14: tab_desktop_icons(cr); break;
+      case 0: tab_home(cr); break;
+      case 1: tab_theme(cr); break;
+      case 2: tab_bar(cr); break;
+      case 3: tab_wallpaper(cr); break;
+      case 4: tab_display(cr); break;
+      case 5: net_tab->draw(ui, cr); break;
+      case 6: bt_tab->draw(ui, cr); break;
+      case 7: kb_tab->draw(ui, cr); break;
+      case 8: tab_mouse(cr); break;
+      case 9: tab_power(cr); break;
+      case 10: tab_datetime(cr); break;
+      case 11: tab_default_apps(cr); break;
+      case 12: tab_audio(cr); break;
+      case 13: tab_performance(cr); break;
+      case 14: tab_file_manager(cr); break;
+      case 15: tab_desktop_icons(cr); break;
       default: tab_about(cr); break;
     }
     ui.space(24);
@@ -1573,6 +1702,8 @@ int main(int argc, char** argv) {
   S.default_apps = load_default_apps_config();
   S.power = load_power_config();
   S.mouse = load_mouse_config();
+  S.profile = load_user_profile();
+  S.profile_draft_name = S.profile.display_name;
   S.apply_theme();
   S.net_tab = std::make_unique<NetworkTab>(S.app, [&S] { S.redraw(); });
   S.bt_tab = std::make_unique<BluetoothTab>(S.app, [&S] { S.redraw(); });
@@ -1605,6 +1736,7 @@ int main(int argc, char** argv) {
   S.surface = std::make_unique<Surface>(S.app, cfg);
   S.surface->on_draw = [&S](cairo_t* cr, int w, int h) { S.draw(cr, w, h); };
   S.surface->on_motion = [&S](double x, double y) {
+    if (S.mouse_test_remaining) ++S.mouse_test_events;
     if (!S.ui.pointer_motion(x, y)) return;
     S.redraw();
   };
