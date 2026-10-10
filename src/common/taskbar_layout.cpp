@@ -45,6 +45,10 @@ bool tb_is_main_zone(TbElement e) {
   return e == TbElement::Start || e == TbElement::Workspaces || e == TbElement::Pinned || e == TbElement::Windows;
 }
 
+bool tb_pinned_label_visible(bool labels_enabled, bool vertical, bool running) {
+  return labels_enabled && !vertical && running;
+}
+
 std::vector<TbElement> tb_default_order() {
   std::vector<TbElement> out;
   for (const Info& i : kInfo) out.push_back(i.id);

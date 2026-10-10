@@ -1255,7 +1255,9 @@ struct Bar {
   static constexpr double kPinnedBtnH = kBtn;  // icon-only pinned buttons keep a comfortable Windows-style cell
 
   double pinned_width(Metrics& m, const PinnedApp& pa) {
-    if (vertical() || !config.taskbar_labels) return kPinnedBtnH;
+    // An idle pin is a launcher button, so it stays a compact icon cell. Once
+    // its application owns a window, it follows the Windows-style label rule.
+    if (!tb_pinned_label_visible(config.taskbar_labels, vertical(), pa.running)) return kPinnedBtnH;
     return std::clamp(m.text_w(pa.name.empty() ? pa.id : pa.name) + 48.0, kPinnedBtnH, 220.0);
   }
 
@@ -1523,7 +1525,7 @@ struct Bar {
       set_source(cr, with_alpha(pal.accent, active ? 0.22 : 0.12));
       cairo_fill(cr);
     }
-    const bool with_title = config.taskbar_labels && !vertical();
+    const bool with_title = tb_pinned_label_visible(config.taskbar_labels, vertical(), pa.running);
     const double isz = vertical() ? 28 : 22;
     const double ix = with_title ? r.x + 9 : r.x + (r.w - isz) / 2, iy = r.y + (r.h - isz) / 2;
     if (cairo_surface_t* icon = app_icon(pa.icon_key, 48)) {
