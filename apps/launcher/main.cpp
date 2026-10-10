@@ -239,6 +239,7 @@ struct Launcher {
         }
     add_pinned(terminal);
     add_pinned(by_id("fleetwm-settings.desktop"));
+    add_pinned(by_id("fleetwm-taskmgr.desktop"));
 
     const char* home = std::getenv("HOME");
     if (home) {

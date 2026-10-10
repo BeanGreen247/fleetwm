@@ -164,6 +164,18 @@ install_data(
   install_dir: get_option('prefix') / 'share' / 'applications',
 )
 
+install_data(
+  'packaging/fleetwm-taskmgr.desktop',
+  install_dir: get_option('prefix') / 'share' / 'applications',
+)
+
+install_data(
+  'packaging/icons/fleetwm-fm.svg',
+  'packaging/icons/fleetwm-settings.svg',
+  'packaging/icons/fleetwm-taskmgr.svg',
+  install_dir: get_option('prefix') / 'share' / 'icons' / 'hicolor' / 'scalable' / 'apps',
+)
+
 # The file manager: a desktop entry for launchers, Default apps (it handles inode/directory) and the network schemes.
 install_data(
   'packaging/fleetwm-fm.desktop',
