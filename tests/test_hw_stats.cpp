@@ -35,6 +35,22 @@ TEST(HwStats, ProcStatCoresSkipAggregateLine) {
   EXPECT_EQ(c[0].busy, 100u);
 }
 
+TEST(HwStats, MachineInventoryParsers) {
+  const CpuInfo cpu = parse_cpuinfo("processor : 0\nmodel name : Old Celeron\ncpu MHz : 798.4\ncpu cores : 2\nprocessor : 1\n");
+  EXPECT_EQ(cpu.model, "Old Celeron");
+  EXPECT_EQ(cpu.logical_threads, 2);
+  EXPECT_EQ(cpu.physical_cores, 2);
+  EXPECT_EQ(cpu.mhz, 798);
+  const auto ram = parse_memory_devices("Memory Device\n\tSize: 4 GB\n\tLocator: DIMM 0\n\tManufacturer: Acme\n\tPart Number: SO-DIMM\n\tType: DDR4\n\tSpeed: 2666 MT/s\n\nMemory Device\n\tSize: No Module Installed\n");
+  ASSERT_EQ(ram.size(), 1u);
+  EXPECT_EQ(ram[0].size_mb, 4096);
+  EXPECT_EQ(ram[0].speed_mhz, 2666);
+  const auto drives = parse_drive_inventory("sda\t1000000\tSSD 500GB\tAcme\tABC123\tsata\n");
+  ASSERT_EQ(drives.size(), 1u);
+  EXPECT_EQ(drives[0].model, "SSD 500GB");
+  EXPECT_EQ(drives[0].size_bytes, 1000000);
+}
+
 TEST(HwStats, CorePercentsFromTwoSamples) {
   std::vector<CpuTimes> a{{0, 0}, {10, 100}}, b{{50, 100}, {10, 200}};
   auto p = core_percents(a, b);

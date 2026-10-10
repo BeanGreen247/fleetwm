@@ -240,6 +240,7 @@ void view_mapped(View* view) {
 
   if (!view->server->outputs.empty()) {
     Output* output = view->server->focused_output();
+    if (!view->server->seat()->keyboard_state.focused_surface) output = view->server->primary_output();
     Workspace& workspace = output->active_workspace();
     workspace.add_view(view);
     view->workspace = &workspace;
@@ -1120,6 +1121,8 @@ void Server::start_output_helpers(wlr_output* out) {
   if (!out || !out->name || output_helper_pids_.count(out->name)) return;
   std::vector<pid_t>& pids = output_helper_pids_[out->name];
   for (const char* program : {"fleetwm-bar", "fleetwm-wallpaper", "fleetwm-desktop"}) {
+    if (std::strcmp(program, "fleetwm-bar") == 0 && !display_settings_.taskbar_all_displays &&
+        out != primary_output()->wlr_output_ptr) continue;
     const pid_t pid = spawn_with_output(program, out->name);
     if (pid > 0) pids.push_back(pid);
   }
@@ -1381,8 +1384,36 @@ bool Server::apply_output_setting(const std::string& name, const OutputSetting& 
   return true;
 }
 
+bool Server::apply_display_settings(const DisplaySettings& settings, std::string* error) {
+  if (!settings.primary_output.empty()) {
+    bool found = false;
+    for (const auto& output : outputs)
+      if (output->wlr_output_ptr->name && settings.primary_output == output->wlr_output_ptr->name) found = true;
+    if (!found) {
+      if (error) *error = "unknown primary display: " + settings.primary_output;
+      return false;
+    }
+  }
+  try {
+    save_display_settings(settings);
+  } catch (const std::exception& e) {
+    if (error) *error = e.what();
+    return false;
+  }
+  display_settings_ = settings;
+  std::vector<std::string> names;
+  for (const auto& [name, pids] : output_helper_pids_) {
+    (void)pids;
+    names.push_back(name);
+  }
+  for (const std::string& name : names) stop_output_helpers(name.c_str());
+  for (const auto& output : outputs) start_output_helpers(output->wlr_output_ptr);
+  return true;
+}
+
 bool Server::init() {
   output_settings_ = load_output_settings();
+  display_settings_ = load_display_settings();
   // WLR_DEBUG logs every single cursor motion and scene/render commit --
   // real per-frame CPU cost (string formatting + a session-log write on
   // every one, confirmed via fleetwm-session.log filling with repeated
@@ -2605,6 +2636,15 @@ Output* Server::focused_output() const {
     if (wlr_output* at = wlr_output_layout_output_at(output_layout_, cursor_->x, cursor_->y))
       if (Output* o = output_for(at)) return o;
   }
+  return outputs.front().get();
+}
+
+Output* Server::primary_output() const {
+  if (outputs.empty()) return nullptr;
+  if (!display_settings_.primary_output.empty())
+    for (const auto& output : outputs)
+      if (output->wlr_output_ptr->name && display_settings_.primary_output == output->wlr_output_ptr->name)
+        return output.get();
   return outputs.front().get();
 }
 

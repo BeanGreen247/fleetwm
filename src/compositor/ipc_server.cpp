@@ -147,6 +147,8 @@ void IpcServer::handle_line(Client& client, const std::string& line) {
     //   OUTPUT <name> <x> <y> <width> <height> <refresh_mhz>
     //   MODE <width> <height> <refresh_mhz> <current 0|1> <preferred 0|1>   (repeated)
     std::string reply;
+    reply += "DISPLAY " + server_->display_settings().primary_output + " " +
+             (server_->display_settings().taskbar_all_displays ? "1" : "0") + "\n";
     for (const Server::OutputInfo& o : server_->describe_outputs()) {
       reply += "OUTPUT " + o.name + " " + std::to_string(o.x) + " " + std::to_string(o.y) + " " +
                std::to_string(o.width) + " " + std::to_string(o.height) + " " +
@@ -158,6 +160,21 @@ void IpcServer::handle_line(Client& client, const std::string& line) {
       }
     }
     reply += "END\n";
+    send(client.fd, reply.data(), reply.size(), MSG_NOSIGNAL);
+    return;
+  }
+  if (line.rfind("DISPLAY_SET ", 0) == 0) {
+    std::istringstream in(line.substr(12));
+    DisplaySettings setting;
+    int all = 1;
+    std::string reply;
+    if (in >> setting.primary_output >> all) {
+      setting.taskbar_all_displays = all != 0;
+      std::string error;
+      reply = server_->apply_display_settings(setting, &error) ? "OK\n" : "ERR " + error + "\n";
+    } else {
+      reply = "ERR malformed DISPLAY_SET\n";
+    }
     send(client.fd, reply.data(), reply.size(), MSG_NOSIGNAL);
     return;
   }

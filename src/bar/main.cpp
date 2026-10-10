@@ -1075,7 +1075,7 @@ struct Bar {
 
   // ---- the Desktop taskbar: one list of elements for both orientations (see taskbar_layout.hpp) ----
   static constexpr double kBtn = 44, kStat = 38, kRow = 28, kClockRowV = 46;
-  static constexpr double kPinnedBtnH = 34;  // horizontal pinned-app button width
+  static constexpr double kPinnedBtnH = kBtn;  // icon-only pinned buttons keep a comfortable Windows-style cell
 
   // Natural size along the taskbar's axis of one element (0: nothing to show, it takes no room).
   double tb_natural(TbElement e, Metrics& m, double clock_w) {
@@ -1091,8 +1091,12 @@ struct Bar {
         const size_t n = pinned.size();
         return n == 0 ? 0 : v ? static_cast<double>(n) * (kBtn + 4) - 4 : static_cast<double>(n) * (kPinnedBtnH + 2) - 2;
       }
-      case TbElement::Windows:
-        return shown_unpinned.empty() ? 0 : static_cast<double>(shown_unpinned.size()) * ((v ? kBtn : 200.0) + 4);
+      case TbElement::Windows: {
+        if (shown_unpinned.empty()) return 0;
+        if (v) return static_cast<double>(shown_unpinned.size()) * (kBtn + 4);
+        const double window_w = config.taskbar_labels ? 200.0 : kBtn;
+        return static_cast<double>(shown_unpinned.size()) * (window_w + 4);
+      }
       case TbElement::Metrics: {
         if (v) return 2 * kStat;
         double a, b;

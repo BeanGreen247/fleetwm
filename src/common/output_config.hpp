@@ -29,9 +29,16 @@ struct OutputSetting {
 
 using OutputSettings = std::map<std::string, OutputSetting>;
 
+struct DisplaySettings {
+  std::string primary_output;
+  bool taskbar_all_displays = true;
+};
+
 std::string output_config_path();
 OutputSettings load_output_settings();
+DisplaySettings load_display_settings();
 // Throws std::runtime_error on I/O failure.
 void save_output_settings(const OutputSettings& settings);
+void save_display_settings(const DisplaySettings& settings);
 
 }  // namespace fleetwm

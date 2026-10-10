@@ -12,6 +12,26 @@ namespace fleetwm {
 struct CpuTimes {
   unsigned long long busy = 0, total = 0;
 };
+struct CpuInfo {
+  std::string model;
+  int logical_threads = 0;
+  int physical_cores = 0;
+  int mhz = 0;
+};
+CpuInfo parse_cpuinfo(const std::string& text);
+
+struct MemoryModule {
+  std::string locator, manufacturer, part_number, type;
+  long long size_mb = 0;
+  int speed_mhz = 0;
+};
+std::vector<MemoryModule> parse_memory_devices(const std::string& text);
+
+struct DriveInfo {
+  std::string name, model, vendor, serial, transport;
+  long long size_bytes = 0;
+};
+std::vector<DriveInfo> parse_drive_inventory(const std::string& text);
 // The "cpuN" lines of /proc/stat in order (the aggregate "cpu" line is skipped).
 std::vector<CpuTimes> parse_proc_stat_cores(const std::string& text);
 // Load of each core between two samples, 0..100; -1 where there was no time between them.

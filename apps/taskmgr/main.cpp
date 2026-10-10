@@ -18,8 +18,11 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <dirent.h>
 #include <fcntl.h>
+#include <fstream>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -113,11 +116,56 @@ struct TaskMgr {
   std::string load_avg;
   long uptime_s = 0;
   GpuMonitor gpu;
+  CpuInfo cpu_info;
+  std::vector<MemoryModule> memory_modules;
+  std::vector<DriveInfo> drives;
   int ncpu = 1;
   long hz = 100;
   Clock::time_point last_sample;
   int ticks = 0;
   int tick_timer = 0;
+
+  void read_inventory() {
+    std::ifstream cpu("/proc/cpuinfo");
+    std::ostringstream cpu_text;
+    cpu_text << cpu.rdbuf();
+    cpu_info = parse_cpuinfo(cpu_text.str());
+    if (cpu_info.logical_threads == 0) cpu_info.logical_threads = std::max(1, static_cast<int>(sysconf(_SC_NPROCESSORS_ONLN)));
+    if (cpu_info.physical_cores == 0) cpu_info.physical_cores = cpu_info.logical_threads;
+
+    // dmidecode is optional and is only called once at startup. It may be unavailable
+    // for an unprivileged user; the page still shows kernel memory totals.
+    if (FILE* p = popen("dmidecode -t memory 2>/dev/null", "r")) {
+      char buf[1024];
+      std::string text;
+      while (std::fgets(buf, sizeof buf, p)) text += buf;
+      pclose(p);
+      memory_modules = parse_memory_devices(text);
+    }
+
+    std::string rows_text;
+    if (DIR* d = opendir("/sys/block")) {
+      while (const dirent* e = readdir(d)) {
+        if (e->d_name[0] == '.') continue;
+        const std::string base = std::string("/sys/block/") + e->d_name;
+        std::ifstream size(base + "/size");
+        long long sectors = 0;
+        size >> sectors;
+        if (sectors <= 0) continue;
+        auto read_file = [](const std::string& path) {
+          std::ifstream f(path);
+          std::string v;
+          std::getline(f, v);
+          return v.empty() ? std::string("--") : v;
+        };
+        rows_text += std::string(e->d_name) + "\t" + std::to_string(sectors * 512) + "\t" +
+                     read_file(base + "/device/model") + "\t" + read_file(base + "/device/vendor") + "\t" +
+                     read_file(base + "/device/serial") + "\t" + read_file(base + "/device/subsystem") + "\n";
+      }
+      closedir(d);
+    }
+    drives = parse_drive_inventory(rows_text);
+  }
 
   // -------------------------------------------------------------- sampling --
   void sample_machine(double dt) {
@@ -484,6 +532,10 @@ struct TaskMgr {
         line("Utilisation", t);
         line("Processes", std::to_string(rows.empty() ? 0 : rows.size()));
         line("Cores", std::to_string(ncpu));
+        line("CPU model", cpu_info.model.empty() ? "unknown" : cpu_info.model);
+        line("Threads", std::to_string(cpu_info.logical_threads));
+        line("Physical cores", std::to_string(cpu_info.physical_cores));
+        line("Clock", cpu_info.mhz > 0 ? std::to_string(cpu_info.mhz) + " MHz" : "unknown");
         line("Load average", load_avg.empty() ? "--" : load_avg);
         {
           const long d = uptime_s / 86400, hh = uptime_s / 3600 % 24, mm = uptime_s / 60 % 60;
@@ -508,6 +560,18 @@ struct TaskMgr {
         line("Cached", format_kib(static_cast<long long>(mem.cached)));
         line("Buffers", format_kib(static_cast<long long>(mem.buffers)));
         line("Swap in use", mem.swap_total ? format_kib(static_cast<long long>(mem.swap_total - mem.swap_free)) + " of " + format_kib(static_cast<long long>(mem.swap_total)) : "no swap");
+        if (memory_modules.empty()) {
+          line("Slots", "details unavailable");
+        } else {
+          line("Slots", std::to_string(memory_modules.size()) + " occupied");
+          for (const MemoryModule& m : memory_modules) {
+            std::string label = m.locator.empty() ? "Module" : m.locator;
+            label += " " + format_kib(m.size_mb * 1024);
+            line(label.c_str(), (m.manufacturer.empty() ? std::string() : m.manufacturer + " ") +
+                                  (m.part_number.empty() ? std::string() : m.part_number) +
+                                  (m.speed_mhz > 0 ? " " + std::to_string(m.speed_mhz) + " MHz" : ""));
+          }
+        }
         break;
       }
       case Res::Disk:
@@ -517,6 +581,10 @@ struct TaskMgr {
         y += 184;
         line("Read", format_rate(disk_read_bps));
         line("Write", format_rate(disk_write_bps));
+        for (const DriveInfo& d : drives) {
+          std::string label = d.name + " " + format_kib(static_cast<long long>(d.size_bytes / 1024 / 1024));
+          line(label.c_str(), d.model == "--" ? "drive" : d.model);
+        }
         text_at(cr, "Blue: read, orange: write. Whole disks only (partitions are not counted twice).", dx, y + 8, kSmall, dim());
         break;
       case Res::Network:
@@ -668,6 +736,7 @@ int main(int argc, char** argv) {
   for (int i = 1; i + 1 < argc; ++i)
     if (std::strcmp(argv[i], "--tab") == 0) T.tab = std::strcmp(argv[i + 1], "performance") == 0 ? Tab::Performance : Tab::Processes;
   T.gpu.discover();
+  T.read_inventory();
   T.gpu.on_nvidia_update = [&T] { T.surface->queue_draw(); };
   if (!T.app.connect()) return 1;
 

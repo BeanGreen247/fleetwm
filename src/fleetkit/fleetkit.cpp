@@ -80,7 +80,8 @@ Palette load_palette(const ThemeConfig& theme) {
     else if (name == "fg_secondary") p.fg_secondary = c;
     else if (name == "accent_color") p.accent = c;
   }
-  if (!theme.accent.auto_extract) p.accent = parse_color(theme.accent.hex, p.accent);
+  if (theme.accent.auto_extract) p.accent = wallpaper_tint();
+  else p.accent = parse_color(theme.accent.hex, p.accent);
   apply_glass_tint(p, theme.glass_tint);
   return p;
 }
