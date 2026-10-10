@@ -12,8 +12,8 @@
 
 namespace fleetwm {
 
-enum class TbElement { Start, Workspaces, Pinned, Windows, Metrics, Tray, Layout, Volume, Network, Bluetooth, Mode, Battery, Clock };
-inline constexpr int kTbElementCount = 13;
+enum class TbElement { Start, Workspaces, Pinned, Windows, Metrics, Tray, Layout, Volume, Network, Bluetooth, Mode, Battery, Media, Clock };
+inline constexpr int kTbElementCount = 14;
 
 const char* tb_element_name(TbElement e);   // the name saved in bar.toml: "start", "workspaces", ...
 const char* tb_element_label(TbElement e);  // what Settings shows: "Start button", "Workspaces", ...

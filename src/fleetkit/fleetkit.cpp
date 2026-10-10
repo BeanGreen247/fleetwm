@@ -60,6 +60,24 @@ void rounded_rect(cairo_t* cr, double x, double y, double w, double h, double r)
   cairo_close_path(cr);
 }
 
+MenuTheme menu_theme(const Palette& palette) {
+  MenuTheme menu;
+  menu.background = palette.bg_secondary;
+  menu.background.a = 0.97;
+  menu.border = {palette.fg_secondary.r, palette.fg_secondary.g, palette.fg_secondary.b, 0.35};
+  menu.hover = palette.accent;
+  menu.hover_border = {palette.accent.r, palette.accent.g, palette.accent.b, 0.75};
+  menu.text = palette.fg_primary;
+  const double accent_luma = 0.299 * palette.accent.r + 0.587 * palette.accent.g + 0.114 * palette.accent.b;
+  menu.hover_text = accent_luma > 0.58 ? palette.bg_primary : palette.fg_primary;
+  menu.secondary = palette.fg_secondary;
+  menu.shadow = {0, 0, 0, menu.shadow_alpha};
+  menu.rounded = palette.rounded;
+  menu.radius = palette.rounded ? 8.0 : 0.0;
+  menu.item_radius = palette.rounded ? 5.0 : 0.0;
+  return menu;
+}
+
 Palette load_palette(const ThemeConfig& theme) {
   Palette p;
   p.rounded = theme.corner_style == CornerStyle::Rounded;

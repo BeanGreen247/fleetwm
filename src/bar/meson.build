@@ -16,6 +16,7 @@ executable(
   'fleetwm-bar',
   files(
     'main.cpp',
+    'mpris.cpp',
     'volume_source.cpp',
     'tray.cpp',
     'tray_vtable.c',

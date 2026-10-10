@@ -61,6 +61,7 @@
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
 #include "child_signals.hpp"
 #include "version.hpp"
+#include "mpris.hpp"
 
 extern char** environ;
 
@@ -111,6 +112,8 @@ struct Bar {
   // Sources (destroyed before `app`, declared after it).
   std::unique_ptr<VolumeSource> volume;
   std::unique_ptr<Tray> tray;
+  std::unique_ptr<fleetwm::bar::Mpris> media;
+  int media_timer = 0;
 
   // Display text.
   std::string clock_text = "--:--:--", cpu_text = "CPU --%", ram_text = "RAM --%", gpu_text = "GPU --%",
@@ -212,7 +215,7 @@ struct Bar {
   int kb_current = 0;
   net::Device net_dev;  // the card the network icon stands for
   bool net_have = false;
-  Rect ws_rect[10], vol_rect, power_rect, battery_rect, ram_rect, cpu_rect, gpu_rect, disk_rect, bt_rect;
+  Rect ws_rect[10], vol_rect, power_rect, battery_rect, ram_rect, cpu_rect, gpu_rect, disk_rect, bt_rect, media_rect;
   int tooltip_for = 0;  // 1 battery, 2 RAM, 3 CPU, 4 GPU, 5 disk, 6 volume, 1000+id window
   std::vector<Rect> tray_rects;
   int hover_power = 0;
@@ -415,6 +418,10 @@ struct Bar {
     }
     t += tray_total();
     ++children;  // tray box always participates in the spacing
+    if (media && media->state().available) {
+      t += media_width(m);
+      ++children;
+    }
     if (!kb_layouts.empty()) {
       t += layout_pill_w(m);
       ++children;
@@ -434,6 +441,15 @@ struct Bar {
       ++children;
     }
     return t + kRightGap * (children - 1);
+  }
+
+  double media_width(Metrics& m) {
+    if (!media || !media->state().available) return 0;
+    if (vertical()) return kRow;
+    const auto& s = media->state();
+    const double title = m.text_w(s.title.empty() ? s.identity : s.title);
+    if (config.media_display == MediaDisplay::Controls) return std::clamp(title + 96.0, 140.0, 280.0);
+    return std::clamp(title + 132.0, 190.0, 340.0);
   }
   double natural_width(Metrics& m) {
     return 2 * kMargin + 4 * kBoxGap + ws_total(m) + m.text_w(clock_text, true) + right_total(m);
@@ -641,6 +657,150 @@ struct Bar {
     draw_text(cr, value, x + lw, base, font, na ? dim : pal.fg_primary);
   }
 
+  static std::string media_time(double seconds) {
+    const int total = std::max(0, static_cast<int>(seconds + 0.5));
+    const int minutes = total / 60;
+    const int secs = total % 60;
+    char text[32];
+    std::snprintf(text, sizeof text, "%d:%02d", minutes, secs);
+    return text;
+  }
+
+  void media_button(cairo_t* cr, double cx, double cy, int kind, const Color& color) {
+    cairo_save(cr);
+    set_source(cr, color);
+    cairo_set_line_width(cr, 1.3);
+    cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
+    if (kind == 0) {  // play
+      cairo_move_to(cr, cx - 3, cy - 6);
+      cairo_line_to(cr, cx + 5, cy);
+      cairo_line_to(cr, cx - 3, cy + 6);
+      cairo_close_path(cr);
+      cairo_fill(cr);
+    } else if (kind == 1) {  // pause
+      cairo_rectangle(cr, cx - 4, cy - 6, 2.5, 12);
+      cairo_rectangle(cr, cx + 1.5, cy - 6, 2.5, 12);
+      cairo_fill(cr);
+    } else if (kind == 2 || kind == 3) {  // previous / next
+      const double direction = kind == 2 ? -1.0 : 1.0;
+      cairo_move_to(cr, cx + direction * 5, cy - 6);
+      cairo_line_to(cr, cx - direction * 3, cy);
+      cairo_line_to(cr, cx + direction * 5, cy + 6);
+      cairo_close_path(cr);
+      cairo_fill(cr);
+      cairo_move_to(cr, cx - direction * 6, cy - 6);
+      cairo_line_to(cr, cx - direction * 6, cy + 6);
+      cairo_stroke(cr);
+    }
+    cairo_restore(cr);
+  }
+
+  void draw_media_app_icon(cairo_t* cr, const fleetwm::bar::MediaState& s, double x, double y, double size) {
+    std::string key = s.service;
+    constexpr const char* prefix = "org.mpris.MediaPlayer2.";
+    if (key.rfind(prefix, 0) == 0) key.erase(0, std::strlen(prefix));
+    cairo_surface_t* icon = app_icon(key, static_cast<int>(size + 8));
+    if (!icon && !s.identity.empty()) icon = app_icon(s.identity, static_cast<int>(size + 8));
+    if (icon) {
+      cairo_save(cr);
+      cairo_translate(cr, x, y);
+      cairo_scale(cr, size / cairo_image_surface_get_width(icon), size / cairo_image_surface_get_height(icon));
+      cairo_set_source_surface(cr, icon, 0, 0);
+      cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_BEST);
+      cairo_paint(cr);
+      cairo_restore(cr);
+      return;
+    }
+    const Color fg = icon_fg();
+    cairo_save(cr);
+    set_source(cr, with_alpha(fg, 0.2));
+    cairo_arc(cr, x + size / 2, y + size / 2, size / 2, 0, 2 * M_PI);
+    cairo_fill(cr);
+    set_source(cr, fg);
+    cairo_set_line_width(cr, 1.4);
+    cairo_move_to(cr, x + size * 0.58, y + size * 0.24);
+    cairo_line_to(cr, x + size * 0.58, y + size * 0.68);
+    cairo_line_to(cr, x + size * 0.28, y + size * 0.76);
+    cairo_stroke(cr);
+    cairo_arc(cr, x + size * 0.25, y + size * 0.78, size * 0.12, 0, 2 * M_PI);
+    cairo_fill(cr);
+    cairo_restore(cr);
+  }
+
+  void draw_media(cairo_t* cr, Metrics& m, const Rect& r, double cross) {
+    if (!media || !media->state().available) return;
+    const auto& s = media->state();
+    media_rect = vertical() ? Rect{6, r.y, cross - 12, r.h} : r;
+    const double cx = media_rect.x + media_rect.w / 2.0;
+    const double cy = media_rect.y + media_rect.h / 2.0;
+    const Color bright = icon_fg();
+    const Color secondary = soft_fg();
+    if (vertical()) {
+      draw_media_app_icon(cr, s, cx - 10, cy - 14, 20);
+      if (s.duration_us > 0) {
+        const double f = std::clamp(media->position_seconds() / (s.duration_us / 1000000.0), 0.0, 1.0);
+        rounded_rect(cr, media_rect.x + 10, media_rect.y + media_rect.h - 7, media_rect.w - 20, 2, 1);
+        set_source(cr, with_alpha(secondary, 0.35));
+        cairo_fill(cr);
+        rounded_rect(cr, media_rect.x + 10, media_rect.y + media_rect.h - 7, (media_rect.w - 20) * f, 2, 1);
+        set_source(cr, pal.accent);
+        cairo_fill(cr);
+      }
+      return;
+    }
+
+    draw_media_app_icon(cr, s, r.x + 6, cy - 10, 20);
+    const double pad = 31;
+    const bool controls_only = config.media_display == MediaDisplay::Controls;
+    const bool waveform = config.media_display == MediaDisplay::Waveform;
+    const double control_w = 18;
+    const double prev_x = r.x + pad + control_w / 2;
+    const double play_x = prev_x + control_w;
+    const double next_x = play_x + control_w;
+    media_button(cr, prev_x, cy, 2, s.can_go_previous ? secondary : with_alpha(secondary, 0.35));
+    media_button(cr, play_x, cy, s.status == "Playing" ? 1 : 0, bright);
+    media_button(cr, next_x, cy, 3, s.can_go_next ? secondary : with_alpha(secondary, 0.35));
+    const double text_x = next_x + control_w / 2 + 5;
+    const double time_w = s.duration_us > 0 && !controls_only ? m.text_w(media_time(media->position_seconds())) + 4 : 0;
+    const double text_w = std::max(10.0, r.x + r.w - text_x - time_w - 8);
+    const std::string title = s.title.empty() ? s.identity : s.title;
+    const std::string label = s.artist.empty() ? title : s.artist + " — " + title;
+    const std::string fitted = fit_text(cr, label, kFont - 1, text_w);
+    const TextExtents te = measure_text(cr, fitted, kFont - 1);
+    draw_text(cr, fitted, text_x, cy - 1 + te.ascent / 2, kFont - 1, bright);
+    if (s.duration_us > 0 && !controls_only) {
+      const double duration = s.duration_us / 1000000.0;
+      const double f = std::clamp(media->position_seconds() / duration, 0.0, 1.0);
+      const double line_y = waveform ? r.y + r.h - 5 : r.y + r.h - 4;
+      const double line_x = text_x;
+      const double line_w = std::max(20.0, r.x + r.w - line_x - 6);
+      rounded_rect(cr, line_x, line_y, line_w, 2, 1);
+      set_source(cr, with_alpha(secondary, 0.35));
+      cairo_fill(cr);
+      if (waveform) {
+        const int bars = std::max(8, std::min(32, static_cast<int>(line_w / 5)));
+        const double step = line_w / bars;
+        const double phase = media->position_seconds() * 5.0;
+        for (int i = 0; i < bars; ++i) {
+          const double beat = 0.5 + 0.5 * std::sin(phase + i * 1.7);
+          const double bh = 3 + beat * 8;
+          rounded_rect(cr, line_x + i * step, line_y - bh + 1, std::max(1.5, step - 1.5), bh, 1);
+          set_source(cr, with_alpha(pal.accent, i / static_cast<double>(bars) <= f ? 0.95 : 0.35));
+          cairo_fill(cr);
+        }
+      } else {
+        rounded_rect(cr, line_x, line_y, line_w * f, 2, 1);
+        set_source(cr, pal.accent);
+        cairo_fill(cr);
+      }
+      if (!controls_only) {
+        const std::string t = media_time(media->position_seconds()) + " / " + media_time(duration);
+        const TextExtents tt = measure_text(cr, t, 10.5);
+        draw_text(cr, t, r.x + r.w - tt.width - 6, r.y + 12, 10.5, secondary);
+      }
+    }
+  }
+
   void draw(cairo_t* cr, int W, int H) {
     clock_rect = Rect{};  // set again by the layout that draws a clock
     if (taskbar) {
@@ -759,6 +919,15 @@ struct Bar {
       rx += kTrayIcon + (i + 1 < items.size() ? kTraySpacing : 0);
     }
     rx += kRightGap;
+
+    if (media && media->state().available) {
+      const double mw = media_width(m);
+      media_rect = {rx, 0, mw, static_cast<double>(H)};
+      draw_media(cr, m, media_rect, H);
+      rx += mw + kRightGap;
+    } else {
+      media_rect = {};
+    }
 
     if (!kb_layouts.empty()) {
       const double lw = layout_pill_w(m);
@@ -1129,13 +1298,14 @@ struct Bar {
       case TbElement::Bluetooth: return !bt_state.available ? 0 : v ? kRow : kBtW;
       case TbElement::Mode: return v ? kRow : kModeW;
       case TbElement::Battery: return v ? kRow : battery_w(m);
+      case TbElement::Media: return media_width(m);
       case TbElement::Clock: return v ? kClockRowV : clock_w;
     }
     return 0;
   }
 
   void clear_tb_rects() {
-    start_rect = power_rect = vol_rect = battery_rect = ram_rect = cpu_rect = gpu_rect = disk_rect = net_rect = layout_rect = bt_rect = Rect{};
+    start_rect = power_rect = vol_rect = battery_rect = ram_rect = cpu_rect = gpu_rect = disk_rect = net_rect = layout_rect = bt_rect = media_rect = Rect{};
     clock_rect = Rect{};
     for (Rect& r : ws_rect) r = Rect{};
     tray_rects.clear();
@@ -1305,6 +1475,9 @@ struct Bar {
         } else {
           draw_plug(cr, box.x + kBatteryW / 2, cy, ic);
         }
+        break;
+      case TbElement::Media:
+        draw_media(cr, m, box, cross);
         break;
       case TbElement::Clock: {
         const size_t split = clock_text.find("  ");
@@ -1550,6 +1723,7 @@ struct Bar {
   // A right click on these keeps its own meaning (keyboard layout settings, tray items).
   bool over_status_widget(double x, double y) const {
     if (layout_rect.hit(x, y) && !kb_layouts.empty()) return true;
+    if (media_rect.hit(x, y) && media && media->state().available) return true;
     for (const Rect& r : tray_rects)
       if (r.hit(x, y)) return true;
     return false;
@@ -1860,6 +2034,16 @@ struct Bar {
 
   std::string vol_tooltip_text() { return vol_text + "\nClick to open the audio mixer"; }
 
+  std::string media_tooltip_text() const {
+    if (!media || !media->state().available) return "";
+    const auto& s = media->state();
+    std::string text = s.identity.empty() ? s.service : s.identity;
+    if (!s.artist.empty()) text += "\n" + s.artist;
+    if (!s.title.empty()) text += "\n" + s.title;
+    text += "\n\nLeft-click: play/pause   Middle-click: next   Right-click: next player";
+    return text;
+  }
+
   std::string tooltip_text(int kind) {
     switch (kind) {
       case 1: return battery_tooltip_text();
@@ -1870,6 +2054,7 @@ struct Bar {
       case 7: return net_tooltip_text();
       case 8: return layout_tooltip_text();
       case 9: return bt_tooltip_text();
+      case 10: return media_tooltip_text();
       default: return vol_tooltip_text();
     }
   }
@@ -1917,6 +2102,35 @@ struct Bar {
 
   void apply_layout_if_island() {
     if (island) apply_layout();  // natural width changes when the battery appears
+  }
+
+  void schedule_media_timer() {
+    if (media_timer) {
+      app.unwatch(media_timer);
+      media_timer = 0;
+    }
+    if (media && media->state().available && media->state().status == "Playing") {
+      media_timer = app.add_timer(1000, [this] {
+        if (!media || !media->state().available || media->state().status != "Playing") {
+          if (media_timer) {
+            app.unwatch(media_timer);
+            media_timer = 0;
+          }
+          return;
+        }
+        if (media_rect.w > 0 && surface)
+          surface->queue_draw_rect(static_cast<int>(media_rect.x), static_cast<int>(media_rect.y), static_cast<int>(media_rect.w) + 1,
+                                   static_cast<int>(media_rect.h) + 1);
+        else
+          redraw();
+      });
+    }
+  }
+
+  void media_changed() {
+    schedule_media_timer();
+    apply_layout_if_island();
+    redraw();
   }
 
   void redraw() {
@@ -2054,6 +2268,19 @@ struct Bar {
         return;
       }
     }
+    if (media && media_rect.hit(x, y)) {
+      if (b == kBtnLeft) media->toggle_play_pause();
+      else if (b == kBtnMiddle) media->next();
+      else if (b == kBtnRight) {
+        media->select_next_player();
+        config.media_player = media->preferred_player();
+        try {
+          save_bar_config(config);
+        } catch (const std::exception&) {
+        }
+      }
+      return;
+    }
     if (!kb_layouts.empty() && layout_rect.hit(x, y)) {
       if (b == kBtnLeft) ipc.send_command("LAYOUT_NEXT");
       else if (b == 0x111) spawn_settings_page("keyboard");
@@ -2136,6 +2363,10 @@ struct Bar {
         want = i + 1;
         r = *rects[i];
       }
+    if (media && media->state().available && media_rect.hit(x, y)) {
+      want = 10;
+      r = media_rect;
+    }
     for (size_t i = 0; i < tray_rects.size(); ++i)
       if (tray_rects[i].hit(x, y)) {
         want = 2000 + static_cast<int>(i);
@@ -2232,6 +2463,10 @@ struct Bar {
     theme = load_theme_config();
     config = load_bar_config();
     pal = load_palette(theme);
+    if (media) {
+      media->set_preferred_player(config.media_player);
+      schedule_media_timer();
+    }
     refresh_glass();
     apply_layout();
     clock_tick();  // show a changed hour format / time zone right away
@@ -2257,6 +2492,9 @@ int main(int argc, char** argv) {
   for (int i = 1; i + 1 < argc; ++i)
     if (std::string(argv[i]) == "--output") B.app.set_preferred_output(argv[i + 1]);
   if (!B.app.connect()) return 1;
+
+  B.media = std::make_unique<fleetwm::bar::Mpris>(B.app, [&B] { B.media_changed(); });
+  B.media->start(B.config.media_player);
 
   Surface::Config cfg;
   cfg.layer = ZWLR_LAYER_SHELL_V1_LAYER_TOP;

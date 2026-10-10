@@ -78,6 +78,22 @@ TEST(FleetkitColor, MalformedFallsBack) {
   EXPECT_DOUBLE_EQ(parse_color("#12zz56", fb).b, 0.3);
 }
 
+TEST(FleetkitMenu, UsesPaletteAndSharedGeometry) {
+  fleetwm::kit::Palette p;
+  p.bg_primary = {0.1, 0.2, 0.3, 1.0};
+  p.bg_secondary = {0.2, 0.3, 0.4, 1.0};
+  p.fg_primary = {0.8, 0.7, 0.6, 1.0};
+  p.fg_secondary = {0.5, 0.4, 0.3, 1.0};
+  p.accent = {0.9, 0.8, 0.1, 1.0};
+  const auto menu = fleetwm::kit::menu_theme(p);
+  EXPECT_DOUBLE_EQ(menu.background.r, p.bg_secondary.r);
+  EXPECT_DOUBLE_EQ(menu.text.g, p.fg_primary.g);
+  EXPECT_DOUBLE_EQ(menu.hover.b, p.accent.b);
+  EXPECT_DOUBLE_EQ(menu.hover_text.r, p.bg_primary.r);
+  EXPECT_DOUBLE_EQ(menu.radius, 8.0);
+  EXPECT_DOUBLE_EQ(menu.item_radius, 5.0);
+}
+
 #include "backdrop.hpp"
 
 TEST(Backdrop, BlurKeepsAFlatPictureFlat) {

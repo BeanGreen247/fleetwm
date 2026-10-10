@@ -53,6 +53,16 @@ struct Palette {
   // the frosted wallpaper behind the window (compositor/glass_backdrop.hpp). Programs that paint their own background ignore it.
   double window_alpha = 1.0;
 };
+
+struct MenuTheme {
+  Color background, border, hover, hover_border, text, hover_text, secondary, shadow;
+  bool rounded = true;
+  double radius = 8.0;
+  double item_radius = 5.0;
+  double shadow_alpha = 0.07;
+};
+
+MenuTheme menu_theme(const Palette& palette);
 // Reads themes/<theme>.css and the accent override, then the glass tint (glass_tint.hpp) from theme.glass_tint.
 Palette load_palette(const ThemeConfig& theme);
 

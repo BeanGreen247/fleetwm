@@ -64,6 +64,21 @@ BarLayout bar_layout_from_string(const std::string& s) {
   return BarLayout::Capsules;
 }
 
+std::string media_display_to_string(MediaDisplay display) {
+  switch (display) {
+    case MediaDisplay::Controls: return "controls";
+    case MediaDisplay::Progress: return "progress";
+    case MediaDisplay::Waveform: return "waveform";
+  }
+  return "progress";
+}
+
+MediaDisplay media_display_from_string(const std::string& s) {
+  if (s == "controls") return MediaDisplay::Controls;
+  if (s == "waveform") return MediaDisplay::Waveform;
+  return MediaDisplay::Progress;
+}
+
 std::string power_mode_to_profiles_daemon_name(PowerMode mode) {
   switch (mode) {
     case PowerMode::Performance: return "performance";
@@ -149,6 +164,8 @@ BarConfig load_bar_config() {
   if (auto v = table["taskbar_autohide"].value<bool>()) config.taskbar_autohide = *v;
   if (auto v = table["start_centered"].value<bool>()) config.start_centered = *v;
   if (auto v = table["taskbar_labels"].value<bool>()) config.taskbar_labels = *v;
+  if (auto v = table["media_player"].value<std::string>()) config.media_player = *v;
+  if (auto v = table["media_display"].value<std::string>()) config.media_display = media_display_from_string(*v);
   if (auto v = table["taskbar_position"].value<std::string>()) {
     config.taskbar_position = taskbar_position_from_string(*v);
   }
@@ -198,6 +215,8 @@ void save_bar_config(const BarConfig& config) {
   table.insert_or_assign("taskbar_autohide", config.taskbar_autohide);
   table.insert_or_assign("start_centered", config.start_centered);
   table.insert_or_assign("taskbar_labels", config.taskbar_labels);
+  table.insert_or_assign("media_player", config.media_player);
+  table.insert_or_assign("media_display", media_display_to_string(config.media_display));
 
   std::ofstream out(path);
   if (!out) {
