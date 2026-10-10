@@ -45,8 +45,8 @@ using namespace fleetwm::kit;
 using Clock = std::chrono::steady_clock;
 
 constexpr uint32_t kBtnLeft = 0x110;
-constexpr int kWindowW = 880, kWindowH = 620;
-constexpr double kFont = 13, kSmall = 11.5, kRowH = 22, kHeaderH = 26, kTabsH = 38, kFooterH = 46, kSideW = 214;
+constexpr int kWindowW = 980, kWindowH = 680;
+constexpr double kFont = 14, kSmall = 12, kRowH = 22, kHeaderH = 28, kTabsH = 40, kFooterH = 46, kSideW = 224;
 
 struct Rect {
   double x = 0, y = 0, w = 0, h = 0;
@@ -276,6 +276,22 @@ struct TaskMgr {
   void text_right(cairo_t* cr, const std::string& s, double x_right, double y_mid, double px, const Color& c) {
     const TextExtents te = measure_text(cr, s, px);
     draw_text(cr, s, x_right - te.width, y_mid - te.height / 2 + te.ascent, px, c);
+  }
+
+  void info_grid(cairo_t* cr, double x, double y, double w,
+                 const std::vector<std::pair<std::string, std::string>>& entries) {
+    const double gap = 18, col_w = (w - gap) / 2.0, row_h = 38;
+    for (size_t i = 0; i < entries.size(); ++i) {
+      const size_t col = i % 2, row = i / 2;
+      const double cx = x + static_cast<double>(col) * (col_w + gap);
+      const double cy = y + static_cast<double>(row) * row_h;
+      text_at(cr, entries[i].first, cx, cy + 9, kSmall, dim());
+      cairo_save(cr);
+      cairo_rectangle(cr, cx, cy + 16, col_w, row_h - 16);
+      cairo_clip(cr);
+      text_at(cr, entries[i].second.empty() ? "--" : entries[i].second, cx, cy + 28, kFont, pal.fg_primary, true);
+      cairo_restore(cr);
+    }
   }
 
   void button(cairo_t* cr, const Rect& r, const char* label, bool enabled, bool accent) {
@@ -513,14 +529,15 @@ struct TaskMgr {
     switch (res) {
       case Res::Cpu: {
         text_at(cr, "CPU", dx, y + 8, 18, pal.fg_primary, true);
+        text_right(cr, cpu_info.model.empty() ? "Unknown processor" : cpu_info.model, dx + dw, y + 8, kFont, dim());
         y += 26;
-        graph(cr, {dx, y, dw, 150}, cpu_h, 100, c1);
-        y += 160;
+        graph(cr, {dx, y, dw, 140}, cpu_h, 100, c1);
+        y += 150;
         const size_t n = core_h.size();
         if (n > 0) {
           const int cols = n <= 4 ? static_cast<int>(n) : n <= 12 ? 4 : 8;
           const int rows_n = static_cast<int>((n + static_cast<size_t>(cols) - 1) / static_cast<size_t>(cols));
-          const double cw = (dw - (cols - 1) * 6) / cols, ch = std::clamp((h - y - 190.0) / rows_n - 6, 22.0, 54.0);
+          const double cw = (dw - (cols - 1) * 6) / cols, ch = std::clamp((h - y - 255.0) / rows_n - 6, 22.0, 42.0);
           for (size_t i = 0; i < n; ++i) {
             const Rect r{dx + static_cast<double>(i % static_cast<size_t>(cols)) * (cw + 6), y + static_cast<double>(i / static_cast<size_t>(cols)) * (ch + 6), cw, ch};
             graph(cr, r, core_h[i], 100, c1);
@@ -529,23 +546,22 @@ struct TaskMgr {
         }
         char t[64];
         std::snprintf(t, sizeof t, "%d%%", cpu_pct);
-        line("Utilisation", t);
-        line("Processes", std::to_string(rows.empty() ? 0 : rows.size()));
-        line("Cores", std::to_string(ncpu));
-        line("CPU model", cpu_info.model.empty() ? "unknown" : cpu_info.model);
-        line("Threads", std::to_string(cpu_info.logical_threads));
-        line("Physical cores", std::to_string(cpu_info.physical_cores));
-        line("Clock", cpu_info.mhz > 0 ? std::to_string(cpu_info.mhz) + " MHz" : "unknown");
-        line("Load average", load_avg.empty() ? "--" : load_avg);
+        info_grid(cr, dx, y, dw, {
+          {"Utilisation", t},
+          {"Processes", std::to_string(rows.size())},
+          {"Logical processors", std::to_string(cpu_info.logical_threads)},
+          {"Physical cores", std::to_string(cpu_info.physical_cores)},
+          {"Clock", cpu_info.mhz > 0 ? std::to_string(cpu_info.mhz) + " MHz" : "unknown"},
+          {"Load average", load_avg.empty() ? "--" : load_avg},
+        });
+        y += 3 * 38 + 8;
         {
           const long d = uptime_s / 86400, hh = uptime_s / 3600 % 24, mm = uptime_s / 60 % 60;
           std::snprintf(t, sizeof t, "%ld:%02ld:%02ld:%02ld", d, hh, mm, uptime_s % 60);
-          line("Up time", uptime_s ? t : "--");
+          info_grid(cr, dx, y, dw, {{"Up time", uptime_s ? t : "--"},
+                                    {"Scheduler latency", sched_latency_us < 0 ? "--" : std::to_string(static_cast<int>(sched_latency_us)) + " us"},
+                                    {"Audio latency", audio_latency_ms < 0 ? "not available" : std::to_string(audio_latency_ms) + " ms"}});
         }
-        std::snprintf(t, sizeof t, "%.0f us (a 200 us sleep, best of 3)", sched_latency_us);
-        line("Scheduler latency", sched_latency_us < 0 ? "--" : t);
-        std::snprintf(t, sizeof t, "%.1f ms (PipeWire quantum)", audio_latency_ms);
-        line("Audio latency", audio_latency_ms < 0 ? "not available" : t);
         break;
       }
       case Res::Memory: {
@@ -554,39 +570,45 @@ struct TaskMgr {
         graph(cr, {dx, y, dw, 170}, mem_h, 100, c1);
         y += 184;
         const unsigned long long used = mem.total - mem.available;
-        line("In use", format_kib(static_cast<long long>(used)));
-        line("Available", format_kib(static_cast<long long>(mem.available)));
-        line("Total", format_kib(static_cast<long long>(mem.total)));
-        line("Cached", format_kib(static_cast<long long>(mem.cached)));
-        line("Buffers", format_kib(static_cast<long long>(mem.buffers)));
-        line("Swap in use", mem.swap_total ? format_kib(static_cast<long long>(mem.swap_total - mem.swap_free)) + " of " + format_kib(static_cast<long long>(mem.swap_total)) : "no swap");
+        info_grid(cr, dx, y, dw, {{"In use", format_kib(static_cast<long long>(used))},
+                                  {"Available", format_kib(static_cast<long long>(mem.available))},
+                                  {"Total", format_kib(static_cast<long long>(mem.total))},
+                                  {"Cached", format_kib(static_cast<long long>(mem.cached))},
+                                  {"Buffers", format_kib(static_cast<long long>(mem.buffers))},
+                                  {"Swap in use", mem.swap_total ? format_kib(static_cast<long long>(mem.swap_total - mem.swap_free)) + " of " + format_kib(static_cast<long long>(mem.swap_total)) : "no swap"}});
+        y += 3 * 38 + 8;
         if (memory_modules.empty()) {
-          line("Slots", "details unavailable");
+          info_grid(cr, dx, y, dw, {{"Memory slots", "details unavailable"}});
         } else {
-          line("Slots", std::to_string(memory_modules.size()) + " occupied");
+          std::vector<std::pair<std::string, std::string>> module_info;
+          module_info.emplace_back("Occupied slots", std::to_string(memory_modules.size()));
           for (const MemoryModule& m : memory_modules) {
             std::string label = m.locator.empty() ? "Module" : m.locator;
             label += " " + format_kib(m.size_mb * 1024);
-            line(label.c_str(), (m.manufacturer.empty() ? std::string() : m.manufacturer + " ") +
-                                  (m.part_number.empty() ? std::string() : m.part_number) +
-                                  (m.speed_mhz > 0 ? " " + std::to_string(m.speed_mhz) + " MHz" : ""));
+            module_info.emplace_back(label, (m.manufacturer.empty() ? std::string() : m.manufacturer + " ") +
+                                             (m.part_number.empty() ? std::string() : m.part_number) +
+                                             (m.speed_mhz > 0 ? " " + std::to_string(m.speed_mhz) + " MHz" : ""));
           }
+          info_grid(cr, dx, y, dw, module_info);
         }
         break;
       }
-      case Res::Disk:
+      case Res::Disk: {
         text_at(cr, "Disk", dx, y + 8, 18, pal.fg_primary, true);
         y += 26;
         graph(cr, {dx, y, dw, 170}, disk_read_h, disk_max, c1, true, &disk_write_h, &c2);
         y += 184;
-        line("Read", format_rate(disk_read_bps));
-        line("Write", format_rate(disk_write_bps));
+        std::vector<std::pair<std::string, std::string>> drive_info{{"Read", format_rate(disk_read_bps)},
+                                                                     {"Write", format_rate(disk_write_bps)}};
         for (const DriveInfo& d : drives) {
           std::string label = d.name + " " + format_kib(static_cast<long long>(d.size_bytes / 1024 / 1024));
-          line(label.c_str(), d.model == "--" ? "drive" : d.model);
+          drive_info.emplace_back(label, d.model == "--" ? "drive" : d.model);
         }
+        info_grid(cr, dx, y, dw, drive_info);
+        y += (static_cast<double>((drive_info.size() + 1) / 2) * 38) + 8;
         text_at(cr, "Blue: read, orange: write. Whole disks only (partitions are not counted twice).", dx, y + 8, kSmall, dim());
         break;
+      }
       case Res::Network:
         text_at(cr, "Network", dx, y + 8, 18, pal.fg_primary, true);
         y += 26;

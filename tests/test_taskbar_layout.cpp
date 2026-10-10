@@ -112,6 +112,15 @@ TEST(TaskbarElements, WindowListDroppedWhenTooNarrow) {
   EXPECT_TRUE(has(s, TbElement::Start));
 }
 
+TEST(TaskbarElements, CompactWindowListUsesRequestedWidth) {
+  std::vector<TbItem> items = {{TbElement::Start, 46}, {TbElement::Windows, 2 * 48}, {TbElement::Clock, 60}};
+  TbLayoutParams p;
+  p.length = 1000;
+  p.windows_fill = false;
+  const auto s = tb_layout(items, p);
+  EXPECT_DOUBLE_EQ(size_of(s, TbElement::Windows), 96);
+}
+
 TEST(TaskbarElements, ZeroSizeElementsTakeNoRoom) {
   std::vector<TbItem> items = {{TbElement::Start, 46}, {TbElement::Pinned, 0}, {TbElement::Tray, 0}, {TbElement::Clock, 60}};
   TbLayoutParams p;
