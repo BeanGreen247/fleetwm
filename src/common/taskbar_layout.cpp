@@ -139,7 +139,7 @@ std::vector<TbSlot> tb_layout(const std::vector<TbItem>& visible, const TbLayout
   double windows = 0;
   if (has_windows && windows_want > 0) {
     const double left = room_end - p.margin - fixed - gaps_without_windows - (shown > 0 ? p.gap : 0);
-    windows = p.centered_start ? std::min(windows_want, left) : left;
+    windows = (p.centered_start || !p.windows_fill) ? std::min(windows_want, left) : left;
     if (windows < p.min_windows) windows = 0;
   }
   double x = p.margin;

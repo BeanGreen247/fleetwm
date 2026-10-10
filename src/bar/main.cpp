@@ -1143,6 +1143,7 @@ struct Bar {
     p.gap = v ? 4 : 10;
     p.min_windows = v ? kBtn : 44;
     p.centered_start = config.start_centered;
+    p.windows_fill = config.taskbar_labels;
     const std::vector<TbSlot> slots = tb_layout(items, p);
     clear_tb_rects();
     const double cross = v ? W : H;

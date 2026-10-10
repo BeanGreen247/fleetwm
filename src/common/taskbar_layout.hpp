@@ -46,6 +46,7 @@ struct TbLayoutParams {
   double gap = 10;             // between neighbouring elements
   double min_windows = 44;     // the window list is dropped when it would get less than this
   bool centered_start = false; // Windows 11 style: start, workspaces, pinned apps and the window buttons as one group in the middle
+  bool windows_fill = true;    // false: keep the window list at its requested compact width
 };
 
 // Lays out the visible elements (given in the user's order). Main-zone items fill from the start, status-zone items from the end. The
