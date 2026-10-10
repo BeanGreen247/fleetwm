@@ -33,6 +33,13 @@ TEST(TaskbarElements, NamesRoundTrip) {
   EXPECT_EQ(tb_default_order().size(), static_cast<size_t>(kTbElementCount));
 }
 
+TEST(TaskbarElements, IdlePinnedAppsStayIconOnly) {
+  EXPECT_FALSE(tb_pinned_label_visible(true, false, false));
+  EXPECT_TRUE(tb_pinned_label_visible(true, false, true));
+  EXPECT_FALSE(tb_pinned_label_visible(false, false, true));
+  EXPECT_FALSE(tb_pinned_label_visible(true, true, true));
+}
+
 TEST(TaskbarElements, NormalizeDropsUnknownAndRepeats) {
   const auto o = tb_normalize_order({"clock", "bogus", "start", "clock", "volume"});
   EXPECT_EQ(o.size(), static_cast<size_t>(kTbElementCount));

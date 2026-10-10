@@ -20,6 +20,10 @@ const char* tb_element_label(TbElement e);  // what Settings shows: "Start butto
 bool tb_element_from_name(const std::string& name, TbElement* out);
 bool tb_is_main_zone(TbElement e);  // start, workspaces, pinned, windows
 
+// Pinned launchers use an icon cell while idle and show their label once the
+// application owns a window, when labels are enabled on a horizontal bar.
+bool tb_pinned_label_visible(bool labels_enabled, bool vertical, bool running);
+
 std::vector<TbElement> tb_default_order();
 // A saved order with unknown names and repeats dropped and every missing element added after its predecessor in the default order
 // (so a file written by an older version, without "bluetooth", still loads and the new element lands next to the network icon).
