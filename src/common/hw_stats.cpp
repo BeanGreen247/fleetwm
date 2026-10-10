@@ -9,6 +9,7 @@
 #include <cstring>
 #include <fstream>
 #include <sstream>
+#include <tuple>
 
 namespace fleetwm {
 
@@ -60,6 +61,55 @@ CpuInfo parse_cpuinfo(const std::string& text) {
     else if (key == "cpu MHz" && out.mhz == 0) out.mhz = static_cast<int>(std::strtod(value.c_str(), nullptr) + 0.5);
     else if (key == "cpu cores" && out.physical_cores == 0) out.physical_cores = std::atoi(value.c_str());
   }
+  return out;
+}
+
+std::vector<CpuCacheInfo> parse_cpu_cache_info(const std::string& text) {
+  std::vector<CpuCacheInfo> out;
+  CpuCacheInfo current;
+  bool active = false;
+  auto finish = [&] {
+    if (active && current.level > 0 && !current.size.empty()) out.push_back(current);
+    current = {};
+    active = false;
+  };
+  std::istringstream in(text);
+  std::string line;
+  while (std::getline(in, line)) {
+    hw_trim(&line);
+    if (line.empty()) {
+      finish();
+      continue;
+    }
+    const size_t colon = line.find(':');
+    if (colon == std::string::npos) continue;
+    std::string key = line.substr(0, colon), value = line.substr(colon + 1);
+    hw_trim(&key);
+    hw_trim(&value);
+    active = true;
+    if (key == "level") current.level = std::atoi(value.c_str());
+    else if (key == "type") current.type = value;
+    else if (key == "size") current.size = value;
+    else if (key == "coherency_line_size") current.line_bytes = std::atoi(value.c_str());
+    else if (key == "ways_of_associativity") current.ways = std::atoi(value.c_str());
+    else if (key == "shared_cpu_list") current.shared_cpus = value;
+  }
+  finish();
+  std::sort(out.begin(), out.end(), [](const CpuCacheInfo& a, const CpuCacheInfo& b) {
+    return std::tie(a.level, a.type, a.size) < std::tie(b.level, b.type, b.size);
+  });
+  out.erase(std::unique(out.begin(), out.end(), [](const CpuCacheInfo& a, const CpuCacheInfo& b) {
+              return a.level == b.level && a.type == b.type && a.size == b.size && a.line_bytes == b.line_bytes &&
+                     a.ways == b.ways && a.shared_cpus == b.shared_cpus;
+            }),
+            out.end());
+  return out;
+}
+
+std::string format_bandwidth_gbs(double bytes_per_second) {
+  if (bytes_per_second <= 0) return "--";
+  char out[32];
+  std::snprintf(out, sizeof out, "%.1f GB/s", bytes_per_second / 1e9);
   return out;
 }
 

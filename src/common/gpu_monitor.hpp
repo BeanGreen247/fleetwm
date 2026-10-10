@@ -20,6 +20,8 @@ struct GpuDevice {
   std::string path;            // the busy or idle-residency file
   std::string device_dir;      // /sys/class/drm/cardN/device
   std::string freq_path, freq_max_path;
+  std::string pcie_speed;
+  int pcie_width = 0;
   int fd = -1;
   long long idle_prev_ms = -1;
   std::chrono::steady_clock::time_point idle_prev_time;

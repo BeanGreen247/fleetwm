@@ -7,6 +7,24 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+CLEAN_BUILD=0
+for arg in "$@"; do
+  case "${arg}" in
+    --clean) CLEAN_BUILD=1 ;;
+    -h|--help)
+      echo "Usage: $0 [--clean]"
+      echo "  --clean  remove Fleetwm build directories before compiling"
+      exit 0
+      ;;
+    *)
+      echo "error: unknown option: ${arg}" >&2
+      echo "Usage: $0 [--clean]" >&2
+      exit 2
+      ;;
+  esac
+done
+
 # shellcheck source=scripts/install-ui.sh
 UI_TOTAL_STEPS=13  # keep equal to the number of ui_step calls below
 source "${SCRIPT_DIR}/scripts/install-ui.sh"
@@ -42,6 +60,11 @@ for d in build-pgo build-test build; do
     sudo chown -R "$(id -u):$(id -g)" "${p}"
   fi
 done
+
+if (( CLEAN_BUILD )); then
+  echo "==> Removing Fleetwm build caches for a clean rebuild"
+  rm -rf "${SCRIPT_DIR}/build-pgo" "${SCRIPT_DIR}/build-test" "${SCRIPT_DIR}/build"
+fi
 
 ui_step "Enabling Debian's non-free software sources" \
   "What: adds 'contrib', 'non-free' and 'non-free-firmware' to Debian's package sources (the original" \
@@ -389,6 +412,26 @@ echo "==> Letting the compositor run at higher priority (smoother, lower input d
 # Members of the video group may raise their priority to nice -10; the compositor asks for it.
 printf '# Fleetwm: lets the compositor run at higher priority\n@video - nice -10\n' |
   sudo tee /etc/security/limits.d/fleetwm.conf >/dev/null
+
+echo "==> Enabling user-space hardware cache counters for Task Manager"
+# fleetwm-taskmgr uses a CPU-wide perf event for aggregate cache references and misses. The
+# kernel default on Debian is commonly 2 or 3, which rejects that event for an ordinary user.
+# Keep kernel and hypervisor samples excluded in the client, and lower only the scope needed
+# for the user-space aggregate counter. Preserve a pre-existing Fleetwm drop-in if this is the
+# first install that creates it; an administrator can remove the drop-in to restore the distro
+# default later.
+PERF_SYSCTL=/etc/sysctl.d/60-fleetwm-taskmgr.conf
+PERF_PARANOID="$(sysctl -n kernel.perf_event_paranoid 2>/dev/null || true)"
+if [[ "${PERF_PARANOID}" =~ ^[0-9]+$ ]] && (( PERF_PARANOID > 0 )); then
+  if [[ -e "${PERF_SYSCTL}" && ! -e "${PERF_SYSCTL}.fleetwm-bak" ]]; then
+    sudo cp -p "${PERF_SYSCTL}" "${PERF_SYSCTL}.fleetwm-bak"
+  fi
+  printf '# Fleetwm Task Manager: allow CPU-wide user-space cache counters\nkernel.perf_event_paranoid = 0\n' |
+    sudo tee "${PERF_SYSCTL}" >/dev/null
+  sudo sysctl -p "${PERF_SYSCTL}" >/dev/null
+else
+  echo "    perf_event_paranoid=${PERF_PARANOID:-unknown}; leaving the existing policy unchanged."
+fi
 
 echo "==> Recording source checkout path for 'fleetwm update'"
 echo "${SCRIPT_DIR}" | sudo tee /etc/fleetwm-source-path >/dev/null

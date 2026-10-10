@@ -20,6 +20,17 @@ struct CpuInfo {
 };
 CpuInfo parse_cpuinfo(const std::string& text);
 
+struct CpuCacheInfo {
+  int level = 0;
+  std::string type;
+  std::string size;
+  int line_bytes = 0;
+  int ways = 0;
+  std::string shared_cpus;
+};
+std::vector<CpuCacheInfo> parse_cpu_cache_info(const std::string& text);
+std::string format_bandwidth_gbs(double bytes_per_second);
+
 struct MemoryModule {
   std::string locator, manufacturer, part_number, type;
   long long size_mb = 0;
