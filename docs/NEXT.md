@@ -1,4 +1,31 @@
-# What is done, what is left (state at 0.4.0, 2026-10-07)
+# What is done, what is left
+
+## Current handoff update (2026-10-11)
+
+The sections below are the historical 0.4.0 backlog snapshot from 2026-10-07;
+they are not an authoritative list of current open work. Read
+`docs/PERF_LOG_2026-10-11.md`, `docs/OPTIMIZATIONS.md`, and
+`/home/bean/HANDOFF_2026-10-11.md` before picking up performance work.
+`docs/CLAUDE_CODE_RESEARCH_PROMPT.md` contains a ready-to-use, analysis-only
+handoff prompt for Claude Code.
+
+- Chromium: three confirmed Wayland/XKB SIGSEGV dumps at 20:08 remain
+  unexplained. A taskbar-pin launch using the default profile stayed open for
+  at least 2:36 with no new dump. This does not prove the issue fixed; no
+  source or launcher workaround is justified.
+- Renderer: the verified post-cap drag A/B used a nested 1280x720 session and
+  found only a small glass-associated Render/3D difference. It does not
+  reproduce the reported full 1920x1080 workload or measure frame latency.
+  Next: capture damage/update/frame timing under that representative workload
+  before changing composition scheduling or glass.
+- Memory: the approximately 62 MiB idle Intel client accounting is shared
+  system memory, not dedicated VRAM or a workload peak. Measure high-water
+  marks by workload and keep any implementation backend-neutral across Intel,
+  AMD, NVIDIA, and other supported GPUs.
+- Task Manager duplicate-row-copy reduction is committed as `6012915`; the
+  cross-GPU memory documentation is committed as `e735f7a`. Both commits were
+  pushed. A taskbar-launched Chromium check and its follow-up handoff updates
+  are now recorded in the dated handoffs.
 
 Kept in the repo so any machine that clones it knows where things stand. The full story with numbers: `CHANGELOG.md`,
 `docs/OPTIMIZATIONS.md`, `docs/PERF_LOG_2026-10-07.md` (every step of the performance round), `docs/PERFORMANCE_FINDINGS.md`.

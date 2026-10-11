@@ -149,6 +149,22 @@ active-drag A/B is recorded below; it does not support a material glass or CPU
 optimization. A frame-time/damage-area trace and a matching 1920x1080 workload
 would be needed to target a further change.
 
+### Interactive scene-update trace (2026-10-11)
+
+Source inspection narrows the next measurement without proving a bottleneck:
+`Server::update_grab()` in `src/compositor/server.cpp` moves the scene node for
+each move event, then updates X11 position and snap-preview state. During
+resize it moves the node and sends a size request only when the requested
+dimensions change. `output_frame()` in `src/compositor/output.cpp` applies the
+24-FPS interactive cap, withholds a not-yet-due commit only when pending damage
+is empty, and sends `frame_done` after commit. Thus input-side scene mutation,
+client resize work, and output composition are separate possible costs; the
+cap alone does not demonstrate that they are expensive or that coalescing
+updates is safe. The project targets wlroots 0.18; validate any instrumentation
+against the actual built version. Record mutation/configure counts, damage
+area, commit/render time, presentation cadence, and input-to-present latency
+for move and resize separately before proposing changes.
+
 ### DWM, shader cache, and CPU instruction-set findings
 
 - Microsoft's [DWM overview](https://learn.microsoft.com/en-us/windows/win32/dwm/dwm-overview)
