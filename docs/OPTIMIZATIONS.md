@@ -7,6 +7,313 @@ standalone process over the stated window.
 
 Findings from the Lestrix speed round (method, hardware limits, governor, kernel pty and pipe tests, closed doors, and the checklist for the next Fleetwm round) are merged in `PERFORMANCE_FINDINGS.md`.
 
+## Paper-derived practices relevant to Fleetwm (2026-10-11)
+
+The local `developer-performance-opt` corpus is broad: it includes networking,
+RDMA, FPGA, JIT, compiler, memory, and measurement papers. The networking,
+FPGA, JIT-specific, SIMD parsing, and large-array search techniques do not map
+to an identified Fleetwm rendering hot path. The useful transfers are mostly
+experimental method and conditional CPU profiling, not new rendering tricks:
+
+- **Treat setup and run variation as part of the result.** Mytkowicz et al.
+  (`~/.claude/skills/developer-performance-opt/sources/papers/47_mytkowicz_measurement_bias_asplos09.txt`)
+  demonstrate that environment and code/data layout can change conclusions;
+  Georges et al.
+  (`~/.claude/skills/developer-performance-opt/sources/papers/49_georges_statistically_rigorous_java.txt`)
+  caution against selecting best-of-N runs. For a new renderer A/B, alternate
+  variants, repeat paired
+  runs, record power/frequency and outer-desktop activity, and report the
+  distribution (median and spread, preferably an interval on paired deltas),
+  not just the best run. This is especially important because the historical
+  ~45% Render/3D drag measurement included the live outer desktop and predates
+  the drag cap.
+- **A hot profile entry is a lead, not proof of a useful fix.** Coz
+  (`~/.claude/skills/developer-performance-opt/sources/papers/44_coz_causal_profiling.txt`)
+  shows that speeding a sampled function
+  may not improve overall progress when it is off the critical path or
+  contending with it. Fleetwm's compositor event loop is largely single-threaded
+  and the reported drag concern includes asynchronous GPU work, so Coz itself
+  is not a direct GPU/present-latency tool here. Keep separating compositor
+  CPU, GPU engine busy, frame cadence and input-to-present latency; only
+  optimize a CPU path if an ablation changes a user-visible metric.
+- **Use profiles to look for duplicated work before instruction tricks.**
+  LOADSPY (`~/.claude/skills/developer-performance-opt/sources/papers/03_redundant_loads_loadspy.txt`)
+  frames repeated loads as a
+  symptom of repeated calls, poor lookup structures or redundant computation,
+  not as permission to remove loads without alias/lifetime proof. Fleetwm's
+  previous GLES2 scroll profile already identified the large CPU copy as
+  Mesa's shm texture upload, not Fleetwm's scene loop. If a new profile instead
+  shows Fleetwm code, inspect repeated scene/layout queries and allocations
+  there; do not add a speculative whole-program redundancy tool.
+- **PGO/BOLT are conditional build experiments.** AutoFDO and BOLT
+  (`~/.claude/skills/developer-performance-opt/sources/papers/41_autofdo_cgo16.txt`,
+  `~/.claude/skills/developer-performance-opt/sources/papers/35_bolt_cgo19.txt`)
+  show the value of representative branch profiles and hot/cold code layout
+  in large CPU-bound
+  binaries; their data-center results are not Fleetwm expectations. The install
+  already uses LTO and PGO, and the training script includes window move and
+  resize. Consider a separate profile/build A/B only if a representative
+  post-cap CPU profile shows Fleetwm is instruction-front-end/branch bound.
+  Do not layer BOLT or change training weights while the GPU bottleneck and
+  attribution remain unknown.
+- **Do not replace caches or allocators by analogy.** Drepper and Carruth
+  (`~/.claude/skills/developer-performance-opt/sources/papers/28_drepper_memory.txt`,
+  `~/.claude/skills/developer-performance-opt/sources/papers/53_carruth_cppcon14_algorithms_data_structures.txt`)
+  support measuring working-set locality; the jemalloc paper
+  (`~/.claude/skills/developer-performance-opt/sources/papers/50_jemalloc_evans_bsdcan06.txt`)
+  targets allocator contention and fragmentation trade-offs. Fleetwm already
+  byte-bounds finished glass and
+  titlebar caches, and its titlebar cache diagnostics report entries/bytes,
+  not hit rates. Only add low-overhead hit/eviction accounting if measured
+  memory pressure or cache churn makes the trade-off relevant; do not swap
+  allocators without allocation-profile evidence.
+- **No bit/SIMD hack is presently indicated.** The N4020 lacks AVX/AVX2, the
+  existing Celeron `-march=native` scroll A/B was inside noise, and the
+  recorded GPU path is not a Fleetwm arithmetic kernel. The relevant
+  instruction and bit-trick sources
+  (`~/.claude/skills/developer-performance-opt/sources/papers/24_agner_optimizing_cpp.txt`
+  through `~/.claude/skills/developer-performance-opt/sources/papers/27_agner_instruction_tables.txt`,
+  plus `~/.claude/skills/developer-performance-opt/sources/papers/31_mula_popcount_avx2.txt`)
+  advise matching code generation to a profiled loop and target CPU; no such
+  loop has been identified in the renderer.
+
+Next evidence-gated experiment remains a controlled post-24-FPS-cap drag
+benchmark on the target, with a quiet outer-desktop control, repeated paired
+variants, compositor task-clock, Render/3D busy, presentation cadence, and
+input latency if measurable. No Celeron benchmark or new optimization was run
+for this paper review; laptop activity remains read-only pending explicit
+authorization.
+
+## Renderer follow-up: compositor scheduling versus glass drawing (2026-10-11)
+
+Reviewed Fleetwm's current rendering paths and external compositor research
+before changing code. No renderer code change is justified by the measurements
+available here:
+
+- Fleetwm already caches finished glass tiles and titlebar/frame pictures;
+  moving a window repositions scene nodes rather than repainting the client or
+  rebuilding its titlebar. The frame cache is shared by flat and glass styles;
+  glass adds only the cached, small titlebar/frame treatment while the window
+  body remains opaque.
+- An existing interleaved Celeron test exercised repeated real titlebar and
+  resize-edge drags with glass enabled and disabled. Compositor+bar CPU task
+  clock was 591/611/619 ms with glass versus 605/601/621 ms without; Intel
+  Render/3D busy was 44.6/45.1/44.8% versus 45.1/45.2/45.1%. These runs show
+  no consistent measurable glass penalty or glass-off gain in that workload.
+  This active-drag evidence was overlooked in the previous handoff; the
+  separate 2026-10-11 idle/unknown-activity sample is still inconclusive.
+  Important scope: the drag A/B predates the 24 FPS cap, added on 2026-10-10.
+  Its `intel_gpu_top` invocation sampled the whole UHD 600, while Fleetwm ran
+  nested inside the live desktop; the absolute ~45% cannot be attributed to
+  Fleetwm alone. A verified post-cap, per-process A/B is now recorded in
+  `docs/PERF_LOG_2026-10-11.md`; it found a small glass-on Render/3D increase
+  but no meaningful CPU or drag-time change, not a glass cost near the reported
+  ~40%.
+  The titlebar microbenchmark also reduced an 800 px hover redraw from 342 us
+  to 51 us with the finished-piece caches. There is no evidence for removing
+  Aero glass or adding another glass-specific cache as a response to the
+  reported utilization.
+- Upstream scene-graph documentation describes damage-aware buffers,
+  visibility calculation and direct scanout. Fleetwm already uses wlroots
+  scene output/damage, advertises dma-buf feedback, and caps interactive
+  move/resize composition at 24 FPS. The remaining unknown is whether the
+  user's reported load comes from a different foreground workload or the
+  1920x1080 full-desktop setup; the verified nested test is 1280x720.
+
+Research links:
+
+- Xaver Hugl, [Fixing KWin's performance on old hardware](https://zamundaaa.github.io/wayland/2024/06/25/fixing-kwin-perf-on-old-hardware.html),
+  2024-06-25. KWin measures CPU and GPU render time and adapts scheduling
+  against the presentation deadline using render-time volatility. Its dynamic
+  triple buffering overlaps CPU/GPU work when frames miss refresh intervals,
+  but may increase latency, waste energy and oscillate around the threshold.
+  This is a frame-pacing/throughput technique, not a general reduction in
+  work per frame.
+- [Wayland Architecture](https://wayland.freedesktop.org/docs/book/Architecture.html)
+  describes damage-driven composition and the compositor's role in collecting
+  client damage.
+- The [wlroots `wlr_scene` API](https://wlroots.pages.freedesktop.org/wlroots/wlr/types/wlr_scene.h.html)
+  documents scene-buffer damage regions, visibility and direct scanout.
+- The [wlroots renderer API](https://wlroots.pages.freedesktop.org/wlroots/wlr/render/wlr_renderer.h.html)
+  exposes render timers whose result may be unavailable. This could support
+  profiling, but is not currently wired into Fleetwm's overlay.
+
+Decision: do not cargo-cult triple buffering, driver environment flags, or
+additional repaint throttles. Fleetwm already caps interactive composition at
+24 FPS, and lowering that cap or changing queue depth trades smoothness/input
+latency for load. The prior local `mesa_glthread` experiment reduced CPU about
+5% only in a nested test and was deliberately left off on the two-core Celeron.
+The current local `build` is `debugoptimized`/O2 without PGO or LTO, so it is
+not a valid production renderer benchmark. The verified post-cap Celeron
+active-drag A/B is recorded below; it does not support a material glass or CPU
+optimization. A frame-time/damage-area trace and a matching 1920x1080 workload
+would be needed to target a further change.
+
+### DWM, shader cache, and CPU instruction-set findings
+
+- Microsoft's [DWM overview](https://learn.microsoft.com/en-us/windows/win32/dwm/dwm-overview)
+  describes application windows being redirected to off-screen video-memory
+  surfaces and composed into the desktop; it explicitly lists glass frames as
+  a DWM feature. This is a retained-surface composition model, not evidence that
+  Aero glass used no GPU or that composition was free. Fleetwm already moves
+  retained scene nodes and caches its finished decorations rather than
+  repainting them on each pointer event.
+- Mesa's [environment-variable reference](https://docs.mesa3d.org/envvars.html#mesa-shader-cache-max-size)
+  describes an on-disk cache of compiled shader programs, normally under
+  `~/.cache/mesa_shader_cache` (or `$XDG_CACHE_HOME`), with a default maximum
+  of 1 GiB. This is a disk-usage ceiling, not a 1 GiB RAM allocation.
+  Fleetwm has no custom GLSL shader pipeline or duplicate application-level
+  shader cache; its GLES2 programs are owned by wlroots/Mesa. Reusing Mesa's
+  cache can avoid shader compilation work during startup, but cannot reduce
+  per-frame fill, blending, or GPU busy while dragging. No Mesa cache variables
+  were changed.
+- The Celeron N4020 has no AVX/AVX2 support. The existing Celeron compiler-flag
+  A/B found no scroll-CPU improvement from `-march=native` over generic LTO
+  (medians 125.0 ms vs 121.5 ms; runs overlapped), and this was a pixman
+  scrolling workload, not a GPU drag test. There is no measured case for
+  hand-written SIMD or a new ISA-specific path. `-march=native` in the local
+  install build is a machine-local build choice, not a portable binary target;
+  it must not be used for binaries intended to run on arbitrary x86-64 CPUs.
+- This earlier research note preceded the owner's authorization for an
+  isolated nested target benchmark. The verified post-cap A/B is recorded in
+  `docs/PERF_LOG_2026-10-11.md`; it provides CPU task-clock and per-process
+  Render/3D busy, but not frame cadence or input-to-present latency.
+
+### Task Manager GPU metric accuracy
+
+The Task Manager uses the shared `GpuMonitor`, sampling machine stats once per
+second while its window is visible. On Intel, `GpuMonitor` computes
+`100 - delta(rc6_residency_ms) / elapsed_wall_time`; this measures the share of
+the GT interval not spent in RC6 sleep. An awake-but-idle GT counts as active,
+so this is **not render-engine utilization** and cannot quantify rendering
+load or headroom. AMD's `gpu_busy_percent` and NVIDIA's `nvidia-smi
+utilization.gpu` paths remain enabled; NVIDIA polling stays asynchronous at its
+existing reduced cadence. Their definitions and sampling windows differ. The
+Intel label is selected from discovered sources rather than replacing or
+filtering other adapters. The Task Manager Performance pane now labels a
+single-source Intel graph “GT awake (RC6 proxy)” (and uses “GPU activity” for
+mixed sources), with an explanatory note; the sidebar calls an Intel-only
+series “GT awake”. NVIDIA availability is now exposed before its first
+`nvidia-smi` response, preventing a hybrid Intel/NVIDIA machine from briefly
+being mislabeled Intel-only. For a Celeron render measurement, use the render-engine
+busy field from `intel_gpu_top`; do not substitute the Task Manager figure or
+RC6-derived values.
+
+This corrects the interpretation in the older Celeron GLES2 benchmark notes:
+their CPU timings remain useful, but the recorded 21–23% Intel RC6-derived
+“GPU busy” values are only a GT-awake proxy, not engine busy.
+
+### UI process sampling follow-up (2026-10-11)
+
+An isolated nested Celeron profile separated Settings and Task Manager client
+CPU from the compositor and bar. In 10-second idle-visible samples, Settings
+used less than 1 ms of task-clock; Task Manager used 163 ms on Processes and
+58 ms on Performance, versus 79/48 ms for the nested compositor and 203/195 ms
+for the bar. This is aggregate client CPU, not frame latency. The Processes
+tab scans `/proc` once per second. A first candidate cached each
+`/proc/PID/stat` descriptor's UID rather than repeating `fstat()`; tracing
+showed 1,653 calls before versus 213 after per ten seconds, but a balanced CPU
+sample did not show a repeatable win. Since a process can change credentials
+without changing PID, caching for the descriptor lifetime could make the
+displayed User stale; that candidate was rejected and per-refresh UID reads
+remain.
+
+The implemented optimization removes a redundant deep copy of the
+`ProcessTable` row vector and process-name strings: Task Manager now sorts and
+draws the table's own row storage. Three balanced old/new ten-second samples
+found client task-clock of 150.70/164.21/168.03 ms before and
+142.25/157.90/166.50 ms after. Each paired sample was lower after the change;
+the mean fell from 160.98 to 155.55 ms (~3.4%). This is a small CPU-work win
+for an idle-visible Processes tab, not evidence of improved input latency,
+frame time, or GPU usage.
+
+This profile used an isolated 1280x720 nested compositor, not the owner's
+1920x1080 desktop workload. The wl_shm app clients had no separate
+`intel_gpu_top` Render/3D client record. Continue with per-frame compositor
+damage/presentation profiling for interaction cost; do not infer input latency
+from task-clock or background Render/3D utilization.
+
+The earlier 2026-10-07 drag A/B is different: `glassgpu.sh` sampled
+`intel_gpu_top`'s `Render/3D.busy` field directly, so its 44.6–45.2% values are
+actual device-wide engine-busy reports during that tested workload. The
+sampler did not restrict collection to the nested compositor, and the live
+outer desktop was running at the same time. Despite the roughly 45% total
+engine-busy level, the glass and flat runs overlap; it does not support glass
+as the cause or a guaranteed gain from disabling it.
+
+### Drag-path non-pessimization
+
+Window movement repositions the existing scene tree; titlebar and frame
+buffers are cached and do not repaint for each pointer event. Removed one
+redundant `update_glass_backdrop()` call from the move-grab hot path: Fleetwm's
+own window backdrop node is no longer created, so the function only checks a
+null pointer and cannot affect the moved window. This trims a needless
+cross-translation-unit call per move event without changing scene output.
+Expected benefit is small CPU-side event-path work, not reduced GPU busy or a
+material glass-rendering speedup. The existing Celeron A/B provides no reason
+to sacrifice the glass appearance; further caps, alpha simplification, or
+frame scheduling changes need measurements that show a bottleneck.
+
+### Celeron sample attempt (2026-10-11)
+
+A bounded 35-second read-only sample was collected from the live Celeron
+compositor (PID 768, glass enabled), aggregating CPU time across all compositor
+threads. The seven five-second samples measured 0.2–0.6% of one core (mean
+0.46%, median 0.40%). Whether a window was actively dragged during this
+interval was not confirmed, so these CPU numbers are not an active-drag
+baseline and cannot validate or explain the reported ~40% usage.
+
+The `intel_gpu_top` JSON stream was truncated/malformed before parsing
+(82,295 bytes; parser stopped at line 5077), leaving no usable render-engine
+busy samples. This attempt therefore provides no GPU result and does not
+support a renderer change. Repeat only with a confirmed drag interval and a
+bounded/streaming GPU sampler that can reliably return complete records.
+
+### Verified post-cap drag A/B (2026-10-11)
+
+Three balanced pairs were run on the Celeron after the 24 FPS drag cap, using
+the installed GLES2 compositor in an isolated 1280x720 nested Wayland session.
+Each run confirmed `Fleetwm Settings` in the nested compositor's window list;
+the virtual pointer, compositor, and Settings client all used that session's
+own sockets. The test repeated titlebar moves and resize-edge drag gestures.
+`perf stat` measured compositor-plus-bar task-clock for seven seconds;
+`intel_gpu_top -J -s 500` collected 16 half-second samples, and the compositor
+PID's client `Render/3D.busy` was analyzed separately from device-wide busy.
+The per-trial values and limitations are in `docs/PERF_LOG_2026-10-11.md`.
+
+Across the three pairs, median compositor Render/3D busy over the whole
+eight-second capture was 14.45% glass-on versus 13.85% flat; paired glass-minus-
+flat differences were +0.54, +1.18, and +0.21 percentage points. Median
+compositor-plus-bar task-clock was 501.10 ms versus 497.80 ms, with paired
+differences of -8.73, +5.50, and +3.30 ms. The active-sample GPU averages were
+less stable because the 500 ms sampling windows did not align exactly with the
+2.75-second scripted drag sequence. This is a small glass-associated GPU
+difference, not evidence that glass accounts for a reported ~40% load; CPU and
+script duration did not show a repeatable glass penalty. Device-wide busy
+included the live desktop and peaked near 62%, so it must not be attributed to
+the nested compositor. The nested process itself peaked around 43.7-46.4% in
+individual 500 ms samples.
+
+No renderer code changed as a result: the measured glass delta is too small to
+justify simplifying the appearance, and the CPU numbers do not identify a
+Fleetwm CPU hot path. The workload did not reproduce the full 1920x1080 desktop
+scenario and did not measure input-to-present latency or GPU time per frame.
+Two preliminary batches were discarded after finding a bad Wayland/IPC socket
+alias and, in a later attempt, that the pointer helper could inherit the host
+display; none of those samples are included. The final trials explicitly
+target the nested display. During the discarded host-display batch the helper
+could have sent virtual-pointer drag gestures to the live session; it issued
+no click command, no settings were changed, and the live compositor was not
+restarted. All recorded nested test processes and temporary directories were
+removed afterward; live Fleetwm PID 768 remained running.
+
+Source inspection shows one unmeasured candidate for a future investigation:
+`Server::update_grab()` calls `wlr_scene_node_set_position()` on each pointer
+event, whereas `output_frame()` limits composition to 24 FPS. Instrument
+per-frame damage area and position updates before trying to coalesce geometry
+updates; the current A/B alone does not establish that accumulated drag damage
+is an avoidable bottleneck.
+
 ## How we decide: non-pessimization first
 
 This is the rule for all code and performance work here. Premature optimization
@@ -71,7 +378,7 @@ laptop; microsecond numbers are from a build machine (a Celeron takes several ti
 Tests that keep it this way: `GlassCache` (cached tile equals a direct paint, styles never share a tile),
 `TitlebarDraw` (cached background and strip equal the drawn ones in all 40 button states, caches stay within their
 budgets, warm is clearly cheaper than cold, glass and matte differ only in the background), `CaptionButtons`.
-Glass versus flat on the compositor: no measurable difference at idle (0.20% against 0.25% on the laptop).
+Glass versus flat on the compositor at idle: no measurable difference (0.20% against 0.25% on the laptop). The separate active-drag A/B is recorded above.
 
 ## Overlay, glass, bar and start menu pass (2026-10-06)
 
@@ -251,7 +558,9 @@ titlebar and resized by its edge, 12 and 8 rounds), compositor plus bar CPU was 
 against 605, 601 and 621 ms flat, and the render engine of the UHD 600 was busy 44.6%, 45.1% and 44.8% with glass
 against 45.1%, 45.2% and 45.1% flat (`perflog/2026-10-07/glassbench.sh`, `glassgpu.sh`, raw in 15 and 16). Glass
 costs nothing measurable beyond flat in motion; the titlebar, frame, bar and menu pictures are all cached, so there
-is no glass-only work left to remove. A further "faster glass" change was not made because there is no gap to close.
+is no glass-only work left to remove. The GPU number is device-wide and includes the live outer desktop; this run
+predates the 24 FPS drag cap. It therefore cannot establish Fleetwm's absolute GPU contribution or the cap's effect.
+A further "faster glass" change was not made because there is no measured glass-only gap to close.
 
 ### Mouse pointer (2026-10-07)
 

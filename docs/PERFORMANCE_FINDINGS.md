@@ -283,7 +283,7 @@ turn prewarm on by default for the Celeron until the manifest is replaced by the
 **Flags on the Celeron (test list row 3; `flagab-safe.sh 6 20 gen nolto native`, interleaved, 6 reps, nested compositor + `foot -F -e yes` for 20 s, pixman, schedutil).**
 Compositor CPU per 20 s of scrolling (median, min-max): LTO (the shipped build) 121.5 ms (117-126); no LTO 123.5 ms (115-154, one outlier); LTO + `-march=native` 125.0 ms (123-131).
 foot CPU ticks 2142 / 2137 / 2136; idle compositor CPU per 20 s 13.0 / 12.5 / 14.0 ms. All three are inside the run spread: no gain from LTO, none from `-march=native` (a hair worse,
-not significant); decision: keep the shipped flags, do not ship `-march=native` (a binary built for one CPU can fail on another). Raw: `perflog/2026-10-08/flagab-celeron.txt`.
+not significant). This does not justify `-march=native` as a performance optimization. The local source installer does use it, so binaries built and installed on the target use that CPU's available instructions; binaries intended for other or unknown machines must use a portable target rather than inheriting the build host's ISA. This was a pixman scroll test, not a GLES2 drag test. Raw: `perflog/2026-10-08/flagab-celeron.txt`.
 Builds: bgen/bnolto/bnative in `~/perf-test` on the laptop (master `ef297cc`); build time each a few minutes on the Celeron.
 
 **Real-hardware reads checked with the files the bar uses (no GUI; both machines).**
@@ -324,19 +324,18 @@ share of the cold cost end to end is about 13 ms (357 evicted vs 344 warm, exec 
 `/usr/local/bin/fleetwm`'s manifest while the user types the password. NOT built: the greeter runs as root and would have to open files named by a user-writable manifest; that needs
 a privilege drop in a forked child before reading (the auto-mode classifier refused an implementation as an attack surface, 2026-10-08); the owner decides whether to allow it.
 
-## 17. Render cost on a real GPU (test list rows 1; Celeron laptop UHD 600, i915, Mesa 25.0.7, 2026-10-08)
+## 17. GLES2 render cost on a real GPU (Celeron laptop UHD 600, i915, Mesa 25.0.7, 2026-10-08)
 
 Rig: the nested headless compositor with the renderer chosen by `WLR_RENDERER` (pixman = CPU, gles2 = the GPU through `/dev/dri/renderD128`; no display needed), `foot -F -e yes`
-scrolling for 20 s, interleaved, schedutil. GPU busy = 100 - share of the i915 `rc6_residency_ms` over the window (the GT is awake that fraction of the time); `act_freq` sampled 4 times.
+scrolling for 20 s, interleaved, schedutil. The reported GPU percentage was calculated as 100 minus the share of i915 `rc6_residency_ms` over the window. This is **GT non-RC6/awake time, not render-engine busy**: it includes awake-but-idle intervals and cannot establish render utilization or render headroom. `act_freq` was sampled 4 times. Treat these GPU percentages as an activity proxy only; the CPU timings and profile below are separate measurements.
 Script `perflog/2026-10-08/gpu-render.sh`, raw `gpu-render-celeron.txt`, profile `gpu-render-perf-celeron.txt`. Compositor CPU per 20 s of scrolling:
-- 1280x720, 5 reps: pixman 119-128 ms (median 123); gles2 1118-1241 ms (median 1147): the GPU path costs 9.3x the CPU time of software rendering; GPU busy 21-23% (pixman 1%); foot ticks equal (2112-2176 vs 2149-2178).
-- 1024x768, 3 reps: pixman 142-155 ms; gles2 1206-1258 ms (8.5x); GPU busy 22-23%.
+- 1280x720, 5 reps: pixman 119-128 ms (median 123); gles2 1118-1241 ms (median 1147): the GPU path costs 9.3x the CPU time of software rendering; GT non-RC6 proxy 21-23% (pixman 1%); foot ticks equal (2112-2176 vs 2149-2178).
+- 1024x768, 3 reps: pixman 142-155 ms; gles2 1206-1258 ms (8.5x); GT non-RC6 proxy 22-23%.
 - Profile of the compositor on gles2 (`perf record -F 999 -g`, 15 s): 73.5% of its CPU is one libc routine (the memcpy family) called from Mesa's gallium driver, i.e. copying the client's
   shm buffer into a GL texture (`wlr_texture_update_from_buffer`); everything of Fleetwm's own (`output_frame` etc.) is 0.2-0.4% each. Same result as the 2026-10-07 profile (53% memcpy).
 Reading: for a client that repaints its whole window every frame through shared memory (a scrolling `foot`), the GPU does not remove work from the CPU, it adds a full-frame copy; the
 compositor's own code is not the cost. At the idle desktop nothing is uploaded, so this affects only busy shm clients; GPU (dmabuf) clients such as Lestrix's GL window avoid the copy
-(not measured yet: needs Lestrix under Fleetwm, row 12). Not measured: key-to-pixel latency (row 11, needs a camera or timestamps), `act_freq` stayed at its 100 MHz floor in most samples,
-so the busy percentage is the meaningful GPU number, and the dev PC (UHD 620, 4 cores) was not used for this.
+(not measured yet: needs Lestrix under Fleetwm, row 12). Not measured: key-to-pixel latency (row 11, needs a camera or timestamps), `act_freq` stayed at its 100 MHz floor in most samples. These RC6-derived percentages are not a substitute for `intel_gpu_top` render-engine busy; use `intel_gpu_top` for GPU-engine utilization. The dev PC (UHD 620, 4 cores) was not used for this test.
 
 **Section 17 follow-up: is the upload avoidable? (WAYLAND_DEBUG=client on the scrolling foot, 6 s, gles2 rig, laptop.)** foot commits about 30 frames/s and each frame damages
 `damage_buffer(1, 2, 1278, 715)`, i.e. 1278x715 px of a 1280x720 surface (178 of 187 requests; the rest are first-frame and border strips): 3.66 MB per frame, 110 MB/s, nearly the whole
@@ -376,3 +375,25 @@ Rig for all rows: dev PC (Nobara, 8 cores), Debian 13 container with the headles
   (`bar-timers-ab.txt`, 3 interleaved runs each): old 2.11 / 1.95 / 1.81 wake-ups/s, shared 2.13 / 2.21 / 2.10; CPU and RSS identical. A first version was worse (2.15-2.43) because the timer fired up to 1 ms early and woke twice per tick;
   with a 1 ms margin it is equal. The timers are a small part of the roughly 2 wake-ups/s (the rest are Wayland events and frame callbacks), so there is nothing to win; removed again, as section 18 predicted.
 - **Parallel speedup 0.00x in the install summary (item 7).** `times` run inside `$(...)` reports the fresh subshell; the installer now reads its own child CPU from `/proc/$$/stat` (cutime + cstime). Checked with a 3 s busy loop: 3.0 s.
+
+## 21. Post-cap Celeron drag A/B (2026-10-11)
+
+A verified three-pair glass-on/off comparison was run on the Celeron N4020 with
+the installed GLES2 compositor and the 24 FPS interactive drag cap. The nested
+session was 1280x720; each pair opened and verified a Settings window and ran
+the same scripted titlebar/resize gestures. CPU task-clock covered the nested
+compositor plus its bar; `intel_gpu_top`'s 500 ms JSON samples were attributed
+to the nested compositor PID as well as summarized device-wide. Full setup,
+per-run numbers, and the harness caveat are in
+`docs/PERF_LOG_2026-10-11.md`.
+
+Median nested-compositor Render/3D busy over the capture was 14.45% with glass
+and 13.85% flat; the paired deltas were +0.54, +1.18, and +0.21 percentage
+points. Median compositor-plus-bar task-clock was 501.10 ms and 497.80 ms,
+respectively, with mixed paired deltas. The nested process reached 43.65-46.36%
+in its busiest half-second samples, while device-wide peaks around 62% include
+the live desktop. This shows a small glass-associated GPU cost, not a glass
+cost approaching the reported ~40%; CPU task-clock and scripted drag duration
+show no repeatable glass penalty. It does not measure a 1920x1080 full-desktop
+workload, frame cadence, or input-to-present latency, and therefore does not
+justify an unmeasured renderer change.

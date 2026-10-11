@@ -19,13 +19,19 @@
 # belong in the "slower, separate stage" CI bucket, not the
 # always-run-after-every-change unit suite.
 set -uo pipefail
+ulimit -c 0
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="$(cd "${1:-${SCRIPT_DIR}/build}" && pwd)"
 COMPOSITOR_BIN="${BUILD_DIR}/src/compositor/fleetwm"
+TASKMGR_BIN="${BUILD_DIR}/apps/taskmgr/fleetwm-taskmgr"
 
 if [[ ! -x "$COMPOSITOR_BIN" ]]; then
   echo "error: $COMPOSITOR_BIN not found or not executable -- build first (ninja -C ${BUILD_DIR})" >&2
+  exit 1
+fi
+if [[ ! -x "$TASKMGR_BIN" ]]; then
+  echo "error: $TASKMGR_BIN not found or not executable -- build first (ninja -C ${BUILD_DIR})" >&2
   exit 1
 fi
 for tool in dbus-run-session python3; do
@@ -47,6 +53,8 @@ RUNTIME_DIR="$(mktemp -d /tmp/fleetwm-smoke.XXXXXX)"
 chmod 700 "$RUNTIME_DIR"
 IPC_SOCK="${RUNTIME_DIR}/fleetwm.sock"
 COMP_LOG="${RUNTIME_DIR}/compositor.log"
+TASKMGR_LOG="${RUNTIME_DIR}/taskmgr.log"
+mkdir -p "$RUNTIME_DIR/config"
 # $! after `dbus-run-session -- ... &` is the *wrapper's* PID, not the
 # compositor's -- dbus-run-session forks the given command as its own
 # child rather than exec-replacing itself, so a SIGTERM aimed at $! does
@@ -58,8 +66,15 @@ COMP_LOG="${RUNTIME_DIR}/compositor.log"
 # liveness/signal check below actually targets.
 WRAPPER_PID=""
 COMP_PID=""
+TASKMGR_PID=""
 
 cleanup() {
+  if [[ -n "$TASKMGR_PID" ]] && kill -0 "$TASKMGR_PID" 2>/dev/null; then
+    kill -TERM "$TASKMGR_PID" 2>/dev/null || true
+  fi
+  if [[ -n "$TASKMGR_PID" ]]; then
+    wait "$TASKMGR_PID" 2>/dev/null || true
+  fi
   if [[ -n "$COMP_PID" ]] && kill -0 "$COMP_PID" 2>/dev/null; then
     kill -TERM "$COMP_PID" 2>/dev/null || true
   fi
@@ -77,6 +92,31 @@ start_compositor() {
     LANG=C.UTF-8 LC_ALL=C.UTF-8 \
     "$COMPOSITOR_BIN" >"$COMP_LOG" 2>&1 &
   WRAPPER_PID=$!
+}
+
+start_taskmgr() {
+  env FLEETWM_PREWARM=off XDG_RUNTIME_DIR="$RUNTIME_DIR" WAYLAND_DISPLAY=wayland-0 \
+    XDG_CONFIG_HOME="$RUNTIME_DIR/config" HOME="$RUNTIME_DIR" \
+    "$TASKMGR_BIN" --tab cache >"$TASKMGR_LOG" 2>&1 &
+  TASKMGR_PID=$!
+  for _ in $(seq 1 20); do
+    if ! kill -0 "$TASKMGR_PID" 2>/dev/null; then
+      wait "$TASKMGR_PID" 2>/dev/null
+      local status=$?
+      TASKMGR_PID=""
+      return "$status"
+    fi
+    local state
+    state="$(ps -o stat= -p "$TASKMGR_PID" 2>/dev/null | tr -d ' ')"
+    if [[ "$state" == Z* ]]; then
+      wait "$TASKMGR_PID" 2>/dev/null
+      local status=$?
+      TASKMGR_PID=""
+      return "$status"
+    fi
+    sleep 0.2
+  done
+  return 0
 }
 
 resolve_compositor_pid() {
@@ -113,10 +153,18 @@ sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 sock.settimeout(2)
 sock.connect(sys.argv[1])
 sock.sendall((sys.argv[2] + "\n").encode())
+data = bytearray()
 try:
-    data = sock.recv(256)
+    while True:
+        chunk = sock.recv(256)
+        if not chunk:
+            break
+        data.extend(chunk)
+        lines = data.splitlines()
+        if lines and (not sys.argv[2].startswith("OUTPUT_SET ") or b"OK" in lines):
+            break
 except socket.timeout:
-    data = b""
+    pass
 sock.close()
 print(data.decode(errors="replace").strip())
 PY
@@ -182,6 +230,35 @@ ipc_query 'WORKSPACE 0' >/dev/null
 reply="$(ipc_query 'WORKSPACE?')"
 [[ "$reply" == "0" ]] && pass "IPC still responsive after prior checks (WORKSPACE 0 took effect)" \
   || fail "WORKSPACE? replied '$reply' after WORKSPACE 0, expected '0'"
+
+echo "-- HeadlessOutputAtMinimumSupportedResolution"
+outputs="$(ipc_query 'OUTPUTS?')"
+output_name="$(printf '%s\n' "$outputs" | awk '$1 == "OUTPUT" {print $2; exit}')"
+if [[ -z "$output_name" ]]; then
+  fail "headless compositor did not report an output"
+else
+  reply="$(ipc_query "OUTPUT_SET $output_name 1024 768 60000 0 0")"
+  size="$(ipc_query 'OUTPUTS?' | awk -v name="$output_name" '$1 == "OUTPUT" && $2 == name {print $5 "x" $6; exit}')"
+  response="$(printf '%s\n' "$reply" | tail -n1)"
+  [[ "$response" == "OK" && "$size" == "1024x768" ]] \
+    && pass "headless output $output_name is set to 1024x768" \
+    || fail "could not set $output_name to 1024x768 (reply '$reply', reported '$size')"
+fi
+
+echo "-- TaskManagerStartsAndStopsCleanly"
+if start_taskmgr; then
+  pass "Task Manager started and remained running"
+  kill -TERM "$TASKMGR_PID"
+  wait "$TASKMGR_PID"
+  taskmgr_status=$?
+  TASKMGR_PID=""
+  [[ "$taskmgr_status" == "0" ]] && pass "Task Manager exited cleanly on SIGTERM" \
+    || fail "Task Manager exited with code $taskmgr_status after SIGTERM"
+else
+  taskmgr_status=$?
+  fail "Task Manager exited during initial rendering (code $taskmgr_status)"
+  cat "$TASKMGR_LOG" >&2
+fi
 
 echo "-- CompositorShutsDownCleanlyOnSigterm"
 kill -TERM "$COMP_PID"

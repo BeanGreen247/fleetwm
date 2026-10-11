@@ -12,12 +12,13 @@ dependencies for a handful of numbers.
 - **CPU%**: read `/proc/stat`'s aggregate line, compute the delta between
   two samples. Piggybacks on the same 1Hz GLib timeout that already drives
   the clock -- no additional wakeup source.
-- **GPU%**: best-effort, vendor-priority order: `/sys/class/drm/card*/
-  device/gpu_busy_percent` (amdgpu) first, then Intel's `gt_busy_percent`
-  sysfs node, then `nvidia-smi --query-gpu=utilization.gpu` via subprocess
-  if the binary exists on PATH (at a reduced 3s interval, since spawning a
-  process is comparatively expensive versus a sysfs read). Shows "N/A" if
-  none are available rather than erroring.
+- **GPU activity**: best-effort. AMD reads
+  `/sys/class/drm/card*/device/gpu_busy_percent`; Intel estimates the GT's
+  non-RC6 (awake) time from `rc6_residency_ms`; NVIDIA reads
+  `nvidia-smi --query-gpu=utilization.gpu` in a subprocess at a reduced 3s
+  interval. The Intel figure is an awake-time proxy, not render-engine
+  utilization: it includes time the GT is awake but idle. Shows "N/A" if no
+  supported source is available rather than erroring.
 - **Disk%**: `statvfs("/")`, polled every 5-10s -- doesn't need 1Hz
   freshness.
 - **Volume%**: PipeWire is the default audio server on both target

@@ -56,6 +56,7 @@ class ProcessTable {
   void apply(const std::vector<ProcInfo>& now, double dt, long hz, int cpus);
   // Reads /proc and applies. Returns false when /proc could not be read.
   bool refresh(double dt, long hz, int cpus);
+  std::vector<ProcRow>& rows() { return rows_; }
   const std::vector<ProcRow>& rows() const { return rows_; }
   ~ProcessTable();
 

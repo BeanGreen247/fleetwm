@@ -48,8 +48,9 @@ class GpuMonitor {
 
   const std::vector<GpuDevice>& devices() const { return devices_; }
   int nvidia_cards() const { return nvidia_cards_; }
+  bool nvidia_available() const { return has_nvidia_smi_ || nvidia_cards_ > 0; }
   const std::vector<GpuDetail>& nvidia_detail() const { return nvidia_detail_; }
-  bool any() const { return !devices_.empty() || has_nvidia_smi_; }
+  bool any() const { return !devices_.empty() || nvidia_available(); }
 
   // "GPU 12%" for one GPU, "GPU1 12%  GPU2 40%" for several, "GPU N/A" for none.
   std::string text() const;

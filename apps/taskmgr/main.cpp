@@ -15,6 +15,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -137,8 +138,11 @@ struct Reader {
   }
 };
 
-enum class Tab { Processes, Performance, Cache };
+enum class Tab { Processes, Performance, Cache, Count };
 enum class Res { Cpu, Memory, Disk, Network, Gpu };
+constexpr size_t kTabCount = static_cast<size_t>(Tab::Count);
+constexpr std::array<const char*, kTabCount> kTabNames = {"Processes", "Performance", "Cache"};
+static_assert(kTabNames.size() == kTabCount);
 
 struct TaskMgr {
   App app;
@@ -148,17 +152,18 @@ struct TaskMgr {
 
   Tab tab = Tab::Processes;
   Res res = Res::Cpu;
+  int hovered_tab = -1;
+  int hovered_res = -1;
 
   // ---- processes ----
   ProcessTable table;
-  std::vector<ProcRow> rows;
   ProcColumn sort_col = ProcColumn::Cpu;
   bool sort_desc = true;
   int selected_pid = 0;
   double scroll = 0;
   std::unordered_map<unsigned, std::string> users;
   std::string status;
-  Rect col_rect[6], end_btn, force_btn, tab_rect[2], res_rect[5];
+  Rect col_rect[6], end_btn, force_btn, tab_rect[kTabCount], res_rect[5];
 
   // ---- machine ----
   Reader stat_r, mem_r, disk_r, net_r, load_r, up_r;
@@ -332,9 +337,8 @@ struct TaskMgr {
     sample_machine(dt);
     if (tab == Tab::Processes) {
       table.refresh(dt, hz, ncpu);
-      rows = table.rows();
-      sort_rows(&rows, sort_col, sort_desc, users);
-      for (const ProcRow& r : rows)
+      sort_rows(&table.rows(), sort_col, sort_desc, users);
+      for (const ProcRow& r : table.rows())
         if (!users.count(r.info.uid)) {
           const passwd* pw = getpwuid(r.info.uid);
           users[r.info.uid] = pw ? pw->pw_name : std::to_string(r.info.uid);
@@ -355,7 +359,7 @@ struct TaskMgr {
   double list_top() const { return kTabsH + kHeaderH; }
   double list_height() const { return height - list_top() - kFooterH; }
   void clamp_scroll() {
-    const double max = std::max(0.0, static_cast<double>(rows.size()) * kRowH - list_height());
+    const double max = std::max(0.0, static_cast<double>(table.rows().size()) * kRowH - list_height());
     scroll = std::clamp(scroll, 0.0, max);
   }
 
@@ -451,16 +455,22 @@ struct TaskMgr {
     set_source(cr, pal.bg_primary);
     cairo_paint(cr);
     // Tabs.
-    const char* names[3] = {"Processes", "Performance", "Cache"};
     double x = 12;
-    for (int i = 0; i < 3; ++i) {
-      const TextExtents te = measure_text(cr, names[i], 14, tab == static_cast<Tab>(i));
-      tab_rect[i] = {x, 6, te.width + 28, kTabsH - 6};
+    for (size_t i = 0; i < kTabNames.size(); ++i) {
+      const TextExtents te = measure_text(cr, kTabNames[i], 14, tab == static_cast<Tab>(i));
+      tab_rect[i] = {x, 0, te.width + 28, kTabsH};
       const bool on = tab == static_cast<Tab>(i);
-      rounded_rect(cr, tab_rect[i].x, tab_rect[i].y, tab_rect[i].w, tab_rect[i].h + 6, pal.rounded ? 7 : 0);
-      set_source(cr, on ? alpha(pal.accent, 0.20) : alpha(pal.bg_secondary, 0.0));
-      cairo_fill(cr);
-      text_at(cr, names[i], tab_rect[i].x + 14, tab_rect[i].y + tab_rect[i].h / 2, 14, on ? pal.fg_primary : dim(), on);
+      if (on || hovered_tab == static_cast<int>(i)) {
+        rounded_rect(cr, tab_rect[i].x + 3, 4, tab_rect[i].w - 6, kTabsH - 8, pal.rounded ? 6 : 0);
+        set_source(cr, on ? alpha(pal.accent, 0.16) : alpha(pal.bg_secondary, 0.8));
+        cairo_fill(cr);
+      }
+      if (on) {
+        rounded_rect(cr, tab_rect[i].x + 11, kTabsH - 3, tab_rect[i].w - 22, 2, 1);
+        set_source(cr, pal.accent);
+        cairo_fill(cr);
+      }
+      text_at(cr, kTabNames[i], tab_rect[i].x + 14, kTabsH / 2, 14, on ? pal.fg_primary : dim(), on);
       x += tab_rect[i].w + 6;
     }
     set_source(cr, alpha(pal.fg_secondary, 0.25));
@@ -506,10 +516,10 @@ struct TaskMgr {
     cairo_rectangle(cr, 0, top, w, bottom - top);
     cairo_clip(cr);
     const size_t first = static_cast<size_t>(std::max(0.0, scroll / kRowH));
-    for (size_t i = first; i < rows.size(); ++i) {
+    for (size_t i = first; i < table.rows().size(); ++i) {
       const double y = top + static_cast<double>(i) * kRowH - scroll;
       if (y >= bottom) break;
-      const ProcRow& r = rows[i];
+      const ProcRow& r = table.rows()[i];
       const bool sel = r.info.pid == selected_pid;
       if (sel) {
         set_source(cr, alpha(pal.accent, 0.30));
@@ -541,7 +551,7 @@ struct TaskMgr {
     cairo_restore(cr);
 
     // Scroll bar.
-    const double total = static_cast<double>(rows.size()) * kRowH;
+    const double total = static_cast<double>(table.rows().size()) * kRowH;
     if (total > bottom - top) {
       const double bar_h = std::max(24.0, (bottom - top) * (bottom - top) / total);
       const double bar_y = top + (bottom - top - bar_h) * (scroll / (total - (bottom - top)));
@@ -559,7 +569,7 @@ struct TaskMgr {
     cairo_rectangle(cr, 0, fy, w, 1);
     cairo_fill(cr);
     char foot[128];
-    std::snprintf(foot, sizeof foot, "Processes: %zu     CPU: %s     Memory: %s", rows.size(), cpu_t, mem_t);
+    std::snprintf(foot, sizeof foot, "Processes: %zu     CPU: %s     Memory: %s", table.rows().size(), cpu_t, mem_t);
     text_at(cr, foot, 12, fy + kFooterH / 2 - (status.empty() ? 0 : 8), kFont, pal.fg_primary);
     if (!status.empty()) text_at(cr, status, 12, fy + kFooterH / 2 + 9, kSmall, dim());
     const bool have = selected_pid > 1;
@@ -585,20 +595,29 @@ struct TaskMgr {
     const double mem_pct = mem.total ? 100.0 * static_cast<double>(mem.total - mem.available) / static_cast<double>(mem.total) : 0;
     std::snprintf(b1, sizeof b1, "%d%%", cpu_pct);
     std::snprintf(b2, sizeof b2, "%.0f%%  %s", mem_pct, format_kib(static_cast<long long>(mem.total - mem.available)).c_str());
+    const bool intel_awake_proxy = std::any_of(gpu.devices().begin(), gpu.devices().end(), [](const GpuDevice& device) {
+      return device.kind == GpuDevice::Kind::IntelIdle;
+    });
+    const bool only_intel_awake_proxy =
+        intel_awake_proxy && !gpu.nvidia_available() &&
+        std::all_of(gpu.devices().begin(), gpu.devices().end(), [](const GpuDevice& device) {
+          return device.kind == GpuDevice::Kind::IntelIdle;
+        });
     const double disk_max = std::max({1.0e6, disk_read_h.max(), disk_write_h.max()});
     const double net_max = std::max({1.0e5, net_rx_h.max(), net_tx_h.max()});
     const Item items[5] = {{"CPU", b1, &cpu_h, 100, nullptr},
                            {"Memory", b2, &mem_h, 100, nullptr},
                            {"Disk", "R " + format_rate(disk_read_bps) + " W " + format_rate(disk_write_bps), &disk_read_h, disk_max, &disk_write_h},
                            {"Network", "Rx " + format_rate(net_rx_bps) + " Tx " + format_rate(net_tx_bps), &net_rx_h, net_max, &net_tx_h},
-                           {"GPU", gpu.any() ? (gpu.busiest_percent() < 0 ? std::string("--") : std::to_string(gpu.busiest_percent()) + "%") : std::string("not found"), &gpu_h, 100, nullptr}};
+                           {only_intel_awake_proxy ? "GT awake" : "GPU", gpu.any() ? (gpu.busiest_percent() < 0 ? std::string("--") : std::to_string(gpu.busiest_percent()) + "%") : std::string("not found"), &gpu_h, 100, nullptr}};
     const Color c1 = pal.accent, c2{0.95, 0.55, 0.25, 1};
     for (int i = 0; i < 5; ++i) {
       res_rect[i] = {0, kTabsH + 6.0 + i * 66, kSideW, 62};
       const bool on = res == static_cast<Res>(i);
-      if (on) {
-        set_source(cr, alpha(pal.accent, 0.20));
-        cairo_rectangle(cr, 4, res_rect[i].y, kSideW - 8, res_rect[i].h);
+      const bool hot = hovered_res == i;
+      if (on || hot) {
+        rounded_rect(cr, 4, res_rect[i].y, kSideW - 8, res_rect[i].h, pal.rounded ? 5 : 0);
+        set_source(cr, on ? alpha(pal.accent, 0.20) : alpha(pal.bg_primary, 0.55));
         cairo_fill(cr);
       }
       graph(cr, {12, res_rect[i].y + 8, 62, 46}, *items[i].hist, items[i].ymax, c1, true, items[i].hist2, &c2);
@@ -608,6 +627,12 @@ struct TaskMgr {
       cairo_clip(cr);
       text_at(cr, items[i].value, 84, res_rect[i].y + 40, kSmall, dim());
       cairo_restore(cr);
+      if (hot) {
+        rounded_rect(cr, 4.5, res_rect[i].y + 0.5, kSideW - 9, res_rect[i].h - 1, pal.rounded ? 5 : 0);
+        set_source(cr, alpha(pal.accent, 0.65));
+        cairo_set_line_width(cr, 1);
+        cairo_stroke(cr);
+      }
     }
     // Detail.
     const double dx = kSideW + 16, dw = w - dx - 16;
@@ -639,7 +664,7 @@ struct TaskMgr {
         std::snprintf(t, sizeof t, "%d%%", cpu_pct);
         info_grid(cr, dx, y, dw, {
           {"Utilisation", t},
-          {"Processes", std::to_string(rows.size())},
+          {"Processes", std::to_string(table.rows().size())},
           {"Logical processors", std::to_string(cpu_info.logical_threads)},
           {"Physical cores", std::to_string(cpu_info.physical_cores)},
           {"Clock", cpu_info.mhz > 0 ? std::to_string(cpu_info.mhz) + " MHz" : "unknown"},
@@ -718,7 +743,9 @@ struct TaskMgr {
         }
         graph(cr, {dx, y, dw, 170}, gpu_h, 100, c1);
         y += 184;
-        line("Utilisation", gpu.text());
+        line(intel_awake_proxy ? (only_intel_awake_proxy ? "GT awake (RC6 proxy)" : "GPU activity (Intel RC6 proxy)")
+                               : "Utilisation",
+             gpu.text());
         for (const GpuDevice& g : gpu.devices()) {
           line("Card", g.vendor + " (" + g.driver + ")");
           if (!g.freq_path.empty()) {
@@ -726,9 +753,88 @@ struct TaskMgr {
             if (f >= 0) line("Core clock", std::to_string(f) + " MHz");
           }
         }
+        if (intel_awake_proxy)
+          text_at(cr, "Intel: GT awake time, not Render/3D busy; includes awake-idle time.", dx, y + 8, kSmall, dim());
         break;
       }
     }
+    if (hovered_res >= 0) draw_resource_hover(cr, hovered_res);
+  }
+
+  void draw_resource_hover(cairo_t* cr, int index) {
+    std::array<std::string, 3> details;
+    const char* title = "";
+    switch (static_cast<Res>(index)) {
+      case Res::Cpu:
+        title = "CPU DETAILS";
+        details = {cpu_info.model.empty() ? "Processor model unavailable" : cpu_info.model,
+                   std::to_string(cpu_info.logical_threads) + " logical processors / " +
+                       std::to_string(cpu_info.physical_cores) + " physical cores",
+                   "Clock: " + (cpu_info.mhz > 0 ? std::to_string(cpu_info.mhz) + " MHz" : "unavailable") +
+                       "  |  Load: " + (load_avg.empty() ? "--" : load_avg)};
+        break;
+      case Res::Memory: {
+        title = "MEMORY DETAILS";
+        const unsigned long long used = mem.total > mem.available ? mem.total - mem.available : 0;
+        details = {"In use: " + format_kib(static_cast<long long>(used)) + " / " +
+                       format_kib(static_cast<long long>(mem.total)),
+                   "Available: " + format_kib(static_cast<long long>(mem.available)),
+                   "Cached: " + format_kib(static_cast<long long>(mem.cached)) + "  |  Swap: " +
+                       (mem.swap_total ? format_kib(static_cast<long long>(mem.swap_total - mem.swap_free)) : "none")};
+        break;
+      }
+      case Res::Disk:
+        title = "DISK DETAILS";
+        details = {"Read: " + format_rate(disk_read_bps),
+                   "Write: " + format_rate(disk_write_bps),
+                   "Physical drives: " + std::to_string(drives.size())};
+        break;
+      case Res::Network:
+        title = "NETWORK DETAILS";
+        details = {"Receive: " + format_rate(net_rx_bps),
+                   "Send: " + format_rate(net_tx_bps),
+                   "All active interfaces except loopback"};
+        break;
+      case Res::Gpu: {
+        title = "GPU DETAILS";
+        details[0] = gpu.text();
+        const bool intel_awake_proxy = std::any_of(gpu.devices().begin(), gpu.devices().end(), [](const GpuDevice& device) {
+          return device.kind == GpuDevice::Kind::IntelIdle;
+        });
+        if (gpu.devices().empty() && gpu.nvidia_cards() == 0) {
+          details[1] = "Hardware utilisation source unavailable";
+        } else if (gpu.devices().empty()) {
+          details[1] = "NVIDIA (nvidia-smi)";
+          const auto& nvidia = gpu.nvidia_detail();
+          details[2] = !nvidia.empty() && nvidia.front().core_mhz > 0
+                           ? "Clock: " + std::to_string(nvidia.front().core_mhz) + " MHz"
+                           : "Clock: unavailable";
+        } else {
+          const GpuDevice& device = gpu.devices().front();
+          details[1] = device.vendor + " (" + device.driver + ")";
+          const long long freq = device.freq_path.empty() ? -1 : GpuMonitor::read_number(device.freq_path);
+          details[2] = intel_awake_proxy
+                           ? "GT awake estimate; not render-engine busy"
+                           : freq >= 0 ? "Clock: " + std::to_string(freq) + " MHz" : "Clock: unavailable";
+        }
+        break;
+      }
+    }
+
+    const Rect panel{8, kTabsH + 6.0 + 5 * 66 + 10, kSideW - 16.0, 90};
+    rounded_rect(cr, panel.x + 0.5, panel.y + 0.5, panel.w - 1, panel.h - 1, pal.rounded ? 6 : 0);
+    set_source(cr, alpha(pal.bg_primary, 0.9));
+    cairo_fill_preserve(cr);
+    set_source(cr, alpha(pal.accent, 0.5));
+    cairo_set_line_width(cr, 1);
+    cairo_stroke(cr);
+    text_at(cr, title, panel.x + 9, panel.y + 14, kSmall, pal.accent, true);
+    cairo_save(cr);
+    cairo_rectangle(cr, panel.x + 8, panel.y + 22, panel.w - 16, panel.h - 26);
+    cairo_clip(cr);
+    for (size_t i = 0; i < details.size(); ++i)
+      text_at(cr, details[i], panel.x + 9, panel.y + 36 + i * 16, kSmall, i == 0 ? pal.fg_primary : dim());
+    cairo_restore(cr);
   }
 
   void draw_cache(cairo_t* cr, int w, int h) {
@@ -785,9 +891,9 @@ struct TaskMgr {
 
   // ---------------------------------------------------------------- input --
   void select_by_index(long i) {
-    if (rows.empty()) return;
-    i = std::clamp(i, 0L, static_cast<long>(rows.size()) - 1);
-    selected_pid = rows[static_cast<size_t>(i)].info.pid;
+    if (table.rows().empty()) return;
+    i = std::clamp(i, 0L, static_cast<long>(table.rows().size()) - 1);
+    selected_pid = table.rows()[static_cast<size_t>(i)].info.pid;
     const double top = static_cast<double>(i) * kRowH;
     if (top < scroll) scroll = top;
     if (top + kRowH > scroll + list_height()) scroll = top + kRowH - list_height();
@@ -795,8 +901,8 @@ struct TaskMgr {
   }
 
   long selected_index() const {
-    for (size_t i = 0; i < rows.size(); ++i)
-      if (rows[i].info.pid == selected_pid) return static_cast<long>(i);
+    for (size_t i = 0; i < table.rows().size(); ++i)
+      if (table.rows()[i].info.pid == selected_pid) return static_cast<long>(i);
     return -1;
   }
 
@@ -809,9 +915,10 @@ struct TaskMgr {
 
   void on_button(double x, double y, uint32_t b, bool pressed) {
     if (!pressed || b != kBtnLeft) return;
-    for (int i = 0; i < 3; ++i)
+    for (size_t i = 0; i < kTabNames.size(); ++i)
       if (tab_rect[i].hit(x, y) && tab != static_cast<Tab>(i)) {
         tab = static_cast<Tab>(i);
+        hovered_res = -1;
         status.clear();
         ticks = 0;
         tick();  // fresh numbers for the page just opened
@@ -836,14 +943,14 @@ struct TaskMgr {
           sort_col = cols[i];
           sort_desc = i != 0 && i != 5;  // numbers: biggest first; names: A to Z
         }
-        sort_rows(&rows, sort_col, sort_desc, users);
+        sort_rows(&table.rows(), sort_col, sort_desc, users);
         surface->queue_draw();
         return;
       }
     if (y >= list_top() && y < list_top() + list_height()) {
       const size_t i = static_cast<size_t>((y - list_top() + scroll) / kRowH);
-      if (i < rows.size()) {
-        selected_pid = rows[i].info.pid;
+      if (i < table.rows().size()) {
+        selected_pid = table.rows()[i].info.pid;
         status.clear();
         surface->queue_draw();
       }
@@ -857,11 +964,43 @@ struct TaskMgr {
     surface->queue_draw();
   }
 
+  void on_motion(double x, double y) {
+    int next_tab = -1;
+    for (size_t i = 0; i < kTabNames.size(); ++i)
+      if (tab_rect[i].hit(x, y)) {
+        next_tab = static_cast<int>(i);
+        break;
+      }
+
+    int next_res = -1;
+    if (tab == Tab::Performance)
+      for (int i = 0; i < 5; ++i)
+        if (res_rect[i].hit(x, y)) {
+          next_res = i;
+          break;
+        }
+
+    if (next_tab != hovered_tab || next_res != hovered_res) {
+      hovered_tab = next_tab;
+      hovered_res = next_res;
+      surface->queue_draw();
+    }
+  }
+
+  void on_leave() {
+    if (hovered_tab >= 0 || hovered_res >= 0) {
+      hovered_tab = -1;
+      hovered_res = -1;
+      surface->queue_draw();
+    }
+  }
+
   void on_key(const KeyEvent& ev) {
     if (!ev.pressed) return;
     switch (ev.sym) {
       case XKB_KEY_Tab:
         tab = tab == Tab::Processes ? Tab::Performance : tab == Tab::Performance ? Tab::Cache : Tab::Processes;
+        hovered_res = -1;
         ticks = 0;
         tick();
         break;
@@ -919,6 +1058,8 @@ int main(int argc, char** argv) {
   cfg.min_height = 480;
   T.surface = std::make_unique<Surface>(T.app, cfg);
   T.surface->on_draw = [&T](cairo_t* cr, int w, int h) { T.draw(cr, w, h); };
+  T.surface->on_motion = [&T](double x, double y) { T.on_motion(x, y); };
+  T.surface->on_leave = [&T] { T.on_leave(); };
   T.surface->on_button = [&T](double x, double y, uint32_t b, bool p) { T.on_button(x, y, b, p); };
   T.surface->on_scroll = [&T](double dx, double dy) { T.on_scroll(dx, dy); };
   T.surface->on_key = [&T](const KeyEvent& e) { T.on_key(e); };

@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <thread>
@@ -32,6 +33,29 @@ TEST_F(GpuMonitorTest, NoCardsMeansNoGpuAndNaText) {
   EXPECT_EQ(g.text(), "GPU N/A");
   EXPECT_EQ(g.busiest_percent(), -1);
   EXPECT_FALSE(g.sample());
+}
+
+TEST_F(GpuMonitorTest, NvidiaSourceIsAvailableBeforeFirstQuery) {
+  const fs::path bin = dir_ / "bin";
+  fs::create_directories(bin);
+  const fs::path smi = bin / "nvidia-smi";
+  std::ofstream(smi) << "#!/bin/sh\n";
+  fs::permissions(smi, fs::perms::owner_read | fs::perms::owner_write | fs::perms::owner_exec);
+
+  const char* old_path = std::getenv("PATH");
+  const bool had_path = old_path != nullptr;
+  const std::string saved_path = had_path ? old_path : "";
+  setenv("PATH", bin.c_str(), 1);
+
+  GpuMonitor g;
+  g.discover(drm().string(), true);
+
+  if (had_path) setenv("PATH", saved_path.c_str(), 1);
+  else unsetenv("PATH");
+
+  EXPECT_TRUE(g.nvidia_available());
+  EXPECT_TRUE(g.any());
+  EXPECT_EQ(g.nvidia_cards(), 0);
 }
 
 TEST_F(GpuMonitorTest, AmdReadsItsBusyFile) {

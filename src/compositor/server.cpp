@@ -1950,7 +1950,6 @@ void Server::update_grab() {
     }
     wlr_scene_node_set_position(&view->container_tree->node, x, y);
     view->sync_x11_position();
-    view->update_glass_backdrop();
     update_snap_preview(view);
     return;
   }
