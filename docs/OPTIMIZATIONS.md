@@ -233,6 +233,50 @@ This profile used an isolated 1280x720 nested compositor, not the owner's
 damage/presentation profiling for interaction cost; do not infer input latency
 from task-clock or background Render/3D utilization.
 
+### Integrated GPU memory baseline (2026-10-11)
+
+The current target is `dev@192.168.0.182` (the owner corrected the older
+`192.168.2.156` address). It is an N4020/UHD 600 (`8086:3185`, `i915`) with
+3.4 GiB system RAM and an active 1920x1080 eDP panel. It is UMA: "VRAM" usage
+is shared system memory, and this driver does not provide the discrete-style
+`mem_info_vram_*` sysfs counters. A six-second idle `intel_gpu_top -J -m`
+capture reported 61.57-62.07 MiB compositor-client system memory
+(62.07 MiB median), with 0-1.21% Render/3D busy (0.41% median). This is a
+driver-tracked idle per-client figure, not peak, dedicated VRAM, or a
+complete device/system memory total.
+
+This Celeron is one reference target, not the supported-GPU design point.
+Fleetwm must remain suitable for Intel integrated and discrete GPUs, AMD
+integrated and discrete GPUs, NVIDIA discrete GPUs, and other supported
+backends. Do not make memory policy, accounting, or rendering paths depend on
+i915, UMA, or `intel_gpu_top`. For meaningful comparisons, record both
+dedicated-memory use (where exposed) and shared/system-memory use, alongside
+the backend/device and workload; vendor counters are not interchangeable.
+Prefer backend-neutral allocation/surface changes, and gate any adaptive
+policy on reliable capabilities and measurements rather than vendor names.
+
+The clearest source-level memory candidate is the live wallpaper surface:
+`src/wallpaper/main.cpp` rasterizes opaque XRGB8888 at the full output size.
+At 1920x1080 that is 7.91 MiB for the client buffer before alignment or GPU
+import overhead. Reducing raster dimensions to 1280x720 or 960x540 would
+reduce that backing by roughly 4.39 or 5.93 MiB respectively, but needs
+fractional viewport scaling and trades image sharpness for memory. Profile
+and compare it as an explicit, backend-neutral low-memory option before
+adopting a default. The byte savings describe client backing size, not a
+guaranteed reduction in dedicated VRAM on discrete GPUs or in driver-reported
+GPU memory on any backend.
+
+Fleetwm already supports wlroots direct scanout for exact, unoccluded
+fullscreen dmabuf buffers; verify it with a compatible real client instead
+of reimplementing it. Mapped clients on hidden workspaces may retain
+textures, but eviction trades memory for re-import/work on workspace return
+and needs a measured high-water result. The existing 3 MiB glass tile, 2 MiB
+titlebar-glass and 1 MiB caption-strip budgets are CPU-side Cairo raster
+caches, not a 6 MiB VRAM reservation. `glass_backdrop_for()` can allocate a
+full-output CPU pixel buffer (7.91 MiB at 1080p), but no active call site was
+found; changing it alone would not reduce current usage. Detailed caveats and
+candidate measurements are in `docs/PERF_LOG_2026-10-11.md`.
+
 The earlier 2026-10-07 drag A/B is different: `glassgpu.sh` sampled
 `intel_gpu_top`'s `Render/3D.busy` field directly, so its 44.6–45.2% values are
 actual device-wide engine-busy reports during that tested workload. The
