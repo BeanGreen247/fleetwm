@@ -84,10 +84,14 @@ class CacheCounters {
     if (references_ < 0 || misses_ < 0) return;
     uint64_t refs = 0, misses = 0;
     if (read(references_, &refs, sizeof refs) != sizeof refs || read(misses_, &misses, sizeof misses) != sizeof misses) return;
+    const auto now = std::chrono::steady_clock::now();
     if (have_prev_ && refs >= prev_refs_ && misses >= prev_misses_ && refs > prev_refs_) {
       const uint64_t ref_delta = refs - prev_refs_, miss_delta = std::min(misses - prev_misses_, ref_delta);
       hit_rate_ = 100.0 * static_cast<double>(ref_delta - miss_delta) / static_cast<double>(ref_delta);
+      const double dt = std::chrono::duration<double>(now - prev_time_).count();
+      if (dt > 0.05) misses_per_s_ = static_cast<double>(misses - prev_misses_) / dt;
     }
+    prev_time_ = now;
     prev_refs_ = refs;
     prev_misses_ = misses;
     have_prev_ = true;
@@ -95,6 +99,9 @@ class CacheCounters {
 
   std::string status() const { return status_; }
   double hit_rate() const { return hit_rate_; }
+  // Last-level cache misses per second (user space, all CPUs): each one is a 64-byte line fetched from RAM, so about 64 B x this is the
+  // memory read traffic of programs, without prefetch, write-back or GPU traffic. -1 until two samples exist.
+  double misses_per_s() const { return misses_per_s_; }
 
  private:
   static int create(uint64_t event) {
@@ -112,7 +119,8 @@ class CacheCounters {
   int references_ = -1, misses_ = -1;
   bool opened_ = false, have_prev_ = false;
   uint64_t prev_refs_ = 0, prev_misses_ = 0;
-  double hit_rate_ = -1;
+  double hit_rate_ = -1, misses_per_s_ = -1;
+  std::chrono::steady_clock::time_point prev_time_{};
   std::string status_ = "checking hardware counters";
 };
 
@@ -485,7 +493,11 @@ struct TaskMgr {
   }
   // Label and value on one row (the value starts at x + label_w); returns the y of the next row.
   std::string imc_text() const {
-    if (!imc.ok()) return imc.status();
+    if (!imc.ok()) {
+      // No memory controller counters (the Gemini Lake laptop has none): estimate the programs' reads from the cache-miss counter.
+      if (cache_counters.misses_per_s() >= 0) return "~" + format_bandwidth_gbs(cache_counters.misses_per_s() * 64.0) + " (misses x 64 B)";
+      return imc.status();
+    }
     if (imc.read_mib_s() < 0) return "measuring";
     return format_bandwidth_gbs((imc.read_mib_s() + imc.write_mib_s()) * 1048576.0) + "  (R " + format_bandwidth_gbs(imc.read_mib_s() * 1048576.0) + " / W " + format_bandwidth_gbs(imc.write_mib_s() * 1048576.0) + ")";
   }
@@ -523,7 +535,7 @@ struct TaskMgr {
         {"Dirty + writeback", "File data changed in memory and not yet written to disk."},
         {"Committed", "Memory promised to programs against the commit limit (overcommit accounting)."},
         {"Memory pressure", "PSI: share of the last 10 s that some task was stalled waiting for memory (reclaim or swap)."},
-        {"Memory traffic", "Bytes per second the memory controller moves between all CPUs/GPU and RAM (read + write), from the uncore_imc counters. Compare with the module's rated speed to see how close the machine is to its memory-bandwidth limit."},
+        {"Memory traffic", "Bytes per second the memory controller moves between all CPUs/GPU and RAM (read + write), from the uncore_imc counters. Compare with the module's rated speed to see how close the machine is to its memory-bandwidth limit. Without those counters (older Intel Atom/Celeron such as Gemini Lake) it shows ~ the programs' reads estimated from last-level cache misses x 64 bytes: no prefetch, write-back or GPU traffic."},
         {"Render/3D busy", "Share of time the GPU's render engine was working."},
         {"Utilization", "Share of time the GPU was busy."},
         {"Core clock", "Current GPU clock against its maximum. A GPU idling at its floor clock is saving power."},
