@@ -495,11 +495,11 @@ struct TaskMgr {
   std::string imc_text() const {
     if (!imc.ok()) {
       // No memory controller counters (the Gemini Lake laptop has none): estimate the programs' reads from the cache-miss counter.
-      if (cache_counters.misses_per_s() >= 0) return "~" + format_bandwidth_gbs(cache_counters.misses_per_s() * 64.0) + " (misses x 64 B)";
+      if (cache_counters.misses_per_s() >= 0) return "~" + format_rate(cache_counters.misses_per_s() * 64.0) + " (misses x 64 B)";
       return imc.status();
     }
     if (imc.read_mib_s() < 0) return "measuring";
-    return format_bandwidth_gbs((imc.read_mib_s() + imc.write_mib_s()) * 1048576.0) + "  (R " + format_bandwidth_gbs(imc.read_mib_s() * 1048576.0) + " / W " + format_bandwidth_gbs(imc.write_mib_s() * 1048576.0) + ")";
+    return format_rate((imc.read_mib_s() + imc.write_mib_s()) * 1048576.0) + "  (R " + format_rate(imc.read_mib_s() * 1048576.0) + " / W " + format_rate(imc.write_mib_s() * 1048576.0) + ")";
   }
   static const char* explain(const std::string& l) {
     static const std::pair<const char*, const char*> table[] = {
