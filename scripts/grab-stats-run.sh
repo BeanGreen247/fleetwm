@@ -28,7 +28,18 @@ RT=$(mktemp -d /tmp/fleetwm-gs.XXXXXX); chmod 700 "$RT"
 HM=$RT/home; mkdir -p "$HM/.config/fleetwm"
 printf 'window_layout = "desktop"\nglass_effects = %s\n' "$GLASS" > "$HM/.config/fleetwm/theme.toml"
 PIDS=()
-cleanup() { local p; for ((i=${#PIDS[@]}-1; i>=0; i--)); do p=${PIDS[$i]}; kill -TERM "$p" 2>/dev/null; done; sleep 0.5; rm -rf "$RT"; }
+cleanup() {
+  local p
+  # the compositor is a grandchild (dbus-run-session -> bash -> fleetwm): killing the wrapper alone left it, and its lock applet, running forever
+  # on the machine (43 of them piled up on the laptop); its pid is in $RT/comp.pid
+  if [[ -f $RT/comp.pid ]]; then
+    pkill -TERM -P "$(cat "$RT/comp.pid")" 2>/dev/null  # its autostarted programs (lock applet) by parent pid, not by name
+    kill -TERM "$(cat "$RT/comp.pid")" 2>/dev/null
+  fi
+  for ((i=${#PIDS[@]}-1; i>=0; i--)); do p=${PIDS[$i]}; kill -TERM "$p" 2>/dev/null; done
+  sleep 0.5
+  rm -rf "$RT"
+}
 trap cleanup EXIT
 
 # the virtual pointer helper (drags through wlr-virtual-pointer; built here from the repo's source)
