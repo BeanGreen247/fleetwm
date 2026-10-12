@@ -1,6 +1,8 @@
 #include "gpu_monitor.hpp"
 
 #include <fcntl.h>
+#include <linux/perf_event.h>
+#include <sys/syscall.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -20,9 +22,42 @@ std::string read_word(const std::string& path) {
 }  // namespace
 
 GpuMonitor::~GpuMonitor() {
-  for (GpuDevice& g : devices_)
+  for (GpuDevice& g : devices_) {
     if (g.fd >= 0) close(g.fd);
+    if (g.pmu_fd >= 0) close(g.pmu_fd);
+  }
 }
+
+bool GpuMonitor::parse_pmu_config(const std::string& text, unsigned long long* config) {
+  const size_t at = text.find("config=");
+  if (at == std::string::npos) return false;
+  char* end = nullptr;
+  const unsigned long long v = std::strtoull(text.c_str() + at + 7, &end, 0);
+  if (end == text.c_str() + at + 7) return false;
+  *config = v;
+  return true;
+}
+
+namespace {
+// perf_event_open on the i915 PMU's rcs0-busy event (nanoseconds the render engine was busy), as a system-wide counter on cpu 0 (how the driver wants it).
+int open_i915_render_busy() {
+  const std::string root = "/sys/bus/event_source/devices/i915";
+  std::ifstream type_file(root + "/type");
+  int type = -1;
+  type_file >> type;
+  if (type < 0) return -1;
+  std::ifstream ev(root + "/events/rcs0-busy");
+  std::string text;
+  std::getline(ev, text);
+  unsigned long long config = 0;
+  if (!GpuMonitor::parse_pmu_config(text, &config)) return -1;
+  perf_event_attr attr{};
+  attr.type = static_cast<uint32_t>(type);
+  attr.size = sizeof attr;
+  attr.config = config;
+  return static_cast<int>(syscall(SYS_perf_event_open, &attr, -1, 0, -1, PERF_FLAG_FD_CLOEXEC));
+}
+}  // namespace
 
 long long GpuMonitor::read_number(const std::string& path) {
   long long v = -1;
@@ -30,7 +65,7 @@ long long GpuMonitor::read_number(const std::string& path) {
   return v;
 }
 
-void GpuMonitor::discover(const std::string& drm_root, bool check_nvidia) {
+void GpuMonitor::discover(const std::string& drm_root, bool check_nvidia, bool use_pmu) {
   devices_.clear();
   for (int card = 0; card < 8; ++card) {
     const std::string base = drm_root + "/card" + std::to_string(card);
@@ -72,6 +107,10 @@ void GpuMonitor::discover(const std::string& drm_root, bool check_nvidia) {
           break;
         }
     }
+    if (!g.path.empty() && use_pmu && g.kind == GpuDevice::Kind::IntelIdle && vendor_id == "0x8086" && drm_root == "/sys/class/drm") {
+      g.pmu_fd = open_i915_render_busy();
+      g.engine_busy = g.pmu_fd >= 0;
+    }
     if (!g.path.empty()) devices_.push_back(std::move(g));
   }
   has_nvidia_smi_ = false;
@@ -105,6 +144,19 @@ bool GpuMonitor::sample(const std::function<void(std::function<void()>)>& run_in
       if (got <= 0) continue;
       buf[got] = 0;
       pct = std::clamp(std::atoi(buf), 0, 100);
+    } else if (g.engine_busy) {
+      unsigned long long busy_ns = 0;
+      if (read(g.pmu_fd, &busy_ns, sizeof busy_ns) != static_cast<ssize_t>(sizeof busy_ns)) continue;
+      const auto now = std::chrono::steady_clock::now();
+      if (g.pmu_have_prev) {
+        const double wall_ns = std::chrono::duration<double, std::nano>(now - g.pmu_time).count();
+        if (wall_ns < 50e6) continue;
+        const double busy = busy_ns >= g.pmu_prev_ns ? static_cast<double>(busy_ns - g.pmu_prev_ns) : 0.0;
+        pct = static_cast<int>(100.0 * std::clamp(busy / wall_ns, 0.0, 1.0) + 0.5);
+      }
+      g.pmu_prev_ns = busy_ns;
+      g.pmu_have_prev = true;
+      g.pmu_time = now;
     } else {
       const long long idle_ms = read_number(g.path);
       if (idle_ms < 0) continue;
@@ -128,7 +180,7 @@ bool GpuMonitor::sample(const std::function<void(std::function<void()>)>& run_in
     // nvidia-smi can take a while; keep it off the UI thread. It prints one line per card.
     run_in_background([this, post] {
       std::string out;
-      if (FILE* p = popen("nvidia-smi --query-gpu=utilization.gpu,power.draw,clocks.gr,clocks.mem,memory.used,memory.total "
+      if (FILE* p = popen("nvidia-smi --query-gpu=utilization.gpu,power.draw,clocks.gr,clocks.mem,memory.used,memory.total,utilization.memory,clocks.max.gr,clocks.max.mem "
                           "--format=csv,noheader,nounits 2>/dev/null", "r")) {
         char buf[512];
         size_t n;
@@ -161,6 +213,32 @@ std::string GpuMonitor::text() const {
   std::string t;
   for (size_t i = 0; i < values.size(); ++i) t += (i ? "  GPU" : "GPU") + std::to_string(i + 1) + " " + one(values[i]);
   return t;
+}
+
+bool GpuMonitor::any_engine_busy() const {
+  for (const GpuDevice& g : devices_)
+    if (g.engine_busy) return true;
+  return false;
+}
+
+bool GpuMonitor::any_awake_proxy() const {
+  for (const GpuDevice& g : devices_)
+    if (g.kind == GpuDevice::Kind::IntelIdle && !g.engine_busy) return true;
+  return false;
+}
+
+GpuDetail GpuMonitor::detail(const GpuDevice& g) const {
+  GpuDetail d;
+  if (g.kind == GpuDevice::Kind::AmdBusy) {
+    d = read_amd_gpu_detail(g.device_dir);
+  } else {
+    const long long cur = g.freq_path.empty() ? -1 : read_number(g.freq_path);
+    const long long max = g.freq_max_path.empty() ? -1 : read_number(g.freq_max_path);
+    if (cur >= 0) d.core_mhz = static_cast<int>(cur);
+    if (max > 0) d.core_max_mhz = static_cast<int>(max);
+  }
+  d.percent = g.percent;
+  return d;
 }
 
 int GpuMonitor::busiest_percent() const {

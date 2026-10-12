@@ -175,3 +175,128 @@ TEST(HwStats, NvidiaSmiCsv) {
   // the old one-field output still parses
   EXPECT_EQ(parse_nvidia_smi_csv("55\n")[0].percent, 55);
 }
+
+// ---- the extra CPU, memory, disk, pressure and GPU readings of the Task Manager ----
+
+TEST(MemComposition, UsedSharedCacheAndFreeAddUpToTotal) {
+  MemDetail m;
+  m.total = 8000000, m.free = 1000000, m.available = 5000000, m.cached = 3000000, m.buffers = 200000, m.sreclaimable = 300000, m.shmem = 500000;
+  const MemComposition c = mem_composition(m);
+  EXPECT_EQ(c.free, 1000000u);
+  EXPECT_EQ(c.shared, 500000u);
+  EXPECT_EQ(c.cache_buffers, 3000000u + 200000u + 300000u - 500000u) << "shared memory is inside Cached, so it leaves the cache figure";
+  EXPECT_EQ(c.used, 8000000u - 1000000u - 500000u - 3000000u);
+  EXPECT_EQ(c.used + c.shared + c.cache_buffers + c.free, c.total);
+}
+
+TEST(MemComposition, NeverGoesNegativeWhenTheCounterDisagree) {
+  MemDetail m;
+  m.total = 1000, m.free = 900, m.cached = 5000, m.shmem = 4000;  // inconsistent on purpose
+  const MemComposition c = mem_composition(m);
+  EXPECT_EQ(c.used + c.shared + c.cache_buffers + c.free, c.total);
+  EXPECT_LE(c.shared, 100u);
+}
+
+TEST(MemInfo, ReadsTheExtraFields) {
+  MemDetail m;
+  ASSERT_TRUE(parse_meminfo("MemTotal: 3500000 kB\nMemFree: 100 kB\nShmem: 42 kB\nSReclaimable: 7 kB\nSUnreclaim: 8 kB\nAnonPages: 9 kB\nMapped: 10 kB\nDirty: 11 kB\nWriteback: 12 kB\nCommitted_AS: 13 kB\nCommitLimit: 14 kB\n", &m));
+  EXPECT_EQ(m.shmem, 42u);
+  EXPECT_EQ(m.sreclaimable, 7u);
+  EXPECT_EQ(m.sunreclaim, 8u);
+  EXPECT_EQ(m.anon, 9u);
+  EXPECT_EQ(m.committed, 13u);
+  EXPECT_EQ(m.commit_limit, 14u);
+}
+
+TEST(DiskActivity, SumsWholeDisksAndSkipsPartitions) {
+  const char* t =
+      "   8       0 sda 100 5 2000 400 50 2 1000 300 3 700 800 0 0 0 0\n"
+      "   8       1 sda1 90 5 1900 390 40 2 900 290 0 600 700 0 0 0 0\n"
+      " 259       0 nvme0n1 10 0 80 20 10 0 80 30 0 50 60 0 0 0 0\n"
+      "   7       0 loop0 5 0 40 1 0 0 0 0 0 1 1 0 0 0 0\n";
+  const DiskActivity a = parse_disk_activity(t);
+  EXPECT_EQ(a.reads, 110u);
+  EXPECT_EQ(a.writes, 60u);
+  EXPECT_EQ(a.read_ms, 420u);
+  EXPECT_EQ(a.write_ms, 330u);
+  EXPECT_EQ(a.io_ms, 750u);  // 700 (sda) + 50 (nvme0n1): the whole-disk lines only
+  EXPECT_EQ(a.in_flight, 3u);
+}
+
+TEST(DiskActivity, AwaitIsTimePerRequestAndBusyIsShareOfTheInterval) {
+  DiskActivity p, c;
+  c.reads = 8, c.writes = 2, c.read_ms = 40, c.write_ms = 60, c.io_ms = 250;
+  EXPECT_DOUBLE_EQ(disk_await_ms(p, c), 10.0);  // 100 ms over 10 requests
+  EXPECT_NEAR(disk_busy_percent(p, c, 1.0), 25.0, 1e-9);
+  EXPECT_NEAR(disk_busy_percent(p, c, 0.5), 50.0, 1e-9);
+  EXPECT_EQ(disk_await_ms(c, c), -1) << "nothing completed";
+  EXPECT_EQ(disk_await_ms(c, p), -1) << "counters went backwards (a disk was removed)";
+  DiskActivity busy;
+  busy.io_ms = 99999;
+  EXPECT_EQ(disk_busy_percent(p, busy, 1.0), 100.0);
+}
+
+TEST(CpuBreakdown, ParsesTheCpuLineAndTheCounters) {
+  const char* t = "cpu  400 20 300 9000 150 10 20 5 0 0\ncpu0 200 10 150 4500 75 5 10 2 0 0\nintr 123456 1 2\nctxt 987654\nbtime 1\nprocesses 4321\nprocs_running 3\nprocs_blocked 1\n";
+  CpuBreakdown b;
+  ASSERT_TRUE(parse_proc_stat_breakdown(t, &b));
+  EXPECT_EQ(b.user, 400u);
+  EXPECT_EQ(b.iowait, 150u);
+  EXPECT_EQ(b.steal, 5u);
+  EXPECT_EQ(b.ctxt, 987654u);
+  EXPECT_EQ(b.intr, 123456u);
+  EXPECT_EQ(b.forks, 4321u);
+  EXPECT_EQ(b.running, 3);
+  EXPECT_EQ(b.blocked, 1);
+  EXPECT_EQ(b.total(), 400u + 20 + 300 + 9000 + 150 + 10 + 20 + 5);
+  EXPECT_FALSE(parse_proc_stat_breakdown("nothing", &b));
+}
+
+TEST(CpuBreakdown, RatesAreSharesOfTheIntervalAndPerSecondCounts) {
+  CpuBreakdown p, c;
+  c.user = 50, c.nice = 10, c.system = 20, c.idle = 100, c.iowait = 15, c.irq = 3, c.softirq = 2, c.steal = 0;
+  c.ctxt = 5000, c.intr = 2000, c.forks = 30;
+  const CpuRates r = cpu_rates(p, c, 2.0);
+  ASSERT_TRUE(r.valid);
+  EXPECT_NEAR(r.user, 100.0 * 60 / 200, 1e-9);
+  EXPECT_NEAR(r.system, 10.0, 1e-9);
+  EXPECT_NEAR(r.iowait, 7.5, 1e-9);
+  EXPECT_NEAR(r.irq, 2.5, 1e-9);
+  EXPECT_DOUBLE_EQ(r.ctxt_per_s, 2500.0);
+  EXPECT_DOUBLE_EQ(r.intr_per_s, 1000.0);
+  EXPECT_DOUBLE_EQ(r.forks_per_s, 15.0);
+  EXPECT_FALSE(cpu_rates(c, c, 1.0).valid) << "no time passed between the samples";
+  EXPECT_FALSE(cpu_rates(p, c, 0.0).valid);
+}
+
+TEST(Pressure, SomeAndFullLines) {
+  Pressure p;
+  ASSERT_TRUE(parse_pressure("some avg10=1.47 avg60=1.04 avg300=0.75 total=22873866\nfull avg10=0.25 avg60=0.10 avg300=0.00 total=1\n", &p));
+  EXPECT_DOUBLE_EQ(p.some10, 1.47);
+  EXPECT_DOUBLE_EQ(p.some60, 1.04);
+  EXPECT_DOUBLE_EQ(p.full10, 0.25);
+  Pressure only_some;
+  ASSERT_TRUE(parse_pressure("some avg10=0.00 avg60=0.02 avg300=0.13 total=5\n", &only_some));  // the cpu file of older kernels has no full line
+  EXPECT_EQ(only_some.full10, -1);
+  EXPECT_FALSE(parse_pressure("", &only_some));
+}
+
+TEST(AmdDpm, ActiveAndHighestLevel) {
+  int cur = 0, max = 0;
+  ASSERT_TRUE(parse_pp_dpm("0: 300Mhz\n1: 1200Mhz *\n2: 2100Mhz\n", &cur, &max));
+  EXPECT_EQ(cur, 1200);
+  EXPECT_EQ(max, 2100);
+  ASSERT_TRUE(parse_pp_dpm("0: 96Mhz\n1: 456Mhz\n", &cur, &max));
+  EXPECT_EQ(cur, -1) << "no level is marked";
+  EXPECT_EQ(max, 456);
+  EXPECT_FALSE(parse_pp_dpm("", &cur, &max));
+}
+
+TEST(NvidiaCsv, MemoryUtilisationAndMaxClocksWhenPresent) {
+  auto c = parse_nvidia_smi_csv("30, 80.0, 1400, 7000, 2048, 8192, 22, 2100, 7500\n");
+  ASSERT_EQ(c.size(), 1u);
+  EXPECT_EQ(c[0].mem_busy_percent, 22);
+  EXPECT_EQ(c[0].core_max_mhz, 2100);
+  EXPECT_EQ(c[0].mem_max_mhz, 7500);
+  EXPECT_EQ(parse_nvidia_smi_csv("30, 80.0, 1400, 7000, 2048, 8192\n")[0].mem_busy_percent, -1) << "the six-field form still works";
+}

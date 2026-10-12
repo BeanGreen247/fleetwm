@@ -115,3 +115,30 @@ TEST_F(GpuMonitorTest, UnknownVendorStillListedByItsId) {
   ASSERT_EQ(g.devices().size(), 1u);
   EXPECT_EQ(g.devices()[0].vendor, "0xabcd");
 }
+
+TEST(GpuMonitorPmu, ParsesTheEventConfig) {
+  unsigned long long c = 7;
+  EXPECT_TRUE(GpuMonitor::parse_pmu_config("config=0x0000000000000001\n", &c));
+  EXPECT_EQ(c, 1u);
+  EXPECT_TRUE(GpuMonitor::parse_pmu_config("config=0x20000\n", &c));
+  EXPECT_EQ(c, 0x20000u);
+  EXPECT_FALSE(GpuMonitor::parse_pmu_config("", &c));
+  EXPECT_FALSE(GpuMonitor::parse_pmu_config("config=\n", &c));
+  EXPECT_FALSE(GpuMonitor::parse_pmu_config("umask=0x1\n", &c));
+}
+
+TEST_F(GpuMonitorTest, AFakeTreeNeverOpensTheCounterAndKeepsTheAwakeLabel) {
+  put("card0/device/vendor", "0x8086");
+  put("card0/gt/gt0/rc6_residency_ms", "1000");
+  put("card0/gt/gt0/rps_act_freq_mhz", "350");
+  put("card0/gt/gt0/rps_RP0_freq_mhz", "650");
+  GpuMonitor g;
+  g.discover(drm().string(), false, true);  // asked for the counter: only the real /sys/class/drm may use it
+  ASSERT_EQ(g.devices().size(), 1u);
+  EXPECT_FALSE(g.devices()[0].engine_busy);
+  EXPECT_TRUE(g.any_awake_proxy());
+  EXPECT_FALSE(g.any_engine_busy());
+  const GpuDetail d = g.detail(g.devices()[0]);
+  EXPECT_EQ(d.core_mhz, 350);
+  EXPECT_EQ(d.core_max_mhz, 650);
+}

@@ -50,12 +50,56 @@ std::vector<int> core_percents(const std::vector<CpuTimes>& prev, const std::vec
 
 struct MemDetail {
   unsigned long long total = 0, free = 0, available = 0, cached = 0, buffers = 0, swap_total = 0, swap_free = 0;  // KiB
+  unsigned long long shmem = 0, sreclaimable = 0, sunreclaim = 0, anon = 0, mapped = 0, dirty = 0, writeback = 0, committed = 0, commit_limit = 0;
 };
+// How the installed memory is divided, the way `free` and the Windows Task Manager do, with shared memory broken out of the cache:
+//   used          programs and the kernel's unreclaimable memory (total - free - cache_buffers - shared)
+//   shared        tmpfs, shared memory (Shmem; it is counted inside "Cached" by the kernel, so it is taken out of cache_buffers)
+//   cache_buffers page cache and buffers and reclaimable slab, minus the shared part
+//   free          nothing in it at all
+// The four add up to total. `available` (what a new program can get without swapping) is a separate number: it includes most of the cache.
+struct MemComposition {
+  unsigned long long used = 0, shared = 0, cache_buffers = 0, free = 0, total = 0;
+};
+MemComposition mem_composition(const MemDetail& m);
 bool parse_meminfo(const std::string& text, MemDetail* out);
 
 struct DiskCounters {
   unsigned long long read_bytes = 0, write_bytes = 0;
 };
+// The request counts and times of the same whole disks, for latency and busy time.
+struct DiskActivity {
+  unsigned long long reads = 0, writes = 0, read_ms = 0, write_ms = 0, io_ms = 0, in_flight = 0;  // ms: time requests spent being served, and time the disk had any
+};
+DiskActivity parse_disk_activity(const std::string& text);
+// Average time one request took between two samples (waiting plus service, like iostat's await); -1 when nothing completed.
+double disk_await_ms(const DiskActivity& prev, const DiskActivity& cur);
+// Share of the interval the disk had work queued (iostat's %util), 0..100; `dt` in seconds.
+double disk_busy_percent(const DiskActivity& prev, const DiskActivity& cur, double dt);
+
+// The "cpu" line and the counters under it from /proc/stat.
+struct CpuBreakdown {
+  unsigned long long user = 0, nice = 0, system = 0, idle = 0, iowait = 0, irq = 0, softirq = 0, steal = 0;
+  unsigned long long ctxt = 0, intr = 0, forks = 0;
+  int running = 0, blocked = 0;  // right now
+  unsigned long long total() const { return user + nice + system + idle + iowait + irq + softirq + steal; }
+};
+bool parse_proc_stat_breakdown(const std::string& text, CpuBreakdown* out);
+struct CpuRates {
+  double user = 0, system = 0, iowait = 0, irq = 0, steal = 0;  // share of the interval, percent
+  double ctxt_per_s = 0, intr_per_s = 0, forks_per_s = 0;
+  bool valid = false;
+};
+CpuRates cpu_rates(const CpuBreakdown& prev, const CpuBreakdown& cur, double dt);
+
+// /proc/pressure/{cpu,io,memory}: the share of time some (or all) tasks were stalled waiting for that resource. -1 where the file has no such line.
+struct Pressure {
+  double some10 = -1, some60 = -1, full10 = -1, full60 = -1;
+};
+bool parse_pressure(const std::string& text, Pressure* out);
+
+// "0: 300Mhz\n1: 700Mhz *\n2: 1200Mhz" (AMD pp_dpm_sclk / pp_dpm_mclk): the active level and the highest one, in MHz; false when empty.
+bool parse_pp_dpm(const std::string& text, int* current_mhz, int* max_mhz);
 // Sum over whole disks only (sda, nvme0n1, vda, mmcblk0; not their partitions, loop, ram or dm devices).
 DiskCounters parse_diskstats(const std::string& text);
 bool is_whole_disk(const std::string& name);
@@ -75,6 +119,8 @@ struct GpuDetail {
   int percent = -1;
   double power_w = -1;
   int core_mhz = -1, mem_mhz = -1;
+  int core_max_mhz = -1, mem_max_mhz = -1;
+  int mem_busy_percent = -1;  // the memory controller's share of time busy (AMD mem_busy_percent, NVIDIA utilization.memory): the nearest thing to bandwidth use these drivers report
   long long vram_used = -1, vram_total = -1;  // bytes
 };
 // AMD: gpu_busy_percent, hwmon power1_average/input, freq1_input (sclk), freq2_input (mclk), mem_info_vram_*.

@@ -212,8 +212,29 @@ bool parse_meminfo(const std::string& text, MemDetail* m) {
     else if (std::sscanf(line.c_str(), "Buffers: %llu", &v) == 1) m->buffers = v;
     else if (std::sscanf(line.c_str(), "SwapTotal: %llu", &v) == 1) m->swap_total = v;
     else if (std::sscanf(line.c_str(), "SwapFree: %llu", &v) == 1) m->swap_free = v;
+    else if (std::sscanf(line.c_str(), "Shmem: %llu", &v) == 1) m->shmem = v;
+    else if (std::sscanf(line.c_str(), "SReclaimable: %llu", &v) == 1) m->sreclaimable = v;
+    else if (std::sscanf(line.c_str(), "SUnreclaim: %llu", &v) == 1) m->sunreclaim = v;
+    else if (std::sscanf(line.c_str(), "AnonPages: %llu", &v) == 1) m->anon = v;
+    else if (std::sscanf(line.c_str(), "Mapped: %llu", &v) == 1) m->mapped = v;
+    else if (std::sscanf(line.c_str(), "Dirty: %llu", &v) == 1) m->dirty = v;
+    else if (std::sscanf(line.c_str(), "Writeback: %llu", &v) == 1) m->writeback = v;
+    else if (std::sscanf(line.c_str(), "Committed_AS: %llu", &v) == 1) m->committed = v;
+    else if (std::sscanf(line.c_str(), "CommitLimit: %llu", &v) == 1) m->commit_limit = v;
   }
   return m->total > 0;
+}
+
+MemComposition mem_composition(const MemDetail& m) {
+  MemComposition c;
+  c.total = m.total;
+  c.free = std::min(m.free, m.total);
+  c.shared = std::min(m.shmem, m.total - c.free);
+  const unsigned long long cache_all = m.cached + m.buffers + m.sreclaimable;
+  const unsigned long long cache = cache_all > c.shared ? cache_all - c.shared : 0;  // Shmem sits inside Cached
+  c.cache_buffers = std::min(cache, m.total - c.free - c.shared);
+  c.used = m.total - c.free - c.shared - c.cache_buffers;
+  return c;
 }
 
 bool is_whole_disk(const std::string& n) {
@@ -252,6 +273,105 @@ DiskCounters parse_diskstats(const std::string& text) {
     c.write_bytes += wr_sectors * 512;
   }
   return c;
+}
+
+DiskActivity parse_disk_activity(const std::string& text) {
+  DiskActivity a;
+  std::istringstream in(text);
+  std::string line;
+  while (std::getline(in, line)) {
+    int major = 0, minor = 0;
+    char name[64] = {};
+    unsigned long long rd_ios, rd_merges, rd_sectors, rd_ms, wr_ios, wr_merges, wr_sectors, wr_ms, inflight, io_ms;
+    if (std::sscanf(line.c_str(), "%d %d %63s %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu", &major, &minor, name, &rd_ios, &rd_merges, &rd_sectors, &rd_ms,
+                    &wr_ios, &wr_merges, &wr_sectors, &wr_ms, &inflight, &io_ms) != 13)
+      continue;
+    if (!is_whole_disk(name)) continue;
+    a.reads += rd_ios;
+    a.writes += wr_ios;
+    a.read_ms += rd_ms;
+    a.write_ms += wr_ms;
+    a.io_ms += io_ms;
+    a.in_flight += inflight;
+  }
+  return a;
+}
+
+double disk_await_ms(const DiskActivity& p, const DiskActivity& c) {
+  if (c.reads < p.reads || c.writes < p.writes || c.read_ms < p.read_ms || c.write_ms < p.write_ms) return -1;
+  const unsigned long long ios = (c.reads - p.reads) + (c.writes - p.writes);
+  if (ios == 0) return -1;
+  return static_cast<double>((c.read_ms - p.read_ms) + (c.write_ms - p.write_ms)) / static_cast<double>(ios);
+}
+
+double disk_busy_percent(const DiskActivity& p, const DiskActivity& c, double dt) {
+  if (dt <= 0 || c.io_ms < p.io_ms) return 0;
+  return std::clamp(100.0 * static_cast<double>(c.io_ms - p.io_ms) / (dt * 1000.0), 0.0, 100.0);
+}
+
+bool parse_proc_stat_breakdown(const std::string& text, CpuBreakdown* o) {
+  std::istringstream in(text);
+  std::string line;
+  bool have_cpu = false;
+  while (std::getline(in, line)) {
+    unsigned long long v = 0;
+    if (line.compare(0, 4, "cpu ") == 0) {
+      CpuBreakdown& b = *o;
+      have_cpu = std::sscanf(line.c_str(), "cpu %llu %llu %llu %llu %llu %llu %llu %llu", &b.user, &b.nice, &b.system, &b.idle, &b.iowait, &b.irq, &b.softirq, &b.steal) >= 4;
+    } else if (std::sscanf(line.c_str(), "ctxt %llu", &v) == 1) o->ctxt = v;
+    else if (std::sscanf(line.c_str(), "intr %llu", &v) == 1) o->intr = v;
+    else if (std::sscanf(line.c_str(), "processes %llu", &v) == 1) o->forks = v;
+    else if (std::sscanf(line.c_str(), "procs_running %llu", &v) == 1) o->running = static_cast<int>(v);
+    else if (std::sscanf(line.c_str(), "procs_blocked %llu", &v) == 1) o->blocked = static_cast<int>(v);
+  }
+  return have_cpu;
+}
+
+CpuRates cpu_rates(const CpuBreakdown& p, const CpuBreakdown& c, double dt) {
+  CpuRates r;
+  const unsigned long long total = c.total() >= p.total() ? c.total() - p.total() : 0;
+  if (total == 0 || dt <= 0) return r;
+  auto share = [&](unsigned long long a, unsigned long long b) { return b >= a ? 100.0 * static_cast<double>(b - a) / static_cast<double>(total) : 0.0; };
+  r.user = share(p.user + p.nice, c.user + c.nice);
+  r.system = share(p.system, c.system);
+  r.iowait = share(p.iowait, c.iowait);
+  r.irq = share(p.irq + p.softirq, c.irq + c.softirq);
+  r.steal = share(p.steal, c.steal);
+  r.ctxt_per_s = c.ctxt >= p.ctxt ? static_cast<double>(c.ctxt - p.ctxt) / dt : 0;
+  r.intr_per_s = c.intr >= p.intr ? static_cast<double>(c.intr - p.intr) / dt : 0;
+  r.forks_per_s = c.forks >= p.forks ? static_cast<double>(c.forks - p.forks) / dt : 0;
+  r.valid = true;
+  return r;
+}
+
+bool parse_pressure(const std::string& text, Pressure* o) {
+  std::istringstream in(text);
+  std::string line;
+  bool any = false;
+  while (std::getline(in, line)) {
+    double a10 = 0, a60 = 0;
+    char kind[8] = {};
+    if (std::sscanf(line.c_str(), "%7s avg10=%lf avg60=%lf", kind, &a10, &a60) != 3) continue;
+    if (!std::strcmp(kind, "some")) o->some10 = a10, o->some60 = a60, any = true;
+    else if (!std::strcmp(kind, "full")) o->full10 = a10, o->full60 = a60, any = true;
+  }
+  return any;
+}
+
+bool parse_pp_dpm(const std::string& text, int* cur, int* max) {
+  std::istringstream in(text);
+  std::string line;
+  int best = -1, active = -1;
+  while (std::getline(in, line)) {
+    int idx = 0, mhz = 0;
+    if (std::sscanf(line.c_str(), "%d: %dMhz", &idx, &mhz) != 2 && std::sscanf(line.c_str(), "%d: %dMHz", &idx, &mhz) != 2) continue;
+    best = std::max(best, mhz);
+    if (line.find('*') != std::string::npos) active = mhz;
+  }
+  if (best < 0) return false;
+  *max = best;
+  *cur = active;
+  return true;
 }
 
 std::string format_rate(double bps) {
@@ -311,6 +431,22 @@ GpuDetail read_amd_gpu_detail(const std::string& dev) {
     if (sclk > 0) g.core_mhz = static_cast<int>(sclk / 1000000);
     if (mclk > 0) g.mem_mhz = static_cast<int>(mclk / 1000000);
   }
+  g.mem_busy_percent = static_cast<int>(read_ll(dev + "/mem_busy_percent"));
+  auto read_text = [](const std::string& path) {
+    std::ifstream f(path);
+    std::stringstream ss;
+    ss << f.rdbuf();
+    return ss.str();
+  };
+  int cur = -1, max = -1;
+  if (parse_pp_dpm(read_text(dev + "/pp_dpm_sclk"), &cur, &max)) {
+    g.core_max_mhz = max;
+    if (g.core_mhz < 0) g.core_mhz = cur;
+  }
+  if (parse_pp_dpm(read_text(dev + "/pp_dpm_mclk"), &cur, &max)) {
+    g.mem_max_mhz = max;
+    if (g.mem_mhz < 0) g.mem_mhz = cur;
+  }
   return g;
 }
 
@@ -335,6 +471,9 @@ std::vector<GpuDetail> parse_nvidia_smi_csv(const std::string& text) {
     if (f.size() > 3 && f[3] >= 0) g.mem_mhz = static_cast<int>(f[3]);
     if (f.size() > 4 && f[4] >= 0) g.vram_used = static_cast<long long>(f[4] * 1048576.0);
     if (f.size() > 5 && f[5] >= 0) g.vram_total = static_cast<long long>(f[5] * 1048576.0);
+    if (f.size() > 6 && f[6] >= 0) g.mem_busy_percent = static_cast<int>(std::min(100.0, f[6]));
+    if (f.size() > 7 && f[7] >= 0) g.core_max_mhz = static_cast<int>(f[7]);
+    if (f.size() > 8 && f[8] >= 0) g.mem_max_mhz = static_cast<int>(f[8]);
     cards.push_back(g);
   }
   return cards;

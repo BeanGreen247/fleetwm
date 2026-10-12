@@ -26,6 +26,13 @@ struct GpuDevice {
   long long idle_prev_ms = -1;
   std::chrono::steady_clock::time_point idle_prev_time;
   int percent = -1;
+  // Intel with the i915 performance counters open: `percent` is the render engine's busy time (what intel_gpu_top calls Render/3D busy)
+  // instead of the time the GPU was awake (RC6 residency), which counts awake-but-idle time as work.
+  bool engine_busy = false;
+  int pmu_fd = -1;
+  unsigned long long pmu_prev_ns = 0;
+  bool pmu_have_prev = false;
+  std::chrono::steady_clock::time_point pmu_time;
 };
 
 class GpuMonitor {
@@ -36,7 +43,9 @@ class GpuMonitor {
   GpuMonitor& operator=(const GpuMonitor&) = delete;
 
   // Finds the cards. `check_nvidia` also looks for nvidia-smi on PATH.
-  void discover(const std::string& drm_root = "/sys/class/drm", bool check_nvidia = true);
+  // `use_pmu` opens the i915 render-engine busy counter for Intel cards when the kernel lets this user (perf_event_paranoid, CAP_PERFMON); it is
+  // off by default because the driver does extra bookkeeping while any such counter is open, which the bar should not cause just to draw a number.
+  void discover(const std::string& drm_root = "/sys/class/drm", bool check_nvidia = true, bool use_pmu = false);
 
   // Reads the AMD and Intel counters once; true when a percentage changed. NVIDIA is asked every third call: `run_in_background` is
   // given a function to run off the UI thread and returns once it has been handed over; `post` runs a function back on the UI thread.
@@ -58,6 +67,12 @@ class GpuMonitor {
   int busiest_percent() const;
 
   static long long read_number(const std::string& path);
+  // "config=0x0000000000000001" (the content of an events/ file under /sys/bus/event_source/devices/i915): the config value; false when malformed.
+  static bool parse_pmu_config(const std::string& text, unsigned long long* config);
+  // Clocks, power and memory of one card, from the files that card has (AMD: hwmon and pp_dpm; Intel: the actual and maximum GT frequency).
+  GpuDetail detail(const GpuDevice& g) const;
+  bool any_engine_busy() const;  // some card reports real render-engine busy time
+  bool any_awake_proxy() const;  // some card only reports the RC6-derived awake time
 
  private:
   std::vector<GpuDevice> devices_;

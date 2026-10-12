@@ -25,6 +25,7 @@
 #include <fcntl.h>
 #include <fstream>
 #include <memory>
+#include <set>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -188,6 +189,20 @@ struct TaskMgr {
   std::vector<DriveInfo> drives;
   std::string cache_counter_status;
   CacheCounters cache_counters;
+  // The extra readings of the Performance pages: CPU time split (I/O wait ...), scheduler counts, disk latency, pressure, clocks, counts.
+  CpuBreakdown prev_breakdown;
+  CpuRates rates;
+  bool have_breakdown = false;
+  DiskActivity prev_activity;
+  double disk_await = -1, disk_busy = 0;
+  Pressure psi_cpu, psi_io, psi_mem;
+  Reader psi_cpu_r, psi_io_r, psi_mem_r, filenr_r;
+  std::vector<std::unique_ptr<Reader>> freq_r;  // one open scaling_cur_freq per logical processor
+  double cpu_mhz_now = -1, cpu_mhz_max = -1;
+  int proc_count = 0, thread_count = 0, running_now = 0, blocked_now = 0;
+  long open_files = 0;
+  int sockets = 1;
+  std::string virtualization = "--";
   int ncpu = 1;
   long hz = 100;
   Clock::time_point last_sample;
@@ -221,6 +236,27 @@ struct TaskMgr {
       cache_text += "shared_cpu_list: " + read("shared_cpu_list") + "\n\n";
     }
     cpu_caches = parse_cpu_cache_info(cache_text);
+    {  // sockets (distinct physical packages), virtualisation support, the highest clock the CPU may run at
+      std::set<int> packages;
+      for (int i = 0; i < cpu_info.logical_threads && i < 512; ++i) {
+        std::ifstream f("/sys/devices/system/cpu/cpu" + std::to_string(i) + "/topology/physical_package_id");
+        int id = -1;
+        if (f >> id) packages.insert(id);
+      }
+      sockets = std::max<int>(1, static_cast<int>(packages.size()));
+      std::string line;
+      std::ifstream flags("/proc/cpuinfo");
+      while (std::getline(flags, line))
+        if (line.compare(0, 5, "flags") == 0) {
+          const std::string f = " " + line.substr(line.find(':') + 1) + " ";
+          virtualization = f.find(" hypervisor ") != std::string::npos ? "Virtual machine"
+                           : (f.find(" vmx ") != std::string::npos || f.find(" svm ") != std::string::npos) ? "Enabled" : "Not available";
+          break;
+        }
+      std::ifstream mx("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq");
+      long khz = 0;
+      if (mx >> khz) cpu_mhz_max = static_cast<double>(khz) / 1000.0;
+    }
     std::ifstream paranoia("/proc/sys/kernel/perf_event_paranoid");
     int paranoid = 3;
     paranoia >> paranoid;
@@ -272,18 +308,33 @@ struct TaskMgr {
     prev_cores = cores;
     if (core_h.size() != cores.size()) core_h.assign(cores.size(), History(60));
     for (size_t i = 0; i < core_pct.size() && i < core_h.size(); ++i) core_h[i].push(std::max(0, core_pct[i]));
+    {
+      CpuBreakdown bd;
+      if (parse_proc_stat_breakdown(st, &bd)) {
+        if (have_breakdown) rates = cpu_rates(prev_breakdown, bd, dt);
+        prev_breakdown = bd;
+        have_breakdown = true;
+        running_now = bd.running;
+        blocked_now = bd.blocked;
+      }
+    }
     cpu_h.push(cpu_pct);
     ncpu = std::max<int>(1, static_cast<int>(cores.size()));
 
     if (parse_meminfo(mem_r.read("/proc/meminfo"), &mem) && mem.total > 0)
       mem_h.push(100.0 * static_cast<double>(mem.total - mem.available) / static_cast<double>(mem.total));
 
-    const DiskCounters d = parse_diskstats(disk_r.read("/proc/diskstats"));
+    const std::string& ds = disk_r.read("/proc/diskstats");
+    const DiskCounters d = parse_diskstats(ds);
+    const DiskActivity act = parse_disk_activity(ds);
     if (have_prev && dt > 0) {
+      disk_await = disk_await_ms(prev_activity, act);
+      disk_busy = disk_busy_percent(prev_activity, act, dt);
       disk_read_bps = static_cast<double>(d.read_bytes >= prev_disk.read_bytes ? d.read_bytes - prev_disk.read_bytes : 0) / dt;
       disk_write_bps = static_cast<double>(d.write_bytes >= prev_disk.write_bytes ? d.write_bytes - prev_disk.write_bytes : 0) / dt;
     }
     prev_disk = d;
+    prev_activity = act;
     disk_read_h.push(disk_read_bps);
     disk_write_h.push(disk_write_bps);
 
@@ -315,6 +366,33 @@ struct TaskMgr {
       load_avg = t;
     }
     uptime_s = std::atol(up_r.read("/proc/uptime").c_str());
+    {  // threads (the total in loadavg's 4th field), open files, processes, pressure, the current clock
+      int running = 0, total = 0;
+      if (std::sscanf(l.c_str(), "%*f %*f %*f %d/%d", &running, &total) == 2) thread_count = total;
+      open_files = std::atol(filenr_r.read("/proc/sys/fs/file-nr").c_str());
+      if (ticks % 2 == 1) {
+        int n = 0;
+        if (DIR* d = opendir("/proc")) {
+          while (const dirent* e = readdir(d))
+            if (e->d_name[0] >= '1' && e->d_name[0] <= '9') ++n;
+          closedir(d);
+        }
+        proc_count = n;
+      }
+      parse_pressure(psi_cpu_r.read("/proc/pressure/cpu"), &psi_cpu);
+      parse_pressure(psi_io_r.read("/proc/pressure/io"), &psi_io);
+      parse_pressure(psi_mem_r.read("/proc/pressure/memory"), &psi_mem);
+      if (freq_r.empty()) freq_r.resize(static_cast<size_t>(std::max(1, ncpu)));
+      double sum = 0;
+      int got = 0;
+      for (size_t i = 0; i < freq_r.size(); ++i) {
+        if (!freq_r[i]) freq_r[i] = std::make_unique<Reader>();
+        const std::string& t = freq_r[i]->read(("/sys/devices/system/cpu/cpu" + std::to_string(i) + "/cpufreq/scaling_cur_freq").c_str());
+        const long khz = std::atol(t.c_str());
+        if (khz > 0) sum += static_cast<double>(khz) / 1000.0, ++got;
+      }
+      cpu_mhz_now = got ? sum / got : -1;
+    }
     if (ticks % 30 == 1) {  // the audio quantum changes rarely, and asking for it starts a program
       std::string out;
       if (FILE* p = popen("pw-metadata -n settings 2>/dev/null", "r")) {
@@ -386,6 +464,58 @@ struct TaskMgr {
       text_at(cr, entries[i].second.empty() ? "--" : entries[i].second, cx, cy + 28, kFont, pal.fg_primary, true);
       cairo_restore(cr);
     }
+  }
+
+  // A Windows-style figure: a small dim label above a large value.
+  void big_stat(cairo_t* cr, double x, double y, const std::string& label, const std::string& value) {
+    text_at(cr, label, x, y + 7, kSmall, dim());
+    text_at(cr, value.empty() ? "--" : value, x, y + 29, 22, pal.fg_primary);
+  }
+  // Label and value on one row (the value starts at x + label_w); returns the y of the next row.
+  double kv_row(cairo_t* cr, double x, double y, double label_w, const std::string& label, const std::string& value) {
+    text_at(cr, label, x, y + 8, kSmall, dim());
+    text_at(cr, value.empty() ? "--" : value, x + label_w, y + 8, kFont, pal.fg_primary);
+    return y + 19;
+  }
+  // A heading in the accent colour with a hairline running on to the right edge.
+  void section_label(cairo_t* cr, double x, double y, double w, const char* title) {
+    text_at(cr, title, x, y + 8, kSmall, pal.accent, true);
+    const double tw = measure_text(cr, title, kSmall, true).width;
+    set_source(cr, alpha(pal.fg_secondary, 0.22));
+    cairo_rectangle(cr, x + tw + 10, y + 8, std::max(0.0, w - tw - 10), 1);
+    cairo_fill(cr);
+  }
+  // Small label over a normal-size value, for the dense grids.
+  void small_cell(cairo_t* cr, double x, double y, double w, const std::string& label, const std::string& value) {
+    text_at(cr, label, x, y + 7, kSmall, dim());
+    cairo_save(cr);
+    cairo_rectangle(cr, x, y + 14, w, 22);
+    cairo_clip(cr);
+    text_at(cr, value.empty() ? "--" : value, x, y + 27, kFont, pal.fg_primary, true);
+    cairo_restore(cr);
+  }
+  static std::string num1(double v, const char* unit = "") {
+    char b[32];
+    std::snprintf(b, sizeof b, "%.1f%s", v, unit);
+    return b;
+  }
+  static std::string count_per_s(double v) {
+    char b[32];
+    if (v >= 100000) std::snprintf(b, sizeof b, "%.0fk/s", v / 1000);
+    else if (v >= 10000) std::snprintf(b, sizeof b, "%.1fk/s", v / 1000);
+    else std::snprintf(b, sizeof b, "%.0f/s", v);
+    return b;
+  }
+  static std::string ghz(double mhz) {
+    char b[32];
+    if (mhz <= 0) return "--";
+    std::snprintf(b, sizeof b, "%.2f GHz", mhz / 1000.0);
+    return b;
+  }
+  std::string cache_size(int level) const {  // "32 KB x 2" style: the size of the level's biggest instance, as the kernel reports it
+    for (const CpuCacheInfo& c : cpu_caches)
+      if (c.level == level && c.type != "Instruction") return c.size.empty() ? "--" : c.size;
+    return "--";
   }
 
   void button(cairo_t* cr, const Rect& r, const char* label, bool enabled, bool accent) {
@@ -609,7 +739,7 @@ struct TaskMgr {
                            {"Memory", b2, &mem_h, 100, nullptr},
                            {"Disk", "R " + format_rate(disk_read_bps) + " W " + format_rate(disk_write_bps), &disk_read_h, disk_max, &disk_write_h},
                            {"Network", "Rx " + format_rate(net_rx_bps) + " Tx " + format_rate(net_tx_bps), &net_rx_h, net_max, &net_tx_h},
-                           {only_intel_awake_proxy ? "GT awake" : "GPU", gpu.any() ? (gpu.busiest_percent() < 0 ? std::string("--") : std::to_string(gpu.busiest_percent()) + "%") : std::string("not found"), &gpu_h, 100, nullptr}};
+                           {"GPU", gpu.any() ? (gpu.busiest_percent() < 0 ? std::string("--") : std::to_string(gpu.busiest_percent()) + "%") : std::string("not found"), &gpu_h, 100, nullptr}};
     const Color c1 = pal.accent, c2{0.95, 0.55, 0.25, 1};
     for (int i = 0; i < 5; ++i) {
       res_rect[i] = {0, kTabsH + 6.0 + i * 66, kSideW, 62};
@@ -646,66 +776,147 @@ struct TaskMgr {
       case Res::Cpu: {
         text_at(cr, "CPU", dx, y + 8, 18, pal.fg_primary, true);
         text_right(cr, cpu_info.model.empty() ? "Unknown processor" : cpu_info.model, dx + dw, y + 8, kFont, dim());
-        y += 26;
-        graph(cr, {dx, y, dw, 140}, cpu_h, 100, c1);
-        y += 150;
+        y += 28;
+        text_at(cr, "% Utilization", dx, y + 6, kSmall, dim());
+        text_right(cr, "100%", dx + dw, y + 6, kSmall, dim());
+        y += 14;
+        // What sits below the graph: the per-core graphs, the figures and the scheduler grid. The graph takes what is left.
         const size_t n = core_h.size();
+        const int cols = n <= 4 ? std::max(1, static_cast<int>(n)) : n <= 12 ? 4 : 8;
+        const int rows_n = n ? static_cast<int>((n + static_cast<size_t>(cols) - 1) / static_cast<size_t>(cols)) : 0;
+        const double ch = std::clamp((h - y - 330.0) / std::max(1, rows_n) - 6, 20.0, 36.0);
+        const double below = 8 + rows_n * (ch + 6) + 6 + 3 * 46 + 12 + 22 + 3 * 38;
+        const double gh = std::clamp(h - y - below - 12, 56.0, 150.0);
+        graph(cr, {dx, y, dw, gh}, cpu_h, 100, c1);
+        y += gh + 8;
         if (n > 0) {
-          const int cols = n <= 4 ? static_cast<int>(n) : n <= 12 ? 4 : 8;
-          const int rows_n = static_cast<int>((n + static_cast<size_t>(cols) - 1) / static_cast<size_t>(cols));
-          const double cw = (dw - (cols - 1) * 6) / cols, ch = std::clamp((h - y - 255.0) / rows_n - 6, 22.0, 42.0);
+          const double cw = (dw - (cols - 1) * 6) / cols;
           for (size_t i = 0; i < n; ++i) {
             const Rect r{dx + static_cast<double>(i % static_cast<size_t>(cols)) * (cw + 6), y + static_cast<double>(i / static_cast<size_t>(cols)) * (ch + 6), cw, ch};
             graph(cr, r, core_h[i], 100, c1);
           }
           y += rows_n * (ch + 6) + 6;
         }
+        // Windows' arrangement: the live figures at the left, the fixed facts of the processor at the right.
+        const double half = dw * 0.5;
         char t[64];
         std::snprintf(t, sizeof t, "%d%%", cpu_pct);
-        info_grid(cr, dx, y, dw, {
-          {"Utilisation", t},
-          {"Processes", std::to_string(table.rows().size())},
-          {"Logical processors", std::to_string(cpu_info.logical_threads)},
-          {"Physical cores", std::to_string(cpu_info.physical_cores)},
-          {"Clock", cpu_info.mhz > 0 ? std::to_string(cpu_info.mhz) + " MHz" : "unknown"},
-          {"Load average", load_avg.empty() ? "--" : load_avg},
-        });
-        y += 3 * 38 + 8;
+        big_stat(cr, dx, y, "Utilization", t);
+        big_stat(cr, dx + half * 0.5, y, "Speed", ghz(cpu_mhz_now));
+        big_stat(cr, dx, y + 46, "Processes", proc_count ? std::to_string(proc_count) : std::string());
+        big_stat(cr, dx + half * 0.5 - 28, y + 46, "Threads", thread_count ? std::to_string(thread_count) : std::string());
+        big_stat(cr, dx + half * 0.5 + 62, y + 46, "Open files", open_files ? std::to_string(open_files) : std::string());
         {
           const long d = uptime_s / 86400, hh = uptime_s / 3600 % 24, mm = uptime_s / 60 % 60;
           std::snprintf(t, sizeof t, "%ld:%02ld:%02ld:%02ld", d, hh, mm, uptime_s % 60);
-          info_grid(cr, dx, y, dw, {{"Up time", uptime_s ? t : "--"},
-                                    {"Scheduler latency", sched_latency_us < 0 ? "--" : std::to_string(static_cast<int>(sched_latency_us)) + " us"},
-                                    {"Audio latency", audio_latency_ms < 0 ? "not available" : std::to_string(audio_latency_ms) + " ms"}});
+          big_stat(cr, dx, y + 92, "Up time", uptime_s ? t : "");
         }
+        {
+          const double kx = dx + half + 16, lw = 124;
+          double ky = y;
+          ky = kv_row(cr, kx, ky, lw, "Maximum speed:", ghz(cpu_mhz_max > 0 ? cpu_mhz_max : static_cast<double>(cpu_info.mhz)));
+          ky = kv_row(cr, kx, ky, lw, "Sockets:", std::to_string(sockets));
+          ky = kv_row(cr, kx, ky, lw, "Cores:", std::to_string(cpu_info.physical_cores));
+          ky = kv_row(cr, kx, ky, lw, "Logical processors:", std::to_string(cpu_info.logical_threads));
+          ky = kv_row(cr, kx, ky, lw, "Virtualization:", virtualization);
+          ky = kv_row(cr, kx, ky, lw, "L1 cache:", cache_size(1));
+          ky = kv_row(cr, kx, ky, lw, "L2 cache:", cache_size(2));
+          kv_row(cr, kx, ky, lw, "L3 cache:", cache_size(3));
+        }
+        y += 3 * 46 + 12;
+        section_label(cr, dx, y, dw, "Scheduler and I/O");
+        y += 22;
+        const double cw4 = dw / 4.0;
+        const CpuRates& r = rates;
+        auto cell = [&](int col, int row, const std::string& label, const std::string& value) {
+          small_cell(cr, dx + col * cw4, y + row * 38.0, cw4 - 8, label, value);
+        };
+        cell(0, 0, "I/O wait", r.valid ? num1(r.iowait, "%") : std::string());
+        cell(1, 0, "Disk latency", disk_await >= 0 ? num1(disk_await, " ms") : std::string("idle"));
+        cell(2, 0, "Disk busy", num1(disk_busy, "%"));
+        cell(3, 0, "I/O pressure", psi_io.some10 >= 0 ? num1(psi_io.some10, "%") : std::string());
+        cell(0, 1, "Context switches", r.valid ? count_per_s(r.ctxt_per_s) : std::string());
+        cell(1, 1, "Interrupts", r.valid ? count_per_s(r.intr_per_s) : std::string());
+        cell(2, 1, "New tasks", r.valid ? count_per_s(r.forks_per_s) : std::string());
+        cell(3, 1, "CPU pressure", psi_cpu.some10 >= 0 ? num1(psi_cpu.some10, "%") : std::string());
+        cell(0, 2, "Running / blocked", std::to_string(running_now) + " / " + std::to_string(blocked_now));
+        cell(1, 2, "Timer latency", sched_latency_us < 0 ? std::string() : std::to_string(static_cast<int>(sched_latency_us)) + " us");
+        cell(2, 2, "Audio latency", audio_latency_ms < 0 ? std::string("n/a") : num1(audio_latency_ms, " ms"));
+        cell(3, 2, "Load average", load_avg);
         break;
       }
       case Res::Memory: {
+        const MemComposition comp = mem_composition(mem);
         text_at(cr, "Memory", dx, y + 8, 18, pal.fg_primary, true);
-        y += 26;
-        graph(cr, {dx, y, dw, 170}, mem_h, 100, c1);
-        y += 184;
-        const unsigned long long used = mem.total - mem.available;
-        info_grid(cr, dx, y, dw, {{"In use", format_kib(static_cast<long long>(used))},
-                                  {"Available", format_kib(static_cast<long long>(mem.available))},
-                                  {"Total", format_kib(static_cast<long long>(mem.total))},
-                                  {"Cached", format_kib(static_cast<long long>(mem.cached))},
-                                  {"Buffers", format_kib(static_cast<long long>(mem.buffers))},
-                                  {"Swap in use", mem.swap_total ? format_kib(static_cast<long long>(mem.swap_total - mem.swap_free)) + " of " + format_kib(static_cast<long long>(mem.swap_total)) : "no swap"}});
-        y += 3 * 38 + 8;
-        if (memory_modules.empty()) {
-          info_grid(cr, dx, y, dw, {{"Memory slots", "details unavailable"}});
-        } else {
+        text_right(cr, format_kib(static_cast<long long>(mem.total)), dx + dw, y + 8, kFont, dim());
+        y += 28;
+        text_at(cr, "Memory usage", dx, y + 6, kSmall, dim());
+        text_right(cr, format_kib(static_cast<long long>(mem.total)), dx + dw, y + 6, kSmall, dim());
+        y += 14;
+        graph(cr, {dx, y, dw, 120}, mem_h, 100, c1);
+        y += 128;
+        // The composition bar: in use, shared, cache and buffers, free (they add up to the installed memory).
+        section_label(cr, dx, y, dw, "Memory composition");
+        y += 22;
+        {
+          const Color seg_colors[4] = {c1, c2, alpha(pal.accent, 0.38), alpha(pal.fg_secondary, 0.14)};
+          const unsigned long long vals[4] = {comp.used, comp.shared, comp.cache_buffers, comp.free};
+          const char* names[4] = {"In use", "Shared", "Cache + buffers", "Free"};
+          double bx = dx;
+          const double total = std::max(1.0, static_cast<double>(comp.total));
+          for (int i = 0; i < 4; ++i) {
+            const double bw = dw * static_cast<double>(vals[i]) / total;
+            if (bw >= 0.5) {
+              set_source(cr, seg_colors[i]);
+              cairo_rectangle(cr, bx, y, bw, 20);
+              cairo_fill(cr);
+            }
+            bx += bw;
+          }
+          set_source(cr, alpha(pal.fg_secondary, 0.4));
+          cairo_set_line_width(cr, 1);
+          cairo_rectangle(cr, dx + 0.5, y + 0.5, dw - 1, 19);
+          cairo_stroke(cr);
+          double lx = dx;
+          for (int i = 0; i < 4; ++i) {
+            set_source(cr, seg_colors[i]);
+            cairo_rectangle(cr, lx, y + 29, 10, 10);
+            cairo_fill(cr);
+            const std::string label = std::string(names[i]) + "  " + format_kib(static_cast<long long>(vals[i]));
+            text_at(cr, label, lx + 15, y + 34, kSmall, pal.fg_primary);
+            lx += 15 + measure_text(cr, label, kSmall).width + 18;
+          }
+          y += 48;
+        }
+        {
+          const double half = dw * 0.5, lw = 118;
+          double ly = y, ry = y;
+          ly = kv_row(cr, dx, ly, lw, "In use:", format_kib(static_cast<long long>(comp.used)));
+          ly = kv_row(cr, dx, ly, lw, "Shared:", format_kib(static_cast<long long>(comp.shared)));
+          ly = kv_row(cr, dx, ly, lw, "Cache + buffers:", format_kib(static_cast<long long>(comp.cache_buffers)));
+          ly = kv_row(cr, dx, ly, lw, "Available:", format_kib(static_cast<long long>(mem.available)));
+          ly = kv_row(cr, dx, ly, lw, "Free:", format_kib(static_cast<long long>(comp.free)));
+          ly = kv_row(cr, dx, ly, lw, "Swap in use:", mem.swap_total ? format_kib(static_cast<long long>(mem.swap_total - mem.swap_free)) + " of " + format_kib(static_cast<long long>(mem.swap_total)) : "no swap");
+          const double rx = dx + half + 16;
+          ry = kv_row(cr, rx, ry, lw, "Programs:", format_kib(static_cast<long long>(mem.anon)));
+          ry = kv_row(cr, rx, ry, lw, "Kernel slab:", format_kib(static_cast<long long>(mem.sreclaimable + mem.sunreclaim)));
+          ry = kv_row(cr, rx, ry, lw, "Mapped files:", format_kib(static_cast<long long>(mem.mapped)));
+          ry = kv_row(cr, rx, ry, lw, "Dirty + writeback:", format_kib(static_cast<long long>(mem.dirty + mem.writeback)));
+          ry = kv_row(cr, rx, ry, lw, "Committed:", mem.commit_limit ? format_kib(static_cast<long long>(mem.committed)) + " of " + format_kib(static_cast<long long>(mem.commit_limit)) : "--");
+          ry = kv_row(cr, rx, ry, lw, "Memory pressure:", psi_mem.some10 >= 0 ? num1(psi_mem.some10, "%") : "--");
+          y = std::max(ly, ry) + 8;
+        }
+        if (!memory_modules.empty() && y + 60 < h) {
           std::vector<std::pair<std::string, std::string>> module_info;
-          module_info.emplace_back("Occupied slots", std::to_string(memory_modules.size()));
           for (const MemoryModule& m : memory_modules) {
             std::string label = m.locator.empty() ? "Module" : m.locator;
             label += " " + format_kib(m.size_mb * 1024);
             module_info.emplace_back(label, (m.manufacturer.empty() ? std::string() : m.manufacturer + " ") +
                                              (m.part_number.empty() ? std::string() : m.part_number) +
-                                             (m.speed_mhz > 0 ? " " + std::to_string(m.speed_mhz) + " MHz" : ""));
+                                             (m.speed_mhz > 0 ? " " + std::to_string(m.speed_mhz) + " MT/s" : ""));
           }
-          info_grid(cr, dx, y, dw, module_info);
+          section_label(cr, dx, y, dw, "Installed modules");
+          info_grid(cr, dx, y + 22, dw, module_info);
         }
         break;
       }
@@ -736,25 +947,49 @@ struct TaskMgr {
         break;
       case Res::Gpu: {
         text_at(cr, "GPU", dx, y + 8, 18, pal.fg_primary, true);
-        y += 26;
+        if (!gpu.devices().empty()) text_right(cr, gpu.devices().front().vendor + " (" + gpu.devices().front().driver + ")", dx + dw, y + 8, kFont, dim());
+        else if (gpu.nvidia_available()) text_right(cr, "NVIDIA", dx + dw, y + 8, kFont, dim());
+        y += 28;
         if (!gpu.any()) {
           text_at(cr, "No GPU utilisation source found (software rendering or an unsupported driver).", dx, y + 8, kFont, dim());
           break;
         }
-        graph(cr, {dx, y, dw, 170}, gpu_h, 100, c1);
-        y += 184;
-        line(intel_awake_proxy ? (only_intel_awake_proxy ? "GT awake (RC6 proxy)" : "GPU activity (Intel RC6 proxy)")
-                               : "Utilisation",
-             gpu.text());
-        for (const GpuDevice& g : gpu.devices()) {
-          line("Card", g.vendor + " (" + g.driver + ")");
-          if (!g.freq_path.empty()) {
-            const long long f = GpuMonitor::read_number(g.freq_path);
-            if (f >= 0) line("Core clock", std::to_string(f) + " MHz");
+        text_at(cr, gpu.any_engine_busy() ? "% Render/3D engine busy" : "% Utilization", dx, y + 6, kSmall, dim());
+        text_right(cr, "100%", dx + dw, y + 6, kSmall, dim());
+        y += 14;
+        graph(cr, {dx, y, dw, std::clamp(h - y - 270.0, 70.0, 150.0)}, gpu_h, 100, c1);
+        y += std::clamp(h - y - 270.0, 70.0, 150.0) + 10;
+        // One block per card: the figures a driver exposes; what it does not expose is said so instead of drawn as zero.
+        auto gpu_block = [&](const std::string& name, const GpuDetail& d, bool uma, const GpuDevice* dev) {
+          section_label(cr, dx, y, dw, name.c_str());
+          y += 22;
+          const double cw3 = dw / 3.0;
+          auto cell = [&](int col, int row, const std::string& label, const std::string& value) { small_cell(cr, dx + col * cw3, y + row * 38.0, cw3 - 8, label, value); };
+          const std::string util = d.percent >= 0 ? std::to_string(d.percent) + "%" : std::string();
+          cell(0, 0, dev && dev->engine_busy ? "Render/3D busy" : "Utilization", util);
+          cell(1, 0, "Core clock", d.core_mhz > 0 ? std::to_string(d.core_mhz) + " MHz" + (d.core_max_mhz > 0 ? " of " + std::to_string(d.core_max_mhz) : std::string()) : std::string());
+          cell(2, 0, "Power", d.power_w >= 0 ? num1(d.power_w, " W") : std::string("not exposed"));
+          if (uma) {
+            cell(0, 1, "Memory", "shared with system RAM");
+            cell(1, 1, "Memory clock", "that of system RAM");
+            cell(2, 1, "Memory bandwidth", "not exposed by this GPU");
+          } else {
+            cell(0, 1, "Dedicated memory", d.vram_total > 0 ? format_kib(d.vram_used / 1024) + " of " + format_kib(d.vram_total / 1024) : std::string());
+            cell(1, 1, "Memory clock", d.mem_mhz > 0 ? std::to_string(d.mem_mhz) + " MHz" + (d.mem_max_mhz > 0 ? " of " + std::to_string(d.mem_max_mhz) : std::string()) : std::string());
+            cell(2, 1, "Memory controller busy", d.mem_busy_percent >= 0 ? std::to_string(d.mem_busy_percent) + "%" : std::string("not exposed"));
           }
+          cell(0, 2, "PCIe link", dev && !dev->pcie_speed.empty() && dev->pcie_speed != "Unknown" ? dev->pcie_speed + (dev->pcie_width > 0 ? " x" + std::to_string(dev->pcie_width) : std::string()) : std::string("n/a"));
+          y += 3 * 38 + 8;
+        };
+        int idx = 0;
+        for (const GpuDevice& g : gpu.devices()) {
+          gpu_block((gpu.devices().size() + static_cast<size_t>(gpu.nvidia_cards()) > 1 ? "GPU " + std::to_string(++idx) + ": " : std::string()) + g.vendor + " (" + g.driver + ")",
+                    gpu.detail(g), g.kind == GpuDevice::Kind::IntelIdle, &g);
         }
-        if (intel_awake_proxy)
-          text_at(cr, "Intel: GT awake time, not Render/3D busy; includes awake-idle time.", dx, y + 8, kSmall, dim());
+        for (int i = 0; i < gpu.nvidia_cards() && static_cast<size_t>(i) < gpu.nvidia_detail().size(); ++i)
+          gpu_block((gpu.devices().size() + static_cast<size_t>(gpu.nvidia_cards()) > 1 ? "GPU " + std::to_string(++idx) + ": " : std::string()) + "NVIDIA", gpu.nvidia_detail()[static_cast<size_t>(i)], false, nullptr);
+        if (gpu.any_awake_proxy())
+          text_at(cr, "This kernel does not let this user read the render-engine counter, so the figure is the GPU's awake time (RC6).", dx, y + 8, kSmall, dim());
         break;
       }
     }
@@ -1043,7 +1278,7 @@ int main(int argc, char** argv) {
       T.tab = std::strcmp(argv[i + 1], "performance") == 0 ? Tab::Performance :
               std::strcmp(argv[i + 1], "cache") == 0 ? Tab::Cache : Tab::Processes;
     }
-  T.gpu.discover();
+  T.gpu.discover("/sys/class/drm", true, true);  // the Task Manager may open the i915 render-busy counter: it is only open while this window lives
   T.read_inventory();
   T.gpu.on_nvidia_update = [&T] { T.surface->queue_draw(); };
   if (!T.app.connect()) return 1;
