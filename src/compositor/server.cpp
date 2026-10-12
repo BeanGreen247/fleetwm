@@ -1926,6 +1926,8 @@ void Server::begin_resize(View* view, uint32_t edges) {
   view->has_placed = false;
   if (grabstats::enabled()) grabstats::set_mode("resize", stats_out_w(), stats_out_h());
   grab_mode_ = GrabMode::Resize;
+  resize_has_last_request_ = false;
+  resize_pending_ = false;
   grab_view_ = view;
   grab_edges_ = edges;
   grab_cursor_x_ = cursor_->x;
@@ -1973,13 +1975,64 @@ void Server::update_grab() {
     const int x = nb.x, y = nb.y, w = nb.w, h = nb.h;
     if (grabstats::enabled()) ++grabstats::c().pos;
     wlr_scene_node_set_position(&view->container_tree->node, x, y);
-    if (w != view->last_requested_content_w || h != view->last_requested_content_h) {
-      if (grabstats::enabled()) ++grabstats::c().resize_req;
-      view->request_size(w, h);
-      view->last_requested_content_w = w;
-      view->last_requested_content_h = h;
-    }
+    if (w != view->last_requested_content_w || h != view->last_requested_content_h) request_grab_size(view, w, h);
   }
+}
+
+namespace {
+constexpr int kResizeRequestMs = 1000 / 24;  // the drag frame cap in output.cpp
+bool resize_coalescing() {
+  static const bool on = [] {
+    const char* e = std::getenv("FLEETWM_RESIZE_COALESCE");
+    return !(e && e[0] == '0');
+  }();
+  return on;
+}
+}  // namespace
+
+void Server::request_grab_size(View* view, int w, int h) {
+  timespec now{};
+  clock_gettime(CLOCK_MONOTONIC, &now);
+  const double since_ms = resize_has_last_request_ ? (now.tv_sec - resize_last_request_.tv_sec) * 1000.0 +
+                                                         (now.tv_nsec - resize_last_request_.tv_nsec) / 1e6
+                                                   : 1e9;
+  if (!resize_coalescing() || since_ms >= kResizeRequestMs) {
+    resize_pending_ = false;
+    if (grabstats::enabled()) ++grabstats::c().resize_req;
+    view->request_size(w, h);
+    view->last_requested_content_w = w;
+    view->last_requested_content_h = h;
+    resize_last_request_ = now;
+    resize_has_last_request_ = true;
+    return;
+  }
+  resize_pending_ = true;
+  resize_pending_w_ = w;
+  resize_pending_h_ = h;
+  if (!resize_flush_timer_) {
+    resize_flush_timer_ = wl_event_loop_add_timer(
+        wl_display_get_event_loop(display_),
+        [](void* data) -> int {
+          static_cast<Server*>(data)->flush_grab_size();
+          return 0;
+        },
+        this);
+  }
+  wl_event_source_timer_update(resize_flush_timer_, std::max(1, static_cast<int>(kResizeRequestMs - since_ms)));
+}
+
+void Server::flush_grab_size() {
+  if (!resize_pending_) return;
+  resize_pending_ = false;
+  View* view = grab_view_;
+  if (!view || grab_mode_ != GrabMode::Resize) return;
+  if (resize_pending_w_ == view->last_requested_content_w && resize_pending_h_ == view->last_requested_content_h) return;
+  if (grabstats::enabled()) ++grabstats::c().resize_req;
+  view->request_size(resize_pending_w_, resize_pending_h_);
+  view->last_requested_content_w = resize_pending_w_;
+  view->last_requested_content_h = resize_pending_h_;
+  clock_gettime(CLOCK_MONOTONIC, &resize_last_request_);
+  resize_has_last_request_ = true;
 }
 
 void Server::update_snap_preview(View* view) {
@@ -2019,6 +2072,8 @@ void Server::hide_snap_preview() {
 }
 
 void Server::end_grab() {
+  flush_grab_size();
+  if (resize_flush_timer_) wl_event_source_timer_update(resize_flush_timer_, 0);
   if (grab_mode_ == GrabMode::Move && grab_view_ && snap_pending_ != geom::SnapZone::None) {
     const geom::SnapZone zone = snap_pending_;
     View* view = grab_view_;
@@ -2038,7 +2093,10 @@ void Server::end_grab() {
 }
 
 void Server::forget_view(View* view) {
-  if (grab_view_ == view) end_grab();
+  if (grab_view_ == view) {
+    resize_pending_ = false;
+    end_grab();
+  }
   if (hover_view_ == view) hover_view_ = nullptr;
   if (last_click_view_ == view) last_click_view_ = nullptr;
   if (pressed_view_ == view) pressed_view_ = nullptr;

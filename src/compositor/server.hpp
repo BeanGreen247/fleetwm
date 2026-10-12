@@ -1,5 +1,6 @@
 #pragma once
 
+#include <ctime>
 #include <wayland-server-core.h>
 
 extern "C" {
@@ -613,6 +614,15 @@ class Server {
   wlr_box grab_box_{};  // container x,y + content w,h when the grab began
   uint32_t grab_edges_ = 0;
   bool grab_unmaximize_pending_ = false;
+  // Resize requests to the client are paced to the drag frame rate (kResizeRequestMs); the newest size waits for the timer, and for the
+  // end of the grab, so the window always ends at the size the pointer left it.
+  void request_grab_size(View* view, int w, int h);
+  void flush_grab_size();
+  wl_event_source* resize_flush_timer_ = nullptr;
+  bool resize_pending_ = false;
+  int resize_pending_w_ = 0, resize_pending_h_ = 0;
+  timespec resize_last_request_{};
+  bool resize_has_last_request_ = false;
   geom::SnapZone snap_pending_ = geom::SnapZone::None;  // zone under the cursor during a move
   wlr_scene_rect* snap_preview_ = nullptr;
   void update_snap_preview(View* view);
