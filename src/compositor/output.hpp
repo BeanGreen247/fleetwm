@@ -47,6 +47,8 @@ class Output {
   wl_listener frame{};
   wl_listener request_state{};
   wl_listener destroy{};
+  wl_listener present{};  // only listened to under FLEETWM_GRAB_STATS
+  bool present_listening = false;
 
   // Adaptive render throttling (RenderMode::Custom, theme.hpp) and the
   // deliberately low-power 24 FPS interactive drag cap: tracks

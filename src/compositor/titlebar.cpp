@@ -12,6 +12,7 @@ extern "C" {
 #include <wlr/interfaces/wlr_buffer.h>
 }
 
+#include "grab_stats.hpp"
 #include "titlebar_draw.hpp"
 #include "fleetkit.hpp"
 #include "pixel_buffer.hpp"
@@ -54,6 +55,7 @@ geom::TitlebarMetrics titlebar_metrics(const TitlebarConfig& cfg) {
 
 wlr_buffer* render_titlebar(int width, const TitlebarState& st, const TitlebarConfig& cfg) {
   if (width < 1) return nullptr;
+  if (grabstats::enabled()) ++grabstats::c().titlebar_renders;
   const geom::TitlebarMetrics metrics = titlebar_metrics(cfg);
   const geom::TitlebarLayout layout = geom::layout_titlebar(width, metrics);
   const int height = std::max(16, metrics.height);
@@ -87,6 +89,7 @@ wlr_buffer* render_titlebar(int width, const TitlebarState& st, const TitlebarCo
 
 wlr_buffer* render_frame_strip(int width, int height, int edge, bool focused, bool glass, bool round_bottom) {
   if (width < 1 || height < 1) return nullptr;
+  if (grabstats::enabled()) ++grabstats::c().strip_renders;
   void* pixels = nullptr;
   size_t stride = 0;
   wlr_buffer* buffer = create_pixel_buffer(width, height, &pixels, &stride);

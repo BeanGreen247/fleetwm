@@ -1,4 +1,5 @@
 #include "output.hpp"
+#include "grab_stats.hpp"
 #include "window_geometry.hpp"
 
 extern "C" {
@@ -59,6 +60,8 @@ void output_frame(wl_listener* listener, void*) {
   Server* server = output->server;
 
   View* fullscreen = fullscreen_view_on(output);
+  const bool stats = grabstats::enabled();
+  if (stats) ++grabstats::c().frames;
 
   // Interactive drags use a fixed low-power 24 FPS cap on every hardware
   // class. This keeps pointer motion responsive while leaving most GPU time
@@ -90,7 +93,15 @@ void output_frame(wl_listener* listener, void*) {
         // and wakes again by itself when something changes.
         wlr_scene_output* pending = wlr_scene_get_scene_output(server->scene(), output->wlr_output_ptr);
         if (pending == nullptr || !pixman_region32_not_empty(&pending->pending_commit_damage)) {
+          if (stats) {
+            ++grabstats::c().cap_idle;
+            grabstats::tick(output->wlr_output_ptr->width, output->wlr_output_ptr->height);
+          }
           return;
+        }
+        if (stats) {
+          ++grabstats::c().cap_wait;
+          grabstats::tick(output->wlr_output_ptr->width, output->wlr_output_ptr->height);
         }
         int remaining_ms = std::max(1, static_cast<int>(interval_ms - elapsed_ms));
         if (output->fps_cap_timer == nullptr) {
@@ -142,7 +153,31 @@ void output_frame(wl_listener* listener, void*) {
       wlr_output_state_finish(&state);
     }
   } else {
+    double damage_px = 0;
+    timespec c0{};
+    if (stats) {  // pending damage before the commit takes it, and what the call costs on the CPU
+      int n = 0;
+      const pixman_box32_t* r = pixman_region32_rectangles(&scene_output->pending_commit_damage, &n);
+      for (int i = 0; i < n; ++i) damage_px += static_cast<double>(r[i].x2 - r[i].x1) * static_cast<double>(r[i].y2 - r[i].y1);
+      if (grabstats::rects() && n > 0 && std::strcmp(grabstats::mode(), "idle") != 0) {
+        std::fprintf(stderr, "RECTS mode=%s n=%d", grabstats::mode(), n);
+        for (int i = 0; i < n && i < 12; ++i) std::fprintf(stderr, " [%d,%d %dx%d]", r[i].x1, r[i].y1, r[i].x2 - r[i].x1, r[i].y2 - r[i].y1);
+        std::fprintf(stderr, "\n");
+      }
+      clock_gettime(CLOCK_MONOTONIC, &c0);
+    }
     const bool committed = wlr_scene_output_commit(scene_output, nullptr);
+    if (stats && damage_px > 0) {
+      timespec c1{};
+      clock_gettime(CLOCK_MONOTONIC, &c1);
+      const double ms = (c1.tv_sec - c0.tv_sec) * 1000.0 + (c1.tv_nsec - c0.tv_nsec) / 1e6;
+      grabstats::Counters& k = grabstats::c();
+      ++k.commits;
+      k.commit_ms += ms;
+      k.commit_ms_max = ms > k.commit_ms_max ? ms : k.commit_ms_max;
+      k.damage_px += damage_px;
+      k.damage_px_max = damage_px > k.damage_px_max ? damage_px : k.damage_px_max;
+    }
     if (!committed) {
       ++output->commit_failures;
       if (output->has_fallback && output->commit_failures >= 3) {
@@ -160,6 +195,7 @@ void output_frame(wl_listener* listener, void*) {
   timespec now{};
   clock_gettime(CLOCK_MONOTONIC, &now);
   wlr_scene_output_send_frame_done(scene_output, &now);
+  if (stats) grabstats::tick(output->wlr_output_ptr->width, output->wlr_output_ptr->height);
 
   output->debug_frame_end((now.tv_sec - commit_start.tv_sec) * 1000.0 + (now.tv_nsec - commit_start.tv_nsec) / 1e6);
 }
@@ -181,6 +217,12 @@ void output_destroy(wl_listener* listener, void*) {
       outputs.end());
 }
 
+void output_present(wl_listener*, void* data) {
+  const auto* event = static_cast<const wlr_output_event_present*>(data);
+  ++grabstats::c().present;
+  if (!event->presented) ++grabstats::c().missed;
+}
+
 }  // namespace
 
 Output::Output(Server* server_, wlr_output* wlr_output_ptr_)
@@ -193,12 +235,19 @@ Output::Output(Server* server_, wlr_output* wlr_output_ptr_)
 
   destroy.notify = output_destroy;
   wl_signal_add(&wlr_output_ptr->events.destroy, &destroy);
+
+  if (grabstats::enabled()) {  // FLEETWM_GRAB_STATS: count presentation outcomes
+    present.notify = output_present;
+    wl_signal_add(&wlr_output_ptr->events.present, &present);
+    present_listening = true;
+  }
 }
 
 Output::~Output() {
   wl_list_remove(&frame.link);
   wl_list_remove(&request_state.link);
   wl_list_remove(&destroy.link);
+  if (present_listening) wl_list_remove(&present.link);
 
   if (fps_cap_timer != nullptr) {
     wl_event_source_remove(fps_cap_timer);

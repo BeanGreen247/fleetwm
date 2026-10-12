@@ -45,6 +45,7 @@ extern "C" {
 #include "scene_node_owner.hpp"
 #include "cursor.hpp"
 #include "glass_backdrop.hpp"
+#include "grab_stats.hpp"
 #include "titlebar.hpp"
 #include "window_geometry.hpp"
 #include "view.hpp"
@@ -1896,6 +1897,15 @@ constexpr uint32_t kDoubleClickMs = 400;
 
 void Server::begin_move(View* view) {
   if (!view || !view->output || grab_active()) return;
+  if (grabstats::enabled()) {
+    grabstats::set_mode("move", stats_out_w(), stats_out_h());
+    if (grabstats::rects()) {
+      wlr_box tb{};
+      wlr_scene_node_coords(&view->container_tree->node, &tb.x, &tb.y);
+      const wlr_box cg = view->content_geometry();
+      std::fprintf(stderr, "WINDOW container=%d,%d content=%dx%d\n", tb.x, tb.y, cg.width, cg.height);
+    }
+  }
   grab_mode_ = GrabMode::Move;
   grab_view_ = view;
   grab_cursor_x_ = cursor_->x;
@@ -1914,6 +1924,7 @@ void Server::begin_resize(View* view, uint32_t edges) {
   const wlr_box geo = view->content_geometry();
   view->snap_zone = geom::SnapZone::None;  // a resized window is no longer a half/quarter
   view->has_placed = false;
+  if (grabstats::enabled()) grabstats::set_mode("resize", stats_out_w(), stats_out_h());
   grab_mode_ = GrabMode::Resize;
   grab_view_ = view;
   grab_edges_ = edges;
@@ -1930,6 +1941,7 @@ void Server::update_grab() {
     return;
   }
   const double dx = cursor_->x - grab_cursor_x_, dy = cursor_->y - grab_cursor_y_;
+  if (grabstats::enabled()) ++grabstats::c().events;
 
   if (grab_mode_ == GrabMode::Move) {
     if (grab_unmaximize_pending_) {
@@ -1948,6 +1960,7 @@ void Server::update_grab() {
     if (view->output) {
       y = std::max(y, view->output->usable_area.y);  // keep the titlebar below the bar
     }
+    if (grabstats::enabled()) ++grabstats::c().pos;
     wlr_scene_node_set_position(&view->container_tree->node, x, y);
     view->sync_x11_position();
     update_snap_preview(view);
@@ -1958,8 +1971,10 @@ void Server::update_grab() {
     const geom::Box nb = geom::resized_box({grab_box_.x, grab_box_.y, grab_box_.width, grab_box_.height},
                                            grab_edges_, dx, dy, kMinContentW, kMinContentH);
     const int x = nb.x, y = nb.y, w = nb.w, h = nb.h;
+    if (grabstats::enabled()) ++grabstats::c().pos;
     wlr_scene_node_set_position(&view->container_tree->node, x, y);
     if (w != view->last_requested_content_w || h != view->last_requested_content_h) {
+      if (grabstats::enabled()) ++grabstats::c().resize_req;
       view->request_size(w, h);
       view->last_requested_content_w = w;
       view->last_requested_content_h = h;
@@ -1980,6 +1995,7 @@ void Server::update_snap_preview(View* view) {
     zone = geom::snap_zone_at(cursor_->x, cursor_->y, {full.x, full.y, full.width, full.height});
   }
   if (zone == snap_pending_) return;
+  if (grabstats::enabled()) ++grabstats::c().snap;
   snap_pending_ = zone;
   if (zone == geom::SnapZone::None) {
     hide_snap_preview();
@@ -2013,6 +2029,7 @@ void Server::end_grab() {
   if (grab_mode_ == GrabMode::Move && grab_view_) adopt_output_under(grab_view_);  // dragged across the edge: it is on the other screen now
   snap_pending_ = geom::SnapZone::None;
   hide_snap_preview();
+  if (grabstats::enabled()) grabstats::set_mode("idle", stats_out_w(), stats_out_h());
   grab_mode_ = GrabMode::None;
   grab_view_ = nullptr;
   grab_edges_ = 0;
@@ -2666,4 +2683,17 @@ Output* Server::output_for(wlr_output* wlr_output_ptr) const {
   return nullptr;
 }
 
+}  // namespace fleetwm
+
+namespace fleetwm {
+int Server::stats_out_w() const {
+  wlr_box b{};
+  if (wlr_output* o = wlr_output_layout_output_at(output_layout_, cursor_->x, cursor_->y)) wlr_output_layout_get_box(output_layout_, o, &b);
+  return b.width;
+}
+int Server::stats_out_h() const {
+  wlr_box b{};
+  if (wlr_output* o = wlr_output_layout_output_at(output_layout_, cursor_->x, cursor_->y)) wlr_output_layout_get_box(output_layout_, o, &b);
+  return b.height;
+}
 }  // namespace fleetwm

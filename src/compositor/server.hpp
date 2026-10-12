@@ -183,6 +183,9 @@ class Server {
   // ---- Desktop (floating) layout: interactive move/resize ----
   bool desktop_layout() const { return theme_config_.window_layout == WindowLayout::Desktop; }
   bool grab_active() const { return grab_mode_ != GrabMode::None; }
+  // Size of the output with the pointer, for the FLEETWM_GRAB_STATS lines (grab_stats.hpp).
+  int stats_out_w() const;
+  int stats_out_h() const;
   View* grab_view() const { return grab_view_; }
   // Starts dragging `view` with the pointer (titlebar drag or a client's
   // xdg_toplevel.move request) / resizing it from `edges` (WLR_EDGE_* mask).
