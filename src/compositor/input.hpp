@@ -34,6 +34,11 @@ class Keyboard {
   // Alt and Shift went down together with no other key since: letting go switches the layout.
   bool layout_chord = false;
   bool alt_down = false, shift_down = false;  // tracked from key events for the chord
+  // A held volume or brightness key repeats like a typed key (the compositor eats the key, so no client does it for us).
+  wl_event_source* media_repeat = nullptr;
+  const char* media_cmd = nullptr;
+  uint32_t media_keycode = 0;
+  void stop_media_repeat();
 
   // Returns true if the key event was consumed as a compositor keybind
   // (and should not be forwarded to the focused client).

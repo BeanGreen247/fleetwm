@@ -304,8 +304,31 @@ void keyboard_key(wl_listener* listener, void* data) {
       if (const char* cmd = media_key_command(syms[i])) {
         spawn_shell(cmd);
         handled = true;
+        keyboard->stop_media_repeat();
+        if (!std::strstr(cmd, "mute")) {  // a held mute key would toggle back and forth
+          keyboard->media_cmd = cmd;
+          keyboard->media_keycode = event->keycode;
+          if (!keyboard->media_repeat) {
+            keyboard->media_repeat = wl_event_loop_add_timer(
+                wl_display_get_event_loop(keyboard->server->display()),
+                [](void* data) -> int {
+                  auto* kb = static_cast<Keyboard*>(data);
+                  if (!kb->media_cmd || kb->server->is_locked()) return 0;
+                  spawn_shell(kb->media_cmd);
+                  // at most 12 repeats a second: each one starts a small process
+                  const int rate = std::clamp(kb->wlr_keyboard_ptr->repeat_info.rate, 1, 12);
+                  wl_event_source_timer_update(kb->media_repeat, 1000 / rate);
+                  return 0;
+                },
+                keyboard);
+          }
+          wl_event_source_timer_update(keyboard->media_repeat, std::max(200, keyboard->wlr_keyboard_ptr->repeat_info.delay));
+        }
       }
     }
+  } else if (event->state == WL_KEYBOARD_KEY_STATE_RELEASED && keyboard->media_cmd && event->keycode == keyboard->media_keycode) {
+    keyboard->stop_media_repeat();
+    handled = true;  // its press never reached a client either
   }
 
   // Desktop layout: tapping Super (Windows/Meta) alone opens the start menu; a
@@ -512,7 +535,13 @@ Keyboard::Keyboard(Server* server_, wlr_keyboard* wlr_keyboard_ptr_, bool is_vir
   server->notify_keyboard_added();
 }
 
+void Keyboard::stop_media_repeat() {
+  media_cmd = nullptr;
+  if (media_repeat) wl_event_source_timer_update(media_repeat, 0);
+}
+
 Keyboard::~Keyboard() {
+  if (media_repeat) wl_event_source_remove(media_repeat);
   server->unregister_keyboard(this);
   wl_list_remove(&modifiers.link);
   wl_list_remove(&key.link);
