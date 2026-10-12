@@ -1827,7 +1827,7 @@ struct Bar {
 
   void init_gpu() {
     gpu.on_nvidia_update = [this] {
-      if (set_if_changed(gpu_text, gpu.text())) redraw();
+      if (set_if_changed(gpu_text, gpu.text()) && stats_shown()) redraw();
     };
     gpu.discover();
     if (!gpu.any()) gpu_text = "GPU N/A";
@@ -2175,11 +2175,20 @@ struct Bar {
     });
   }
 
+  // The CPU/RAM/GPU/Disk texts are drawn by the bar styles that carry them and by the taskbar's Metrics element, which is hidden by
+  // default. Measured on the laptop: a full taskbar redraw costs about 35 ms of CPU there, and with Metrics hidden these texts caused one
+  // every 2 s for nothing (1.7% of a core at idle).
+  bool stats_shown() const {
+    if (!taskbar) return true;
+    const std::vector<TbElement> hidden = tb_normalize_hidden(config.taskbar_hidden);
+    return std::find(hidden.begin(), hidden.end(), TbElement::Metrics) == hidden.end();
+  }
+
   void stats_tick() {
     bool ch = update_cpu();
     ch |= update_ram();
     ch |= update_gpu();
-    if (ch) {
+    if (ch && stats_shown()) {
       island_resize_if_needed();  // text widths changed, island width follows
       redraw();
     }
@@ -2557,7 +2566,7 @@ int main(int argc, char** argv) {
 
   B.app.add_timer(2000, [&B] { B.stats_tick(); });
   B.app.add_timer(5000, [&B] {
-    if (B.update_disk()) B.redraw();
+    if (B.update_disk() && B.stats_shown()) B.redraw();
   });
   B.app.add_timer(15000, [&B] {
     if (B.update_battery()) B.redraw();

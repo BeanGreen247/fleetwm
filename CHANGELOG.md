@@ -4,6 +4,8 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
 
 ## Unreleased
 
+- The bar no longer redraws itself every 2 s for CPU/RAM/GPU/Disk text nobody can see: with the taskbar's Metrics element hidden (the default) a change of those figures used to repaint the whole taskbar (about 35 ms of CPU on the Celeron laptop). Measured with the laptop's own bar, theme and wallpaper settings in a nested compositor and a fluctuating CPU load: 1.02% and 1.12% of a core before, 0.35% twice after (the rest is the one-second clock strip).
+
 - Volume and brightness keys with an on-screen card (`fleetwm-osd`, `apps/osd`): a rounded card at the bottom of the screen with a big speaker or sun icon and a 16-segment bar, shown for about 1.6 s. Handled in the compositor for XF86AudioRaiseVolume/LowerVolume/Mute and XF86MonBrightnessUp/Down. One resident process per session (socket in `XDG_RUNTIME_DIR`), quits 10 s after the last key. Brightness through sysfs or logind; the logic (commands, steps, wpctl and backlight parsing, lit segments) is in `src/common/osd_logic.*` with unit tests.
 - Drag frame cap: `FLEETWM_DRAG_FPS` (5..240, default 24) sets it for experiments; resize requests to the client are paced to the same rate and the last size is sent when the grab ends (`FLEETWM_RESIZE_COALESCE=0` turns pacing off). Measurements in `docs/PERF_LOG_2026-10-11.md`.
 - Task Manager: memory figures follow `free` (used = total - available, Shared, Buff/cache, Available); hover explanations for the CPU, memory, GPU and cache figures; a Memory traffic row from the memory controller counters (needs root or `perf_event_paranoid` <= 0).
