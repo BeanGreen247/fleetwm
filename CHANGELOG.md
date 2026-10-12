@@ -4,6 +4,7 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
 
 ## Unreleased
 
+- Taskbar icons (pinned apps, window buttons, the media applet) are scaled once and kept (`kit::draw_app_icon`) instead of being resampled from the 48 px original with the best-quality filter on every repaint, which was two thirds of the idle taskbar's CPU on the Celeron laptop. Together with the next item the idle bar went from 1.12% and 1.20% of a core to 0.15% twice (laptop's own bar, theme and wallpaper settings, nested compositor, fluctuating CPU load).
 - The bar no longer redraws itself every 2 s for CPU/RAM/GPU/Disk text nobody can see: with the taskbar's Metrics element hidden (the default) a change of those figures used to repaint the whole taskbar (about 35 ms of CPU on the Celeron laptop). Measured with the laptop's own bar, theme and wallpaper settings in a nested compositor and a fluctuating CPU load: 1.02% and 1.12% of a core before, 0.35% twice after (the rest is the one-second clock strip).
 
 - Volume and brightness keys with an on-screen card (`fleetwm-osd`, `apps/osd`): a rounded card at the bottom of the screen with a big speaker or sun icon and a 16-segment bar, shown for about 1.6 s. Handled in the compositor for XF86AudioRaiseVolume/LowerVolume/Mute and XF86MonBrightnessUp/Down. One resident process per session (socket in `XDG_RUNTIME_DIR`), quits 10 s after the last key. Brightness through sysfs or logind; the logic (commands, steps, wpctl and backlight parsing, lit segments) is in `src/common/osd_logic.*` with unit tests.

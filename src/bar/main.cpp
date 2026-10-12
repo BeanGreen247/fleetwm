@@ -703,13 +703,7 @@ struct Bar {
     cairo_surface_t* icon = app_icon(key, static_cast<int>(size + 8));
     if (!icon && !s.identity.empty()) icon = app_icon(s.identity, static_cast<int>(size + 8));
     if (icon) {
-      cairo_save(cr);
-      cairo_translate(cr, x, y);
-      cairo_scale(cr, size / cairo_image_surface_get_width(icon), size / cairo_image_surface_get_height(icon));
-      cairo_set_source_surface(cr, icon, 0, 0);
-      cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_BEST);
-      cairo_paint(cr);
-      cairo_restore(cr);
+      draw_app_icon(cr, icon, x, y, size);
       return;
     }
     const Color fg = icon_fg();
@@ -1119,13 +1113,7 @@ struct Bar {
   void draw_window_icon(cairo_t* cr, const WindowEntry& w, double x, double y, double size) {
     const double alpha = w.minimized ? 0.5 : 1.0;
     if (cairo_surface_t* icon = window_icon(w.app_id)) {
-      cairo_save(cr);
-      cairo_translate(cr, x, y);
-      cairo_scale(cr, size / cairo_image_surface_get_width(icon), size / cairo_image_surface_get_height(icon));
-      cairo_set_source_surface(cr, icon, 0, 0);
-      cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_BEST);
-      cairo_paint_with_alpha(cr, alpha);
-      cairo_restore(cr);
+      draw_app_icon(cr, icon, x, y, size, alpha);
       return;
     }
     // No icon: the first letter on a soft disc.
@@ -1529,13 +1517,7 @@ struct Bar {
     const double isz = vertical() ? 28 : 22;
     const double ix = with_title ? r.x + 9 : r.x + (r.w - isz) / 2, iy = r.y + (r.h - isz) / 2;
     if (cairo_surface_t* icon = app_icon(pa.icon_key, 48)) {
-      cairo_save(cr);
-      cairo_translate(cr, ix, iy);
-      cairo_scale(cr, isz / cairo_image_surface_get_width(icon), isz / cairo_image_surface_get_height(icon));
-      cairo_set_source_surface(cr, icon, 0, 0);
-      cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_BEST);
-      cairo_paint_with_alpha(cr, pa.minimized ? 0.5 : 1.0);
-      cairo_restore(cr);
+      draw_app_icon(cr, icon, ix, iy, isz, pa.minimized ? 0.5 : 1.0);
     } else {
       cairo_arc(cr, ix + isz / 2, iy + isz / 2, isz / 2, 0, 2 * M_PI);
       set_source(cr, with_alpha(pal.accent, 0.22));
