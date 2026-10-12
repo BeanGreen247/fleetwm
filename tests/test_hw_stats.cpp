@@ -178,23 +178,25 @@ TEST(HwStats, NvidiaSmiCsv) {
 
 // ---- the extra CPU, memory, disk, pressure and GPU readings of the Task Manager ----
 
-TEST(MemComposition, UsedSharedCacheAndFreeAddUpToTotal) {
+TEST(MemComposition, ColumnsMatchFree) {
   MemDetail m;
   m.total = 8000000, m.free = 1000000, m.available = 5000000, m.cached = 3000000, m.buffers = 200000, m.sreclaimable = 300000, m.shmem = 500000;
   const MemComposition c = mem_composition(m);
+  EXPECT_EQ(c.used, 3000000u) << "free: used = total - available";
   EXPECT_EQ(c.free, 1000000u);
   EXPECT_EQ(c.shared, 500000u);
-  EXPECT_EQ(c.cache_buffers, 3000000u + 200000u + 300000u - 500000u) << "shared memory is inside Cached, so it leaves the cache figure";
-  EXPECT_EQ(c.used, 8000000u - 1000000u - 500000u - 3000000u);
-  EXPECT_EQ(c.used + c.shared + c.cache_buffers + c.free, c.total);
+  EXPECT_EQ(c.buff_cache, 3500000u) << "free: buffers + cached + reclaimable slab, shared included";
+  EXPECT_EQ(c.available, 5000000u);
+  EXPECT_EQ(c.used + c.reclaimable + c.free, c.total);
 }
 
 TEST(MemComposition, NeverGoesNegativeWhenTheCounterDisagree) {
   MemDetail m;
-  m.total = 1000, m.free = 900, m.cached = 5000, m.shmem = 4000;  // inconsistent on purpose
+  m.total = 1000, m.free = 900, m.available = 2000, m.cached = 5000, m.shmem = 4000;  // inconsistent on purpose
   const MemComposition c = mem_composition(m);
-  EXPECT_EQ(c.used + c.shared + c.cache_buffers + c.free, c.total);
-  EXPECT_LE(c.shared, 100u);
+  EXPECT_EQ(c.used + c.reclaimable + c.free, c.total);
+  EXPECT_LE(c.shared, c.total);
+  EXPECT_LE(c.buff_cache, c.total);
 }
 
 TEST(MemInfo, ReadsTheExtraFields) {

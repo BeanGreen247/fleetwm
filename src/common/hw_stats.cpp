@@ -229,11 +229,11 @@ MemComposition mem_composition(const MemDetail& m) {
   MemComposition c;
   c.total = m.total;
   c.free = std::min(m.free, m.total);
-  c.shared = std::min(m.shmem, m.total - c.free);
-  const unsigned long long cache_all = m.cached + m.buffers + m.sreclaimable;
-  const unsigned long long cache = cache_all > c.shared ? cache_all - c.shared : 0;  // Shmem sits inside Cached
-  c.cache_buffers = std::min(cache, m.total - c.free - c.shared);
-  c.used = m.total - c.free - c.shared - c.cache_buffers;
+  c.available = std::min(m.available, m.total);
+  c.used = m.total - c.available;
+  c.shared = std::min(m.shmem, m.total);
+  c.buff_cache = std::min(m.cached + m.buffers + m.sreclaimable, m.total);
+  c.reclaimable = c.available > c.free ? c.available - c.free : 0;
   return c;
 }
 

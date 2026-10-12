@@ -52,14 +52,15 @@ struct MemDetail {
   unsigned long long total = 0, free = 0, available = 0, cached = 0, buffers = 0, swap_total = 0, swap_free = 0;  // KiB
   unsigned long long shmem = 0, sreclaimable = 0, sunreclaim = 0, anon = 0, mapped = 0, dirty = 0, writeback = 0, committed = 0, commit_limit = 0;
 };
-// How the installed memory is divided, the way `free` and the Windows Task Manager do, with shared memory broken out of the cache:
-//   used          programs and the kernel's unreclaimable memory (total - free - cache_buffers - shared)
-//   shared        tmpfs, shared memory (Shmem; it is counted inside "Cached" by the kernel, so it is taken out of cache_buffers)
-//   cache_buffers page cache and buffers and reclaimable slab, minus the shared part
-//   free          nothing in it at all
-// The four add up to total. `available` (what a new program can get without swapping) is a separate number: it includes most of the cache.
+// The columns of `free`, from the same /proc/meminfo fields procps uses:
+//   used        total - available (programs, kernel, and cache that cannot be given back)
+//   free        MemFree
+//   shared      Shmem (tmpfs, shared memory; it is also counted inside buff_cache, as `free` does)
+//   buff_cache  Buffers + Cached + SReclaimable
+//   available   what a new program can get without swapping
+// `reclaimable` = available - free is the part of the cache that can be dropped; used + reclaimable + free = total, for the usage bar.
 struct MemComposition {
-  unsigned long long used = 0, shared = 0, cache_buffers = 0, free = 0, total = 0;
+  unsigned long long used = 0, free = 0, shared = 0, buff_cache = 0, available = 0, reclaimable = 0, total = 0;
 };
 MemComposition mem_composition(const MemDetail& m);
 bool parse_meminfo(const std::string& text, MemDetail* out);

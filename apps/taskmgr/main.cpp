@@ -855,16 +855,16 @@ struct TaskMgr {
         y += 14;
         graph(cr, {dx, y, dw, 120}, mem_h, 100, c1);
         y += 128;
-        // The composition bar: in use, shared, cache and buffers, free (they add up to the installed memory).
+        // The composition bar: in use, cache that can be given back, free (they add up to the installed memory).
         section_label(cr, dx, y, dw, "Memory composition");
         y += 22;
         {
-          const Color seg_colors[4] = {c1, c2, alpha(pal.accent, 0.38), alpha(pal.fg_secondary, 0.14)};
-          const unsigned long long vals[4] = {comp.used, comp.shared, comp.cache_buffers, comp.free};
-          const char* names[4] = {"In use", "Shared", "Cache + buffers", "Free"};
+          const Color seg_colors[3] = {c1, alpha(pal.accent, 0.38), alpha(pal.fg_secondary, 0.14)};
+          const unsigned long long vals[3] = {comp.used, comp.reclaimable, comp.free};
+          const char* names[3] = {"In use", "Cache (reclaimable)", "Free"};
           double bx = dx;
           const double total = std::max(1.0, static_cast<double>(comp.total));
-          for (int i = 0; i < 4; ++i) {
+          for (int i = 0; i < 3; ++i) {
             const double bw = dw * static_cast<double>(vals[i]) / total;
             if (bw >= 0.5) {
               set_source(cr, seg_colors[i]);
@@ -878,7 +878,7 @@ struct TaskMgr {
           cairo_rectangle(cr, dx + 0.5, y + 0.5, dw - 1, 19);
           cairo_stroke(cr);
           double lx = dx;
-          for (int i = 0; i < 4; ++i) {
+          for (int i = 0; i < 3; ++i) {
             set_source(cr, seg_colors[i]);
             cairo_rectangle(cr, lx, y + 29, 10, 10);
             cairo_fill(cr);
@@ -892,10 +892,10 @@ struct TaskMgr {
           const double half = dw * 0.5, lw = 118;
           double ly = y, ry = y;
           ly = kv_row(cr, dx, ly, lw, "In use:", format_kib(static_cast<long long>(comp.used)));
-          ly = kv_row(cr, dx, ly, lw, "Shared:", format_kib(static_cast<long long>(comp.shared)));
-          ly = kv_row(cr, dx, ly, lw, "Cache + buffers:", format_kib(static_cast<long long>(comp.cache_buffers)));
-          ly = kv_row(cr, dx, ly, lw, "Available:", format_kib(static_cast<long long>(mem.available)));
           ly = kv_row(cr, dx, ly, lw, "Free:", format_kib(static_cast<long long>(comp.free)));
+          ly = kv_row(cr, dx, ly, lw, "Shared:", format_kib(static_cast<long long>(comp.shared)));
+          ly = kv_row(cr, dx, ly, lw, "Buff/cache:", format_kib(static_cast<long long>(comp.buff_cache)));
+          ly = kv_row(cr, dx, ly, lw, "Available:", format_kib(static_cast<long long>(comp.available)));
           ly = kv_row(cr, dx, ly, lw, "Swap in use:", mem.swap_total ? format_kib(static_cast<long long>(mem.swap_total - mem.swap_free)) + " of " + format_kib(static_cast<long long>(mem.swap_total)) : "no swap");
           const double rx = dx + half + 16;
           ry = kv_row(cr, rx, ry, lw, "Programs:", format_kib(static_cast<long long>(mem.anon)));
