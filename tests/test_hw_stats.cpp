@@ -302,3 +302,38 @@ TEST(NvidiaCsv, MemoryUtilisationAndMaxClocksWhenPresent) {
   EXPECT_EQ(c[0].mem_max_mhz, 7500);
   EXPECT_EQ(parse_nvidia_smi_csv("30, 80.0, 1400, 7000, 2048, 8192\n")[0].mem_busy_percent, -1) << "the six-field form still works";
 }
+
+TEST(ImcBandwidth, ParsesThePmuScale) {
+  double s = 0;
+  ASSERT_TRUE(parse_pmu_scale("6.103515625e-5\n", &s));
+  EXPECT_DOUBLE_EQ(s, 6.103515625e-5);
+  EXPECT_FALSE(parse_pmu_scale("", &s));
+  EXPECT_FALSE(parse_pmu_scale("0", &s));
+  EXPECT_FALSE(parse_pmu_scale("abc", &s));
+}
+
+TEST(ImcBandwidth, SaysWhyItIsNotAvailable) {
+  const fs::path d = scratch("imc");
+  ImcBandwidth none;
+  none.open((d / "absent").string());
+  EXPECT_FALSE(none.ok());
+  EXPECT_NE(none.status().find("no memory controller"), std::string::npos);
+
+  put(d / "typeonly/type", "99999\n");
+  ImcBandwidth bare;
+  bare.open((d / "typeonly").string());
+  EXPECT_FALSE(bare.ok());
+  EXPECT_NE(bare.status().find("not described"), std::string::npos);
+
+  put(d / "full/type", "99999\n");
+  put(d / "full/events/data_reads", "event=0x01\n");
+  put(d / "full/events/data_writes", "event=0x02\n");
+  put(d / "full/events/data_reads.scale", "6.103515625e-5\n");
+  put(d / "full/events/data_writes.scale", "6.103515625e-5\n");
+  ImcBandwidth full;
+  full.open((d / "full").string());  // the kernel has no PMU of that type: it must fail cleanly, never crash
+  EXPECT_FALSE(full.ok());
+  full.sample();
+  EXPECT_LT(full.read_mib_s(), 0);
+  fs::remove_all(d);
+}

@@ -1,9 +1,14 @@
 #include "hw_stats.hpp"
 
 #include <dirent.h>
+#include <linux/perf_event.h>
+#include <sys/syscall.h>
+#include <unistd.h>
 #include <time.h>
 
 #include <algorithm>
+#include <cerrno>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -477,6 +482,98 @@ std::vector<GpuDetail> parse_nvidia_smi_csv(const std::string& text) {
     cards.push_back(g);
   }
   return cards;
+}
+
+}  // namespace fleetwm
+
+namespace fleetwm {
+
+bool parse_pmu_scale(const std::string& text, double* scale) {
+  char* end = nullptr;
+  const double v = std::strtod(text.c_str(), &end);
+  if (end == text.c_str() || !(v > 0)) return false;
+  *scale = v;
+  return true;
+}
+
+namespace {
+std::string imc_first_line(const std::string& path) {
+  std::ifstream f(path);
+  std::string l;
+  std::getline(f, l);
+  return l;
+}
+
+// "event=0x01" -> 1
+bool imc_event_config(const std::string& text, unsigned long long* config) {
+  const size_t at = text.find("event=");
+  if (at == std::string::npos) return false;
+  char* end = nullptr;
+  const unsigned long long v = std::strtoull(text.c_str() + at + 6, &end, 0);
+  if (end == text.c_str() + at + 6) return false;
+  *config = v;
+  return true;
+}
+
+int imc_open_event(int type, unsigned long long config) {
+  perf_event_attr attr{};
+  attr.type = static_cast<uint32_t>(type);
+  attr.size = sizeof attr;
+  attr.config = config;
+  return static_cast<int>(syscall(SYS_perf_event_open, &attr, -1, 0, -1, PERF_FLAG_FD_CLOEXEC));
+}
+
+double imc_mono_seconds() {
+  timespec t{};
+  clock_gettime(CLOCK_MONOTONIC, &t);
+  return static_cast<double>(t.tv_sec) + static_cast<double>(t.tv_nsec) / 1e9;
+}
+}  // namespace
+
+ImcBandwidth::~ImcBandwidth() {
+  if (read_fd_ >= 0) ::close(read_fd_);
+  if (write_fd_ >= 0) ::close(write_fd_);
+}
+
+void ImcBandwidth::open(const std::string& root) {
+  int type = -1;
+  std::ifstream(root + "/type") >> type;
+  if (type < 0) {
+    status_ = "this CPU exposes no memory controller counters";
+    return;
+  }
+  unsigned long long rc = 0, wc = 0;
+  if (!imc_event_config(imc_first_line(root + "/events/data_reads"), &rc) || !imc_event_config(imc_first_line(root + "/events/data_writes"), &wc) ||
+      !parse_pmu_scale(imc_first_line(root + "/events/data_reads.scale"), &read_scale_) || !parse_pmu_scale(imc_first_line(root + "/events/data_writes.scale"), &write_scale_)) {
+    status_ = "memory controller counters are not described by this kernel";
+    return;
+  }
+  read_fd_ = imc_open_event(type, rc);
+  write_fd_ = imc_open_event(type, wc);
+  if (read_fd_ < 0 || write_fd_ < 0) {
+    const int err = errno;
+    if (read_fd_ >= 0) ::close(read_fd_);
+    if (write_fd_ >= 0) ::close(write_fd_);
+    read_fd_ = write_fd_ = -1;
+    status_ = err == EACCES || err == EPERM ? "needs root (perf_event_paranoid)" : "could not be opened";
+    return;
+  }
+  status_ = "memory controller counters";
+}
+
+void ImcBandwidth::sample() {
+  if (!ok()) return;
+  unsigned long long r = 0, w = 0;
+  if (::read(read_fd_, &r, sizeof r) != static_cast<ssize_t>(sizeof r) || ::read(write_fd_, &w, sizeof w) != static_cast<ssize_t>(sizeof w)) return;
+  const double now = imc_mono_seconds();
+  if (prev_time_ >= 0 && now > prev_time_) {
+    const double dt = now - prev_time_;
+    read_rate_ = static_cast<double>(r - prev_read_) * read_scale_ / dt;
+    write_rate_ = static_cast<double>(w - prev_write_) * write_scale_ / dt;
+  }
+  prev_read_ = r;
+  prev_write_ = w;
+  prev_time_ = now;
 }
 
 }  // namespace fleetwm

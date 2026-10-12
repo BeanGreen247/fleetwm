@@ -65,6 +65,33 @@ struct MemComposition {
 MemComposition mem_composition(const MemDetail& m);
 bool parse_meminfo(const std::string& text, MemDetail* out);
 
+// Traffic between the CPU/GPU and RAM, from the memory controller's own counters (the uncore_imc perf events data_reads and data_writes,
+// which count 64-byte lines and carry a scale to MiB). The kernel hands them to root or to a user when kernel.perf_event_paranoid is
+// at most 0 (or CAP_PERFMON); without that, status() says why and the rates stay -1. Call sample() about once a second.
+// parse_pmu_scale reads the text of an `events/*.scale` file ("6.103515625e-5").
+bool parse_pmu_scale(const std::string& text, double* scale);
+class ImcBandwidth {
+ public:
+  ImcBandwidth() = default;
+  ~ImcBandwidth();
+  ImcBandwidth(const ImcBandwidth&) = delete;
+  ImcBandwidth& operator=(const ImcBandwidth&) = delete;
+  // `root` is /sys/bus/event_source/devices/uncore_imc, a fake tree in tests.
+  void open(const std::string& root = "/sys/bus/event_source/devices/uncore_imc");
+  void sample();
+  bool ok() const { return read_fd_ >= 0 && write_fd_ >= 0; }
+  double read_mib_s() const { return read_rate_; }    // -1 until two samples exist
+  double write_mib_s() const { return write_rate_; }
+  const std::string& status() const { return status_; }
+
+ private:
+  int read_fd_ = -1, write_fd_ = -1;
+  double read_scale_ = 0, write_scale_ = 0, read_rate_ = -1, write_rate_ = -1;
+  unsigned long long prev_read_ = 0, prev_write_ = 0;
+  double prev_time_ = -1;
+  std::string status_ = "not opened";
+};
+
 struct DiskCounters {
   unsigned long long read_bytes = 0, write_bytes = 0;
 };

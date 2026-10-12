@@ -155,6 +155,15 @@ struct TaskMgr {
   Res res = Res::Cpu;
   int hovered_tab = -1;
   int hovered_res = -1;
+  // Hover explanations: each labelled figure registers its rectangle while it is drawn; the one under the pointer is shown in a small box.
+  struct TipRect {
+    Rect r;
+    const char* text;
+  };
+  std::vector<TipRect> tips;
+  const char* tip_text = nullptr;
+  double tip_x = 0, tip_y = 0;
+  ImcBandwidth imc;
 
   // ---- processes ----
   ProcessTable table;
@@ -261,6 +270,7 @@ struct TaskMgr {
     int paranoid = 3;
     paranoia >> paranoid;
     cache_counter_status = paranoid <= 2 ? "hardware counters available" : "hardware counters restricted by kernel";
+    imc.open();
 
     // dmidecode is optional and is only called once at startup. It may be unavailable
     // for an unprivileged user; the page still shows kernel memory totals.
@@ -350,6 +360,7 @@ struct TaskMgr {
     gpu.sample([](std::function<void()> fn) { std::thread(std::move(fn)).detach(); }, [this](std::function<void()> fn) { app.post(std::move(fn)); });
     gpu_h.push(std::max(0, gpu.busiest_percent()));
     cache_counters.sample();
+    imc.sample();
     if (cache_counters.status() == "hardware counters available") cache_counter_status = cache_counters.status();
 
     have_prev = true;
@@ -457,6 +468,7 @@ struct TaskMgr {
       const size_t col = i % 2, row = i / 2;
       const double cx = x + static_cast<double>(col) * (col_w + gap);
       const double cy = y + static_cast<double>(row) * row_h;
+      add_tip(entries[i].first, cx, cy, col_w, row_h);
       text_at(cr, entries[i].first, cx, cy + 9, kSmall, dim());
       cairo_save(cr);
       cairo_rectangle(cr, cx, cy + 16, col_w, row_h - 16);
@@ -472,7 +484,69 @@ struct TaskMgr {
     text_at(cr, value.empty() ? "--" : value, x, y + 29, 22, pal.fg_primary);
   }
   // Label and value on one row (the value starts at x + label_w); returns the y of the next row.
+  std::string imc_text() const {
+    if (!imc.ok()) return imc.status();
+    if (imc.read_mib_s() < 0) return "measuring";
+    return format_bandwidth_gbs((imc.read_mib_s() + imc.write_mib_s()) * 1048576.0) + "  (R " + format_bandwidth_gbs(imc.read_mib_s() * 1048576.0) + " / W " + format_bandwidth_gbs(imc.write_mib_s() * 1048576.0) + ")";
+  }
+  static const char* explain(const std::string& l) {
+    static const std::pair<const char*, const char*> table[] = {
+        {"Maximum speed", "Highest clock the CPU may boost to. The live clock is lower when idle to save power."},
+        {"Sockets", "Physical processor packages on the board."},
+        {"Cores", "Physical cores. Each can run its own thread of work."},
+        {"Logical processors", "Hardware threads the kernel schedules on (cores x SMT threads per core)."},
+        {"Virtualization", "Whether the CPU can run virtual machines in hardware (VT-x / AMD-V)."},
+        {"L1 cache", "Smallest, fastest cache, private to each core: about 1 ns away."},
+        {"L2 cache", "Second-level cache, bigger and slower than L1 (a few ns)."},
+        {"L3 cache", "Last-level cache shared by the cores; a miss here goes to RAM (tens of ns)."},
+        {"I/O wait", "Share of CPU time spent idle while a disk request was outstanding. High = the CPU is waiting for storage."},
+        {"Disk latency", "Average time a disk request takes from submit to done. Spikes mean a slow or busy disk."},
+        {"Disk busy", "Share of time the disk had at least one request in flight (100% = saturated)."},
+        {"I/O pressure", "PSI: share of the last 10 s that some task was stalled waiting for disk."},
+        {"Context switches", "Times per second the kernel changed which task runs on a core. Very high costs CPU time."},
+        {"Interrupts", "Hardware interrupts per second (network, disk, timers, input)."},
+        {"New tasks", "Processes created per second (fork/clone)."},
+        {"CPU pressure", "PSI: share of the last 10 s that some task was runnable but had no CPU to run on."},
+        {"Running / blocked", "Tasks running on a CPU right now / tasks stuck in uninterruptible sleep, usually waiting for disk."},
+        {"Timer latency", "How late a 1 ms sleep wakes up: the scheduler's wake-up delay. Large values make the desktop feel laggy."},
+        {"Audio latency", "Output delay reported by the sound server."},
+        {"Load average", "Average number of runnable plus blocked tasks over 1, 5 and 15 minutes. Compare it with the logical processors."},
+        {"In use", "Same as `free`: total - available. Memory programs and the kernel hold that cannot be given back without swapping."},
+        {"Free", "Memory holding nothing at all (MemFree). Low is normal: Linux fills spare RAM with cache."},
+        {"Shared", "tmpfs and shared memory (Shmem). It is also counted inside Buff/cache, as `free` does."},
+        {"Buff/cache", "File cache, buffers and reclaimable kernel slab. The kernel drops it when programs need the RAM."},
+        {"Available", "What a new program can get without swapping: free memory plus the cache that can be dropped."},
+        {"Swap in use", "Memory pushed out to disk. Anything above a few MB under load means RAM is short."},
+        {"Programs", "Anonymous memory: heaps and stacks of running programs."},
+        {"Kernel slab", "Memory the kernel keeps for its own objects (caches of inodes, sockets and so on)."},
+        {"Mapped files", "File data mapped into programs: libraries and memory-mapped files."},
+        {"Dirty + writeback", "File data changed in memory and not yet written to disk."},
+        {"Committed", "Memory promised to programs against the commit limit (overcommit accounting)."},
+        {"Memory pressure", "PSI: share of the last 10 s that some task was stalled waiting for memory (reclaim or swap)."},
+        {"Memory traffic", "Bytes per second the memory controller moves between all CPUs/GPU and RAM (read + write), from the uncore_imc counters. Compare with the module's rated speed to see how close the machine is to its memory-bandwidth limit."},
+        {"Render/3D busy", "Share of time the GPU's render engine was working."},
+        {"Utilization", "Share of time the GPU was busy."},
+        {"Core clock", "Current GPU clock against its maximum. A GPU idling at its floor clock is saving power."},
+        {"Power", "GPU power draw."},
+        {"Memory", "Where the GPU's memory lives."},
+        {"Memory clock", "Clock of the memory the GPU reads from."},
+        {"Memory bandwidth", "Data the GPU moves to and from its memory per second."},
+        {"Dedicated memory", "The graphics card's own memory in use against its total."},
+        {"Memory controller busy", "Share of time the GPU's memory controller was busy: the nearest thing to bandwidth use the driver reports."},
+        {"PCIe link", "Speed and width of the slot link between the GPU and the CPU."},
+        {"Overall", "Share of CPU cache lookups that hit, over all programs."},
+    };
+    std::string key = l;
+    while (!key.empty() && (key.back() == ':' || key.back() == ' ')) key.pop_back();
+    for (const auto& e : table)
+      if (key == e.first) return e.second;
+    return nullptr;
+  }
+  void add_tip(const std::string& label, double x, double y, double w, double h) {
+    if (const char* t = explain(label)) tips.push_back({{x, y, w, h}, t});
+  }
   double kv_row(cairo_t* cr, double x, double y, double label_w, const std::string& label, const std::string& value) {
+    add_tip(label, x, y, label_w + 170, 19);
     text_at(cr, label, x, y + 8, kSmall, dim());
     text_at(cr, value.empty() ? "--" : value, x + label_w, y + 8, kFont, pal.fg_primary);
     return y + 19;
@@ -487,6 +561,7 @@ struct TaskMgr {
   }
   // Small label over a normal-size value, for the dense grids.
   void small_cell(cairo_t* cr, double x, double y, double w, const std::string& label, const std::string& value) {
+    add_tip(label, x, y, w, 36);
     text_at(cr, label, x, y + 7, kSmall, dim());
     cairo_save(cr);
     cairo_rectangle(cr, x, y + 14, w, 22);
@@ -582,6 +657,7 @@ struct TaskMgr {
   void draw(cairo_t* cr, int w, int h) {
     width = w;
     height = h;
+    tips.clear();
     set_source(cr, pal.bg_primary);
     cairo_paint(cr);
     // Tabs.
@@ -609,6 +685,40 @@ struct TaskMgr {
     if (tab == Tab::Processes) draw_processes(cr, w, h);
     else if (tab == Tab::Performance) draw_performance(cr, w, h);
     else draw_cache(cr, w, h);
+    draw_tip(cr, w, h);
+  }
+
+  // The explanation box: wrapped to 300 px, placed under and right of the pointer, pulled back inside the window.
+  void draw_tip(cairo_t* cr, int w, int h) {
+    if (!tip_text) return;
+    const double max_w = 300, pad = 8, line_h = 16;
+    std::vector<std::string> lines;
+    std::string line, word;
+    std::istringstream words(tip_text);
+    double widest = 0;
+    while (words >> word) {
+      const std::string next = line.empty() ? word : line + " " + word;
+      if (!line.empty() && measure_text(cr, next, kSmall).width > max_w) {
+        widest = std::max(widest, measure_text(cr, line, kSmall).width);
+        lines.push_back(line);
+        line = word;
+      } else {
+        line = next;
+      }
+    }
+    if (!line.empty()) {
+      widest = std::max(widest, measure_text(cr, line, kSmall).width);
+      lines.push_back(line);
+    }
+    const double bw = widest + 2 * pad, bh = static_cast<double>(lines.size()) * line_h + 2 * pad;
+    const double bx = std::clamp(tip_x + 14, 4.0, std::max(4.0, w - bw - 4)), by = std::clamp(tip_y + 18, 4.0, std::max(4.0, h - bh - 4));
+    rounded_rect(cr, bx, by, bw, bh, pal.rounded ? 6 : 0);
+    set_source(cr, pal.bg_secondary);
+    cairo_fill_preserve(cr);
+    set_source(cr, alpha(pal.fg_secondary, 0.5));
+    cairo_set_line_width(cr, 1);
+    cairo_stroke(cr);
+    for (size_t i = 0; i < lines.size(); ++i) text_at(cr, lines[i], bx + pad, by + pad + static_cast<double>(i) * line_h + line_h / 2, kSmall, pal.fg_primary);
   }
 
   void draw_processes(cairo_t* cr, int w, int h) {
@@ -903,6 +1013,7 @@ struct TaskMgr {
           ry = kv_row(cr, rx, ry, lw, "Mapped files:", format_kib(static_cast<long long>(mem.mapped)));
           ry = kv_row(cr, rx, ry, lw, "Dirty + writeback:", format_kib(static_cast<long long>(mem.dirty + mem.writeback)));
           ry = kv_row(cr, rx, ry, lw, "Committed:", mem.commit_limit ? format_kib(static_cast<long long>(mem.committed)) + " of " + format_kib(static_cast<long long>(mem.commit_limit)) : "--");
+          ry = kv_row(cr, rx, ry, lw, "Memory traffic:", imc_text());
           ry = kv_row(cr, rx, ry, lw, "Memory pressure:", psi_mem.some10 >= 0 ? num1(psi_mem.some10, "%") : "--");
           y = std::max(ly, ry) + 8;
         }
@@ -1100,6 +1211,7 @@ struct TaskMgr {
       memory.emplace_back(label, m.speed_mhz > 0 ? std::to_string(m.speed_mhz) + " MT/s  " + format_bandwidth_gbs(gbs * 1e9) : "speed unavailable");
     }
     if (memory.empty()) memory.emplace_back("RAM", "module speed unavailable");
+    memory.emplace_back("Memory traffic", imc_text());
     info_grid(cr, dx, y, dw, memory);
     y += static_cast<double>((memory.size() + 1) / 2) * 38 + 16;
     text_at(cr, "Cache hit rate scopes", dx, y, 16, pal.fg_primary, true);
@@ -1215,17 +1327,28 @@ struct TaskMgr {
           break;
         }
 
-    if (next_tab != hovered_tab || next_res != hovered_res) {
+    const char* next_tip = nullptr;
+    if (next_tab < 0 && next_res < 0)
+      for (const TipRect& t : tips)
+        if (t.r.hit(x, y)) {
+          next_tip = t.text;
+          break;
+        }
+    if (next_tab != hovered_tab || next_res != hovered_res || next_tip != tip_text || (next_tip && (std::abs(x - tip_x) > 2 || std::abs(y - tip_y) > 2))) {
       hovered_tab = next_tab;
       hovered_res = next_res;
+      tip_text = next_tip;
+      tip_x = x;
+      tip_y = y;
       surface->queue_draw();
     }
   }
 
   void on_leave() {
-    if (hovered_tab >= 0 || hovered_res >= 0) {
+    if (hovered_tab >= 0 || hovered_res >= 0 || tip_text) {
       hovered_tab = -1;
       hovered_res = -1;
+      tip_text = nullptr;
       surface->queue_draw();
     }
   }
