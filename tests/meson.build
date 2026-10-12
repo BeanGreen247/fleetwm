@@ -20,6 +20,7 @@ fleetwm_test_sources = files(
   'test_ipc_client.cpp',
   'test_battery_source.cpp',
   'test_hw_stats.cpp',
+  'test_osd.cpp',
   'test_prewarm.cpp',
   'test_fleetkit.cpp',
   'test_ui_motion.cpp',
@@ -102,6 +103,7 @@ test_areas = {
   'popups': 'PopupSpot.*:SingleInstance.*:AudioInstaller.*:PopupDismissal.*',
   'fm': 'Fm*',
   'build': 'PgoTraining.*:PgoTrainingShim.*',
+  'osd': 'OsdLogic.*',
   'power': 'PowerActions.*:PowerPolkitRule.*:PowerInstaller.*:PowerIcons.*:PolkitRules.*:PolkitRuleBehaviour.*',
 }
 foreach area, filter : test_areas

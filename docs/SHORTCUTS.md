@@ -75,6 +75,10 @@ Everything else is done with the mouse:
 | Middle-click a taskbar button | Close that window |
 | Start button | Start menu: search, all applications, Settings / Shortcuts / Lock / Power |
 
+## Media keys
+
+Volume up, volume down, mute and brightness up/down work in both layouts (also with modifiers held) and show a small card at the bottom of the screen with a big icon and a 16-segment bar, `fleetwm-osd`. Each press moves the level to the next multiple of 5 percent; volume up on a muted output unmutes first. The volume goes through `wpctl` (PipeWire). The brightness is written to the backlight in `/sys/class/backlight` when the file is writable, else through logind (`SetBrightness`, no root needed), and never goes below 1 unit so the screen cannot be switched off with the keys. They do nothing while the session is locked. Run `fleetwm-osd volume up|down|mute|show` or `fleetwm-osd brightness up|down|show` by hand to use the same card from a script. Holding a key does not repeat (the compositor does not generate key repeat); press again.
+
 ## Changing keys
 
 `~/.config/fleetwm/keybinds.toml` (per user). The Desktop shortcuts are full combos: modifier names

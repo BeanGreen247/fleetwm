@@ -155,7 +155,9 @@ TEST(PgoTraining, TheInstallerTellsTheTruthAboutTheLength) {
 TEST(PgoTraining, WindowDraggingUsesTheLowPowerInteractiveFrameCap) {
   const std::string output = tr_read(tr_root() / "src/compositor/output.cpp");
   EXPECT_NE(output.find("server->grab_active()"), std::string::npos);
-  EXPECT_NE(output.find("drag_cap ? 24"), std::string::npos);
+  EXPECT_NE(output.find("drag_cap ? drag_fps()"), std::string::npos);
+  const std::string rate = tr_read(tr_root() / "src/compositor/drag_rate.hpp");
+  EXPECT_NE(rate.find(": 24;"), std::string::npos) << "the default drag cap stays 24 FPS";
   EXPECT_NE(output.find("fullscreen == nullptr && server->grab_active()"), std::string::npos);
 }
 

@@ -82,6 +82,7 @@ libcommon_core = static_library(
     'keybinds_config.cpp',
     'battery_reading.cpp',
     'hw_stats.cpp',
+    'osd_logic.cpp',
     'gpu_monitor.cpp',
     'proc_stats.cpp',
     'prewarm.cpp',
