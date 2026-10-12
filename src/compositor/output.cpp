@@ -1,4 +1,5 @@
 #include "output.hpp"
+#include "drag_rate.hpp"
 #include "grab_stats.hpp"
 #include "window_geometry.hpp"
 
@@ -76,7 +77,7 @@ void output_frame(wl_listener* listener, void*) {
   const bool drag_cap = fullscreen == nullptr && server->grab_active();
   const bool custom_cap = fullscreen == nullptr && server->theme_config().render_mode == RenderMode::Custom;
   if (drag_cap || custom_cap) {
-    const int fps = drag_cap ? 24 : std::clamp(server->theme_config().custom_fps_lock, 24, 5000);
+    const int fps = drag_cap ? drag_fps() : std::clamp(server->theme_config().custom_fps_lock, 24, 5000);
     int interval_ms = std::max(1, 1000 / fps);
 
     timespec now{};

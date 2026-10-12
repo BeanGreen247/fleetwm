@@ -126,8 +126,11 @@ phase() {  # phase NAME SECONDS command...
   local name=$1 secs=$2; shift 2
   echo "PHASE $name $(date +%s.%N)" >> "$LOG"
   gpu_capture "$name" "$((secs + 1))"; sleep 0.3
-  local end=$(( $(date +%s) + secs ))
+  local end=$(( $(date +%s) + secs )) t0 t1 c0 c1
+  t0=$(date +%s.%N); c0=$(awk '{print $14 + $15}' "/proc/$CP/stat" 2>/dev/null || echo 0)
   if [[ $# -gt 0 ]]; then while (( $(date +%s) < end )); do "$@"; done; else sleep "$secs"; fi
+  t1=$(date +%s.%N); c1=$(awk '{print $14 + $15}' "/proc/$CP/stat" 2>/dev/null || echo 0)
+  echo "COMPCPU $name ticks=$((c1 - c0)) dt=$(echo "$t1 - $t0" | bc -l)" >> "$LOG"  # 100 ticks = 1 s of one core
   sleep 1.2
 }
 move_once() { "$PTR" drag $CX $TY $((CX - 220)) $((TY + 220)) 100 drag $((CX - 220)) $((TY + 220)) $CX $TY 100 >/dev/null 2>&1; }

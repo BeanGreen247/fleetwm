@@ -259,6 +259,18 @@ void spawn_shell(const char* shell_cmd) {
   }
 }
 
+// The fleetwm-osd command a media key runs, or null for any other key.
+const char* media_key_command(xkb_keysym_t sym) {
+  switch (sym) {
+    case XKB_KEY_XF86AudioRaiseVolume: return "fleetwm-osd volume up";
+    case XKB_KEY_XF86AudioLowerVolume: return "fleetwm-osd volume down";
+    case XKB_KEY_XF86AudioMute: return "fleetwm-osd volume mute";
+    case XKB_KEY_XF86MonBrightnessUp: return "fleetwm-osd brightness up";
+    case XKB_KEY_XF86MonBrightnessDown: return "fleetwm-osd brightness down";
+    default: return nullptr;
+  }
+}
+
 void keyboard_modifiers(wl_listener* listener, void*) {
   Keyboard* keyboard = wl_container_of(listener, keyboard, modifiers);
   wlr_seat_set_keyboard(keyboard->server->seat(), keyboard->wlr_keyboard_ptr);
@@ -284,6 +296,17 @@ void keyboard_key(wl_listener* listener, void* data) {
   // The Tiling layout's held modifier: Alt by default, Super when Settings -> Keyboard says so.
   bool alt_held = (wlr_keyboard_get_modifiers(keyboard->wlr_keyboard_ptr) & keyboard->server->keybinds().tiling_mod) != 0;
   bool handled = false;
+
+  // The media keys (volume, mute, brightness) work in every layout, with any modifiers, and are not passed on to clients; fleetwm-osd
+  // changes the level and shows the pop-up. Not while the session is locked.
+  if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED && !keyboard->server->is_locked()) {
+    for (int i = 0; i < nsyms && !handled; ++i) {
+      if (const char* cmd = media_key_command(syms[i])) {
+        spawn_shell(cmd);
+        handled = true;
+      }
+    }
+  }
 
   // Desktop layout: tapping Super (Windows/Meta) alone opens the start menu; a
   // second tap closes it (the launcher toggles itself). Any other key pressed in

@@ -45,6 +45,7 @@ extern "C" {
 #include "scene_node_owner.hpp"
 #include "cursor.hpp"
 #include "glass_backdrop.hpp"
+#include "drag_rate.hpp"
 #include "grab_stats.hpp"
 #include "titlebar.hpp"
 #include "window_geometry.hpp"
@@ -1980,7 +1981,6 @@ void Server::update_grab() {
 }
 
 namespace {
-constexpr int kResizeRequestMs = 1000 / 24;  // the drag frame cap in output.cpp
 bool resize_coalescing() {
   static const bool on = [] {
     const char* e = std::getenv("FLEETWM_RESIZE_COALESCE");
@@ -1996,7 +1996,7 @@ void Server::request_grab_size(View* view, int w, int h) {
   const double since_ms = resize_has_last_request_ ? (now.tv_sec - resize_last_request_.tv_sec) * 1000.0 +
                                                          (now.tv_nsec - resize_last_request_.tv_nsec) / 1e6
                                                    : 1e9;
-  if (!resize_coalescing() || since_ms >= kResizeRequestMs) {
+  if (!resize_coalescing() || since_ms >= (1000 / drag_fps())) {
     resize_pending_ = false;
     if (grabstats::enabled()) ++grabstats::c().resize_req;
     view->request_size(w, h);
@@ -2018,7 +2018,7 @@ void Server::request_grab_size(View* view, int w, int h) {
         },
         this);
   }
-  wl_event_source_timer_update(resize_flush_timer_, std::max(1, static_cast<int>(kResizeRequestMs - since_ms)));
+  wl_event_source_timer_update(resize_flush_timer_, std::max(1, static_cast<int>((1000 / drag_fps()) - since_ms)));
 }
 
 void Server::flush_grab_size() {
