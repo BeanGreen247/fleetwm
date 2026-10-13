@@ -446,13 +446,7 @@ struct Launcher {
       const double isz = 34, ix = lx + 12, iy = ry + (row_h - isz) / 2;
       cairo_surface_t* icon = e ? icon_for(*e) : nullptr;
       if (icon) {
-        cairo_save(cr);
-        cairo_translate(cr, ix, iy);
-        cairo_scale(cr, isz / cairo_image_surface_get_width(icon), isz / cairo_image_surface_get_height(icon));
-        cairo_set_source_surface(cr, icon, 0, 0);
-        cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_BEST);
-        cairo_paint(cr);
-        cairo_restore(cr);
+        draw_app_icon(cr, icon, ix, iy, isz);  // scaled once per icon, see app_icon.hpp
       } else {  // no icon: the first letter on a soft disc, or a prompt glyph for commands
         cairo_arc(cr, ix + isz / 2, iy + isz / 2, isz / 2, 0, 2 * M_PI);
         set_source(cr, alpha(pal.accent, 0.20));
@@ -572,13 +566,7 @@ struct Launcher {
       const double isz = 30, ix = lx + 8, iy = ry + (row_h - isz) / 2;
       cairo_surface_t* icon = e ? icon_for(*e) : nullptr;
       if (icon) {
-        cairo_save(cr);
-        cairo_translate(cr, ix, iy);
-        cairo_scale(cr, isz / cairo_image_surface_get_width(icon), isz / cairo_image_surface_get_height(icon));
-        cairo_set_source_surface(cr, icon, 0, 0);
-        cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_BEST);
-        cairo_paint(cr);
-        cairo_restore(cr);
+        draw_app_icon(cr, icon, ix, iy, isz);  // scaled once per icon, see app_icon.hpp
       } else {
         cairo_arc(cr, ix + isz / 2, iy + isz / 2, isz / 2, 0, 2 * M_PI);
         set_source(cr, alpha(pal.accent, 0.20));

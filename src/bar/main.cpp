@@ -901,15 +901,7 @@ struct Bar {
       const double iy = (H - kTrayIcon) / 2.0;
       tray_rects[i] = {rx, iy, kTrayIcon, kTrayIcon};
       if (items[i].icon) {
-        cairo_save(cr);
-        const double iw = cairo_image_surface_get_width(items[i].icon);
-        const double ih = cairo_image_surface_get_height(items[i].icon);
-        cairo_translate(cr, rx, iy);
-        cairo_scale(cr, kTrayIcon / iw, kTrayIcon / ih);
-        cairo_set_source_surface(cr, items[i].icon, 0, 0);
-        cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_BEST);
-        cairo_paint(cr);
-        cairo_restore(cr);
+        draw_app_icon(cr, items[i].icon, rx, iy, kTrayIcon);  // scaled once per icon, see app_icon.hpp
       }
       rx += kTrayIcon + (i + 1 < items.size() ? kTraySpacing : 0);
     }
@@ -1418,13 +1410,7 @@ struct Bar {
           const double iy = v ? box.y + static_cast<double>(i) * kRow + (kRow - kTrayIcon) / 2 : (box.h - kTrayIcon) / 2.0;
           tray_rects[i] = {ix, iy, kTrayIcon, kTrayIcon};
           if (!items[i].icon) continue;
-          cairo_save(cr);
-          cairo_translate(cr, ix, iy);
-          cairo_scale(cr, kTrayIcon / cairo_image_surface_get_width(items[i].icon), kTrayIcon / cairo_image_surface_get_height(items[i].icon));
-          cairo_set_source_surface(cr, items[i].icon, 0, 0);
-          cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_BEST);
-          cairo_paint(cr);
-          cairo_restore(cr);
+          draw_app_icon(cr, items[i].icon, ix, iy, kTrayIcon);
         }
         break;
       }

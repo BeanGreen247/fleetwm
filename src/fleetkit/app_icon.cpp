@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cmath>
 #include <utility>
+#include <vector>
 
 #include "desktop_entry.hpp"
 #include "icon_theme.hpp"
@@ -96,28 +97,46 @@ cairo_surface_t* app_icon(const std::string& app_id, int size) {
   return icon;
 }
 
+namespace {
+// The scaled copies hang off the icon surface itself (cairo user data), so they are freed with it and
+// a new surface that happens to get a freed one's address never sees a stale copy.
+struct ScaledCopies {
+  std::vector<std::pair<int, cairo_surface_t*>> by_px;
+  ~ScaledCopies() {
+    for (auto& e : by_px) cairo_surface_destroy(e.second);
+  }
+};
+const cairo_user_data_key_t kScaledKey = {};
+}  // namespace
+
 void draw_app_icon(cairo_t* cr, cairo_surface_t* icon, double x, double y, double size, double alpha) {
   const int iw = cairo_image_surface_get_width(icon), ih = cairo_image_surface_get_height(icon);
   if (iw <= 0 || ih <= 0 || size <= 0) return;
   double ux = size, uy = 0;
   cairo_user_to_device_distance(cr, &ux, &uy);  // the device pixels the box covers (the surface scale of a HiDPI output is in the matrix)
   const int px = std::max(1, static_cast<int>(std::lround(std::hypot(ux, uy))));
-  static std::map<std::pair<cairo_surface_t*, int>, cairo_surface_t*> scaled;
-  auto it = scaled.find({icon, px});
-  if (it == scaled.end()) {
-    cairo_surface_t* copy = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, px, px);
-    cairo_t* c = cairo_create(copy);
+  auto* copies = static_cast<ScaledCopies*>(cairo_surface_get_user_data(icon, &kScaledKey));
+  if (!copies) {
+    copies = new ScaledCopies;
+    cairo_surface_set_user_data(icon, &kScaledKey, copies, [](void* d) { delete static_cast<ScaledCopies*>(d); });
+  }
+  cairo_surface_t* scaled = nullptr;
+  for (const auto& e : copies->by_px)
+    if (e.first == px) scaled = e.second;
+  if (!scaled) {
+    scaled = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, px, px);
+    cairo_t* c = cairo_create(scaled);
     cairo_scale(c, static_cast<double>(px) / iw, static_cast<double>(px) / ih);
     cairo_set_source_surface(c, icon, 0, 0);
     cairo_pattern_set_filter(cairo_get_source(c), CAIRO_FILTER_BEST);
     cairo_paint(c);
     cairo_destroy(c);
-    it = scaled.emplace(std::make_pair(icon, px), copy).first;
+    copies->by_px.emplace_back(px, scaled);
   }
   cairo_save(cr);
   cairo_translate(cr, x, y);
   cairo_scale(cr, size / px, size / px);
-  cairo_set_source_surface(cr, it->second, 0, 0);
+  cairo_set_source_surface(cr, scaled, 0, 0);
   cairo_paint_with_alpha(cr, alpha);
   cairo_restore(cr);
 }

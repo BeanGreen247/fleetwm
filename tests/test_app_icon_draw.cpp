@@ -77,3 +77,29 @@ TEST(DrawAppIcon, IgnoresAnEmptyBox) {
   cairo_surface_destroy(out);
   cairo_surface_destroy(icon);
 }
+
+// The scaled copy lives on the icon surface, so a new surface never sees a freed one's copy (tray icons are replaced often).
+TEST(DrawAppIcon, ANewIconDoesNotInheritAFreedOnesCopy) {
+  for (int round = 0; round < 8; ++round) {
+    cairo_surface_t* red = draw_icon_solid(48);
+    cairo_surface_t* out = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 40, 40);
+    cairo_t* cr = cairo_create(out);
+    draw_app_icon(cr, red, 5, 5, 22);
+    cairo_surface_destroy(red);
+
+    cairo_surface_t* blue = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 48, 48);
+    cairo_t* c = cairo_create(blue);
+    cairo_set_source_rgba(c, 0, 0, 1, 1);
+    cairo_paint(c);
+    cairo_destroy(c);
+    cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
+    cairo_set_source_rgba(cr, 0, 0, 0, 0);
+    cairo_paint(cr);
+    cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
+    draw_app_icon(cr, blue, 5, 5, 22);
+    EXPECT_EQ(draw_icon_pixel(out, 15, 15), 0xff0000ffu);
+    cairo_destroy(cr);
+    cairo_surface_destroy(out);
+    cairo_surface_destroy(blue);
+  }
+}
