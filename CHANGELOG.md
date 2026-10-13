@@ -4,6 +4,10 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
 
 ## Unreleased
 
+- Window titlebars no longer rescale the application icon on every redraw (`kit::draw_app_icon`; callgrind: icon paint 64.3M -> 0.88M instructions, per titlebar render about -35%); the tray icons in the bar and the launcher result icons use the same cached copy, which is now stored on the icon surface and freed with it
+- The compositor asks SDL2 programs for Wayland first (`SDL_VIDEODRIVER=wayland,x11`) so an SDL terminal no longer keeps Xwayland running (about 18 MB less on the dev VM)
+- `kit::measure_text` caches its answers (20,000 calls 22.2 ms -> 0.7 ms in the bench) and `draw_text` converts the text to glyphs once (2,000 labels 11.4 -> 8.8 ms); output pixels unchanged
+- Builds on Debian 12, 13 and 14: wlroots 0.18 to 0.20 (`meson.build`, `WLR_VERSION_NUM` checks), Debian 12 gets wlroots 0.18 built from source (`scripts/build-wlroots-from-source.sh`, `install.sh`); see `docs/DEBIAN_BACKPORT.md`
 - Taskbar icons (pinned apps, window buttons, the media applet) are scaled once and kept (`kit::draw_app_icon`) instead of being resampled from the 48 px original with the best-quality filter on every repaint, which was two thirds of the idle taskbar's CPU on the Celeron laptop. Together with the next item the idle bar went from 1.12% and 1.20% of a core to 0.15% twice (laptop's own bar, theme and wallpaper settings, nested compositor, fluctuating CPU load).
 - The bar no longer redraws itself every 2 s for CPU/RAM/GPU/Disk text nobody can see: with the taskbar's Metrics element hidden (the default) a change of those figures used to repaint the whole taskbar (about 35 ms of CPU on the Celeron laptop). Measured with the laptop's own bar, theme and wallpaper settings in a nested compositor and a fluctuating CPU load: 1.02% and 1.12% of a core before, 0.35% twice after (the rest is the one-second clock strip).
 

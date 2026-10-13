@@ -2,6 +2,8 @@
 
 ## Current state (2026-10-13)
 
+Not yet committed (2026-10-13; an 85 s headless session on the dev VM showed no CPU difference, see the section; details in `docs/OPTIMIZATIONS.md` "Round 2026-10-13"): titlebar/tray/launcher icon scaling cached (callgrind -35% per titlebar render), SDL clients no longer start Xwayland, text measure/draw cache, Debian 12/13/14 build support (`docs/DEBIAN_BACKPORT.md`). Open: end-to-end wall-time and GPU numbers on the Celeron laptop; an install and a session on Debian 12 and 14 (only built and unit-tested in Docker).
+
 Latest work, all pushed (details and numbers in `docs/PERF_LOG_2026-10-11.md`, sections dated 2026-10-12):
 
 - Drag cap is `FLEETWM_DRAG_FPS` (default 24); resize configure requests are paced to it. GPU busy on the Celeron follows the commit rate almost linearly (move 6/11/12/24%, resize 11/17/20/40% at 15/24/30/60 FPS). The owner's ~40% spike matches an uncapped resize (hypothesis). Open: feel of 24 versus 30 FPS; repeat the sweep on a clean laptop.

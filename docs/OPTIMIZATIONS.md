@@ -895,3 +895,58 @@ Rig: dev VM, KVM, 2 vCPU i5-8500, pixman, no governor exposed, perf_event_parano
 - **Rejected: read-coalescing delay** (row 5), **`mmap` of owned files** (row 8: read 0.26 ms vs decode 58 ms for a 465 KB PNG), **per-client whitelist** (row 9: no such path).
 - **Kept: IPC `recv` buffers 256/512 -> 4096 bytes** (row 10). 1 MB: 3.26 ms vs 0.29 ms (best of 9). Matters only for floods.
 - **Rejected: idle wake-up changes** (section 11 of `PERFORMANCE_FINDINGS.md`). Idle per-process wake-ups/s on the VM: compositor 0.90, bar 1.18, wallpaper 0.00, launcher 0.00 (no file-stat polling found); `show_seconds=true` raises compositor + bar to 7.2 + 3.8 wake-ups/s (+14.6 ms CPU per 40 s, feature cost, off by default); wpctl fallback vs native PipeWire 0-20 vs 10-20 ms per 60 s (noise, 8 runs); lock applet reconnect retry only while the compositor is gone.
+
+## Round 2026-10-13: memory breakdown, old-hardware backport, text path A/B
+
+**Memory on the dev VM (Debian 13, 2 GB, owner's Task Manager screenshot, 445 MB "in use").** PSS per process (`/proc/PID/smaps_rollup`):
+Fleetwm itself is about 55 MB (compositor 27, taskmgr 9, desktop 8, bar 7, rest small; 12 MB of the compositor and 3-4 MB per client is shared
+window buffers). The rest of the figure is not Fleetwm: `lestrix` 111 MB (of which 36 MB is libLLVM, i.e. Mesa llvmpipe, which only a GPU-less VM
+loads), Xwayland 42 MB (24 MB file-backed), tailscaled 77 MB RSS, journald 36 MB RSS, kernel slab 51 MB. Idle CPU of every Fleetwm process is
+under 0.2% of a core (30 s sample).
+
+**Xwayland kept alive by an SDL2 client (fixed).** `lestrix --lite` (SDL2) opens two X11 connections even in a Wayland session, so the lazily
+started Xwayland never exits. A/B on the VM: default 6 sockets on Xwayland, `SDL_VIDEODRIVER=wayland` or `wayland,x11` 4 (none from the client, Xwayland
+not started at all); with the client gone Xwayland exits after its 10 s `-terminate`. The compositor now exports `SDL_VIDEODRIVER=wayland,x11`
+(not overriding an existing value). The saving is Xwayland's anonymous and shared memory (~18 MB), not its 42 MB PSS (file pages are cache).
+
+**Text path (`src/fleetkit/fleetkit.cpp`).** Bench `perflog/2026-10-13/textbench.cpp`, i5, median of 7, 2,000 labels: `draw_text` 11.4 ms -> 8.8 ms
+(cached font face + one UTF-8 to glyph conversion instead of two); 20,000 `measure_text` calls 22.2 ms -> 0.7 ms (bounded per-thread cache, only with an
+identity matrix, keyed by string, size, weight, device scale). Pixels identical (`fleetwm-fm --screenshot` old and new `cmp` equal; unit tests 22/22). End to
+end the file manager's start-to-PNG time did not move (82.1 vs 82.5 ms median of 15): the win only exists where many labels are measured per repaint. Inter
+is not installed on the bench machine (Noto Sans was measured).
+
+**Backport to older Debian (feasibility, versions from sources.debian.org).** Blocker is wlroots >= 0.17 (0.18 targeted; 0.18 needs wayland >= 1.23,
+libdrm >= 2.4.122, meson >= 0.59, pixman >= 0.42, libinput >= 1.19). Stock packages: wlroots buster none, bullseye 0.11, bookworm 0.15, trixie 0.18,
+forky 0.20. Wayland: 1.16 / 1.18 / 1.21 (1.23 in bookworm-backports) / 1.23.1. libdrm: 2.4.97 / .104 / .114 (.123 backports) / .124. meson: 0.49 / 0.56 /
+1.0.1 (1.7 backports) / 1.7. Result: bookworm (12) is reachable with backports plus a source build of wlroots 0.18; bullseye (11) and buster (10)
+would need wayland, libdrm, libinput, meson and wlroots all built from source (or a port to wlroots 0.11/0.15 APIs). The language is not the blocker:
+a `-std=c++17` build fails only on 17 `operator==() = default` (C++20), a missing `<unistd.h>` in 4 places and one `std::erase_if` (227 errors, 5 kinds).
+Not done: nothing was built on an older distribution; GCC 8 (buster) `std::filesystem` needs `-lstdc++fs`.
+
+### Callgrind of the compositor, and the icon scaling it found (2026-10-13, same round)
+
+Method: the training workload (`scripts/pgo-train-session.sh`, 40 s, headless backend, pixman renderer, no foot/grim/wlrctl installed so those parts skipped)
+with the compositor started under `valgrind --tool=callgrind` (instruction counts are deterministic where wall time is noisy). Caveat: this is the software
+renderer; on a GPU renderer the pixman share (about half of the 858M instructions) does not exist, so only the ratios inside Fleetwm's own code carry over.
+
+- **Titlebar app icon was scaled with `CAIRO_FILTER_BEST` on every titlebar render** (`draw_titlebar`, `cairo_paint_with_alpha`): 64.3M of the 229M instructions
+  in `draw_titlebar` (28%). Now `kit::draw_app_icon` (scaled once per icon and size, then a plain copy): 64.3M -> 0.88M. Per titlebar render 4.49M (51 renders) ->
+  2.92M (62 renders) instructions, both including about 60M of one-time font loading; whole compositor 858M -> 792M (-7.7%) on this workload. Not yet measured
+  on a GPU renderer or in wall time.
+- **`draw_app_icon` keeps the scaled copy on the icon surface** (cairo user data) instead of a process-wide map keyed by the surface pointer. The old map never
+  freed a copy and could give a new surface that reused a freed address a stale image, which made it unsafe for the tray (icons are replaced). Now any image
+  surface may be passed. Test: `DrawAppIcon.ANewIconDoesNotInheritAFreedOnesCopy`.
+- **Same pattern removed in the tray (2 sites in `src/bar/main.cpp`) and in the launcher result rows (2 sites in `apps/launcher/main.cpp`).** Expected saving is
+  the same per-paint scaling (about 1.9M instructions per icon per repaint in the titlebar case); not measured separately for these.
+- Seen and left alone: prewarm `record_to` builds one `Range` (with a copied path string) per resident page and then sorts them, 87M instructions (10% of this
+  run), but it runs once per program per build; `load_desktop_entries` 26M (3%), once at start.
+- End-to-end on the dev VM (2 cores, headless training run of 85 s, CPU seconds of the whole session from the cgroup; 3 interleaved pairs), installed-HEAD build
+  against the build with only the text-path and SDL changes (no icon fixes yet): old 13.1, 13.5, 13.2 s; new 13.3, 13.7, 13.2 s; session PSS at 60% of the run
+  106.9, 99.2, 98.8 MB against 107.5, 101.0, 97.3 MB. No difference outside the noise, as expected (the training run starts no SDL client and measures few labels).
+- Re-run with the icon fixes (PGO build of the full working tree against the installed-HEAD PGO build, same 3 interleaved pairs): old 13.6, 13.7, 13.5 s; new
+  13.2, 13.6, 13.6 s; PSS 109.1, 107.3, 107.4 MB against 97.3, 107.5, 105.6 MB. Medians 13.6 against 13.6 s: **no end-to-end difference at this resolution** (the
+  spread between runs is about 0.4 s, 3%). Consistent with the callgrind figure: about 1.6M instructions saved per titlebar render and roughly 100 renders in
+  85 s is 160M instructions, about 0.05 s of 13.6 s. The saving only shows in bursts of titlebar redraws (resize and drag at up to 24 renders a second, focus
+  changes with many windows), and this workload does not have enough of them; a wall-time or GPU-busy measurement of a resize on the Celeron laptop is still open.
+
+Reproduce: `perflog/2026-10-13/ab.sh LABEL SRC_DIR [seconds]` (one training session of `SRC_DIR/build-pgo`, CPU from the cgroup, PSS sampled at 60% of the run).
