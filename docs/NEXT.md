@@ -1,11 +1,22 @@
 # What is done, what is left
 
-## Current handoff update (2026-10-11)
+## Current state (2026-10-13)
+
+Latest work, all pushed (details and numbers in `docs/PERF_LOG_2026-10-11.md`, sections dated 2026-10-12):
+
+- Drag cap is `FLEETWM_DRAG_FPS` (default 24); resize configure requests are paced to it. GPU busy on the Celeron follows the commit rate almost linearly (move 6/11/12/24%, resize 11/17/20/40% at 15/24/30/60 FPS). The owner's ~40% spike matches an uncapped resize (hypothesis). Open: feel of 24 versus 30 FPS; repeat the sweep on a clean laptop.
+- Taskbar idle cost fixed (hidden Metrics no longer repaints, icons scaled once): 1.12% to 0.15% of a core. Not installed on the live laptop until `fleetwm update`.
+- `fleetwm-osd` on-screen card for volume, mute and brightness keys. Brightness through logind could only be checked on a real seat.
+- Task Manager memory figures follow `free`; hover explanations; Memory traffic row (memory controller counters, else last-level-cache misses x 64 B because Gemini Lake has no uncore_imc). Open: run once as root on a CPU with uncore_imc.
+- About 60% of the compositor's resize CPU is a Mesa shm texture-upload memcpy; no cheap change found.
+- Other open items: the Chromium XKB crashes (unexplained), Bluetooth and taskbar hardware tests, multi-monitor stages 5-6, native FTP/SFTP/WebDAV/SMB, 0.5.0 release (needs owner OK).
+
+## Earlier handoff update (2026-10-11)
 
 The sections below are the historical 0.4.0 backlog snapshot from 2026-10-07;
 they are not an authoritative list of current open work. Read
-`docs/PERF_LOG_2026-10-11.md`, `docs/OPTIMIZATIONS.md`, and
-`/home/bean/HANDOFF_2026-10-11.md` before picking up performance work.
+`docs/PERF_LOG_2026-10-11.md` and `docs/OPTIMIZATIONS.md` before picking up
+performance work.
 `docs/CLAUDE_CODE_RESEARCH_PROMPT.md` contains a ready-to-use, analysis-only
 handoff prompt for Claude Code.
 
@@ -25,7 +36,7 @@ handoff prompt for Claude Code.
 - Task Manager duplicate-row-copy reduction is committed as `6012915`; the
   cross-GPU memory documentation is committed as `e735f7a`. Both commits were
   pushed. A taskbar-launched Chromium check and its follow-up handoff updates
-  are now recorded in the dated handoffs.
+  are recorded in `docs/PERF_LOG_2026-10-11.md`.
 
 Kept in the repo so any machine that clones it knows where things stand. The full story with numbers: `CHANGELOG.md`,
 `docs/OPTIMIZATIONS.md`, `docs/PERF_LOG_2026-10-07.md` (every step of the performance round), `docs/PERFORMANCE_FINDINGS.md`.
@@ -130,7 +141,7 @@ One "Taskbar" page in Settings (the Bar page grows into it; Date & Time keeps on
 Both orientations (horizontal and the vertical Left/Right taskbar) must follow the same order. Tests at 1024x768. The bar's two draw paths (`draw_taskbar_horizontal`, `draw_taskbar_vertical` in src/bar/main.cpp) are fixed layouts today, so step 1 is to turn them into one list of element widths that either path lays out.
 
 ## Task Manager app (implemented; follow-up remains)
-`fleetwm-taskmgr` is implemented as a code-drawn Fleetkit application with Processes, Performance, and Cache tabs, hardware inventory, CPU cache data, and the Desktop-only `Ctrl+Shift+Esc` shortcut. Process parsers and hardware metrics have existing tests. The current crash/UI fix and headless regression check are described in `/home/bean/HANDOFF_2026-10-10.md`.
+`fleetwm-taskmgr` is implemented as a code-drawn Fleetkit application with Processes, Performance, and Cache tabs, hardware inventory, CPU cache data, and the Desktop-only `Ctrl+Shift+Esc` shortcut. Process parsers and hardware metrics have existing tests. The current crash/UI fix and headless regression check are described in `docs/PERF_LOG_2026-10-11.md`.
 
 The current pass fixes the initial-render out-of-bounds tab write, keeps tabs within the header, and adds low-cost hover details on Performance resource cards. A nested Celeron profile and a measured removal of redundant Task Manager process-row copying are recorded in `docs/PERF_LOG_2026-10-11.md` (about 3.4% lower client task-clock across three paired samples). Remaining: visually inspect at 1024x768 and measure Task Manager/compositor frame timing and damage during a real drag on the Celeron. Keep glass rendering unchanged until a comparable measurement identifies it as a cause.
 

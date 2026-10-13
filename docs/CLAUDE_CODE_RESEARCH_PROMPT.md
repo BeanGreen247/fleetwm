@@ -39,11 +39,6 @@ Read current repository state and these files before forming conclusions:
 - `docs/PERF_LOG_2026-10-11.md`
 - `docs/HANDOFF_2026-10-08.md` (historical; check whether each item was later
   completed)
-- `/home/bean/HANDOFF_2026-10-10.md`
-- `/home/bean/HANDOFF_2026-10-11.md`
-- `/home/bean/ai-handoff-summary.md`
-- `/home/bean/fleetwm-next-session.md`
-- `/home/bean/.copilot/session-state/15c0c027-4e54-4807-9a89-ea025243b4db/plan.md`
 - `/home/bean/.claude/CLAUDE.md`
 - `/home/bean/.claude/projects/-home-bean-git-fleetwm/memory/MEMORY.md` and its
   linked Fleetwm memory files, especially `fleetwm-test-machines.md`,

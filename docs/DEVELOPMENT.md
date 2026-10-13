@@ -196,6 +196,10 @@ behind each:
 - **`fleetwm-locker`** -- the lock screen, spawned on demand (`Alt+Shift+L`
   or the power menu's Lock); PAM-verifies the password in-process and
   signals the compositor to unlock over the IPC socket
+- **`fleetwm-osd`** -- the volume/brightness on-screen card; one resident
+  process per session (socket in `XDG_RUNTIME_DIR`), started by the first
+  media key the compositor handles, quits 10 s after the last one; logic
+  in `src/common/osd_logic.*`
 - **`fleetwm-audiomixer`** -- the audio mixer popup (master + per-app
   volume sliders), spawned on demand from the bar's volume stat; same
   standalone layer-shell-overlay approach as `fleetwm-powermenu` -- exits
