@@ -3,6 +3,7 @@
 
 #include "backdrop.hpp"
 
+#include <unordered_map>
 #include <poll.h>
 #include <sys/mman.h>
 #include <fcntl.h>
@@ -107,31 +108,81 @@ Palette load_palette(const ThemeConfig& theme) {
 // ------------------------------------------------------------------ text ---
 
 namespace {
+// One toy font face per weight, created once: cairo_select_font_face looks the family up again on
+// every call (A/B in perflog/2026-10-13/textbench.cpp).
+cairo_font_face_t* font_face(bool bold) {
+  static cairo_font_face_t* faces[2] = {
+      cairo_toy_font_face_create("Inter", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL),
+      cairo_toy_font_face_create("Inter", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD)};
+  return faces[bold];
+}
+
 void apply_font(cairo_t* cr, double px, bool bold) {
-  cairo_select_font_face(cr, "Inter", CAIRO_FONT_SLANT_NORMAL,
-                         bold ? CAIRO_FONT_WEIGHT_BOLD : CAIRO_FONT_WEIGHT_NORMAL);
+  cairo_set_font_face(cr, font_face(bold));
   cairo_set_font_size(cr, px);
 }
+
+struct MeasureKey {
+  std::string s;
+  float px;
+  float dev;  // device scale of the target: hinted metrics can differ between scales
+  bool bold;
+  bool operator==(const MeasureKey& o) const {
+    return px == o.px && dev == o.dev && bold == o.bold && s == o.s;
+  }
+};
+struct MeasureKeyHash {
+  size_t operator()(const MeasureKey& k) const {
+    return std::hash<std::string>()(k.s) ^ (std::hash<float>()(k.px) * 31u + k.bold) ^
+           (std::hash<float>()(k.dev) * 131u);
+  }
+};
 }  // namespace
 
 TextExtents measure_text(cairo_t* cr, const std::string& s, double px, bool bold) {
+  // About 11 us a call, and the same labels are measured on every repaint. The answer depends only
+  // on string, size, weight and the target's device scale while the matrix is the identity; any
+  // other caller state takes the uncached path.
+  static thread_local std::unordered_map<MeasureKey, TextExtents, MeasureKeyHash> cache;
+  cairo_matrix_t m;
+  cairo_get_matrix(cr, &m);
+  const bool plain = m.xx == 1 && m.yy == 1 && m.xy == 0 && m.yx == 0;
+  double dsx = 1, dsy = 1;
+  cairo_surface_get_device_scale(cairo_get_target(cr), &dsx, &dsy);
+  const MeasureKey key{s, static_cast<float>(px), static_cast<float>(dsx), bold};
+  if (plain) {
+    const auto it = cache.find(key);
+    if (it != cache.end()) return it->second;
+  }
   apply_font(cr, px, bold);
   cairo_text_extents_t te;
   cairo_font_extents_t fe;
   cairo_text_extents(cr, s.c_str(), &te);
   cairo_font_extents(cr, &fe);
-  return {te.x_advance, fe.ascent + fe.descent, fe.ascent};
+  const TextExtents r{te.x_advance, fe.ascent + fe.descent, fe.ascent};
+  if (plain) {
+    if (cache.size() >= 4096) cache.clear();  // file and process names come and go
+    cache.emplace(key, r);
+  }
+  return r;
 }
 
 double draw_text(cairo_t* cr, const std::string& s, double x, double y, double px, const Color& c,
                  bool bold) {
   apply_font(cr, px, bold);
   set_source(cr, c);
-  cairo_move_to(cr, x, y);
-  cairo_show_text(cr, s.c_str());
-  cairo_new_path(cr);  // show_text leaves a current point that would join the next arc/line
+  // One UTF-8 to glyph conversion serves both the drawing and the advance (it was done twice).
+  cairo_glyph_t* glyphs = nullptr;
+  int n = 0;
+  cairo_scaled_font_t* sf = cairo_get_scaled_font(cr);
+  if (cairo_scaled_font_text_to_glyphs(sf, x, y, s.c_str(), static_cast<int>(s.size()), &glyphs, &n,
+                                       nullptr, nullptr, nullptr) != CAIRO_STATUS_SUCCESS)
+    return 0;
+  cairo_show_glyphs(cr, glyphs, n);
   cairo_text_extents_t te;
-  cairo_text_extents(cr, s.c_str(), &te);
+  cairo_scaled_font_glyph_extents(sf, glyphs, n, &te);
+  cairo_glyph_free(glyphs);
+  cairo_new_path(cr);  // keep the old behavior: no current point left behind to join the next arc/line
   return te.x_advance;
 }
 
