@@ -1602,6 +1602,10 @@ bool Server::init() {
     return false;
   }
   setenv("WAYLAND_DISPLAY", socket, true);
+  // SDL2 opens X11 first when DISPLAY is set, which starts XWayland and keeps it running for as long
+  // as the program lives (measured on the dev VM: ~12 MB anon + 6 MB shm for XWayland, two X
+  // connections from an SDL2 terminal). Ask it for Wayland and keep X11 as the fallback.
+  setenv("SDL_VIDEODRIVER", "wayland,x11", false);
   // Portals and other D-Bus-activated services start outside this process; hand them the
   // session variables they need (best effort, it is fine if the tool is missing).
   setenv("XDG_CURRENT_DESKTOP", "fleetwm", false);
