@@ -14,6 +14,7 @@
 #include "server.hpp"
 #include "titlebar.hpp"
 #include "workspace.hpp"
+#include <wlr/version.h>
 
 namespace fleetwm {
 
@@ -561,7 +562,11 @@ void View::set_maximized(bool want) {
   }
 #if FLEETWM_XWAYLAND
   if (kind == Kind::XWayland) {
+#if WLR_VERSION_NUM >= 0x001300
+    wlr_xwayland_surface_set_maximized(xwayland_surface, maximized, maximized);  // 0.19 split horizontal and vertical
+#else
     wlr_xwayland_surface_set_maximized(xwayland_surface, maximized);
+#endif
   }
 #endif
   resize_border();
@@ -617,7 +622,11 @@ bool View::is_child_window() const {
 wlr_box View::content_geometry() const {
   wlr_box geo{};
   if (kind == Kind::XdgToplevel) {
+#if WLR_VERSION_NUM >= 0x001300
+    if (xdg_toplevel) geo = xdg_toplevel->base->geometry;  // 0.19 replaced the getter with this field
+#else
     if (xdg_toplevel) wlr_xdg_surface_get_geometry(xdg_toplevel->base, &geo);
+#endif
     return geo;
   }
 #if FLEETWM_XWAYLAND

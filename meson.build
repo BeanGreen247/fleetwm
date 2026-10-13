@@ -38,15 +38,20 @@ subdir('protocols')
 # compositor (src/greeter/compositor.{hpp,cpp}) also links wlroots directly
 # and needs the exact same patched_wlroots_dir/cpp_args, not a second
 # divergent copy of this ~40-line block.
-wlroots_pkgconfig_name = 'wlroots-0.18'
-wlroots_dep = dependency(wlroots_pkgconfig_name, required: false)
+# Newest series first: Debian 14 ships wlroots-0.20, Debian 13 0.18. A series that the code does not
+# build against is caught by the version check below, not by a confusing compile error.
+wlroots_pkgconfig_name = ''
+wlroots_dep = dependency('', required: false)
+foreach candidate : ['wlroots-0.20', 'wlroots-0.19', 'wlroots-0.18', 'wlroots']
+  if not wlroots_dep.found()
+    wlroots_dep = dependency(candidate, required: false)
+    if wlroots_dep.found()
+      wlroots_pkgconfig_name = candidate
+    endif
+  endif
+endforeach
 if not wlroots_dep.found()
-  # Some distros (and older wlroots releases) publish the .pc file under the
-  # bare 'wlroots' name instead of version-suffixed. Fall back rather than
-  # hard-failing configure, and let the version check below catch anything
-  # actually too old.
-  wlroots_pkgconfig_name = 'wlroots'
-  wlroots_dep = dependency(wlroots_pkgconfig_name)
+  error('wlroots not found (tried wlroots-0.20, wlroots-0.19, wlroots-0.18, wlroots); Debian 12 needs 0.18 built from source, see docs/DEBIAN_BACKPORT.md')
 endif
 
 wlroots_version = wlroots_dep.version()

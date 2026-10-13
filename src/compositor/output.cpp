@@ -28,6 +28,14 @@ extern "C" {
 #include "layer_surface.hpp"
 #include "server.hpp"
 #include "view.hpp"
+#include <wlr/version.h>
+
+// wlroots 0.19 moved the scene output's pending damage into its private block.
+#if WLR_VERSION_NUM >= 0x001300
+#define FLEETWM_PENDING_DAMAGE(so) ((so)->WLR_PRIVATE.pending_commit_damage)
+#else
+#define FLEETWM_PENDING_DAMAGE(so) ((so)->pending_commit_damage)
+#endif
 
 namespace fleetwm {
 
@@ -93,7 +101,7 @@ void output_frame(wl_listener* listener, void*) {
         // frames a second forever. With no pending damage the output goes idle
         // and wakes again by itself when something changes.
         wlr_scene_output* pending = wlr_scene_get_scene_output(server->scene(), output->wlr_output_ptr);
-        if (pending == nullptr || !pixman_region32_not_empty(&pending->pending_commit_damage)) {
+        if (pending == nullptr || !pixman_region32_not_empty(&FLEETWM_PENDING_DAMAGE(pending))) {
           if (stats) {
             ++grabstats::c().cap_idle;
             grabstats::tick(output->wlr_output_ptr->width, output->wlr_output_ptr->height);
@@ -144,7 +152,7 @@ void output_frame(wl_listener* listener, void*) {
 
   if (want_tearing) {
     if (output->wlr_output_ptr->needs_frame ||
-        pixman_region32_not_empty(&scene_output->pending_commit_damage)) {
+        pixman_region32_not_empty(&FLEETWM_PENDING_DAMAGE(scene_output))) {
       wlr_output_state state;
       wlr_output_state_init(&state);
       if (wlr_scene_output_build_state(scene_output, &state, nullptr)) {
@@ -158,7 +166,7 @@ void output_frame(wl_listener* listener, void*) {
     timespec c0{};
     if (stats) {  // pending damage before the commit takes it, and what the call costs on the CPU
       int n = 0;
-      const pixman_box32_t* r = pixman_region32_rectangles(&scene_output->pending_commit_damage, &n);
+      const pixman_box32_t* r = pixman_region32_rectangles(&FLEETWM_PENDING_DAMAGE(scene_output), &n);
       for (int i = 0; i < n; ++i) damage_px += static_cast<double>(r[i].x2 - r[i].x1) * static_cast<double>(r[i].y2 - r[i].y1);
       if (grabstats::rects() && n > 0 && std::strcmp(grabstats::mode(), "idle") != 0) {
         std::fprintf(stderr, "RECTS mode=%s n=%d", grabstats::mode(), n);

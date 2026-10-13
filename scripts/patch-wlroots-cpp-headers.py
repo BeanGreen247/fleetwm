@@ -28,6 +28,11 @@ PATCHED_FILES = {
     "wlr/types/wlr_scene.h": [
         (re.compile(r"const float color\[static 4\]"), "const float color[4]"),
     ],
+    # 0.19 and later: matrix and vector parameters use [static N] too. 0.18 has none (and 0.20's
+    # wlr_scene.h no longer has the color one), hence the OPTIONAL set below.
+    "wlr/render/color.h": [
+        (re.compile(r"\[static (\d+)\]"), r"[\1]"),
+    ],
     "wlr/xwayland/xwayland.h": [
         (re.compile(r"\bchar \*class;"), "char *class_;"),
     ],
@@ -35,6 +40,10 @@ PATCHED_FILES = {
         (re.compile(r"\bchar \*namespace;"), "char *namespace_;"),
     ],
 }
+
+
+# Patterns that only exist in some wlroots series; no warning when they are absent.
+OPTIONAL = {"wlr/render/color.h", "wlr/types/wlr_scene.h"}
 
 
 def main() -> int:
@@ -54,7 +63,7 @@ def main() -> int:
         text = src.read_text()
         for pattern, replacement in patches:
             text, count = pattern.subn(replacement, text)
-            if count == 0:
+            if count == 0 and rel_path not in OPTIONAL:
                 print(
                     f"warning: pattern {pattern.pattern!r} not found in {src} "
                     "-- wlroots header layout may have changed upstream; "

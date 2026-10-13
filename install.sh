@@ -126,7 +126,7 @@ ui_step "Installing the compiler and the libraries Fleetwm is built from" \
   "Why:  Fleetwm is built from source on your machine, tuned for your exact CPU, which is part of why" \
   "      it can be faster than a generic prebuilt package."
 ui_item "build-essential meson ninja git" "compiler and build system (ninja runs the compile in parallel)"
-ui_item "libwlroots-0.18-dev" "wlroots: the window-system core the compositor is built on"
+ui_item "libwlroots-dev (0.18 to 0.20)" "wlroots: the window-system core the compositor is built on (built from source on Debian 12)"
 ui_item "wayland-protocols libwayland-dev" "the Wayland protocol the programs speak to each other"
 ui_item "libinput libxkbcommon libdrm" "keyboard, mouse and touchpad input, key maps, direct screen access"
 ui_item "libegl/libgles2 libpixman" "OpenGL ES drawing (GPU) and the software fallback"
@@ -145,9 +145,31 @@ ui_live plain "Refreshing the package lists" "$(mktemp)" apt_update
 # not found" -- fatal here since `set -euo pipefail` is on. Confirmed
 # this the hard way: an earlier version of this file had exactly that
 # shape and would have failed a truly fresh install.
+# wlroots: Debian 13 ships 0.18, Debian 14 0.20 (the code builds against 0.18 to 0.20). Debian 12 has
+# 0.15 only: take the newer wayland, libdrm and meson from bookworm-backports and build wlroots 0.18
+# from source (scripts/build-wlroots-from-source.sh, docs/DEBIAN_BACKPORT.md).
+wlroots_pkg=""
+for candidate in libwlroots-0.20-dev libwlroots-0.19-dev libwlroots-0.18-dev; do
+  if apt-cache show "${candidate}" >/dev/null 2>&1; then wlroots_pkg="${candidate}"; break; fi
+done
+if [[ -z "${wlroots_pkg}" ]]; then
+  if [[ "${VERSION_CODENAME:-}" != "bookworm" ]]; then
+    echo "error: no libwlroots-0.18/0.19/0.20-dev package on this release (Debian 12 or newer is supported)" >&2
+    exit 1
+  fi
+  echo "==> Debian 12: enabling bookworm-backports and building wlroots 0.18 from source"
+  echo "deb http://deb.debian.org/debian bookworm-backports main" | sudo tee /etc/apt/sources.list.d/fleetwm-backports.list >/dev/null
+  apt_update
+  apt_install curl hwdata libgbm-dev libseat-dev libudev-dev libdisplay-info-dev libliftoff-dev \
+    libxcb1-dev libxcb-composite0-dev libxcb-dri3-dev libxcb-ewmh-dev libxcb-icccm4-dev \
+    libxcb-present-dev libxcb-render0-dev libxcb-render-util0-dev libxcb-res0-dev libxcb-shm0-dev \
+    libxcb-xfixes0-dev libxcb-xinput-dev libxcb-image0-dev libx11-xcb-dev libxcb-errors-dev glslang-tools libvulkan-dev
+  sudo apt-get install -y -t bookworm-backports meson libwayland-dev libwayland-bin wayland-protocols libdrm-dev
+  sudo bash "${SCRIPT_DIR}/scripts/build-wlroots-from-source.sh" /usr/local
+fi
 apt_install \
   build-essential meson ninja-build pkg-config git \
-  libwlroots-0.18-dev wayland-protocols libwayland-dev \
+  ${wlroots_pkg:+${wlroots_pkg}} wayland-protocols libwayland-dev \
   libinput-dev libdrm-dev libxkbcommon-dev libpixman-1-dev \
   libegl1-mesa-dev libgles2-mesa-dev \
   libpipewire-0.3-dev \
