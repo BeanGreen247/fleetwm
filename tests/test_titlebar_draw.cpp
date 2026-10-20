@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstring>
 #include <fstream>
 #include <sstream>
 #include <vector>
@@ -549,4 +550,27 @@ TEST(WindowShadow, FadesOutwardAndFocusedIsDarker) {
 
 TEST(ThemeConfig, WindowShadowsDefaultOn) {
   EXPECT_TRUE(fleetwm::ThemeConfig{}.window_shadows);
+}
+
+// Windows 7 caption text: dark letters on a soft white halo, and the second draw (from the kept picture) is the same as the first.
+TEST(TextGlow, HaloAroundDarkTextAndTheKeptPictureMatches) {
+  auto render = [] {
+    cairo_surface_t* s = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 200, 40);
+    cairo_t* cr = cairo_create(s);
+    cairo_set_source_rgb(cr, 0.1, 0.3, 0.6);
+    cairo_paint(cr);
+    td::draw_text_glow(cr, "Glow", 40.25, 26.5, 15, td::Color{0, 0, 0, 1}, td::Color{1, 1, 1, 0.8});
+    cairo_destroy(cr);
+    cairo_surface_flush(s);
+    return s;
+  };
+  cairo_surface_t* a = render();
+  cairo_surface_t* b = render();
+  const int stride = cairo_image_surface_get_stride(a);
+  EXPECT_EQ(0, std::memcmp(cairo_image_surface_get_data(a), cairo_image_surface_get_data(b), static_cast<size_t>(stride) * 40));
+  auto blue = [&](int x, int y) { return cairo_image_surface_get_data(a)[y * stride + x * 4]; };
+  EXPECT_GT(blue(38, 20), blue(5, 5) + 20) << "the halo reaches a few pixels beyond the letters and is lighter than the plain glass";
+  EXPECT_EQ(blue(1, 1), 153) << "far from the text nothing changes";
+  cairo_surface_destroy(a);
+  cairo_surface_destroy(b);
 }

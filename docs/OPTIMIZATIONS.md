@@ -950,3 +950,16 @@ renderer; on a GPU renderer the pixman share (about half of the 858M instruction
   changes with many windows), and this workload does not have enough of them; a wall-time or GPU-busy measurement of a resize on the Celeron laptop is still open.
 
 Reproduce: `perflog/2026-10-13/ab.sh LABEL SRC_DIR [seconds]` (one training session of `SRC_DIR/build-pgo`, CPU from the cgroup, PSS sampled at 60% of the run).
+
+## Round 2026-10-20: Windows 7 glass, drop shadow, caption glow
+
+All numbers: this build machine (Intel i5, `-O2` bench build of fleetkit), `perflog/2026-10-20/titlebar_glow_bench.cpp` (800 px titlebar, glass on, background and caption strip caches warm; 2,000 renders per figure, three runs, the spread was under 3%).
+
+| Titlebar render | Light text (theme tint) | Aero caption, first version | Aero caption, finished picture kept |
+|---|---|---|---|
+| same title (a hover or focus redraw) | 73 us | 111 us | **73 us** |
+| a new title every time | 74 us | 210 us | 205 us (the halo is built once per title) |
+
+- **Finding:** painting the blurred halo through an A8 mask on every redraw (`cairo_mask_surface`, about 190x44 px) cost 38 us, half of a hover redraw. `draw_text_glow` now keeps the finished picture (halo and text, ARGB) per (text, size, weight, colours, quarter-pixel position) in a 512 KB cache and blits it: a hover redraw costs what it did before the glow existed. Building the halo (3 box passes on the glyph coverage) is 130 us once per title, on the Celeron a few hundred us per title change.
+- **Frost layer and shadow cost nothing to draw:** the frost is four scene buffers showing parts of one shared blurred picture (a source-box update when the window moves), the shadow is eight scene buffers cut from one 80 px picture per focus state (positions and sizes only). No pixel is drawn when a window moves or resizes. What they add is compositing area (about the frame ring plus the 20 px shadow ring per window). Drag cost with and without each: see the table below (VM, pixman, headless; the GPU side needs the Celeron).
+- Test: `TextGlow.HaloAroundDarkTextAndTheKeptPictureMatches`, `WindowShadow.FadesOutwardAndFocusedIsDarker`.
