@@ -58,6 +58,7 @@
 #include "xkb_rules.hpp"
 #include "gpu_monitor.hpp"
 #include "hw_stats.hpp"
+#include "spectrum_source.hpp"
 #include "volume_source.hpp"
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
 #include "child_signals.hpp"
@@ -71,6 +72,7 @@ namespace {
 using namespace fleetwm;
 using namespace fleetwm::kit;
 using fleetwm::bar::Tray;
+using fleetwm::bar::SpectrumSource;
 using fleetwm::bar::VolumeSource;
 
 // kBarHeight, kCapsuleTopMargin, kCapsuleSideMargin, kIslandTopMargin and kIslandSideInset: common/bar_config.hpp
@@ -122,6 +124,7 @@ struct Bar {
 
   // Sources (destroyed before `app`, declared after it).
   std::unique_ptr<VolumeSource> volume;
+  std::unique_ptr<SpectrumSource> spectrum;  // real audio levels for the media waveform, listening only while it shows
   std::unique_ptr<Tray> tray;
   std::unique_ptr<fleetwm::bar::Mpris> media;
   int media_timer = 0;
@@ -810,15 +813,26 @@ struct Bar {
       const double line_x = text_x;
       const double line_w = std::max(20.0, r.x + r.w - line_x - 6);
       if (waveform) {
-        // Moving bars (the applet cannot hear the audio, so they follow the clock, not the sound); they rest low while paused.
+        // Bars follow the sound the speakers play (a PipeWire monitor capture); without it they follow the clock.
         // Bars up to the play position take the accent colour, the rest are dim; a stream with no length is all accent.
         const bool playing = s.status == "Playing";
-        const int bars = std::max(8, std::min(32, static_cast<int>(line_w / 5)));
+        float lv[SpectrumSource::kBands];
+        const bool live = playing && spectrum && spectrum->levels(lv);
+        const int bars = std::max(8, std::min(SpectrumSource::kBands, static_cast<int>(line_w / 5)));
         const double step = line_w / bars;
         const double phase = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count() * 6.0;
         for (int i = 0; i < bars; ++i) {
-          const double beat = playing ? 0.5 + 0.25 * std::sin(phase + i * 1.7) + 0.25 * std::sin(phase * 1.7 + i * 0.9) : 0.15;
-          const double bh = 2 + beat * 9;
+          double beat;
+          if (live) {
+            // Average the analyser bands that fall under this bar (there are never fewer bands than bars).
+            const int a = i * SpectrumSource::kBands / bars, z = std::max(a + 1, (i + 1) * SpectrumSource::kBands / bars);
+            float sum = 0;
+            for (int k = a; k < z; ++k) sum += lv[k];
+            beat = 0.08 + 0.92 * std::min(1.0f, sum / static_cast<float>(z - a));
+          } else {
+            beat = playing && !spectrum ? 0.5 + 0.25 * std::sin(phase + i * 1.7) + 0.25 * std::sin(phase * 1.7 + i * 0.9) : 0.1;
+          }
+          const double bh = 2 + beat * 11;
           rounded_rect(cr, line_x + i * step, line_y - bh + 2, std::max(1.5, step - 1.5), bh, 1);
           set_source(cr, with_alpha(pal.accent, !has_length || i / static_cast<double>(bars) <= f ? 0.95 : 0.35));
           cairo_fill(cr);
@@ -2193,9 +2207,15 @@ struct Bar {
       app.unwatch(media_timer);
       media_timer = 0;
     }
-    if (media && media->state().available && media->state().status == "Playing") {
-      // The waveform moves, so it redraws about eight times a second; the other displays only need the seconds counter.
-      media_timer = app.add_timer(config.media_display == MediaDisplay::Waveform ? 125 : 1000, [this] {
+    const bool wave = config.media_display == MediaDisplay::Waveform;
+    const bool playing = media && media->state().available && media->state().status == "Playing";
+    if (spectrum) {
+      if (wave && playing) spectrum->start();
+      else spectrum->stop();
+    }
+    if (playing) {
+      // The waveform moves, so it redraws about twenty times a second; the other displays only need the seconds counter.
+      media_timer = app.add_timer(wave ? 50 : 1000, [this] {
         if (!media || !media->state().available || media->state().status != "Playing") {
           if (media_timer) {
             app.unwatch(media_timer);
@@ -2641,6 +2661,7 @@ int main(int argc, char** argv) {
   B.tray->start();
 
   B.volume = std::make_unique<VolumeSource>(B.app);
+  B.spectrum = std::make_unique<SpectrumSource>();
   B.volume->start([&B](int percent, bool available, bool muted) {
     B.vol_percent = available ? percent : -1;
     const bool mute_changed = B.vol_muted != (available && muted);

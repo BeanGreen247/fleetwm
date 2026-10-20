@@ -18,6 +18,7 @@ executable(
     'main.cpp',
     'mpris.cpp',
     'volume_source.cpp',
+    'spectrum_source.cpp',
     'tray.cpp',
     'tray_vtable.c',
   ),

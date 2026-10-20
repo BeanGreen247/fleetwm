@@ -63,6 +63,7 @@ libcommon_core = static_library(
     'xkb_rules.cpp',
     'lock_tooltip.cpp',
     'app_appearance.cpp',
+    'spectrum.cpp',
     'config_backup.cpp',
   ),
   include_directories: include_directories('.'),

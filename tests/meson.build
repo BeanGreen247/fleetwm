@@ -51,6 +51,7 @@ fleetwm_test_sources = files(
   'test_mouse.cpp',
   'test_user_profile.cpp',
   'test_app_appearance.cpp',
+  'test_spectrum.cpp',
   'test_settings_pages.cpp',
   'test_power_menu.cpp',
   'test_pgo_training.cpp',
