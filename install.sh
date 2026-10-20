@@ -537,7 +537,11 @@ if [[ -x "${BUILD_DIR}/src/greeter/fleetwm-greet" ]]; then
   GREETER_ENABLED=0
   if [[ "${FLEETWM_NO_GREETER:-0}" == "1" ]]; then
     echo "==> FLEETWM_NO_GREETER=1: leaving the login screen disabled"
-  elif systemctl is-enabled display-manager.service >/dev/null 2>&1; then
+  elif systemctl is-enabled display-manager.service >/dev/null 2>&1 \
+      || systemctl is-active --quiet display-manager.service \
+      || [[ -s /etc/X11/default-display-manager ]] \
+      || systemctl is-enabled lightdm.service gdm.service gdm3.service sddm.service greetd.service >/dev/null 2>&1 \
+      || systemctl is-active --quiet lightdm.service gdm.service gdm3.service sddm.service greetd.service; then
     echo "==> A display manager is enabled; leaving the Fleetwm login screen disabled."
     echo "    Pick 'Fleetwm' from its session list instead."
   else
