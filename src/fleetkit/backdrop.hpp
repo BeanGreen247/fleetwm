@@ -43,10 +43,14 @@ struct GlassStyle {
   bool rim = true;
   double ray = 0.0;                   // peak opacity of the Windows 7 light ray across it (paint_glass_ray); 0 = none
 };
-// The Windows 7 light ray: one diagonal beam across a glass rectangle, a crisp bright leading edge and a long soft tail fading away from it.
-// `strength` is its peak opacity (about 0.2 on a taskbar, 0.4 on a focused titlebar); (x, y, w, h) is the glass rectangle in `cr`.
-// `at` is where the leading edge starts along the top, as a fraction of the width. Painted over what is there, clipped to the rectangle.
-void paint_glass_ray(cairo_t* cr, double x, double y, double w, double h, double strength, double at = 0.14);
+// The Windows 7 light ray, fixed to the screen like a reflection on a pane: one diagonal beam across an output of out_w x out_h, a crisp
+// bright leading edge with a long soft tail, leaning like a "/". A glass rectangle only shows the part of the beam that lies behind it, so
+// a window dragged across the screen slides through the ray. (x, y, w, h) is the rectangle in `cr`'s coordinates and (screen_x, screen_y)
+// is where its top-left corner is on the screen. `strength` is the beam's peak opacity. Painted over what is there, clipped to the rectangle.
+// Raises (factor > 1) the colour saturation of an ARGB32 picture in place; used once on the frosted backdrop (Aero saturates what it blurs).
+void saturate_argb32(unsigned char* pixels, int w, int h, int stride, double factor);
+void paint_screen_ray(cairo_t* cr, double screen_x, double screen_y, double x, double y, double w, double h, int out_w, int out_h,
+                      double strength);
 void paint_glass(cairo_t* cr, cairo_surface_t* backdrop, int out_w, int out_h, double screen_x, double screen_y, double x,
                  double y, double w, double h, const GlassStyle& style);
 

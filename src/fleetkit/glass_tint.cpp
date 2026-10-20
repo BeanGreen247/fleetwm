@@ -132,8 +132,8 @@ void mix_glass_colors(Palette& pal, const Color& base, int intensity) {
   const Color white{1, 1, 1, 1};
   pal.glass_title = mixc(base, white, 0.06);
   pal.glass_title_idle = mixc(base, white, 0.62);  // Windows 7 clears an unfocused frame: more of the wallpaper, a light wash over it
-  pal.glass_alpha = 0.45 + 0.35 * k;
-  pal.glass_alpha_idle = 0.20 + 0.22 * k;
+  pal.glass_alpha = 0.26 + 0.30 * k;       // 0.44 at the default strength: the frosted wallpaper and its ray show through clearly
+  pal.glass_alpha_idle = 0.12 + 0.20 * k;  // an unfocused frame is clearer still
   pal.aero_caption = true;
 }
 

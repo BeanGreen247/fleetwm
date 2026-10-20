@@ -46,6 +46,12 @@ wlr_buffer* glass_backdrop_for(int out_w, int out_h) {
                                                                 out_h, static_cast<int>(stride));
     cairo_t* cr = cairo_create(surf);
     kit::paint_backdrop(cr, backdrop, out_w, out_h, 0, 0, 0, 0, out_w, out_h);
+    // Windows 7 saturates what it frosts, and the light ray of its wallpaper shows through the frame: both are put into the picture once, so
+    // a window only shows the part of it that lies behind it (the ray stays on the screen while a window slides through it).
+    cairo_surface_flush(surf);
+    kit::saturate_argb32(static_cast<unsigned char*>(pixels), out_w, out_h, static_cast<int>(stride), 1.35);
+    cairo_surface_mark_dirty(surf);
+    kit::paint_screen_ray(cr, 0, 0, 0, 0, out_w, out_h, out_w, out_h, 0.80);
     cairo_destroy(cr);
     cairo_surface_destroy(surf);
     k.buffer = buffer;  // the cache owns this reference

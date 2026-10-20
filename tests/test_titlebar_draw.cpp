@@ -18,6 +18,7 @@
 #include "titlebar_draw.hpp"
 #include "window_shadow.hpp"
 #include "win7_look.hpp"
+#include "backdrop.hpp"
 #include "theme.hpp"
 
 namespace {
@@ -611,4 +612,45 @@ TEST(Win7Look, TileStatesAndTheOrb) {
   EXPECT_EQ(d[25 * stride + 25 * 4 + 3], 255) << "the orb is solid in the middle";
   EXPECT_EQ(d[1 * stride + 1 * 4 + 3], 0) << "and round: the corner is empty";
   cairo_surface_destroy(s);
+}
+
+// The light ray is fixed to the screen: a window slid across the screen shows different parts of the same beam, so two rectangles that
+// both cover one screen point must show the same brightness there.
+TEST(ScreenRay, StaysOnTheScreenWhateverRectangleShowsIt) {
+  const int out_w = 1280, out_h = 720;
+  auto paint = [&](double sx, double sy, int w, int h) {
+    cairo_surface_t* s = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
+    cairo_t* cr = cairo_create(s);
+    td::paint_screen_ray(cr, sx, sy, 0, 0, w, h, out_w, out_h, 0.8);
+    cairo_destroy(cr);
+    cairo_surface_flush(s);
+    return s;
+  };
+  auto alpha = [](cairo_surface_t* s, int x, int y) { return cairo_image_surface_get_data(s)[y * cairo_image_surface_get_stride(s) + x * 4 + 3]; };
+  // find a screen point with the beam on it: scan the middle row of the screen
+  cairo_surface_t* whole = paint(0, 0, out_w, out_h);
+  int bright_x = -1;
+  for (int x = 0; x < out_w; ++x)
+    if (alpha(whole, x, 360) > 80) bright_x = x;
+  ASSERT_GE(bright_x, 0) << "the beam crosses the middle of the screen";
+  cairo_surface_t* window = paint(bright_x - 30, 340, 200, 60);  // a window whose frame covers that point
+  EXPECT_EQ(alpha(window, 30, 20), alpha(whole, bright_x, 360));
+  cairo_surface_t* moved = paint(bright_x - 100, 340, 200, 60);  // the same size, 70 px further left: the beam is at another place in it
+  EXPECT_NE(alpha(moved, 30, 20), alpha(whole, bright_x, 360));
+  EXPECT_EQ(alpha(moved, 100, 20), alpha(whole, bright_x, 360));
+  EXPECT_LT(alpha(whole, out_w - 20, out_h - 20), 20) << "the far corner of the screen, away from the beam, stays clear";
+  cairo_surface_destroy(whole);
+  cairo_surface_destroy(window);
+  cairo_surface_destroy(moved);
+}
+
+TEST(ScreenRay, SaturationBoostKeepsGreyAndPushesColourAway) {
+  unsigned char px[8] = {128, 128, 128, 255, 50, 100, 200, 255};  // B,G,R,A: a grey and an orange
+  td::saturate_argb32(px, 2, 1, 8, 1.5);
+  EXPECT_EQ(px[0], 128);
+  EXPECT_EQ(px[1], 128);
+  EXPECT_EQ(px[2], 128);
+  EXPECT_GT(px[6], 200);  // the red of the orange grows
+  EXPECT_LT(px[4], 50);   // the blue shrinks
+  EXPECT_EQ(px[7], 255);
 }

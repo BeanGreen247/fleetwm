@@ -173,30 +173,48 @@ cairo_surface_t* load_backdrop(bool recheck) {
   return shared ? cairo_surface_reference(shared) : nullptr;
 }
 
-void paint_glass_ray(cairo_t* cr, double x, double y, double w, double h, double strength, double at) {
-  if (w < 60 || h < 8 || strength <= 0) return;
-  const double bw = std::clamp(w * 0.12, 48.0, 280.0);  // along x, the beam's whole width: sharp edge to the end of the tail
-  const double lean = h * 1.0;                           // the top is this much to the right of the bottom
-  const double x0 = x + w * at;
+void saturate_argb32(unsigned char* pixels, int w, int h, int stride, double factor) {
+  const int f = static_cast<int>(factor * 256);
+  for (int y = 0; y < h; ++y) {
+    unsigned char* row = pixels + static_cast<size_t>(y) * stride;
+    for (int x = 0; x < w; ++x) {  // B, G, R, A in memory; the backdrop is opaque, so no premultiplication to undo
+      unsigned char* p = row + x * 4;
+      const int luma = (p[2] * 54 + p[1] * 183 + p[0] * 19) >> 8;
+      for (int c = 0; c < 3; ++c) p[c] = static_cast<unsigned char>(std::clamp(luma + (((p[c] - luma) * f) >> 8), 0, 255));
+    }
+  }
+}
+
+void paint_screen_ray(cairo_t* cr, double screen_x, double screen_y, double x, double y, double w, double h, int out_w, int out_h,
+                      double strength) {
+  if (w < 4 || h < 4 || out_w < 100 || out_h < 100 || strength <= 0) return;
+  // The beam in screen coordinates: its leading edge runs from (xt, 0) at the top down and to the left to (xt - lean, out_h) at the bottom.
+  const double bw = std::clamp(out_w * 0.16, 90.0, 460.0);  // along x: the sharp edge to the end of the tail
+  const double lean = out_h * 0.95;
+  const double xt = out_w * 0.50;
   cairo_save(cr);
   cairo_rectangle(cr, x, y, w, h);
   cairo_clip(cr);
-  cairo_pattern_t* g = cairo_pattern_create_linear(x0, 0, x0 + bw, 0);
+  cairo_translate(cr, x - screen_x, y - screen_y);  // from here on, coordinates are screen coordinates
+  // The gradient runs across the beam (perpendicular to its edge), so lines of equal opacity are parallel to the leading edge.
+  const double len = std::hypot(lean, static_cast<double>(out_h));
+  const double nx = out_h / len, ny = lean / len, across = bw * out_h / len;
+  cairo_pattern_t* g = cairo_pattern_create_linear(xt, 0, xt + nx * across, ny * across);
   cairo_pattern_add_color_stop_rgba(g, 0.00, 1, 1, 1, 0.0);
-  cairo_pattern_add_color_stop_rgba(g, 0.07, 1, 1, 1, strength);  // the bright, fairly sharp leading edge
-  cairo_pattern_add_color_stop_rgba(g, 0.40, 1, 1, 1, strength * 0.38);
+  cairo_pattern_add_color_stop_rgba(g, 0.06, 1, 1, 1, strength);  // the bright, fairly sharp leading edge
+  cairo_pattern_add_color_stop_rgba(g, 0.38, 1, 1, 1, strength * 0.36);
   cairo_pattern_add_color_stop_rgba(g, 1.00, 1, 1, 1, 0.0);
   cairo_set_source(cr, g);
-  cairo_move_to(cr, x0 + lean, y);
-  cairo_line_to(cr, x0 + lean + bw, y);
-  cairo_line_to(cr, x0 + bw, y + h);
-  cairo_line_to(cr, x0, y + h);
+  cairo_move_to(cr, xt, 0);
+  cairo_line_to(cr, xt + bw, 0);
+  cairo_line_to(cr, xt + bw - lean, out_h);
+  cairo_line_to(cr, xt - lean, out_h);
   cairo_close_path(cr);
   cairo_fill(cr);
   cairo_pattern_destroy(g);
   // a hairline along the leading edge makes the beam read as a ray and not as a haze
-  cairo_move_to(cr, x0 + lean + 0.5, y);
-  cairo_line_to(cr, x0 + 0.5, y + h);
+  cairo_move_to(cr, xt + 0.5, 0);
+  cairo_line_to(cr, xt - lean + 0.5, out_h);
   cairo_set_source_rgba(cr, 1, 1, 1, strength * 0.55);
   cairo_set_line_width(cr, 1);
   cairo_stroke(cr);
@@ -317,7 +335,7 @@ void paint_glass_direct(cairo_t* cr, cairo_surface_t* bd, int out_w, int out_h, 
   cairo_fill(cr);
   cairo_pattern_destroy(band);
   cairo_restore(cr);
-  if (st.ray > 0) paint_glass_ray(cr, x, y, w, h, st.ray);
+  if (st.ray > 0) paint_screen_ray(cr, sx, sy, x, y, w, h, out_w, out_h, st.ray);
   if (st.rim) {
     rounded_rect(cr, x + 0.5, y + 0.5, w - 1, h - 1, st.radius);
     cairo_set_source_rgba(cr, 1, 1, 1, 0.30);

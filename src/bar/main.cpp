@@ -147,9 +147,9 @@ struct Bar {
     if (glass) {
       GlassStyle st;
       st.tint = pal.glass_surface;
-      st.tint_alpha = 0.55;
+      st.tint_alpha = 0.42;
       st.radius = radius;
-      st.ray = w >= 160 && h >= 24 ? 0.34 : 0.0;  // the light ray of the Windows 7 taskbar, on the wide surfaces only
+      st.ray = w >= 160 && h >= 24 ? 0.55 : 0.0;  // the light ray of the Windows 7 taskbar, on the wide surfaces only
       paint_glass(cr, backdrop, monitor_width(), monitor_height(), sx, sy, x, y, w, h, st);
       return;
     }

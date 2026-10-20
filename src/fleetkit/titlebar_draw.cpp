@@ -75,7 +75,6 @@ void draw_glass_background(cairo_t* cr, int width, int height, bool focused, con
     cairo_fill(cr);
     cairo_pattern_destroy(band);
   }
-  paint_glass_ray(cr, 0, 0, width, height, focused ? 0.55 : 0.28);
   // the client area's top edge: a light line and, under it, a dark one (Windows 7 draws both round the whole client area)
   cairo_set_source_rgba(cr, 1, 1, 1, 0.42);
   cairo_rectangle(cr, 0, height - 2, width, 1);
