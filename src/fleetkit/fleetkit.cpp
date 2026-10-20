@@ -1,4 +1,7 @@
 #include "fleetkit.hpp"
+
+#include <cairo-ft.h>
+#include <fontconfig/fontconfig.h>
 #include "glass_tint.hpp"
 
 #include "backdrop.hpp"
@@ -133,6 +136,118 @@ void apply_font(cairo_t* cr, double px, bool bold) {
   cairo_set_font_size(cr, px);
 }
 
+
+// Characters Inter does not have (symbols, braille, box drawing, emoji: the art in a terminal's window title, a spinner, a track name)
+// come out as an empty box from a toy font face. A face that has the character is looked up with fontconfig, once per character,
+// and the character is drawn with it; pure Latin text never leaves the fast path (all its glyphs exist).
+cairo_font_face_t* fallback_face(uint32_t cp, bool bold) {
+  static std::unordered_map<uint64_t, cairo_font_face_t*> cache;
+  const uint64_t key = (static_cast<uint64_t>(cp) << 1) | (bold ? 1u : 0u);
+  const auto it = cache.find(key);
+  if (it != cache.end()) return it->second;
+  cairo_font_face_t* face = nullptr;
+  FcPattern* want = FcPatternCreate();
+  FcCharSet* cs = FcCharSetCreate();
+  FcCharSetAddChar(cs, cp);
+  FcPatternAddString(want, FC_FAMILY, reinterpret_cast<const FcChar8*>("Inter"));
+  FcPatternAddInteger(want, FC_WEIGHT, bold ? FC_WEIGHT_BOLD : FC_WEIGHT_NORMAL);
+  FcPatternAddCharSet(want, FC_CHARSET, cs);
+  FcConfigSubstitute(nullptr, want, FcMatchPattern);
+  FcDefaultSubstitute(want);
+  FcResult result;
+  if (FcPattern* match = FcFontMatch(nullptr, want, &result)) {
+    FcCharSet* have = nullptr;
+    if (FcPatternGetCharSet(match, FC_CHARSET, 0, &have) == FcResultMatch && FcCharSetHasChar(have, cp))
+      face = cairo_ft_font_face_create_for_pattern(match);
+    FcPatternDestroy(match);
+  }
+  FcCharSetDestroy(cs);
+  FcPatternDestroy(want);
+  cache.emplace(key, face);
+  return face;
+}
+
+// Next code point of a UTF-8 string (invalid bytes become U+FFFD).
+uint32_t next_code_point(const std::string& s, size_t* i) {
+  const unsigned char c = static_cast<unsigned char>(s[*i]);
+  const int extra = c < 0x80 ? 0 : (c >> 5) == 6 ? 1 : (c >> 4) == 14 ? 2 : (c >> 3) == 30 ? 3 : -1;
+  if (extra < 0 || *i + extra >= s.size()) {
+    ++*i;
+    return extra == 0 ? c : 0xFFFD;
+  }
+  uint32_t cp = extra == 0 ? c : c & (0x3Fu >> extra);
+  for (int k = 1; k <= extra; ++k) cp = (cp << 6) | (static_cast<unsigned char>(s[*i + k]) & 0x3Fu);
+  *i += extra + 1;
+  return cp;
+}
+
+struct GlyphRun {
+  cairo_scaled_font_t* font;  // referenced
+  std::vector<cairo_glyph_t> glyphs;
+};
+
+// The slow path of draw_text and measure_text: a run of glyphs per font, character by character. Returns the advance.
+double layout_with_fallback(cairo_t* cr, const std::string& s, double x, double y, bool bold, std::vector<GlyphRun>* runs) {
+  cairo_scaled_font_t* primary = cairo_get_scaled_font(cr);
+  cairo_matrix_t fm, ctm;
+  cairo_scaled_font_get_font_matrix(primary, &fm);
+  cairo_scaled_font_get_ctm(primary, &ctm);
+  cairo_font_options_t* opts = cairo_font_options_create();
+  cairo_scaled_font_get_font_options(primary, opts);
+  const double x0 = x;
+  size_t i = 0;
+  while (i < s.size()) {
+    const size_t start = i;
+    const uint32_t cp = next_code_point(s, &i);
+    if (cp == 0xFE0F || cp == 0xFE0E || cp == 0x200D || cp == 0x200B) continue;  // variation selectors and joiners draw nothing
+    const std::string one = s.substr(start, i - start);
+    cairo_scaled_font_t* sf = primary;
+    cairo_scaled_font_reference(sf);
+    cairo_glyph_t* g = nullptr;
+    int n = 0;
+    bool ok = cairo_scaled_font_text_to_glyphs(sf, x, y, one.c_str(), static_cast<int>(one.size()), &g, &n, nullptr, nullptr, nullptr) ==
+              CAIRO_STATUS_SUCCESS;
+    if (ok && n > 0 && g[0].index == 0 && cp >= 0x20) {
+      if (cairo_font_face_t* face = fallback_face(cp, bold)) {
+        cairo_scaled_font_t* alt = cairo_scaled_font_create(face, &fm, &ctm, opts);
+        if (cairo_scaled_font_status(alt) == CAIRO_STATUS_SUCCESS) {
+          cairo_glyph_free(g);
+          g = nullptr;
+          n = 0;
+          cairo_scaled_font_destroy(sf);
+          sf = alt;
+          ok = cairo_scaled_font_text_to_glyphs(sf, x, y, one.c_str(), static_cast<int>(one.size()), &g, &n, nullptr, nullptr, nullptr) ==
+               CAIRO_STATUS_SUCCESS;
+        } else {
+          cairo_scaled_font_destroy(alt);
+        }
+      }
+    }
+    if (ok && n > 0) {
+      cairo_text_extents_t te;
+      cairo_scaled_font_glyph_extents(sf, g, n, &te);
+      x += te.x_advance;
+      if (runs) {
+        if (runs->empty() || runs->back().font != sf) {
+          cairo_scaled_font_reference(sf);
+          runs->push_back({sf, {}});
+        }
+        runs->back().glyphs.insert(runs->back().glyphs.end(), g, g + n);
+      }
+    }
+    if (g) cairo_glyph_free(g);
+    cairo_scaled_font_destroy(sf);
+  }
+  cairo_font_options_destroy(opts);
+  return x - x0;
+}
+
+bool has_high_byte(const std::string& s) {
+  for (unsigned char c : s)
+    if (c >= 0x80) return true;
+  return false;
+}
+
 struct MeasureKey {
   std::string s;
   float px;
@@ -169,6 +284,7 @@ TextExtents measure_text(cairo_t* cr, const std::string& s, double px, bool bold
   cairo_text_extents_t te;
   cairo_font_extents_t fe;
   cairo_text_extents(cr, s.c_str(), &te);
+  if (has_high_byte(s)) te.x_advance = layout_with_fallback(cr, s, 0, 0, bold, nullptr);
   cairo_font_extents(cr, &fe);
   const TextExtents r{te.x_advance, fe.ascent + fe.descent, fe.ascent};
   if (plain) {
@@ -189,6 +305,23 @@ double draw_text(cairo_t* cr, const std::string& s, double x, double y, double p
   if (cairo_scaled_font_text_to_glyphs(sf, x, y, s.c_str(), static_cast<int>(s.size()), &glyphs, &n,
                                        nullptr, nullptr, nullptr) != CAIRO_STATUS_SUCCESS)
     return 0;
+  bool missing = false;
+  for (int i = 0; i < n && !missing; ++i) missing = glyphs[i].index == 0 && has_high_byte(s);
+  if (missing) {  // some character is not in Inter: draw it, and the rest, with the fonts that have them
+    cairo_glyph_free(glyphs);
+    cairo_scaled_font_reference(sf);  // cr lets go of it while the other fonts are set
+    std::vector<GlyphRun> runs;
+    const double advance = layout_with_fallback(cr, s, x, y, bold, &runs);
+    for (GlyphRun& r : runs) {
+      cairo_set_scaled_font(cr, r.font);
+      cairo_show_glyphs(cr, r.glyphs.data(), static_cast<int>(r.glyphs.size()));
+      cairo_scaled_font_destroy(r.font);
+    }
+    cairo_set_scaled_font(cr, sf);
+    cairo_scaled_font_destroy(sf);
+    cairo_new_path(cr);
+    return advance;
+  }
   cairo_show_glyphs(cr, glyphs, n);
   cairo_text_extents_t te;
   cairo_scaled_font_glyph_extents(sf, glyphs, n, &te);
@@ -252,10 +385,7 @@ double draw_text_glow(cairo_t* cr, const std::string& s, double x, double y, dou
     const int w = static_cast<int>(std::ceil(te.width + fx)) + 2 * kGlowMargin + 1, h = static_cast<int>(std::ceil(te.height + fy)) + 2 * kGlowMargin + 1;
     cairo_surface_t* mask = cairo_image_surface_create(CAIRO_FORMAT_A8, w, h);
     cairo_t* mc = cairo_create(mask);
-    apply_font(mc, px, bold);
-    cairo_set_source_rgba(mc, 0, 0, 0, 1);
-    cairo_move_to(mc, kGlowMargin + fx, kGlowMargin + fy + te.ascent);
-    cairo_show_text(mc, s.c_str());
+    draw_text(mc, s, kGlowMargin + fx, kGlowMargin + fy + te.ascent, px, Color{0, 0, 0, 1}, bold);
     cairo_destroy(mc);
     cairo_surface_flush(mask);
     unsigned char* d = cairo_image_surface_get_data(mask);

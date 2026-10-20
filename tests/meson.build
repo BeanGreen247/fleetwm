@@ -57,6 +57,7 @@ fleetwm_test_sources = files(
   'test_popups.cpp',
   'test_caption_buttons.cpp',
   'test_titlebar_draw.cpp',
+  'test_text_fallback.cpp',
   'test_fm_format.cpp',
   'test_fm_listing.cpp',
   'test_fm_transfer.cpp',

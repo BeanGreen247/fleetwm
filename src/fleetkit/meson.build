@@ -2,6 +2,8 @@
 # surfaces on wl_shm + cairo, xkbcommon input, timers). Links cairo (which
 # pulls fontconfig/freetype/pixman) but never GTK, GLib or Pango.
 cairo_dep = dependency('cairo')
+fontconfig_dep = dependency('fontconfig')  # per-character font fallback in text drawing (fleetkit.cpp)
+cairo_ft_dep = dependency('cairo-ft')
 xkbcommon_client_dep = dependency('xkbcommon')
 
 # Image decoding (PNG/JPEG/WebP via libpng/libjpeg/libwebp, SVG via vendored
@@ -28,11 +30,11 @@ libfleetkit = static_library(
   'fleetwm-kit',
   files('fleetkit.cpp', 'icon_theme.cpp', 'desktop_entry.cpp', 'ui.cpp', 'mimeapps.cpp', 'backdrop.cpp', 'glass_tint.cpp', 'app_icon.cpp', 'caption_buttons.cpp', 'titlebar_draw.cpp', 'cursor_draw.cpp', 'window_shadow.cpp', 'win7_look.cpp'),
   include_directories: include_directories('.'),
-  dependencies: [wayland_client, client_protocols_dep, cairo_dep, xkbcommon_client_dep, libcommon_core_dep, libfleetkit_image_dep],
+  dependencies: [wayland_client, client_protocols_dep, cairo_dep, fontconfig_dep, cairo_ft_dep, xkbcommon_client_dep, libcommon_core_dep, libfleetkit_image_dep],
 )
 
 libfleetkit_dep = declare_dependency(
   link_with: libfleetkit,
   include_directories: include_directories('.'),
-  dependencies: [wayland_client, client_protocols_dep, cairo_dep, xkbcommon_client_dep, libcommon_core_dep, libfleetkit_image_dep],
+  dependencies: [wayland_client, client_protocols_dep, cairo_dep, fontconfig_dep, cairo_ft_dep, xkbcommon_client_dep, libcommon_core_dep, libfleetkit_image_dep],
 )
