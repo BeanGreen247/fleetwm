@@ -430,7 +430,7 @@ void draw_titlebar(cairo_t* cr, int width, int height, const TitlebarPaint& p, c
       draw_text_glow(cr, text, x, ty, font, p.focused ? Color{0, 0, 0, 0.92} : Color{0.20, 0.22, 0.26, 0.85},
                      Color{1, 1, 1, p.focused ? 0.80 : 0.55}, false);
     else
-      draw_text(cr, text, x, ty, font, fg, p.focused);
+      draw_text(cr, text, x, ty, font, fg, p.focused && !pal.aero_caption);  // Windows 7 captions are never bold
   }
 
   // Buttons: one joined Windows 7 style strip (pin, minimize, maximize, close), see caption_buttons.hpp.

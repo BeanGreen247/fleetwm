@@ -4,6 +4,7 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
 
 ## Unreleased
 
+- The desktop looks like Windows 7 in both modes (docs/WINDOWS7_FRAME_REFERENCE.md, fifth pass): glass or opaque "Basic" window frames with the measured edge lines, tile taskbar buttons, a start orb, a show-desktop sliver (`SHOW_DESKTOP`), a white clock, icon-only buttons and no pin button by default. The "Theme colours" tint keeps the old flat look.
 - Windows 7 light ray across glass titlebars and the taskbar; a softer, wider window shadow; Settings -> Taskbar "Line under each running program" (`taskbar_indicator`), off and greyed out while glass effects are on.
 - Glass looks like Windows 7: dark caption text on a soft white glow, a bright colour over frosted wallpaper (the blurred wallpaper now sits under the titlebar and frame, `View::frost_`), tint strength as see-through-ness, two wide reflections, a deeper taskbar tint, a redder close button, and a soft drop shadow around floating windows (`window_shadows` in theme.toml, Settings -> Theme). docs/WINDOWS7_FRAME_REFERENCE.md, fourth pass.
 - File manager: built-in FTP, FTPS, SFTP, WebDAV and SMB clients (`fleetwm-netfs`, FUSE with libcurl, libssh2 and libsmbclient); GVfs stays the fallback and handles the other protocols. Checked against real vsftpd, OpenSSH, Apache mod_dav and Samba.
