@@ -3,6 +3,7 @@
 
 #include <cstring>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -23,6 +24,14 @@ int main(int argc, char** argv) {
   // jemalloc would only add ~10 MB of resident arenas per small process.
   unsetenv("LD_PRELOAD");
   unsetenv("MALLOC_CONF");
+
+  // Started by a display manager (lightdm, GDM, SDDM): the seat belongs to its logind session, which the manager switches to. libseat
+  // would otherwise take the seatd that the login screen's service leaves running, get a seat that is not on screen, and the
+  // compositor would fail every modeset ("gbm_bo_create failed") while the manager's greeter stays up.
+  {
+    const char* type = std::getenv("XDG_SESSION_TYPE");
+    if (type && std::string_view(type) == "wayland" && std::getenv("XDG_SESSION_ID")) setenv("LIBSEAT_BACKEND", "logind", 0);
+  }
 
   fleetwm::prewarm::start("fleetwm");  // learns this program's own manifest on its first run (see prewarm.hpp)
   // The programs the session starts a moment from now (the bar, the wallpaper, the lock applet): ask for their files now, so the reads
