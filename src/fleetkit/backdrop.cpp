@@ -189,7 +189,7 @@ void paint_screen_ray(cairo_t* cr, double screen_x, double screen_y, double x, d
                       double strength) {
   if (w < 4 || h < 4 || out_w < 100 || out_h < 100 || strength <= 0) return;
   // The beam in screen coordinates: its leading edge runs from (xt, 0) at the top down and to the left to (xt - lean, out_h) at the bottom.
-  const double bw = std::clamp(out_w * 0.16, 90.0, 460.0);  // along x: the sharp edge to the end of the tail
+  const double bw = std::clamp(out_w * 0.21, 110.0, 560.0);  // along x: the sharp edge to the end of the tail
   const double lean = out_h * 0.95;
   const double xt = out_w * 0.50;
   cairo_save(cr);
@@ -202,7 +202,7 @@ void paint_screen_ray(cairo_t* cr, double screen_x, double screen_y, double x, d
   cairo_pattern_t* g = cairo_pattern_create_linear(xt, 0, xt + nx * across, ny * across);
   cairo_pattern_add_color_stop_rgba(g, 0.00, 1, 1, 1, 0.0);
   cairo_pattern_add_color_stop_rgba(g, 0.06, 1, 1, 1, strength);  // the bright, fairly sharp leading edge
-  cairo_pattern_add_color_stop_rgba(g, 0.38, 1, 1, 1, strength * 0.36);
+  cairo_pattern_add_color_stop_rgba(g, 0.40, 1, 1, 1, strength * 0.46);
   cairo_pattern_add_color_stop_rgba(g, 1.00, 1, 1, 1, 0.0);
   cairo_set_source(cr, g);
   cairo_move_to(cr, xt, 0);

@@ -51,7 +51,7 @@ wlr_buffer* glass_backdrop_for(int out_w, int out_h) {
     cairo_surface_flush(surf);
     kit::saturate_argb32(static_cast<unsigned char*>(pixels), out_w, out_h, static_cast<int>(stride), 1.35);
     cairo_surface_mark_dirty(surf);
-    kit::paint_screen_ray(cr, 0, 0, 0, 0, out_w, out_h, out_w, out_h, 0.80);
+    kit::paint_screen_ray(cr, 0, 0, 0, 0, out_w, out_h, out_w, out_h, 0.95);
     cairo_destroy(cr);
     cairo_surface_destroy(surf);
     k.buffer = buffer;  // the cache owns this reference
