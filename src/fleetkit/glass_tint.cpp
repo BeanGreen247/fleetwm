@@ -46,7 +46,8 @@ Color mixc(const Color& a, const Color& b, double t) {
 
 }  // namespace
 
-Color aero_blue() { return parse_color("#4a86c8"); }
+// Windows 7's default colorization over a blue wallpaper measured (52,157,207) on the frame; this colour at the strength below lands there.
+Color aero_blue() { return parse_color("#2d9ad0"); }
 
 Color tint_from_pixels(const uint8_t* px, int w, int h) {
   if (!px || w < 1 || h < 1) return aero_blue();
@@ -128,11 +129,11 @@ void mix_glass_colors(Palette& pal, const Color& base, int intensity) {
   pal.glass_surface = mixc(base, Color{0, 0, 0, 1}, 0.42 - 0.20 * k);
   // Windows 7 colorization: the colour itself, a little lightened, over the blurred wallpaper at 45-80% strength (never the theme's
   // dark background, which made every tint look like slate). An unfocused window is greyer and clearer.
-  const Color white{1, 1, 1, 1}, grey{0.72, 0.74, 0.78, 1};
-  pal.glass_title = mixc(base, white, 0.10);
-  pal.glass_title_idle = mixc(mixc(base, grey, 0.55), white, 0.10);
+  const Color white{1, 1, 1, 1};
+  pal.glass_title = mixc(base, white, 0.06);
+  pal.glass_title_idle = mixc(base, white, 0.62);  // Windows 7 clears an unfocused frame: more of the wallpaper, a light wash over it
   pal.glass_alpha = 0.45 + 0.35 * k;
-  pal.glass_alpha_idle = 0.28 + 0.22 * k;
+  pal.glass_alpha_idle = 0.20 + 0.22 * k;
   pal.aero_caption = true;
 }
 

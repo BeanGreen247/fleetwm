@@ -55,7 +55,7 @@ struct TitlebarConfig {
   int button_height = 20;  // 14..height (Windows 7: 20)
   ButtonSide buttons_side = ButtonSide::Right;
   TitleAlign title_align = TitleAlign::Left;
-  bool show_pin = true;
+  bool show_pin = false;  // the always-on-top pin: not on a Windows 7 titlebar, so off unless the theme asks
   bool show_minimize = true;
   bool show_maximize = true;
   int frame_px = 8;        // 0..16, the Windows 7 style frame around a window with a titlebar (0 = none)

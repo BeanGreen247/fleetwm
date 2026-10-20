@@ -127,7 +127,7 @@ TEST(GlassTint, CustomColourPullsTheGlassTowardsIt) {
   cfg.intensity = 100;
   fleetwm::kit::apply_glass_tint(pal, cfg);
   EXPECT_GT(pal.glass_title.r, pal.glass_title.b + 0.4);
-  EXPECT_GT(pal.glass_title.r, pal.glass_title_idle.r);  // the focused bar is the more tinted one
+  EXPECT_LT(pal.glass_title.g, pal.glass_title_idle.g);  // the focused frame is the more tinted one, the unfocused a lighter wash
 }
 
 TEST(GlassTint, IntensityScalesTheTint) {

@@ -130,14 +130,14 @@ TEST_F(ThemeTest, TitlebarDefaults) {
   EXPECT_EQ(tb.button_height, 20);
   EXPECT_EQ(tb.buttons_side, ButtonSide::Right);
   EXPECT_EQ(tb.title_align, TitleAlign::Left);
-  EXPECT_TRUE(tb.show_pin);
+  EXPECT_FALSE(tb.show_pin) << "no always-on-top pin on a Windows 7 titlebar by default";
   EXPECT_TRUE(tb.show_minimize);
   EXPECT_TRUE(tb.show_maximize);
 }
 
 TEST_F(ThemeTest, TitlebarRoundTripsEveryField) {
   ThemeConfig c;
-  c.titlebar = {40, 52, 30, ButtonSide::Left, TitleAlign::Right, false, false, true};
+  c.titlebar = {40, 52, 30, ButtonSide::Left, TitleAlign::Right, true, false, true};
   save_theme_config(c);
   const TitlebarConfig tb = load_theme_config().titlebar;
   EXPECT_EQ(tb.height, 40);
@@ -145,7 +145,7 @@ TEST_F(ThemeTest, TitlebarRoundTripsEveryField) {
   EXPECT_EQ(tb.button_height, 30);
   EXPECT_EQ(tb.buttons_side, ButtonSide::Left);
   EXPECT_EQ(tb.title_align, TitleAlign::Right);
-  EXPECT_FALSE(tb.show_pin);
+  EXPECT_TRUE(tb.show_pin);
   EXPECT_FALSE(tb.show_minimize);
   EXPECT_TRUE(tb.show_maximize);
 }

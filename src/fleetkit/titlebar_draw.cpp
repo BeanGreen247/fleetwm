@@ -16,6 +16,18 @@ Color tb_mix(const Color& a, const Color& b, double t) {
   return {a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t, 1.0};
 }
 
+// The opaque (no glass) Windows 7 "Basic" frame: the tint lightened into a vertical gradient, a greyer one when the window is not focused.
+// Only used when the tint is an Aero colour; the "Theme colours" tint keeps the theme's flat colours.
+struct BasicColors {
+  Color top, bottom;
+};
+BasicColors basic_colors(const Palette& pal, bool focused) {
+  const Color white{1, 1, 1, 1}, grey{0.78, 0.80, 0.84, 1};
+  if (focused) return {tb_mix(pal.glass_title, white, 0.58), tb_mix(pal.glass_title, white, 0.30)};
+  return {tb_mix(grey, white, 0.55), tb_mix(grey, white, 0.30)};
+}
+bool basic_look(bool glass, const Palette& pal) { return !glass && pal.aero_caption; }
+
 // A rectangle with its own radius on each corner (0 = square), as a closed sub-path.
 void rounded_rect_path(cairo_t* cr, double x0, double y0, double x1, double y1, double tl, double tr, double br, double bl) {
   cairo_new_sub_path(cr);
@@ -63,8 +75,12 @@ void draw_glass_background(cairo_t* cr, int width, int height, bool focused, con
     cairo_fill(cr);
     cairo_pattern_destroy(band);
   }
-  paint_glass_ray(cr, 0, 0, width, height, focused ? 0.42 : 0.20);
-  cairo_set_source_rgba(cr, 0, 0, 0, 0.30);
+  paint_glass_ray(cr, 0, 0, width, height, focused ? 0.55 : 0.28);
+  // the client area's top edge: a light line and, under it, a dark one (Windows 7 draws both round the whole client area)
+  cairo_set_source_rgba(cr, 1, 1, 1, 0.42);
+  cairo_rectangle(cr, 0, height - 2, width, 1);
+  cairo_fill(cr);
+  cairo_set_source_rgba(cr, 0, 0, 0, 0.55);
   cairo_rectangle(cr, 0, height - 1, width, 1);
   cairo_fill(cr);
 }
@@ -295,22 +311,28 @@ void draw_window_edge(cairo_t* cr, double x0, double y0, double x1, double y1, d
 
 void draw_frame_strip(cairo_t* cr, int width, int height, FrameEdge edge, bool focused, bool glass, const Palette& pal,
                       bool round_bottom) {
-  const Color bg = glass ? (focused ? pal.glass_title : pal.glass_title_idle) : (focused ? tb_mix(pal.bg_secondary, pal.accent, 0.12) : pal.bg_secondary);
+  const bool basic = basic_look(glass, pal);
+  const Color bg = glass ? (focused ? pal.glass_title : pal.glass_title_idle)
+                 : basic ? basic_colors(pal, focused).bottom
+                         : (focused ? tb_mix(pal.bg_secondary, pal.accent, 0.12) : pal.bg_secondary);
   const bool left = edge == FrameEdge::Left, right = edge == FrameEdge::Right;
   cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
   if (glass) cairo_set_source_rgba(cr, bg.r, bg.g, bg.b, focused ? pal.glass_alpha : pal.glass_alpha_idle);
   else cairo_set_source_rgba(cr, bg.r, bg.g, bg.b, 1.0);
   cairo_paint(cr);
   cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
-  // Line against the window content ("inner") and along the outside of the window ("outer").
-  auto line = [&](double r, double g, double b, double a, bool outer) {
+  // Line against the window content ("inner", `off` pixels from it) and along the outside of the window ("outer").
+  auto line = [&](double r, double g, double b, double a, bool outer, int off = 0) {
     cairo_set_source_rgba(cr, r, g, b, a);
-    if (left) cairo_rectangle(cr, outer ? 0 : width - 1, 0, 1, height);
-    else if (right) cairo_rectangle(cr, outer ? width - 1 : 0, 0, 1, height);
-    else cairo_rectangle(cr, 0, outer ? height - 1 : 0, width, 1);
+    if (left) cairo_rectangle(cr, outer ? 0 : width - 1 - off, 0, 1, height);
+    else if (right) cairo_rectangle(cr, outer ? width - 1 : off, 0, 1, height);
+    else cairo_rectangle(cr, 0, outer ? height - 1 : off, width, 1);
     cairo_fill(cr);
   };
-  if (glass) line(0, 0, 0, 0.30, false);  // against the content
+  if (glass || basic) {  // against the content: a dark line with a light one beside it, as on a Windows 7 window
+    line(0, 0, 0, 0.55, false);
+    line(1, 1, 1, 0.42, false, 1);
+  }
   // The outer edge: dark line with a light one inside it, round the bottom corners on the bottom strip. The window's shape is
   // drawn larger than the strip so only the part that lies in this strip shows.
   {
@@ -342,13 +364,29 @@ void draw_frame_strip(cairo_t* cr, int width, int height, FrameEdge edge, bool f
 double titlebar_icon_size(int bar_height) { return std::clamp(std::round(bar_height * 0.55), 14.0, 24.0); }
 
 void draw_titlebar(cairo_t* cr, int width, int height, const TitlebarPaint& p, const Palette& pal) {
+  const bool basic = basic_look(p.glass, pal);
   const Color bg = p.glass ? (p.focused ? pal.glass_title : pal.glass_title_idle)
+                 : basic   ? basic_colors(pal, p.focused).bottom
                            : (p.focused ? tb_mix(pal.bg_secondary, pal.accent, 0.12) : pal.bg_secondary);
-  const Color fg = p.focused ? pal.fg_primary : pal.fg_secondary;
+  const Color fg = basic ? (p.focused ? Color{0, 0, 0, 1} : Color{0.25, 0.27, 0.30, 1}) : (p.focused ? pal.fg_primary : pal.fg_secondary);
   const bool glass_look = p.glass;  // read before the buttons, which are drawn the same either way
 
   if (p.glass) {
     paint_titlebar_glass_background(cr, width, height, p.focused, bg, p.focused ? pal.glass_alpha : pal.glass_alpha_idle);
+  } else if (basic) {
+    const BasicColors bc = basic_colors(pal, p.focused);
+    cairo_pattern_t* g = cairo_pattern_create_linear(0, 0, 0, height);
+    cairo_pattern_add_color_stop_rgba(g, 0, bc.top.r, bc.top.g, bc.top.b, 1);
+    cairo_pattern_add_color_stop_rgba(g, 1, bc.bottom.r, bc.bottom.g, bc.bottom.b, 1);
+    cairo_set_source(cr, g);
+    cairo_paint(cr);
+    cairo_pattern_destroy(g);
+    cairo_set_source_rgba(cr, 1, 1, 1, 0.42);
+    cairo_rectangle(cr, 0, height - 2, width, 1);
+    cairo_fill(cr);
+    cairo_set_source_rgba(cr, 0, 0, 0, 0.55);
+    cairo_rectangle(cr, 0, height - 1, width, 1);
+    cairo_fill(cr);
   } else {
     set_source(cr, bg);
     cairo_paint(cr);

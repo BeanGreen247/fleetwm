@@ -194,7 +194,7 @@ struct GlowTile {
   cairo_surface_t* image = nullptr;
   int margin = 0;
 };
-constexpr int kGlowMargin = 10;
+constexpr int kGlowMargin = 14;
 constexpr size_t kGlowBudget = 512u << 10;
 
 void box_blur_a8(unsigned char* p, int w, int h, int stride, int r, int passes) {
@@ -249,7 +249,7 @@ double draw_text_glow(cairo_t* cr, const std::string& s, double x, double y, dou
     cairo_surface_flush(mask);
     unsigned char* d = cairo_image_surface_get_data(mask);
     const int stride = cairo_image_surface_get_stride(mask);
-    box_blur_a8(d, w, h, stride, 4, 3);
+    box_blur_a8(d, w, h, stride, 5, 3);
     for (int row = 0; row < h; ++row)  // dense next to the letters, like Aero's caption glow
       for (int col = 0; col < w; ++col) {
         unsigned char& v = d[static_cast<size_t>(row) * stride + col];
