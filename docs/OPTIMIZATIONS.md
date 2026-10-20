@@ -963,3 +963,14 @@ All numbers: this build machine (Intel i5, `-O2` bench build of fleetkit), `perf
 - **Finding:** painting the blurred halo through an A8 mask on every redraw (`cairo_mask_surface`, about 190x44 px) cost 38 us, half of a hover redraw. `draw_text_glow` now keeps the finished picture (halo and text, ARGB) per (text, size, weight, colours, quarter-pixel position) in a 512 KB cache and blits it: a hover redraw costs what it did before the glow existed. Building the halo (3 box passes on the glyph coverage) is 130 us once per title, on the Celeron a few hundred us per title change.
 - **Frost layer and shadow cost nothing to draw:** the frost is four scene buffers showing parts of one shared blurred picture (a source-box update when the window moves), the shadow is eight scene buffers cut from one 80 px picture per focus state (positions and sizes only). No pixel is drawn when a window moves or resizes. What they add is compositing area (about the frame ring plus the 20 px shadow ring per window). Drag cost with and without each: see the table below (VM, pixman, headless; the GPU side needs the Celeron).
 - Test: `TextGlow.HaloAroundDarkTextAndTheKeptPictureMatches`, `WindowShadow.FadesOutwardAndFocusedIsDarker`.
+
+Drag cost, `scripts/grab-stats-run.sh build-test OUT --renderer pixman --size 1280x720 --glass G --rounds 3` with `WINDOW_SHADOWS=S` (dev VM i5-8500 KVM, 2 cores, CPU rendering; `commit_ms_avg` is the compositor's time per frame while a Settings window is dragged / resized; one run per row, so differences under about 10% are noise):
+
+| glass | shadows | move ms/frame | resize ms/frame | damage px/frame (move) |
+|---|---|---|---|---|
+| off | off | 1.01 | 1.16 | 532k |
+| off | on | 1.30 | 1.40 | 565k |
+| on (frost) | off | 1.13 | 1.25 | 532k |
+| on (frost) | on | 1.21 | 1.36 | 521k |
+
+Reading: with CPU compositing the shadow ring adds about 0.2-0.3 ms per frame (+20-29%, more damaged area) and the frost layer about 0.1 ms (+8-12%); together +17-20%. On a GPU the cost is texture sampling over the same areas and is expected to be small, but that is not measured (the Celeron was off). `window_shadows = false` in theme.toml removes the shadow cost; the default stays on because the shadow is a large part of the Windows 7 look, and the owner decides after the hardware test.
