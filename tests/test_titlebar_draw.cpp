@@ -15,6 +15,8 @@
 
 #include "caption_buttons.hpp"
 #include "titlebar_draw.hpp"
+#include "window_shadow.hpp"
+#include "theme.hpp"
 
 namespace {
 
@@ -520,4 +522,31 @@ TEST(TitlebarDraw, TheCompositorDrawsTheFrameFromTheSharedCode) {
   const std::string view = td_read("src/compositor/view.cpp");
   EXPECT_NE(view.find("geom::frame_thickness("), std::string::npos);
   EXPECT_NE(view.find("void View::update_frame("), std::string::npos);
+}
+
+// The drop shadow picture the compositor cuts its nine pieces from: dark right outside the window edge, fading to nothing at the outer
+// edge of its reach, symmetric, and darker for the focused window.
+TEST(WindowShadow, FadesOutwardAndFocusedIsDarker) {
+  auto alpha_at = [](bool focused, int x, int y) {
+    const int n = kit::kShadowSize;
+    cairo_surface_t* s = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, n, n);
+    cairo_t* cr = cairo_create(s);
+    kit::draw_window_shadow(cr, focused);
+    cairo_destroy(cr);
+    cairo_surface_flush(s);
+    const unsigned char a = cairo_image_surface_get_data(s)[y * cairo_image_surface_get_stride(s) + x * 4 + 3];
+    cairo_surface_destroy(s);
+    return static_cast<int>(a);
+  };
+  const int mid = kit::kShadowSize / 2, edge = kit::kShadowReach;  // the window's edge is `edge` pixels in
+  EXPECT_GT(alpha_at(true, mid, edge - 1), alpha_at(true, mid, edge / 2));
+  EXPECT_GT(alpha_at(true, mid, edge / 2), alpha_at(true, mid, 0));
+  EXPECT_LE(alpha_at(true, mid, 0), 6) << "the shadow ends at its reach";
+  EXPECT_EQ(alpha_at(true, mid, edge - 2), alpha_at(true, mid, kit::kShadowSize - edge + 1)) << "top and bottom are alike";
+  EXPECT_EQ(alpha_at(true, edge - 2, mid), alpha_at(true, kit::kShadowSize - edge + 1, mid)) << "left and right are alike";
+  EXPECT_GT(alpha_at(true, mid, edge - 1), alpha_at(false, mid, edge - 1));
+}
+
+TEST(ThemeConfig, WindowShadowsDefaultOn) {
+  EXPECT_TRUE(fleetwm::ThemeConfig{}.window_shadows);
 }

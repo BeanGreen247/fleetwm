@@ -145,6 +145,7 @@ struct ThemeConfig {
   // Glass effects (Desktop layout): translucent window frames, taskbar, start menu and window
   // switcher with a soft sheen and a frosted backdrop. Off = matte, flat surfaces. On by default (Windows 7 Aero look).
   bool glass = true;
+  bool window_shadows = true;  // soft drop shadow around floating windows (Windows 7); theme.toml window_shadows
   GlassTintConfig glass_tint;  // [glass_tint] in theme.toml
 };
 

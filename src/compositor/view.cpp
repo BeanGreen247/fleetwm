@@ -10,6 +10,8 @@
 
 #include "app_icon.hpp"
 #include "glass_backdrop.hpp"
+#include "shadow.hpp"
+#include "window_shadow.hpp"
 #include "output.hpp"
 #include "server.hpp"
 #include "titlebar.hpp"
@@ -397,7 +399,43 @@ void View::update_frame(int content_h) {
   }
 }
 
+void View::update_shadow() {
+  const bool on = server->theme_config().window_shadows && wants_titlebar() && frame_key_.w >= 0 && frame_key_.px > 0 && round_corners();
+  if (!on) {
+    for (wlr_scene_buffer* sh : shadow_)
+      if (sh) wlr_scene_node_set_enabled(&sh->node, false);
+    return;
+  }
+  wlr_buffer* pic = shadow_picture(focused);
+  if (!pic) return;
+  constexpr int E = kit::kShadowReach, M = kit::kShadowSize;
+  constexpr int kDown = 2;  // the light comes from above: the shadow sits a little lower
+  const int W = frame_key_.w + 2 * frame_key_.px, H = top_border() + frame_key_.th + frame_key_.h + frame_key_.px;
+  // x, y, w, h of each piece around the window, and the part of the picture it shows. A corner is two reaches square, so the blurred
+  // fade along the edge near the corner is part of it (the picture is clear where the window is); an edge is a 1 px strip, stretched.
+  struct Piece { wlr_box dst; wlr_fbox src; } pieces[8] = {
+      {{-E, -E + kDown, 2 * E, 2 * E}, {0, 0, 2 * E, 2 * E}},               {{W - E, -E + kDown, 2 * E, 2 * E}, {M - 2 * E, 0, 2 * E, 2 * E}},
+      {{-E, H - E + kDown, 2 * E, 2 * E}, {0, M - 2 * E, 2 * E, 2 * E}},    {{W - E, H - E + kDown, 2 * E, 2 * E}, {M - 2 * E, M - 2 * E, 2 * E, 2 * E}},
+      {{E, -E + kDown, std::max(1, W - 2 * E), E}, {M / 2.0, 0, 1, E}},     {{E, H + kDown, std::max(1, W - 2 * E), E}, {M / 2.0, M - E, 1, E}},
+      {{-E, E + kDown, E, std::max(1, H - 2 * E)}, {0, M / 2.0, E, 1}},     {{W, E + kDown, E, std::max(1, H - 2 * E)}, {M - E, M / 2.0, E, 1}}};
+  for (int i = 0; i < 8; ++i) {
+    if (!shadow_[i]) {
+      shadow_[i] = wlr_scene_buffer_create(container_tree, nullptr);
+      wlr_scene_node_lower_to_bottom(&shadow_[i]->node);
+      // not part of the window: it takes no clicks, so a click on the shadow goes to what is behind it
+      shadow_[i]->point_accepts_input = [](wlr_scene_buffer*, double*, double*) { return false; };
+    }
+    wlr_scene_node_set_enabled(&shadow_[i]->node, true);
+    wlr_scene_node_set_position(&shadow_[i]->node, pieces[i].dst.x, pieces[i].dst.y);
+    if (shadow_[i]->buffer != pic) wlr_scene_buffer_set_buffer(shadow_[i], pic);
+    wlr_scene_buffer_set_source_box(shadow_[i], &pieces[i].src);
+    wlr_scene_buffer_set_dest_size(shadow_[i], pieces[i].dst.width, pieces[i].dst.height);
+  }
+  wlr_buffer_unlock(pic);
+}
+
 void View::update_glass_backdrop() {
+  update_shadow();
   // Fleetwm's own windows used to get a frosted picture behind their (then see-through) body. Their body is opaque now, only the
   // frame is glass, so that picture is never wanted; this switches off one made earlier.
   if (glass_bg_) wlr_scene_node_set_enabled(&glass_bg_->node, false);

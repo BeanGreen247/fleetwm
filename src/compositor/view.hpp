@@ -319,6 +319,9 @@ class View {
   // The frosted wallpaper behind the translucent frame: one piece per part of the frame (titlebar, left, right, bottom), each showing the
   // part of the blurred wallpaper that lies under it. Below the client and the frame, so Aero glass looks frosted and not just tinted.
   wlr_scene_buffer* frost_[4] = {};
+  // The drop shadow: four corners and four edges around the window's outer rectangle, all cut from one small blurred picture.
+  wlr_scene_buffer* shadow_[8] = {};
+  void update_shadow();
   void update_frame(int content_h);
   // Rounded outer corners: the theme asks for them and the window is a free-floating one, not filling the screen.
   bool round_corners() const;

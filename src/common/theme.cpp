@@ -189,6 +189,7 @@ ThemeConfig load_theme_config() {
     config.show_debug_overlay_on_startup = *v;
   }
   if (auto v = table["glass_effects"].value<bool>()) config.glass = *v;
+  if (auto v = table["window_shadows"].value<bool>()) config.window_shadows = *v;
   if (auto* t = table["glass_tint"].as_table()) {
     GlassTintConfig& g = config.glass_tint;
     if (auto v = (*t)["mode"].value<std::string>()) g.mode = glass_tint_mode_from_string(*v);
@@ -227,6 +228,7 @@ void save_theme_config(const ThemeConfig& config) {
   table.insert_or_assign("custom_fps_lock", static_cast<int64_t>(config.custom_fps_lock));
   table.insert_or_assign("show_debug_overlay_on_startup", config.show_debug_overlay_on_startup);
   table.insert_or_assign("glass_effects", config.glass);
+  table.insert_or_assign("window_shadows", config.window_shadows);
 
   toml::table glass_tint;
   glass_tint.insert_or_assign("mode", glass_tint_mode_to_string(config.glass_tint.mode));

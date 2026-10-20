@@ -851,6 +851,9 @@ struct Settings {
     if (ui.checkbox("Translucent frames and menus", &config.glass)) save_theme();
     ui.newline();
     ui.paragraph("The bar, the taskbar, titlebars, the start menu and the Alt+Tab panel get a see-through, frosted look. Off is flat and matte.", true);
+    ui.row("Window shadows");
+    if (ui.checkbox("Soft shadow around floating windows", &config.window_shadows)) save_theme();
+    ui.newline();
     ui.row("Glass tint");
     int tint_mode = static_cast<int>(config.glass_tint.mode);
     if (ui.dropdown({"Windows 7 blue", "Pick a colour", "From the wallpaper", "Theme colours"}, &tint_mode, 220)) {

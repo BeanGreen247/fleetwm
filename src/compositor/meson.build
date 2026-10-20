@@ -35,6 +35,7 @@ executable(
     'switcher.cpp',
     'debug_overlay.cpp',
     'glass_backdrop.cpp',
+    'shadow.cpp',
   ),
   include_directories: include_directories('.'),
   cpp_args: wlroots_cpp_args,
