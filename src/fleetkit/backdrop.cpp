@@ -173,6 +173,36 @@ cairo_surface_t* load_backdrop(bool recheck) {
   return shared ? cairo_surface_reference(shared) : nullptr;
 }
 
+void paint_glass_ray(cairo_t* cr, double x, double y, double w, double h, double strength, double at) {
+  if (w < 60 || h < 8 || strength <= 0) return;
+  const double bw = std::clamp(w * 0.12, 48.0, 280.0);  // along x, the beam's whole width: sharp edge to the end of the tail
+  const double lean = h * 1.0;                           // the top is this much to the right of the bottom
+  const double x0 = x + w * at;
+  cairo_save(cr);
+  cairo_rectangle(cr, x, y, w, h);
+  cairo_clip(cr);
+  cairo_pattern_t* g = cairo_pattern_create_linear(x0, 0, x0 + bw, 0);
+  cairo_pattern_add_color_stop_rgba(g, 0.00, 1, 1, 1, 0.0);
+  cairo_pattern_add_color_stop_rgba(g, 0.07, 1, 1, 1, strength);  // the bright, fairly sharp leading edge
+  cairo_pattern_add_color_stop_rgba(g, 0.40, 1, 1, 1, strength * 0.38);
+  cairo_pattern_add_color_stop_rgba(g, 1.00, 1, 1, 1, 0.0);
+  cairo_set_source(cr, g);
+  cairo_move_to(cr, x0 + lean, y);
+  cairo_line_to(cr, x0 + lean + bw, y);
+  cairo_line_to(cr, x0 + bw, y + h);
+  cairo_line_to(cr, x0, y + h);
+  cairo_close_path(cr);
+  cairo_fill(cr);
+  cairo_pattern_destroy(g);
+  // a hairline along the leading edge makes the beam read as a ray and not as a haze
+  cairo_move_to(cr, x0 + lean + 0.5, y);
+  cairo_line_to(cr, x0 + 0.5, y + h);
+  cairo_set_source_rgba(cr, 1, 1, 1, strength * 0.55);
+  cairo_set_line_width(cr, 1);
+  cairo_stroke(cr);
+  cairo_restore(cr);
+}
+
 namespace {
 
 // Glass rectangles are painted once and kept: a clip, a stretched blit, two gradients and two
@@ -194,7 +224,7 @@ bool whole(double v) { return std::fabs(v - std::round(v)) < 1e-6; }
 
 bool same_style(const GlassStyle& a, const GlassStyle& b) {
   return a.tint.r == b.tint.r && a.tint.g == b.tint.g && a.tint.b == b.tint.b && a.tint_alpha == b.tint_alpha &&
-         a.radius == b.radius && a.rim == b.rim;
+         a.radius == b.radius && a.rim == b.rim && a.ray == b.ray;
 }
 
 void paint_glass_direct(cairo_t* cr, cairo_surface_t* bd, int out_w, int out_h, double sx, double sy, double x, double y,
@@ -287,6 +317,7 @@ void paint_glass_direct(cairo_t* cr, cairo_surface_t* bd, int out_w, int out_h, 
   cairo_fill(cr);
   cairo_pattern_destroy(band);
   cairo_restore(cr);
+  if (st.ray > 0) paint_glass_ray(cr, x, y, w, h, st.ray);
   if (st.rim) {
     rounded_rect(cr, x + 0.5, y + 0.5, w - 1, h - 1, st.radius);
     cairo_set_source_rgba(cr, 1, 1, 1, 0.30);

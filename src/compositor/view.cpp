@@ -409,7 +409,7 @@ void View::update_shadow() {
   wlr_buffer* pic = shadow_picture(focused);
   if (!pic) return;
   constexpr int E = kit::kShadowReach, M = kit::kShadowSize;
-  constexpr int kDown = 2;  // the light comes from above: the shadow sits a little lower
+  constexpr int kDown = 4;  // the light comes from above: the shadow sits a little lower
   const int W = frame_key_.w + 2 * frame_key_.px, H = top_border() + frame_key_.th + frame_key_.h + frame_key_.px;
   // x, y, w, h of each piece around the window, and the part of the picture it shows. A corner is two reaches square, so the blurred
   // fade along the edge near the corner is part of it (the picture is clear where the window is); an edge is a 1 px strip, stretched.

@@ -508,3 +508,7 @@ TEST_F(BarConfigTest, FileWithoutTheKeyKeepsTheMetricsHidden) {
 }
 
 }  // namespace fleetwm
+
+TEST(BarConfigIndicator, OnByDefaultAndKept) {
+  EXPECT_TRUE(fleetwm::BarConfig{}.taskbar_indicator);
+}

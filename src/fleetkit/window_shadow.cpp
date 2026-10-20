@@ -51,9 +51,9 @@ void draw_window_shadow(cairo_t* cr, bool focused) {
   cairo_destroy(mc);
   cairo_surface_flush(mask);
   // Three box passes approximate a gaussian; a focused window's shadow spreads wider.
-  box_blur(cairo_image_surface_get_data(mask), n, n, cairo_image_surface_get_stride(mask), focused ? 6 : 4, 3);
+  box_blur(cairo_image_surface_get_data(mask), n, n, cairo_image_surface_get_stride(mask), focused ? 8 : 6, 3);
   cairo_surface_mark_dirty(mask);
-  cairo_set_source_rgba(cr, 0, 0, 0, focused ? 0.80 : 0.50);
+  cairo_set_source_rgba(cr, 0, 0, 0, focused ? 0.55 : 0.34);
   cairo_mask_surface(cr, mask, 0, 0);
   cairo_surface_destroy(mask);
   // Nothing under the window itself: the frame is translucent, and the corner pieces of the compositor reach into the window's area.

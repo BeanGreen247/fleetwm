@@ -8,7 +8,7 @@
 
 namespace fleetwm::kit {
 
-inline constexpr int kShadowReach = 20;  // how far the shadow reaches beyond the window, in pixels
+inline constexpr int kShadowReach = 24;  // how far the shadow reaches beyond the window, in pixels
 
 // The side of the square picture (reach on both sides of a body that is two reaches wide).
 inline constexpr int kShadowSize = 4 * kShadowReach;

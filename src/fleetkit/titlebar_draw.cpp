@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "app_icon.hpp"
+#include "backdrop.hpp"
 #include "caption_buttons.hpp"
 
 namespace fleetwm::kit {
@@ -62,6 +63,7 @@ void draw_glass_background(cairo_t* cr, int width, int height, bool focused, con
     cairo_fill(cr);
     cairo_pattern_destroy(band);
   }
+  paint_glass_ray(cr, 0, 0, width, height, focused ? 0.42 : 0.20);
   cairo_set_source_rgba(cr, 0, 0, 0, 0.30);
   cairo_rectangle(cr, 0, height - 1, width, 1);
   cairo_fill(cr);

@@ -41,7 +41,12 @@ struct GlassStyle {
   double tint_alpha = 0.58;           // how much of the backdrop shows through
   double radius = 0;                  // corner radius of the rectangle
   bool rim = true;
+  double ray = 0.0;                   // peak opacity of the Windows 7 light ray across it (paint_glass_ray); 0 = none
 };
+// The Windows 7 light ray: one diagonal beam across a glass rectangle, a crisp bright leading edge and a long soft tail fading away from it.
+// `strength` is its peak opacity (about 0.2 on a taskbar, 0.4 on a focused titlebar); (x, y, w, h) is the glass rectangle in `cr`.
+// `at` is where the leading edge starts along the top, as a fraction of the width. Painted over what is there, clipped to the rectangle.
+void paint_glass_ray(cairo_t* cr, double x, double y, double w, double h, double strength, double at = 0.14);
 void paint_glass(cairo_t* cr, cairo_surface_t* backdrop, int out_w, int out_h, double screen_x, double screen_y, double x,
                  double y, double w, double h, const GlassStyle& style);
 

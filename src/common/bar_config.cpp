@@ -151,6 +151,7 @@ BarConfig load_bar_config() {
     config.taskbar_workspaces = std::clamp(static_cast<int>(*v), 1, 10);
   }
   if (auto v = table["taskbar_rounded"].value<bool>()) config.taskbar_rounded = *v;
+  if (auto v = table["taskbar_indicator"].value<bool>()) config.taskbar_indicator = *v;
   auto read_names = [&](const char* key, std::vector<std::string>* out) {
     if (toml::array* a = table[key].as_array()) {
       out->clear();  // a list in the file replaces the default
@@ -204,6 +205,7 @@ void save_bar_config(const BarConfig& config) {
   table.insert_or_assign("taskbar_position", taskbar_position_to_string(config.taskbar_position));
   table.insert_or_assign("taskbar_workspaces", static_cast<int64_t>(config.taskbar_workspaces));
   table.insert_or_assign("taskbar_rounded", config.taskbar_rounded);
+  table.insert_or_assign("taskbar_indicator", config.taskbar_indicator);
   auto write_names = [&](const char* key, const std::vector<std::string>& names) {
     toml::array a;
     for (const std::string& n : names) a.push_back(n);

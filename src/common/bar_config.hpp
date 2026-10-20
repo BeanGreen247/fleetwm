@@ -110,6 +110,9 @@ struct BarConfig {
   int taskbar_workspaces = 4;
   // Desktop taskbar: rounded window buttons. Sharp corners in theme.toml still win.
   bool taskbar_rounded = true;
+  // The thin line under (beside, on a vertical taskbar) each running program's button. Only drawn without glass effects: the Windows 7 glass
+  // look has none, and Settings greys the switch out while glass is on.
+  bool taskbar_indicator = true;
   // The Desktop taskbar's elements: the saved order and the hidden ones, by name (see taskbar_layout.hpp: unknown names are dropped on use,
   // missing ones are added, so an older file keeps working). Empty order = the default one.
   std::vector<std::string> taskbar_order;

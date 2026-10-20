@@ -1143,6 +1143,16 @@ struct Settings {
     ui.row("Window buttons");
     if (ui.checkbox("Rounded corners", &bar.taskbar_rounded, desktop)) save_bar();
     ui.newline();
+    ui.row("Running-program line");
+    {  // glass has no line, so the switch is off and greyed out while glass effects are on
+      bool shown = config.glass ? false : bar.taskbar_indicator;
+      if (ui.checkbox("Line under each running program", &shown, desktop && !config.glass)) {
+        bar.taskbar_indicator = shown;
+        save_bar();
+      }
+    }
+    if (config.glass) ui.label("Off while glass effects are on", true);
+    ui.newline();
     ui.row("Window titles");
     if (ui.toggle(&bar.taskbar_labels, desktop)) save_bar();
     ui.label(bar.taskbar_labels ? "Icon and title" : "Icon only", true);

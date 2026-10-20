@@ -148,6 +148,7 @@ struct Bar {
       st.tint = pal.glass_surface;
       st.tint_alpha = 0.55;
       st.radius = radius;
+      st.ray = w >= 160 && h >= 24 ? 0.22 : 0.0;  // the light ray of the Windows 7 taskbar, on the wide surfaces only
       paint_glass(cr, backdrop, monitor_width(), monitor_height(), sx, sy, x, y, w, h, st);
       return;
     }
@@ -1180,6 +1181,8 @@ struct Bar {
     cairo_stroke(cr);
   }
 
+  bool show_indicator() const { return config.taskbar_indicator && !glass; }
+
   void draw_window_button(cairo_t* cr, const Rect& r, const WindowEntry& w, bool hover, bool with_title) {
     const bool active = w.focused && !w.minimized;
     const double radius = config.taskbar_rounded && pal.rounded ? 8 : 0;
@@ -1200,7 +1203,8 @@ struct Bar {
       if (w.minimized) c.a = 0.6;
       draw_text(cr, label, tx, r.y + (r.h - te.height) / 2 + te.ascent, kFont, c, active);
     }
-    // Indicator on the edge facing the desktop-side of the button.
+    // Indicator on the edge facing the desktop-side of the button (not with glass: the Windows 7 look has none).
+    if (!show_indicator()) return;
     set_source(cr, active ? pal.accent : with_alpha(icon_fg(), w.minimized ? 0.4 : 0.7));
     if (!vertical() && active) {
       // The active button's line runs the full width of the bottom edge and follows the corner
@@ -1536,7 +1540,7 @@ struct Bar {
       draw_text(cr, label, tx, r.y + (r.h - te.height) / 2 + te.ascent, kFont,
                 active ? pal.fg_primary : soft_fg(), active);
     }
-    if (pa.running) {  // the same indicator the window buttons have
+    if (pa.running && show_indicator()) {  // the same indicator the window buttons have
       set_source(cr, active ? pal.accent : with_alpha(icon_fg(), 0.7));
       if (!vertical()) {
         rounded_rect(cr, r.x + (r.w - 14) / 2, r.y + r.h - 3, 14, 2, 1);
