@@ -1147,7 +1147,7 @@ struct Settings {
         bar.taskbar_workspaces = n;
         save_bar();
       }
-      ui.label(n <= 1 ? "One desktop: the desktop switcher is hidden" : "Numbered buttons next to the start button", true);
+      ui.label(n <= 1 ? "No switcher" : "1 hides the switcher", true);
     }
     ui.newline();
     ui.row("Window buttons");
@@ -1156,12 +1156,12 @@ struct Settings {
     ui.row("Running-program line");
     {  // glass has no line, so the switch is off and greyed out while glass effects are on
       bool shown = config.glass ? false : bar.taskbar_indicator;
-      if (ui.checkbox("Line under each running program", &shown, desktop && !config.glass)) {
+      if (ui.checkbox("Line under running programs", &shown, desktop && !config.glass)) {
         bar.taskbar_indicator = shown;
         save_bar();
       }
     }
-    if (config.glass) ui.label("Off while glass effects are on", true);
+    if (config.glass) ui.label("Needs glass off", true);
     ui.newline();
     ui.row("Window titles");
     if (ui.toggle(&bar.taskbar_labels, desktop)) save_bar();
