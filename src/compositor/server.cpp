@@ -2262,6 +2262,20 @@ xkb_keysym_t resolve_keybind(const std::string& name, xkb_keysym_t fallback,
 
 // ---- keyboard layouts ----
 
+void Server::ensure_seat_keyboard(Keyboard* preferred) {
+  if (!preferred && !keyboards_.empty()) preferred = keyboards_.front();
+  if (!preferred) return;
+  wlr_keyboard* current = wlr_seat_get_keyboard(seat_);
+  if (current && current != preferred->wlr_keyboard_ptr) {
+    for (Keyboard* kb : keyboards_) {
+      if (kb->wlr_keyboard_ptr == current) return;  // still alive: keep it
+    }
+  } else if (current) {
+    return;
+  }
+  wlr_seat_set_keyboard(seat_, preferred->wlr_keyboard_ptr);
+}
+
 void Server::unregister_keyboard(Keyboard* kb) {
   keyboards_.erase(std::remove(keyboards_.begin(), keyboards_.end(), kb), keyboards_.end());
 }

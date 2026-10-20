@@ -399,6 +399,8 @@ class Server {
   std::string layouts_line() const;
   void register_keyboard(Keyboard* kb) { keyboards_.push_back(kb); }
   void unregister_keyboard(Keyboard* kb);
+  // Gives the seat a keyboard (so clients get a keymap) when it has none: `preferred`, else any registered one.
+  void ensure_seat_keyboard(Keyboard* preferred);
 
   // Screen-lock state (bar's power-menu "Lock" action, see
   // bar_window.cpp's build_power_menu()/on_power_action()). `locked_`

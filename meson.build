@@ -8,6 +8,7 @@ project(
     'c_std=c11',
     'warning_level=0',
     'buildtype=debugoptimized',
+    'optimization=3',  # owner rule 2026-10-20: -O3 for every build, tests and sanitizer builds included
   ],
 )
 

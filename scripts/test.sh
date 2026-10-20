@@ -87,7 +87,7 @@ python3 "${SCRIPT_DIR}/check-unity-collisions.py" "${ROOT}" || exit 1
 if (( build )); then
   if [[ ! -f "${BUILD_DIR}/build.ninja" ]]; then
     echo "==> Configuring ${BUILD_DIR}"
-    meson setup "${BUILD_DIR}" "${ROOT}" -Dtests=true -Dbuildtype=debugoptimized >/dev/null
+    meson setup "${BUILD_DIR}" "${ROOT}" -Dtests=true -Dbuildtype=debugoptimized -Doptimization=3 >/dev/null
   fi
   echo "==> Building the unit tests"
   ninja -C "${BUILD_DIR}" tests/fleetwm-unit-tests 2>&1 | tail -n 3

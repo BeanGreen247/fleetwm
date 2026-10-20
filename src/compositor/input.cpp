@@ -533,6 +533,10 @@ Keyboard::Keyboard(Server* server_, wlr_keyboard* wlr_keyboard_ptr_, bool is_vir
   wl_signal_add(&wlr_keyboard_ptr->base.events.destroy, &destroy);
 
   server->notify_keyboard_added();
+  // wlroots only sends a keymap to clients once the seat has a keyboard, but sends the focus-enter modifiers regardless.
+  // A client focused before the first key press (a fresh session, a mouse-only launch) then got modifiers with no keymap,
+  // and Chromium's Wayland keyboard passes its still-null xkb state to xkb_state_update_mask (SIGSEGV, 2026-10-11).
+  server->ensure_seat_keyboard(this);
 }
 
 void Keyboard::stop_media_repeat() {
@@ -543,6 +547,7 @@ void Keyboard::stop_media_repeat() {
 Keyboard::~Keyboard() {
   if (media_repeat) wl_event_source_remove(media_repeat);
   server->unregister_keyboard(this);
+  server->ensure_seat_keyboard(nullptr);
   wl_list_remove(&modifiers.link);
   wl_list_remove(&key.link);
   wl_list_remove(&destroy.link);
