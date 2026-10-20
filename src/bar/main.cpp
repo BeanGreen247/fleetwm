@@ -93,6 +93,16 @@ void spawn(const char* prog) {
     std::fprintf(stderr, "fleetwm-bar: failed to launch %s\n", prog);
 }
 
+// Hands the saved power mode to power-profiles-daemon. The bar runs in every session, so a mode chosen in Settings (or kept from
+// the last session) is in force again after a login; without the daemon installed the call fails and the mode stays cosmetic.
+void apply_power_mode(PowerMode mode) {
+  const std::string name = power_mode_to_profiles_daemon_name(mode);
+  char* argv[] = {const_cast<char*>("powerprofilesctl"), const_cast<char*>("set"), const_cast<char*>(name.c_str()), nullptr};
+  pid_t pid;
+  if (posix_spawnp(&pid, "powerprofilesctl", nullptr, fleetwm::CleanSpawnAttr().get(), argv, environ) != 0)
+    std::fprintf(stderr, "fleetwm-bar: powerprofilesctl not found; install power-profiles-daemon to apply the power mode\n");
+}
+
 // Opens Settings on the named page (e.g. the Power page from the battery icon).
 void spawn_settings_page(const char* page) {
   char* argv[] = {const_cast<char*>("fleetwm-settings"), const_cast<char*>("--page"), const_cast<char*>(page), nullptr};
@@ -2555,7 +2565,9 @@ struct Bar {
 
   void reload_config() {
     theme = load_theme_config();
+    const PowerMode old_mode = config.power_mode;
     config = load_bar_config();
+    if (config.power_mode != old_mode) apply_power_mode(config.power_mode);
     pal = load_palette(theme);
     if (media) {
       media->set_preferred_player(config.media_player);
@@ -2580,6 +2592,7 @@ int main(int argc, char** argv) {
   Bar B;
   B.theme = load_theme_config();
   B.config = load_bar_config();
+  apply_power_mode(B.config.power_mode);
   B.pal = load_palette(B.theme);
   B.refresh_glass();
   // `fleetwm-bar --output DP-1`: the compositor starts one bar per screen; without it the compositor picks the screen.

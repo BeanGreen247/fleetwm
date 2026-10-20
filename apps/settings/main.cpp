@@ -1063,8 +1063,7 @@ struct Settings {
     int mode = static_cast<int>(bar.power_mode);
     if (ui.segmented({"Normal", "Performance", "Battery Saver"}, &mode)) {
       bar.power_mode = static_cast<PowerMode>(mode);
-      save_bar();  // the bar picks this up live
-      spawn_detached({"powerprofilesctl", "set", power_mode_to_profiles_daemon_name(bar.power_mode)});
+      save_bar();  // the bar picks this up live and hands the mode to power-profiles-daemon
     }
     ui.newline();
   }

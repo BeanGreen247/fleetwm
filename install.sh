@@ -281,6 +281,12 @@ if command -v aplay >/dev/null 2>&1 && aplay -l 2>/dev/null | grep -q '^card'; t
   systemctl --user try-restart wireplumber.service pipewire.service pipewire-pulse.service >/dev/null 2>&1 || true
 fi
 
+# Power mode: Settings -> Power and the taskbar's gauge pick one of power-profiles-daemon's profiles (power-saver, balanced,
+# performance); the bar applies it with powerprofilesctl at login and whenever it changes. Best effort: a machine without the
+# daemon keeps working, the mode just has no effect.
+apt_install power-profiles-daemon || echo "warning: power-profiles-daemon could not be installed; the power mode will have no effect"
+sudo systemctl enable --now power-profiles-daemon.service >/dev/null 2>&1 || true
+
 # Bluetooth: bluez is the service the bar's Bluetooth icon and Settings -> Bluetooth talk to over D-Bus, and
 # libspa-0.2-bluetooth lets PipeWire play sound to Bluetooth headphones and speakers. Best effort: a machine
 # without a Bluetooth adapter simply never uses them, and the service is only switched on when an adapter exists.
