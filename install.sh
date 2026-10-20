@@ -188,7 +188,7 @@ ui_step "Installing drawing, font, language and cursor support" \
 # launcher, audio mixer) draw with cairo and decode images with libpng /
 # libjpeg / libwebp (SVG is handled by the vendored nanosvg); fontconfig
 # resolves cairo's "Inter" family (it falls back to the system sans when missing), so install Inter plus a default font
-apt_install libcairo2-dev libpng-dev libjpeg-dev libwebp-dev fonts-inter fonts-dejavu-core \
+apt_install libgtest-dev libcairo2-dev libpng-dev libjpeg-dev libwebp-dev fonts-inter fonts-dejavu-core \
   fontconfig locales xkb-data
 # A mouse cursor theme. Without one there is no pointer image to draw (the compositor
 # has a built-in fallback arrow, but apps load their own); best effort, since the

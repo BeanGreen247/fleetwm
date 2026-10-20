@@ -4,7 +4,7 @@
 #include <signal.h>
 #include <sys/resource.h>
 #include <sys/wait.h>
-#include <toml++/toml.h>
+#include "fleettoml.hpp"
 #include <unistd.h>
 
 #include <algorithm>

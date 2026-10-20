@@ -1,6 +1,6 @@
 #include "power_config.hpp"
 
-#include <toml++/toml.h>
+#include "fleettoml.hpp"
 
 #include <algorithm>
 #include <cstdlib>

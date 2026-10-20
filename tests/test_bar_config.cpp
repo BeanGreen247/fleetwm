@@ -1,7 +1,7 @@
 #include "bar_config.hpp"
 
 #include <gtest/gtest.h>
-#include <toml++/toml.h>
+#include "fleettoml.hpp"
 
 #include <fstream>
 

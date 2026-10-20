@@ -71,6 +71,7 @@ fleetwm_test_sources = files(
   'test_fm_window.cpp',
   'test_fm_desktop.cpp',
   'test_netfs.cpp',
+  'test_fleettoml.cpp',
   'test_config_backup.cpp',
 )
 

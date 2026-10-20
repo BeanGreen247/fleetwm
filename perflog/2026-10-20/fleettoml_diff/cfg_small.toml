@@ -1,0 +1,26 @@
+accent = '#005cf2'
+bar_gap_px = 6
+corner_style = 'rounded'
+custom_fps_lock = 60
+focus_border_color = '#833535'
+focus_border_thickness_px = 3
+gap_px = 3
+glass_effects = true
+window_shadows = true
+outer_gap_px = 3
+render_mode = 'synced'
+theme = 'catppuccin'
+window_layout = 'desktop'
+
+[glass_tint]
+color = '#4a86c8'
+intensity = 30
+mode = 'aero'
+
+[titlebar]
+button_height = 20
+button_width = 28
+height = 30
+show_maximize = true
+show_minimize = true
+show_pin = false

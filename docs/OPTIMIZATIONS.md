@@ -983,3 +983,15 @@ Reading: with CPU compositing the shadow ring adds about 0.2-0.3 ms per frame (+
 | with | 1.28, 1.29, 1.24, 1.25 | 1.27 | 1.37, 1.41, 1.40, 1.39 | 1.39 |
 
 No difference (the spread inside one build is larger than the gap), so the change was removed. A first attempt at this A/B compared two identical binaries (the VM's `ninja` thought `view.cpp` was up to date because the extracted file had an older timestamp than the object: after syncing sources to the VM, `touch` them and check with `cmp` that the binaries differ before measuring).
+
+## Own TOML reader and writer instead of toml++ (2026-10-20)
+The installer's unity build fetched toml++ with `git clone` on a fresh checkout (`subprojects/tomlplusplus.wrap`), and the system package had to match. `src/common/fleettoml.{hpp,cpp}` replaces it: the same `toml::table` / `node_view` / `parse_file` / `insert_or_assign` interface for the part the project uses, tables kept as sorted vectors, one pass over the text, output written straight into a string.
+
+Measured with `perflog/2026-10-20/fleettoml_diff/` (g++ -O3, this build machine, toml++ 3.4.0, 3 runs agree within 5%):
+
+| document | toml++ parse | fleettoml parse | toml++ write | fleettoml write |
+|---|---|---|---|---|
+| a 28-line `theme.toml` (20,000 runs) | 12.9-13.2 us | 4.3-5.4 us | 2.9 us | 1.5 us |
+| 400 folder-view tables (500 runs) | 972 us | 582-594 us | 231-244 us | 105 us |
+
+Checks that it is a safe replacement (`perflog/2026-10-20/fleettoml_diff/run.sh TOMLPP_INCLUDE`): ~200,000 mutated documents (a hand-written list, the repo's real config files, the test snippets, and random single-character deletions, insertions and replacements), parsed by toml++ 3.3.0, toml++ 3.4.0 and fleettoml: zero cases where fleettoml rejects what toml++ accepts, zero where it accepts what toml++ rejects, values equal (dates are kept as text, the project has none); round trip `parse(print(parse(x))) == print(parse(x))` on every parsable document; ASan and UBSan clean on those plus 600,000 random strings; printed output matches toml++'s layout (values first, then `[tables]`, then `[[arrays of tables]]`, literal single-quoted strings; differences: numbers print in decimal, inline tables print as sub-tables, strings with control characters are escaped). Two toml++ behaviours are kept on purpose because the config code relies on them: an integer in a bool field reads as true unless it is 0, and a missing file is a `parse_error`. The whole unit suite (1,187 tests) passes unchanged except for the one comment that named toml++.

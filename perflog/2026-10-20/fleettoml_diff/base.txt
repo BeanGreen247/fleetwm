@@ -1,0 +1,118 @@
+
+a = 1
+a = "x"
+a = 'x'
+a = true
+a = false
+a = 1.5
+a = -3
+a = +4
+a = 0x1F
+a = 0o17
+a = 0b101
+a = 1_000
+a = 1e3
+a = -1.5e-2
+a = inf
+a = -inf
+a = nan
+a = [1,2,3]
+a = [ 1, 2, 3, ]
+a = [ "a", 'b' ]
+a = [[1,2],[3]]
+a = [1, "x", true]
+a = []
+a = {}
+a = { x = 1, y = "z" }
+a = { x = { y = 1 } }
+[t]
+b = 1
+[t]
+[t]
+b = 1
+[t.u]
+c = 2
+[a.b.c]
+d = 1
+[[arr]]
+x = 1
+[[arr]]
+x = 2
+[[a.b]]
+x = 1
+[ t ]
+x = 1
+["quoted key"]
+x = 1
+'lit key' = 2
+"a.b" = 3
+a.b = 1
+a.b.c = 2
+a.b = 1
+a.b.c = 2
+a = 1
+a = 2
+a = """multi
+line"""
+a = """
+trim first"""
+a = """line \
+   continued"""
+a = '''raw
+text'''
+a = "esc \n \t \" \\ é \U0001F600"
+a = "bad \q"
+a = "unterminated
+a = 'unterminated
+a = [1, 2
+a = [1 2]
+a = {x=1
+a = 
+= 1
+a = 01
+a = 1__0
+a = _1
+a = 1_
+a = 0x
+a = 1.
+a = .5
+a = 1.e3
+a = tru
+a = TRUE
+# comment only
+a = 1 # trailing
+a = "x" # trailing
+a = 1 b = 2
+[t]x=1
+[t] x = 1
+[[t]]
+[t]
+[t.u]
+[[t.u]]
+a = 9223372036854775807
+a = 9223372036854775808
+a = -9223372036854775808
+a = -9223372036854775809
+a = 0xFFFFFFFFFFFFFFFF
+a = 2024-01-02
+a = 12:30:00
+a = [ { a = 1 }, { a = 2 } ]
+a = { x = 1, }
+a = [ # c
+ 1, # d
+ 2
+]
+x = "é ü 世界"
+"é" = 1
+a = 1
+ b = 2
+\ta = 1
+a=1
+a =1
+a= 1
+[t]
+a = 1
+[t.u]
+a = 1
+[t]
+b = 2
