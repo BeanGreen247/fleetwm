@@ -54,7 +54,7 @@ apt_install() {
         else if ($i ~ /min$/) s += $i * 60
         else if ($i ~ /s$/) s += $i
       }
-      printf "%.0f %.0f", v * m, s }')
+      printf "%.0f %.0f\n", v * m, s }')
     STATS_FETCH_BYTES=$(( STATS_FETCH_BYTES + ${bytes:-0} ))
     STATS_FETCH_SECS=$(( STATS_FETCH_SECS + ${secs:-0} ))
   fi
