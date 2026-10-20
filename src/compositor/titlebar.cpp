@@ -37,6 +37,8 @@ void titlebar_backdrop_color(float rgba[4]) {
   rgba[3] = 1.0f;
 }
 
+void titlebar_frame_color(bool focused, bool glass, double rgba[4]) { kit::frame_tint(g_palette, glass, focused, rgba); }
+
 geom::TitlebarMetrics titlebar_metrics(const TitlebarConfig& cfg) {
   geom::TitlebarMetrics m;
   m.height = cfg.height;

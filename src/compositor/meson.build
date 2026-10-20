@@ -36,6 +36,7 @@ executable(
     'debug_overlay.cpp',
     'glass_backdrop.cpp',
     'glass_ray.cpp',
+    'glass_scene.cpp',
     'shadow.cpp',
   ),
   include_directories: include_directories('.'),

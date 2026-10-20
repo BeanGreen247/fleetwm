@@ -419,6 +419,8 @@ static void xdg_toplevel_surface_commit(wl_listener* listener, void*) {
     wlr_xdg_toplevel_set_size(view->xdg_toplevel, 0, 0);
     return;
   }
+  ++view->content_serial;
+  view->server->refresh_glass_under(view);
   // Border rects must be sized off the client's just-committed geometry,
   // not the size we last requested -- wlr_xdg_toplevel_set_size() (called
   // from Output::relayout() on every tile/promote/float-toggle) is async:
@@ -1971,6 +1973,7 @@ void Server::update_grab() {
     if (grabstats::enabled()) ++grabstats::c().pos;
     wlr_scene_node_set_position(&view->container_tree->node, x, y);
     view->update_glass_backdrop();  // the frosted wallpaper under the frame follows the window
+    refresh_glass_under(view);
     view->sync_x11_position();
     update_snap_preview(view);
     return;
@@ -2188,6 +2191,40 @@ void Server::toggle_view_from_taskbar(View* view) {
   }
 }
 
+void Server::mark_glass_dirty(View* view) {
+  glass_dirty_.insert(view);
+  if (!glass_timer_) {
+    glass_timer_ = wl_event_loop_add_timer(
+        wl_display_get_event_loop(display_),
+        [](void* data) -> int {
+          static_cast<Server*>(data)->flush_glass_dirty();
+          return 0;
+        },
+        this);
+  }
+  wl_event_source_timer_update(glass_timer_, 45);
+}
+
+void Server::flush_glass_dirty() {
+  std::set<View*> todo;
+  todo.swap(glass_dirty_);
+  for (const std::unique_ptr<View>& view : views)
+    if (todo.count(view.get())) view->rebuild_glass_pictures();
+}
+
+void Server::glass_forget(View* view) { glass_dirty_.erase(view); }
+
+void Server::refresh_glass_under(View* changed) {
+  if (!theme_config_.glass) return;
+  for (const std::unique_ptr<View>& view : views)
+    if (view.get() != changed) view->update_glass_backdrop();
+}
+
+void Server::refresh_all_glass() {
+  if (!theme_config_.glass) return;
+  for (const std::unique_ptr<View>& view : views) view->update_glass_backdrop();
+}
+
 void Server::toggle_show_desktop() {
   if (!show_desktop_ids_.empty()) {
     for (const std::unique_ptr<View>& view : views)
@@ -2235,6 +2272,7 @@ void windows_idle_cb(void* data) {
 }  // namespace
 
 void Server::schedule_windows_broadcast() {
+  refresh_all_glass();  // a window appeared, went, was minimized or restacked: what the glass shows behind it may differ
   if (windows_idle_ || !ipc_server || !display_) return;
   windows_idle_ = wl_event_loop_add_idle(wl_display_get_event_loop(display_), windows_idle_cb, this);
 }

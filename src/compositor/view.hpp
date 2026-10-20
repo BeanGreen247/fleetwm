@@ -12,6 +12,7 @@ extern "C" {
 
 #include "config.h"
 #include "scene_node_owner.hpp"
+#include "glass_scene.hpp"
 #include "titlebar.hpp"
 
 #if FLEETWM_XWAYLAND
@@ -234,6 +235,11 @@ class View {
   // Glass effects: Fleetwm's own windows (Settings and the like) get the frosted wallpaper behind them, aimed at the part of the screen
   // they cover; call after the window moved, resized or changed screen.
   void update_glass_backdrop();
+  // What the glass of this window shows behind it, built from the wallpaper and the windows below (glass_scene.hpp); rebuilt when that changed.
+  void rebuild_glass_pictures();
+  int frame_px() const { return frame_key_.px; }
+  int frame_content_h() const { return frame_key_.h; }
+  uint32_t content_serial = 0;  // counts the commits of this window's content; the glass of windows above it rebuilds when it changes
   void glass_bg_reset() { glass_bg_w_ = glass_bg_h_ = 0; }  // the picture behind it was dropped (glass or wallpaper changed)
   // Forces the next update_titlebar() to re-render (palette/theme changed).
   void invalidate_titlebar() {
@@ -321,6 +327,9 @@ class View {
   wlr_scene_buffer* frost_[4] = {};
   // The glass reflection over the frost, one piece per frame part like the frost: the screen-fixed ray, shifted 10% with the window.
   wlr_scene_buffer* ray_[4] = {};
+  GlassPicture dyn_[4];       // the blurred backdrop pieces built from the windows below; empty until the first rebuild
+  uint64_t dyn_key_ = 0;      // what they were built from (glass_backdrop_key)
+  bool dyn_pending_ = false;  // a rebuild is scheduled
   // The drop shadow: four corners and four edges around the window's outer rectangle, all cut from one small blurred picture.
   wlr_scene_buffer* shadow_[8] = {};
   void update_shadow();

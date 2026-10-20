@@ -24,6 +24,8 @@ void titlebar_reload_palette(const ThemeConfig& theme);
 
 // The window-backdrop color (theme background) as RGBA floats.
 void titlebar_backdrop_color(float rgba[4]);
+// The colour a window frame has seen from behind (see kit::frame_tint): used to paint it into the backdrop of the glass above it.
+void titlebar_frame_color(bool focused, bool glass, double rgba[4]);
 
 struct TitlebarState {
   std::string title;

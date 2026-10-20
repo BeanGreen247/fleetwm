@@ -69,7 +69,10 @@ View::View(Server* server_, Kind kind_) : server(server_), kind(kind_) { tag.vie
 // See that function's comment for why ordering matters (matches
 // wlroots' own tinywl.c reference pattern: remove every listener first,
 // only then destroy the scene tree / free the object).
-View::~View() = default;
+View::~View() {
+  for (GlassPicture& p : dyn_) glass_picture_release(&p);
+  if (server) server->glass_forget(this);
+}
 
 void View::set_pinned(bool pinned_) {
   if (pinned == pinned_) {
@@ -467,6 +470,14 @@ void View::update_glass_backdrop() {
   const int bt = frame_key_.px, th = frame_key_.th, w = frame_key_.w, h = frame_key_.h;
   const int y = top_border() + th;
   const wlr_box pieces[4] = {{0, 0, w + 2 * bt, th}, {0, y, bt, h}, {bt + w, y, bt, h}, {0, y + h, w + 2 * bt, bt}};
+  // What lies under the four parts of the frame, in layout coordinates. When it changed (a window moved under it, new content), the pictures
+  // of the glass are rebuilt a moment later (Server::mark_glass_dirty); until then the old ones are shown.
+  wlr_box layout_rects[4];
+  for (int i = 0; i < 4; ++i) layout_rects[i] = {cx + pieces[i].x, cy + pieces[i].y, pieces[i].width, pieces[i].height};
+  if (!dyn_pending_ && glass_backdrop_key(server, this, layout_rects) != dyn_key_) {
+    dyn_pending_ = true;
+    server->mark_glass_dirty(this);
+  }
   for (int i = 0; i < 4; ++i) {
     // The part of the piece that lies on this output; the rest has nothing to show.
     const int x0 = std::max(cx + pieces[i].x, area.x), y0 = std::max(cy + pieces[i].y, area.y);
@@ -483,10 +494,20 @@ void View::update_glass_backdrop() {
     }
     wlr_scene_node_set_enabled(&frost_[i]->node, true);
     wlr_scene_node_set_position(&frost_[i]->node, x0 - cx, y0 - cy);
-    if (frost_[i]->buffer != backdrop) wlr_scene_buffer_set_buffer(frost_[i], backdrop);
-    const wlr_fbox src = {static_cast<double>(x0 - area.x), static_cast<double>(y0 - area.y), static_cast<double>(x1 - x0),
-                          static_cast<double>(y1 - y0)};
-    wlr_scene_buffer_set_source_box(frost_[i], &src);
+    // The picture built from the wallpaper and the windows below when there is one that still covers this part; the plain blurred wallpaper otherwise.
+    const GlassPicture& dp = dyn_[i];
+    const bool use_dyn = dp.buffer && x0 >= dp.origin.x && y0 >= dp.origin.y && x1 <= dp.origin.x + dp.origin.width && y1 <= dp.origin.y + dp.origin.height;
+    if (use_dyn) {
+      if (frost_[i]->buffer != dp.buffer) wlr_scene_buffer_set_buffer(frost_[i], dp.buffer);
+      const wlr_fbox src = {static_cast<double>(x0 - dp.origin.x) / kGlassScale, static_cast<double>(y0 - dp.origin.y) / kGlassScale,
+                            static_cast<double>(x1 - x0) / kGlassScale, static_cast<double>(y1 - y0) / kGlassScale};
+      wlr_scene_buffer_set_source_box(frost_[i], &src);
+    } else {
+      if (frost_[i]->buffer != backdrop) wlr_scene_buffer_set_buffer(frost_[i], backdrop);
+      const wlr_fbox src = {static_cast<double>(x0 - area.x), static_cast<double>(y0 - area.y), static_cast<double>(x1 - x0),
+                            static_cast<double>(y1 - y0)};
+      wlr_scene_buffer_set_source_box(frost_[i], &src);
+    }
     wlr_scene_buffer_set_dest_size(frost_[i], x1 - x0, y1 - y0);
     // The reflection over it. DWM keeps the reflection texture on the screen and moves it with the window by 10% (parallax), so the part of
     // the picture shown here starts 10% of the window's distance from the screen's left edge further left than the plain screen position.
@@ -510,6 +531,23 @@ void View::update_glass_backdrop() {
   }
   if (ray) wlr_buffer_unlock(ray);
   wlr_buffer_unlock(backdrop);  // glass_backdrop_for() hands out a lock, not the producer's reference
+}
+
+void View::rebuild_glass_pictures() {
+  dyn_pending_ = false;
+  if (!server->theme_config().glass || !output || !wants_titlebar() || frame_key_.w < 0 || frame_key_.px <= 0) return;
+  wlr_box area{};
+  wlr_output_layout_get_box(server->output_layout(), output->wlr_output_ptr, &area);
+  int cx = 0, cy = 0;
+  wlr_scene_node_coords(&container_tree->node, &cx, &cy);
+  const int bt = frame_key_.px, th = frame_key_.th, w = frame_key_.w, h = frame_key_.h;
+  const int y = top_border() + th;
+  const wlr_box pieces[4] = {{0, 0, w + 2 * bt, th}, {0, y, bt, h}, {bt + w, y, bt, h}, {0, y + h, w + 2 * bt, bt}};
+  wlr_box rects[4];
+  for (int i = 0; i < 4; ++i) rects[i] = {cx + pieces[i].x, cy + pieces[i].y, pieces[i].width, pieces[i].height};
+  dyn_key_ = glass_backdrop_key(server, this, rects);
+  if (!glass_build_pictures(server, this, rects, area, dyn_)) return;
+  update_glass_backdrop();
 }
 
 bool View::round_corners() const {

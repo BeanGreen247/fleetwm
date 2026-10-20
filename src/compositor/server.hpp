@@ -34,6 +34,7 @@ extern "C" {
 
 #include <chrono>
 #include <list>
+#include <set>
 #include <map>
 #include <vector>
 
@@ -266,6 +267,12 @@ class Server {
   void toggle_view_from_taskbar(View* view);
   // The taskbar's show-desktop sliver (Windows 7): minimizes every window, or brings back the ones it minimized.
   void toggle_show_desktop();
+  // The glass of a window shows the windows below it, blurred (glass_scene.hpp). These keep that picture current: a window below changed
+  // (moved, resized, new content, stacking), so the glass above it is rebuilt a moment later, at most every 45 ms.
+  void mark_glass_dirty(View* view);
+  void glass_forget(View* view);  // the window is going away
+  void refresh_glass_under(View* changed);
+  void refresh_all_glass();
   // Coalesces any number of changes within one event-loop iteration into a
   // single WINDOWS broadcast.
   void schedule_windows_broadcast();
@@ -554,6 +561,9 @@ class Server {
   wlr_seat* seat_ = nullptr;
   int keyboard_count_ = 0;
   std::vector<Keyboard*> keyboards_;
+  std::set<View*> glass_dirty_;
+  wl_event_source* glass_timer_ = nullptr;
+  void flush_glass_dirty();
   std::vector<uint32_t> show_desktop_ids_;  // ids of the windows toggle_show_desktop() minimized, to bring back
   KeyboardConfig keyboard_config_;
   MouseConfig mouse_config_;

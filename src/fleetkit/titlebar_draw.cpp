@@ -308,6 +308,23 @@ void draw_window_edge(cairo_t* cr, double x0, double y0, double x1, double y1, d
   cairo_restore(cr);
 }
 
+void frame_tint(const Palette& pal, bool glass, bool focused, double rgba[4]) {
+  Color c;
+  double a = 1.0;
+  if (glass) {
+    c = focused ? pal.glass_title : pal.glass_title_idle;
+    a = focused ? pal.glass_alpha : pal.glass_alpha_idle;
+  } else if (basic_look(false, pal)) {
+    c = basic_colors(pal, focused).bottom;
+  } else {
+    c = focused ? tb_mix(pal.bg_secondary, pal.accent, 0.12) : pal.bg_secondary;
+  }
+  rgba[0] = c.r;
+  rgba[1] = c.g;
+  rgba[2] = c.b;
+  rgba[3] = a;
+}
+
 void draw_frame_strip(cairo_t* cr, int width, int height, FrameEdge edge, bool focused, bool glass, const Palette& pal,
                       bool round_bottom) {
   const bool basic = basic_look(glass, pal);

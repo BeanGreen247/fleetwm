@@ -39,6 +39,10 @@ void draw_titlebar(cairo_t* cr, int width, int height, const TitlebarPaint& pain
 // picture per (size, focus, colour): painting it again is one blit. Exposed for the tests.
 void paint_titlebar_glass_background(cairo_t* cr, int width, int height, bool focused, const Color& base, double alpha = -1);
 
+// The colour a window's frame has, as seen from behind: `rgba` gets the tint and how much of it covers the backdrop (glass), or the solid colour
+// (opaque looks, alpha 1). Used to paint the frames of windows into the blurred backdrop other glass shows (compositor/glass_scene.cpp).
+void frame_tint(const Palette& palette, bool glass, bool focused, double rgba[4]);
+
 // The left, right and bottom parts of a window frame, in the same glass (or flat) as the titlebar they hang
 // from: translucent colour with a light line on the outer edge and a darker one against the content.
 enum class FrameEdge { Left, Right, Bottom };
