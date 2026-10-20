@@ -72,6 +72,11 @@ MenuTheme menu_theme(const Palette& palette);
 // Reads themes/<theme>.css and the accent override, then the glass tint (glass_tint.hpp) from theme.glass_tint.
 Palette load_palette(const ThemeConfig& theme);
 
+// WCAG relative luminance (0..1) of a colour, and the text colour (near-white or near-black) that reads best on `bg`: the one with the higher
+// contrast ratio. Used where the background is not known in advance (translucent glass over a wallpaper), so a label stays readable.
+double relative_luminance(const Color& c);
+Color readable_text_on(const Color& bg);
+
 // ---- text helpers (cairo toy text API: fontconfig "Sans", no Pango/GLib) ----
 struct TextExtents {
   double width = 0, height = 0, ascent = 0;

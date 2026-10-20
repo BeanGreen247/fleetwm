@@ -1140,6 +1140,16 @@ struct Settings {
       save_bar();
     }
     ui.newline();
+    ui.row("Virtual desktops");
+    {
+      int n = bar.taskbar_workspaces;
+      if (ui.spin(&n, 1, 10, 1, desktop)) {
+        bar.taskbar_workspaces = n;
+        save_bar();
+      }
+      ui.label(n <= 1 ? "One desktop: the desktop switcher is hidden" : "Numbered buttons next to the start button", true);
+    }
+    ui.newline();
     ui.row("Window buttons");
     if (ui.checkbox("Rounded corners", &bar.taskbar_rounded, desktop)) save_bar();
     ui.newline();

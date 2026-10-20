@@ -213,3 +213,14 @@ TEST(GlassCache, DifferentStyleIsNotServedFromAnotherTile) {
   cairo_destroy(cb);
   for (cairo_surface_t* s : {sa, sb, bd}) cairo_surface_destroy(s);
 }
+
+// A label on glass of unknown colour: white on dark backgrounds, black on light ones, and the better of the two on the middle greys.
+TEST(ReadableText, PicksTheBetterContrast) {
+  using fleetwm::kit::Color;
+  EXPECT_EQ(fleetwm::kit::readable_text_on(Color{0.05, 0.1, 0.2, 1}).r, 1.0);   // dark navy: white text
+  EXPECT_EQ(fleetwm::kit::readable_text_on(Color{0.9, 0.95, 1.0, 1}).r, 0.0);    // pale blue: black text
+  EXPECT_EQ(fleetwm::kit::readable_text_on(Color{0.0, 0.5, 0.9, 1}).r, 0.0)      // a saturated mid blue (luminance ~0.2): black is the higher contrast
+      << "the choice follows the contrast ratio, not the hue";
+  EXPECT_NEAR(fleetwm::kit::relative_luminance(Color{1, 1, 1, 1}), 1.0, 1e-9);
+  EXPECT_NEAR(fleetwm::kit::relative_luminance(Color{0, 0, 0, 1}), 0.0, 1e-9);
+}

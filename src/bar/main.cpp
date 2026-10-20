@@ -251,6 +251,8 @@ struct Bar {
   bool desktop_entries_loaded = false;
   Rect start_rect;
   Rect show_desktop_rect;  // the sliver at the far end of the Windows 7 taskbar
+  double tb_sx_ = 0, tb_sy_ = 0;  // where the taskbar's top-left corner is on the screen (for sampling the backdrop under a label)
+  bool tb_origin_valid_ = false;
   bool hover_sliver = false;
   std::vector<Rect> win_rects;  // parallel to `windows` (zero-size = not shown)
   int hover_win = -1;           // index into `windows`
@@ -320,12 +322,28 @@ struct Bar {
     }
   }
 
+  // The colour that really lies under a point of the taskbar: the blurred wallpaper there with the glass tint over it (glass), or the bar's own
+  // colour. Labels pick black or white text from it (kit::readable_text_on), so a desktop number stays readable on any wallpaper and tint.
+  Color effective_bg_at(double lx, double ly) {
+    if (!glass || !backdrop || !tb_origin_valid_) return pal.bg_primary;
+    cairo_surface_flush(backdrop);
+    const int bw = cairo_image_surface_get_width(backdrop), bh = cairo_image_surface_get_height(backdrop);
+    const int ow = monitor_width(), oh = monitor_height();
+    if (bw < 1 || bh < 1 || ow < 1 || oh < 1) return pal.bg_primary;
+    const double scale = std::max(ow / static_cast<double>(bw), oh / static_cast<double>(bh));  // cover-fit, as paint_backdrop
+    const double ox = (ow - bw * scale) / 2, oy = (oh - bh * scale) / 2;
+    const int px = std::clamp(static_cast<int>((tb_sx_ + lx - ox) / scale), 0, bw - 1), py = std::clamp(static_cast<int>((tb_sy_ + ly - oy) / scale), 0, bh - 1);
+    const uint32_t v = reinterpret_cast<const uint32_t*>(cairo_image_surface_get_data(backdrop) + static_cast<size_t>(py) * cairo_image_surface_get_stride(backdrop))[px];
+    const Color wall{((v >> 16) & 255) / 255.0, ((v >> 8) & 255) / 255.0, (v & 255) / 255.0, 1.0};
+    const double a = pal.glass_surface_alpha;
+    return {wall.r * (1 - a) + pal.glass_surface.r * a, wall.g * (1 - a) + pal.glass_surface.g * a, wall.b * (1 - a) + pal.glass_surface.b * a, 1.0};
+  }
+
   // Workspace buttons (the ones the user asked for, 1-10). Laid out in a row, or in two
   // columns when the taskbar is vertical. Returns the far edge (x for a row, y for columns).
   double draw_pager(cairo_t* cr, double x0, double y0, double btn_w, double btn_h, bool columns) {
     const std::vector<int> list = ws_visible();
     for (Rect& r : ws_rect) r = Rect{};
-    const Color idle = with_alpha(pal.fg_secondary, 0.9);
     double edge = columns ? y0 : x0;
     for (size_t k = 0; k < list.size(); ++k) {
       const int i = list[k];
@@ -333,16 +351,22 @@ struct Bar {
       const double y = columns ? y0 + (k / 2) * (btn_h + 3) : y0;
       ws_rect[i] = {x, y, btn_w, btn_h};
       const bool active = i == active_workspace;
-      if (active || i == hover_workspace) {
+      const bool lit = active || i == hover_workspace;
+      const double lit_a = active ? 0.9 : 0.18;
+      // The colour under the number, with the highlight over it: the number's colour follows it, so it reads whether selected or not.
+      const Color under = effective_bg_at(x + btn_w / 2, y + btn_h / 2);
+      const Color pill = lit ? Color{under.r * (1 - lit_a) + pal.accent.r * lit_a, under.g * (1 - lit_a) + pal.accent.g * lit_a, under.b * (1 - lit_a) + pal.accent.b * lit_a, 1.0} : under;
+      if (lit) {
         rounded_rect(cr, x, y, btn_w, btn_h, pal.rounded ? 6 : 2);
-        set_source(cr, active ? with_alpha(pal.accent, 0.9) : with_alpha(pal.accent, 0.18));
+        set_source(cr, with_alpha(pal.accent, lit_a));
         cairo_fill(cr);
       }
       char label[4];
       std::snprintf(label, sizeof label, "%d", (i + 1) % 10);
       const TextExtents te = measure_text(cr, label, kFont, active);
-      draw_text(cr, label, x + (btn_w - te.width) / 2, y + (btn_h - te.height) / 2 + te.ascent, kFont,
-                active ? pal.bg_primary : idle, active);
+      Color text = readable_text_on(pill);
+      if (!active && !lit) text.a = 0.9;
+      draw_text(cr, label, x + (btn_w - te.width) / 2, y + (btn_h - te.height) / 2 + te.ascent, kFont, text, active);
       edge = columns ? y + btn_h : x + btn_w;
     }
     return edge;
@@ -1250,6 +1274,9 @@ struct Bar {
       double sx = 0, sy = 0;  // where the taskbar sits on the screen
       if (tb_pos == TaskbarPosition::Bottom) sy = mh - H;
       else if (tb_pos == TaskbarPosition::Right) sx = mw - W;
+      tb_sx_ = sx;
+      tb_sy_ = sy;
+      tb_origin_valid_ = true;
       if (win7() && !glass) {
         kit::paint_basic_taskbar(cr, W, H, pal.glass_title, tb_pos == TaskbarPosition::Bottom ? 0 : tb_pos == TaskbarPosition::Top ? 1 : tb_pos == TaskbarPosition::Left ? 3 : 2);
       } else {
@@ -1306,7 +1333,7 @@ struct Bar {
       case TbElement::Start: return v ? kBtn : 46;
       case TbElement::Workspaces: {
         const size_t n = ws_visible().size();
-        if (n == 0) return 0;
+        if (n <= 1) return 0;  // one desktop: nothing to switch between, so no switcher
         return v ? static_cast<double>((n + 1) / 2) * 29 - 3 : static_cast<double>(n) * 29 - 3;
       }
       case TbElement::Pinned: {
@@ -1401,6 +1428,7 @@ struct Bar {
         draw_start_button(cr, start_rect);
         break;
       case TbElement::Workspaces:
+        if (ws_visible().size() <= 1) break;
         if (v) draw_pager(cr, bx + (bw - 2 * 30 - 3) / 2, box.y, 30, 26, true);
         else draw_pager(cr, box.x, (box.h - 26) / 2.0, 26, 26, false);
         break;

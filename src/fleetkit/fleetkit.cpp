@@ -105,6 +105,17 @@ Palette load_palette(const ThemeConfig& theme) {
   return p;
 }
 
+double relative_luminance(const Color& c) {
+  auto lin = [](double v) { return v <= 0.03928 ? v / 12.92 : std::pow((v + 0.055) / 1.055, 2.4); };
+  return 0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b);
+}
+
+Color readable_text_on(const Color& bg) {
+  const double l = relative_luminance(bg);
+  const double on_white = 1.05 / (l + 0.05), on_black = (l + 0.05) / 0.05;  // contrast ratios of white and of black text on `bg`
+  return on_white >= on_black ? Color{1, 1, 1, 0.97} : Color{0, 0, 0, 0.9};
+}
+
 // ------------------------------------------------------------------ text ---
 
 namespace {

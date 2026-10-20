@@ -210,10 +210,12 @@ void draw_caption_buttons(cairo_t* cr, const CaptionButton* buttons, int count, 
   if (count < 1) return;
   const Rgb bg = rgb_of(st.colors.bg), fg = rgb_of(st.colors.fg), accent = rgb_of(st.colors.accent);
   const bool dark = luma(bg) < 0.5;
-  const double focus = st.focused ? 1.0 : 0.62;  // an inactive window's buttons fade
+  // An inactive window's buttons fade, but only their glass: the outline, the separators and the glyphs stay nearly full strength, or they smear
+  // into the frosted backdrop behind (the glass under them is see-through).
+  const double focus = st.focused ? 1.0 : 0.62;
   // Glass mode: the buttons are translucent like the bar they sit on (close stays nearly solid).
   const double neutral_alpha = (st.glass ? 0.80 : 1.0) * focus, red_alpha = (st.glass ? 0.92 : 1.0) * focus;
-  const double alpha = focus;
+  const double alpha = st.focused ? 1.0 : 0.92;
   double x0 = buttons[0].x, x1 = buttons[0].x + buttons[0].w, y0 = buttons[0].y, y1 = buttons[0].y + buttons[0].h;
   for (int i = 1; i < count; ++i) {
     x0 = std::min(x0, buttons[i].x);
