@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cstdlib>
 
 #include <filesystem>
@@ -285,11 +286,15 @@ TEST(FmMountLocation, NativeHelperIsTriedFirstAndGetsThePasswordOnStdin) {
   mount_location(parse_uri("ftp://host/"), c, f, gv.string());
   ASSERT_GE(f.calls.size(), 2u);
   EXPECT_EQ(f.calls[1][0], "gio");
-  // smb is not handled natively
+  // smb: the share is the mount root and the domain is passed along
   f.calls.clear();
-  mount_location(parse_uri("smb://nas/media"), c, f, gv.string());
+  f.next = {2, "x\n", false};
+  c.domain = "HOME";
+  mount_location(parse_uri("smb://nas/media/sub"), c, f, gv.string());
   ASSERT_EQ(f.calls.size(), 1u);
-  EXPECT_EQ(f.calls[0][0], "gio");
+  EXPECT_EQ(f.calls[0][f.calls[0].size() - 2], "smb://nas/media");
+  EXPECT_EQ(f.calls[0][1], "--user");
+  EXPECT_NE(std::find(f.calls[0].begin(), f.calls[0].end(), "--domain"), f.calls[0].end());
   ::setenv("FLEETWM_NETFS", saved.c_str(), 1);
   fs::remove_all(gv.parent_path());
 }
@@ -302,5 +307,5 @@ TEST(FmMountLocation, UnmountingANativePlaceUsesFusermount) {
   EXPECT_TRUE(is_netfs_path("/run/user/1000/fleetwm-net/sftp:host=h/sub", "/run/user/1000/gvfs"));
   EXPECT_FALSE(is_netfs_path("/run/user/1000/gvfs/sftp:host=h", "/run/user/1000/gvfs"));
   EXPECT_TRUE(netfs_handles("davs"));
-  EXPECT_FALSE(netfs_handles("smb"));
+  EXPECT_FALSE(netfs_handles("nfs"));
 }

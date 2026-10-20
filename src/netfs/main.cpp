@@ -175,7 +175,7 @@ bool parse(const std::string& s, Uri* u) {
 }  // namespace
 
 int main(int argc, char** argv) {
-  std::string user, known_hosts, uri_text, mountpoint;
+  std::string user, domain, known_hosts, uri_text, mountpoint;
   bool anonymous = false, foreground = false, debug = false;
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
@@ -184,11 +184,12 @@ int main(int argc, char** argv) {
       return 0;
     }
     if (a == "--help" || a == "-h") {
-      std::puts("usage: fleetwm-netfs [--user NAME] [--anonymous] [--known-hosts FILE] [--foreground] URI MOUNTPOINT\n"
-                "URI: sftp://, ftp://, ftps:// or dav(s):// followed by host[:port]/path. The password is read from the first line of standard input.");
+      std::puts("usage: fleetwm-netfs [--user NAME] [--domain NAME] [--anonymous] [--known-hosts FILE] [--foreground] URI MOUNTPOINT\n"
+                "URI: sftp://, ftp://, ftps://, dav(s):// or smb:// followed by host[:port]/path. The password is read from the first line of standard input.");
       return 0;
     }
     if (a == "--user" && i + 1 < argc) user = argv[++i];
+    else if (a == "--domain" && i + 1 < argc) domain = argv[++i];
     else if (a == "--known-hosts" && i + 1 < argc) known_hosts = argv[++i];
     else if (a == "--anonymous") anonymous = true;
     else if (a == "--foreground") foreground = true;
@@ -207,6 +208,7 @@ int main(int argc, char** argv) {
   t.port = u.port;
   t.user = user.empty() ? u.user : user;
   t.base = u.path;
+  t.domain = domain;
   t.anonymous = anonymous;
   t.known_hosts = known_hosts;
   if (!anonymous) {

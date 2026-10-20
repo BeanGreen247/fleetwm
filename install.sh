@@ -240,6 +240,10 @@ ui_step "Installing dark/light theme support for other programs" \
 # Best effort: the file manager works on local folders without them.
 apt_install udisks2 gvfs gvfs-backends gvfs-fuse xdg-utils ||
   echo "warning: some file manager helpers could not be installed; network places and safe eject may not work"
+# fleetwm-netfs, the file manager's own FTP / FTPS / SFTP / WebDAV / SMB client (FUSE + libcurl + libssh2 + libsmbclient). Built when these
+# are present; without it those places go through GVfs as before.
+apt_install fuse3 libfuse3-dev libcurl4-openssl-dev libssh2-1-dev libsmbclient-dev ||
+  echo "warning: fleetwm-netfs libraries could not be installed; network places will use GVfs"
 # Dark/light mode for other toolkits: the portal (settings backend that Chromium and
 # libadwaita read), an Adwaita dark theme for GTK 3, the Qt platform themes that follow GTK,
 # and the D-Bus pieces that start the portal. Best effort.

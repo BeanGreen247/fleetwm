@@ -43,10 +43,10 @@ class Backend {
 };
 
 struct Target {
-  std::string scheme;    // sftp, ftp, ftps, dav, davs
+  std::string scheme;    // sftp, ftp, ftps, dav, davs, smb
   std::string host;
   int port = 0;          // 0: the protocol's default
-  std::string user, password;
+  std::string user, password, domain;
   std::string base;      // path on the server that appears as the root of the mount
   bool anonymous = false;
   std::string known_hosts;  // file for the SSH host key fingerprints (trust on first use)

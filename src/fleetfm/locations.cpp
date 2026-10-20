@@ -405,7 +405,7 @@ std::string gvfs_root(unsigned uid) { return "/run/user/" + std::to_string(uid) 
 std::string netfs_root(const std::string& gvfs_dir) { return (fs::path(gvfs_dir).parent_path() / "fleetwm-net").string(); }
 
 bool netfs_handles(std::string_view scheme) {
-  return scheme == "sftp" || scheme == "ftp" || scheme == "ftps" || scheme == "dav" || scheme == "davs";
+  return scheme == "sftp" || scheme == "ftp" || scheme == "ftps" || scheme == "dav" || scheme == "davs" || scheme == "smb";
 }
 
 bool is_mount_point(const std::string& dir) {
@@ -468,7 +468,15 @@ bool mount_native(const std::string& program, const Uri& u, const Credentials& c
   bare.user.clear();
   bare.password.clear();
   // sftp and ftp mount the server's root and the window opens the folder below it; a WebDAV address keeps its path (it names the mount).
-  if (u.scheme != "dav" && u.scheme != "davs") bare.path = "/";
+  if (u.scheme == "smb") {
+    std::string share = u.path;  // the share is the mount root
+    if (!share.empty() && share[0] == '/') share.erase(0, 1);
+    const size_t slash = share.find('/');
+    if (slash != std::string::npos) share.resize(slash);
+    bare.path = "/" + share;
+  } else if (u.scheme != "dav" && u.scheme != "davs") {
+    bare.path = "/";
+  }
   std::vector<std::string> argv = {program};
   const std::string user = !c.user.empty() ? c.user : u.user;
   if (!user.empty()) {
@@ -476,6 +484,10 @@ bool mount_native(const std::string& program, const Uri& u, const Credentials& c
     argv.push_back(user);
   }
   if (c.anonymous) argv.push_back("--anonymous");
+  if (!c.domain.empty()) {
+    argv.push_back("--domain");
+    argv.push_back(c.domain);
+  }
   argv.push_back("--known-hosts");
   argv.push_back((fs::path(config_internal::config_home()) / "fleetwm" / "fleetfm-known-hosts").string());
   argv.push_back(uri_to_string(bare));

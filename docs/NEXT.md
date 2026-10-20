@@ -127,7 +127,7 @@ Built on the VM, not committed. What it is: `docs/FILE_MANAGER.md`, `docs/DESKTO
 Open, most important first:
 1. Network places were never run against a real Samba, SFTP, FTP or Nextcloud server; eject and mounting never on a real USB stick.
 2. Clipboard and drag and drop with a second Wayland program were never run (only the unit tests with a fake host).
-3. Native FTP/SFTP/WebDAV/SMB clients: a rewrite of the data path (see FILE_MANAGER.md). Not started.
+3. Native FTP/SFTP/WebDAV/SMB clients: done 2026-10-20 as `fleetwm-netfs` (FUSE, no data-path rewrite; see FILE_MANAGER.md). Not run: FTPS, Nextcloud, key logins, big trees, the file manager window against a real mount (only the helper and `mount_location` were).
 4. Group by in the icon views, "Other application..." under Open with, a Settings page for `desktop.toml` (the shortcut card can only be turned off in the file).
 5. Performance next steps with an estimate: prefix-key array for the 100,000-name sort (about 20 ms), overlap read-back with writing for big files.
 6. The pointer was never moved by a real mouse in a running session; everything was driven by tests and the headless compositor.

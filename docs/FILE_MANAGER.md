@@ -54,7 +54,18 @@ window leaves the drive before unmounting, so it is not what holds it.
 Nextcloud and ownCloud (the dialog builds `davs://user@host/remote.php/dav/files/user/` from "cloud.example.com" and a user name), NFS,
 AFP, MTP phones, iPhone (AFC), cameras, archives and administrator access, all mounted through GVfs (`gio mount`), the layer Nautilus, Nemo,
 Caja and Thunar use. A mounted place is an ordinary folder below `/run/user/<uid>/gvfs/`, so listing, copying, verifying, searching and
-thumbnails need no second code path. The address bar understands `smb://nas/media`, `\\nas\media` and `//nas/media`. Passwords go to `gio`
+thumbnails need no second code path.
+
+**Built-in clients (`fleetwm-netfs`, `src/netfs/`, 2026-10-20).** SFTP, FTP, FTPS (explicit TLS), WebDAV (`dav://`, `davs://`) and SMB are
+also served by a small FUSE program with no GVfs: libssh2 (SFTP, trust on first use, fingerprints in `~/.config/fleetwm/fleetfm-known-hosts`),
+libcurl (FTP: MLSD with a `LIST` fallback; WebDAV: PROPFIND, Range, MKCOL, MOVE, DELETE) and libsmbclient. It mounts below
+`/run/user/<uid>/fleetwm-net/` (same folder names as GVfs) and the file manager tries it first, falling back to `gio mount` when the
+program is not installed or built without a protocol (exit status 3); `FLEETWM_NETFS=off` forces GVfs. The password reaches it on standard input.
+It adds the caches a file manager needs on a slow link: a listing answers the stats of its names (no stat per file), misses are remembered for
+2 s, reads fetch 1 MB blocks, and a write goes to a temporary local file that is uploaded when the program closes it, so a failed upload is
+reported to the program that wrote the file. Checked against real vsftpd, OpenSSH sftp, Apache mod_dav and Samba on the dev VM (create, read,
+append, rename, mkdir, 20 MB copy compared byte for byte, delete, wrong password, unreachable host). FTPS, a Nextcloud server, SFTP key logins
+with a passphrase and large trees were not run. Single threaded, so one slow server call stalls that mount. The address bar understands `smb://nas/media`, `\\nas\media` and `//nas/media`. Passwords go to `gio`
 on its standard input and are never put on a command line, in a title, in `fleetfm-places.toml` or in a log. Saved places appear under
 Network (Windows 10's "Network locations") and mounted ones under Computer with an eject button.
 
