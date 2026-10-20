@@ -3,6 +3,8 @@
 
 #include <spawn.h>
 
+#include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -105,6 +107,72 @@ void apply_app_appearance(bool dark) {
   const char* argv[] = {"sh", "-c", script.c_str(), nullptr};
   pid_t pid;
   posix_spawn(&pid, "/bin/sh", nullptr, CleanSpawnAttr().get(), const_cast<char* const*>(argv), environ);
+}
+
+std::string set_custom_chrome_frame(const std::string& preferences, bool custom) {
+  static const std::string key = "\"custom_chrome_frame\":";
+  const size_t at = preferences.find(key);
+  if (at == std::string::npos) return preferences;
+  size_t v = at + key.size();
+  while (v < preferences.size() && preferences[v] == ' ') ++v;
+  size_t end = v;
+  while (end < preferences.size() && std::isalpha(static_cast<unsigned char>(preferences[end]))) ++end;
+  const std::string current = preferences.substr(v, end - v);
+  if (current != "true" && current != "false") return preferences;
+  std::string out = preferences;
+  out.replace(v, end - v, custom ? "true" : "false");
+  return out;
+}
+
+namespace {
+
+// A browser's config directory holds SingletonLock (a symlink to "host-pid") while it runs.
+bool browser_running(const fs::path& dir) {
+  std::error_code ec;
+  return fs::is_symlink(dir / "SingletonLock", ec);
+}
+
+void set_profile_frame(const fs::path& file, bool custom) {
+  std::string text;
+  if (std::ifstream in(file, std::ios::binary); in) {
+    std::ostringstream ss;
+    ss << in.rdbuf();
+    text = ss.str();
+  } else {
+    return;
+  }
+  const std::string next = set_custom_chrome_frame(text, custom);
+  if (next == text) return;
+  const fs::path tmp = file.string() + ".fleetwm";
+  {
+    std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+    if (!out) return;
+    out << next;
+    if (!out) return;
+  }
+  std::error_code ec;
+  fs::rename(tmp, file, ec);
+  if (ec) fs::remove(tmp, ec);
+}
+
+}  // namespace
+
+void apply_browser_frames(bool compositor_draws_titlebars) {
+  const fs::path base = config_internal::config_home();
+  static const char* const browsers[] = {"BraveSoftware/Brave-Browser", "BraveSoftware/Brave-Browser-Beta",
+                                         "google-chrome", "google-chrome-beta", "chromium",
+                                         "microsoft-edge", "vivaldi"};
+  std::error_code ec;
+  for (const char* name : browsers) {
+    const fs::path dir = base / name;
+    if (!fs::is_directory(dir, ec) || browser_running(dir)) continue;
+    for (const fs::directory_entry& entry : fs::directory_iterator(dir, ec)) {
+      const std::string leaf = entry.path().filename().string();
+      if (leaf == "Default" || leaf.rfind("Profile ", 0) == 0) {
+        set_profile_frame(entry.path() / "Preferences", !compositor_draws_titlebars);
+      }
+    }
+  }
 }
 
 }  // namespace fleetwm

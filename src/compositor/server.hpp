@@ -587,6 +587,7 @@ class Server {
   std::string cursor_name_storage_;    // keeps the name alive across refresh_cursor()
   BorderColors border_colors_{{0.9f, 0.9f, 0.95f, 1.0f}, {0.9f, 0.9f, 0.95f, 1.0f}, {0.9f, 0.9f, 0.95f, 1.0f}};
   bool appearance_applied_ = false, appearance_dark_ = true;
+  bool frames_applied_ = false, frames_desktop_ = false;  // browsers' own window buttons follow the layout
   PowerConfig power_config_;
   wl_event_source* idle_timer_ = nullptr;
   std::chrono::steady_clock::time_point last_input_;

@@ -1712,7 +1712,9 @@ void Server::focus_view(View* view) {
 
   wlr_surface* prev_surface = seat_->keyboard_state.focused_surface;
   wlr_surface* surface = view->surface();
-  if (prev_surface == surface) {
+  // An XWayland view has no surface until its window is associated, and wlroots
+  // asserts on a null surface in wlr_seat_keyboard_notify_enter().
+  if (!surface || prev_surface == surface) {
     return;
   }
 
@@ -2140,7 +2142,7 @@ void Server::minimize_view(View* view) {
 
 void Server::focus_next_after(View* gone) {
   for (const std::unique_ptr<View>& candidate : views) {
-    if (candidate.get() != gone && candidate->workspace && !candidate->minimized &&
+    if (candidate.get() != gone && candidate->surface() && candidate->workspace && !candidate->minimized &&
         (candidate->pinned || candidate->container_tree->node.enabled)) {
       focus_view(candidate.get());
       return;
@@ -2524,6 +2526,13 @@ void Server::reload_keybinds_config() {
 
 // GTK, Chromium and Qt apps follow the theme's dark/light setting; only touched when it changes.
 void Server::update_app_appearance() {
+  // Chromium browsers draw their own window buttons unless told to use the system title bar,
+  // which would double the Desktop layout's titlebar.
+  if (!frames_applied_ || frames_desktop_ != desktop_layout()) {
+    frames_applied_ = true;
+    frames_desktop_ = desktop_layout();
+    apply_browser_frames(frames_desktop_);
+  }
   const bool dark = theme_is_dark(theme_config_.theme);
   if (appearance_applied_ && appearance_dark_ == dark) return;
   appearance_applied_ = true;

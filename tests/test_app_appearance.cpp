@@ -73,3 +73,14 @@ TEST(AppearanceScript, OnlySwitchesAPlainAdwaitaTheme) {
 TEST(AppearanceScript, DoesNothingWithoutGsettings) {
   EXPECT_EQ(appearance_shell_script(true).rfind("command -v gsettings", 0), 0u);
 }
+
+TEST(SetCustomChromeFrame, ChangesTheValueInPlace) {
+  const std::string in = R"({"browser":{"custom_chrome_frame":true,"x":1}})";
+  EXPECT_EQ(set_custom_chrome_frame(in, false), R"({"browser":{"custom_chrome_frame":false,"x":1}})");
+  EXPECT_EQ(set_custom_chrome_frame(set_custom_chrome_frame(in, false), true), in);
+}
+
+TEST(SetCustomChromeFrame, LeavesTextWithoutTheKeyAlone) {
+  const std::string in = R"({"browser":{"x":1}})";
+  EXPECT_EQ(set_custom_chrome_frame(in, false), in);
+}

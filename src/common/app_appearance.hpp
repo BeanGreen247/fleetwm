@@ -27,4 +27,16 @@ std::string appearance_shell_script(bool dark);
 // script above in the background. Cheap; callers only need to call it when the theme changes.
 void apply_app_appearance(bool dark);
 
+// Chromium-based browsers (Brave, Chrome, Chromium, Edge, Vivaldi) keep "Use system title bar
+// and borders" as browser.custom_chrome_frame in each profile's Preferences file, and draw
+// their own minimise/maximise/close buttons while it is true, whatever the compositor asks
+// for. Returns the file text with the value set to `custom` (the key is changed in place);
+// text without the key is returned as it was.
+std::string set_custom_chrome_frame(const std::string& preferences, bool custom);
+
+// Sets that value in every profile of the installed Chromium-based browsers: false while
+// the Desktop layout draws the titlebars, true otherwise. A browser that is running is
+// skipped (it would write its own value back on exit) and is picked up on the next call.
+void apply_browser_frames(bool compositor_draws_titlebars);
+
 }  // namespace fleetwm
