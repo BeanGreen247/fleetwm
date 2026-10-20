@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 #include <unistd.h>
 
+#include <cstdlib>
+
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -122,6 +124,12 @@ TEST(FmGvfs, KernelMountLabels) {
 }
 
 namespace {
+// The unit tests drive `gio` through a fake runner; a fleetwm-netfs installed on the machine must not take over.
+class NoNetfsEnv : public ::testing::Environment {
+ public:
+  void SetUp() override { ::setenv("FLEETWM_NETFS", "off", 1); }
+};
+const ::testing::Environment* const kNoNetfs = ::testing::AddGlobalTestEnvironment(new NoNetfsEnv);
 class Fake : public CommandRunner {
  public:
   std::vector<std::vector<std::string>> calls;
@@ -244,4 +252,55 @@ TEST_F(FmPlaces, SavedPlacesRoundTripWithoutPasswords) {
 TEST_F(FmPlaces, BrokenFileGivesAnEmptyList) {
   write_config("fleetfm-places.toml", "place = [ {{{ nope");
   EXPECT_TRUE(load_places().empty());
+}
+
+TEST(FmMountLocation, NativeHelperIsTriedFirstAndGetsThePasswordOnStdin) {
+  const fs::path gv = fs::temp_directory_path() / ("fm-gvfs3-" + std::to_string(::getpid())) / "gvfs";
+  fs::create_directories(gv);
+  const std::string saved = std::getenv("FLEETWM_NETFS") ? std::getenv("FLEETWM_NETFS") : "off";
+  const fs::path fake_prog = gv.parent_path() / "fleetwm-netfs";
+  { std::ofstream(fake_prog) << "#!/bin/sh\n"; }
+  fs::permissions(fake_prog, fs::perms::owner_all);
+  ::setenv("FLEETWM_NETFS", fake_prog.c_str(), 1);
+  Fake f;
+  f.next = {2, "Wrong user name or password\n", false};
+  Credentials c;
+  c.user = "anna";
+  c.password = "s3cret";
+  const MountOutcome bad = mount_location(parse_uri("sftp://anna@host:2222/srv/data"), c, f, gv.string());
+  EXPECT_FALSE(bad.ok);
+  EXPECT_EQ(bad.error, "Wrong user name or password");
+  ASSERT_EQ(f.calls.size(), 1u) << "a refused login is not retried through gio";
+  EXPECT_EQ(f.calls[0][0], fake_prog.string());
+  EXPECT_EQ(f.calls[0].back(), (gv.parent_path() / "fleetwm-net" / "sftp:host=host,port=2222,user=anna").string());
+  EXPECT_EQ(f.calls[0][f.calls[0].size() - 2], "sftp://host:2222/");  // no user, no password; the folder below the root is opened by the window
+  for (const auto& a : f.calls[0]) EXPECT_EQ(a.find("s3cret"), std::string::npos);
+  EXPECT_EQ(f.inputs[0], "s3cret\n");
+  EXPECT_FALSE(fs::exists(gv.parent_path() / "fleetwm-net" / "sftp:host=host,port=2222,user=anna")) << "a failed mount leaves no empty folder";
+  // helper missing or protocol not built in (exit 3): fall back to gio
+  f.calls.clear();
+  f.inputs.clear();
+  f.next = {3, "protocol not built in\n", false};
+  f.side_effect = [&] {};
+  mount_location(parse_uri("ftp://host/"), c, f, gv.string());
+  ASSERT_GE(f.calls.size(), 2u);
+  EXPECT_EQ(f.calls[1][0], "gio");
+  // smb is not handled natively
+  f.calls.clear();
+  mount_location(parse_uri("smb://nas/media"), c, f, gv.string());
+  ASSERT_EQ(f.calls.size(), 1u);
+  EXPECT_EQ(f.calls[0][0], "gio");
+  ::setenv("FLEETWM_NETFS", saved.c_str(), 1);
+  fs::remove_all(gv.parent_path());
+}
+
+TEST(FmMountLocation, UnmountingANativePlaceUsesFusermount) {
+  Fake f;
+  std::string err;
+  EXPECT_TRUE(unmount_location("/run/user/1000/fleetwm-net/sftp:host=h", f, &err));
+  EXPECT_EQ(f.calls[0][0], "fusermount3");
+  EXPECT_TRUE(is_netfs_path("/run/user/1000/fleetwm-net/sftp:host=h/sub", "/run/user/1000/gvfs"));
+  EXPECT_FALSE(is_netfs_path("/run/user/1000/gvfs/sftp:host=h", "/run/user/1000/gvfs"));
+  EXPECT_TRUE(netfs_handles("davs"));
+  EXPECT_FALSE(netfs_handles("smb"));
 }

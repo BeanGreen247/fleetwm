@@ -373,6 +373,7 @@ void FmWindow::open_special(PlaceKind k, bool remember) {
 void FmWindow::open_remote(const Uri& u, bool remember) {
   const std::string root = gvfs_root(static_cast<unsigned>(::getuid()));
   std::string existing = find_mount_dir(root, u);
+  if (existing.empty()) existing = find_netfs_dir(root, u);
   if (existing.empty()) existing = root + "/" + gvfs_mount_dir_name(u);
   const std::string dir = existing;
   auto enter = [this, u, remember](const std::string& dir) {
@@ -709,7 +710,10 @@ const Volume* FmWindow::volume_for_path(const std::string& path) const {
 
 bool FmWindow::is_external_destination(const std::string& path) const {
   const Volume* v = volume_for_path(path);
-  if (!v) return path.compare(0, gvfs_root(static_cast<unsigned>(::getuid())).size(), gvfs_root(static_cast<unsigned>(::getuid()))) == 0;
+  if (!v) {
+    const std::string gv = gvfs_root(static_cast<unsigned>(::getuid()));
+    return path.compare(0, gv.size(), gv) == 0 || is_netfs_path(path, gv);
+  }
   return v->kind == DriveKind::Removable || v->kind == DriveKind::Network || v->kind == DriveKind::Optical;
 }
 

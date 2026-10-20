@@ -222,6 +222,17 @@ std::vector<Volume> list_volumes(const SysRoots& roots) {
   std::set<std::string> seen_devices;
   for (const MountEntry& m : parse_mountinfo(text)) {
     if (hidden_mount(m)) continue;
+    if (m.fstype == "fuse.fleetwm-netfs") {
+      // A place mounted by fleetwm-netfs (sftp, ftp, ftps, webdav): the folder name is the GVfs-style name of the address.
+      Volume v;
+      v.mountpoint = m.target;
+      v.label = gvfs_friendly_name(fs::path(m.target).filename().string());
+      v.kind = DriveKind::Network;
+      v.mounted = true;
+      v.fstype = m.fstype;  // "fuse..." is ejected with fusermount -u
+      out.push_back(std::move(v));
+      continue;
+    }
     if (m.fstype == "fuse.gvfsd-fuse") {
       // GVfs puts every mounted place (smb://, sftp://, ftp://, dav://, mtp://) in a sub folder here.
       DirListing l;

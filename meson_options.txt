@@ -25,3 +25,10 @@ option(
   value: false,
   description: 'Build the file manager benchmarks in perflog/2026-10-09 (folder listing, copy engine, window frames); never installed',
 )
+
+option(
+  'netfs',
+  type: 'feature',
+  value: 'auto',
+  description: 'Build fleetwm-netfs, the FTP/FTPS/SFTP/WebDAV mount helper of the file manager (needs libfuse3, libcurl and libssh2 development files)',
+)

@@ -1,10 +1,12 @@
 #include "locations.hpp"
 
 #include <toml++/toml.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 #include <filesystem>
 #include <map>
 #include <fstream>
@@ -400,6 +402,103 @@ std::string network_mount_label(std::string_view source, std::string_view fstype
 
 std::string gvfs_root(unsigned uid) { return "/run/user/" + std::to_string(uid) + "/gvfs"; }
 
+std::string netfs_root(const std::string& gvfs_dir) { return (fs::path(gvfs_dir).parent_path() / "fleetwm-net").string(); }
+
+bool netfs_handles(std::string_view scheme) {
+  return scheme == "sftp" || scheme == "ftp" || scheme == "ftps" || scheme == "dav" || scheme == "davs";
+}
+
+bool is_mount_point(const std::string& dir) {
+  struct stat a {}, b {};
+  const std::string parent = (fs::path(dir).parent_path()).string();
+  if (::stat(dir.c_str(), &a) != 0 || ::stat(parent.c_str(), &b) != 0) return false;
+  return a.st_dev != b.st_dev;
+}
+
+std::string find_netfs_dir(const std::string& gvfs_dir, const Uri& u) {
+  const std::string d = netfs_root(gvfs_dir) + "/" + gvfs_mount_dir_name(u);
+  return is_mount_point(d) ? d : std::string();
+}
+
+bool is_netfs_path(const std::string& path, const std::string& gvfs_dir) {
+  const std::string root = netfs_root(gvfs_dir);
+  return path.size() > root.size() && path.compare(0, root.size(), root) == 0 && path[root.size()] == '/';
+}
+
+std::string netfs_program() {
+  const char* env = std::getenv("FLEETWM_NETFS");
+  if (env && std::string_view(env) == "off") return {};
+  std::error_code ec;
+  if (env && *env) return fs::exists(env, ec) ? std::string(env) : std::string();
+  std::vector<fs::path> dirs;
+  char self[4096];
+  const ssize_t n = ::readlink("/proc/self/exe", self, sizeof self - 1);
+  if (n > 0) dirs.push_back(fs::path(std::string(self, static_cast<size_t>(n))).parent_path());
+  if (const char* path = std::getenv("PATH")) {
+    std::string_view p(path);
+    size_t from = 0;
+    while (from <= p.size()) {
+      size_t to = p.find(':', from);
+      if (to == std::string_view::npos) to = p.size();
+      if (to > from) dirs.emplace_back(std::string(p.substr(from, to - from)));
+      from = to + 1;
+    }
+  }
+  for (const fs::path& d : dirs) {
+    const fs::path cand = d / "fleetwm-netfs";
+    if (fs::exists(cand, ec) && ::access(cand.c_str(), X_OK) == 0) return cand.string();
+  }
+  return {};
+}
+
+namespace {
+
+// fleetwm-netfs exits 2 for a refused login or unreachable server (message on stderr), 3 when the protocol is not built in.
+bool mount_native(const std::string& program, const Uri& u, const Credentials& c, CommandRunner& run, const std::string& gvfs_dir,
+                  MountOutcome* r, bool* fall_back) {
+  *fall_back = false;
+  const std::string dir = netfs_root(gvfs_dir) + "/" + gvfs_mount_dir_name(u);
+  std::error_code ec;
+  fs::create_directories(dir, ec);
+  if (ec) {
+    *fall_back = true;
+    return false;
+  }
+  Uri bare = u;
+  bare.user.clear();
+  bare.password.clear();
+  // sftp and ftp mount the server's root and the window opens the folder below it; a WebDAV address keeps its path (it names the mount).
+  if (u.scheme != "dav" && u.scheme != "davs") bare.path = "/";
+  std::vector<std::string> argv = {program};
+  const std::string user = !c.user.empty() ? c.user : u.user;
+  if (!user.empty()) {
+    argv.push_back("--user");
+    argv.push_back(user);
+  }
+  if (c.anonymous) argv.push_back("--anonymous");
+  argv.push_back("--known-hosts");
+  argv.push_back((fs::path(config_internal::config_home()) / "fleetwm" / "fleetfm-known-hosts").string());
+  argv.push_back(uri_to_string(bare));
+  argv.push_back(dir);
+  const RunResult rr = run.run(argv, c.anonymous ? std::string() : c.password + "\n", 60000);
+  if (rr.status == 0 && is_mount_point(dir)) {
+    r->ok = true;
+    r->path = dir;
+    return true;
+  }
+  fs::remove(dir, ec);  // an empty folder left by a failed mount
+  if (rr.status == 3 || rr.status == -1 || rr.status == 127) {
+    *fall_back = true;
+    return false;
+  }
+  r->error = rr.output;
+  while (!r->error.empty() && (r->error.back() == '\n' || r->error.back() == ' ')) r->error.pop_back();
+  if (r->error.empty()) r->error = rr.timed_out ? "The server did not answer in time" : "The connection failed";
+  return false;
+}
+
+}  // namespace
+
 MountOutcome mount_location(const Uri& u, const Credentials& c, CommandRunner& run, const std::string& gvfs_dir) {
   MountOutcome r;
   const Protocol* pr = find_protocol(u.scheme);
@@ -410,10 +509,18 @@ MountOutcome mount_location(const Uri& u, const Credentials& c, CommandRunner& r
   std::error_code ec;
   std::string dir = find_mount_dir(gvfs_dir, u);
   if (dir.empty() && fs::exists(gvfs_dir + "/" + gvfs_mount_dir_name(u), ec)) dir = gvfs_dir + "/" + gvfs_mount_dir_name(u);
+  if (dir.empty()) dir = find_netfs_dir(gvfs_dir, u);
   if (!dir.empty()) {
     r.ok = true;
     r.path = dir;
     return r;
+  }
+  if (netfs_handles(u.scheme)) {
+    const std::string program = netfs_program();
+    if (!program.empty()) {
+      bool fall_back = false;
+      if (mount_native(program, u, c, run, gvfs_dir, &r, &fall_back) || !fall_back) return r;
+    }
   }
   Uri with_user = u;
   if (!c.user.empty()) with_user.user = c.user;
@@ -444,6 +551,17 @@ MountOutcome mount_location(const Uri& u, const Credentials& c, CommandRunner& r
 }
 
 bool unmount_location(const std::string& mountpoint, CommandRunner& run, std::string* error) {
+  const fs::path p(mountpoint);
+  if (p.parent_path().filename() == "fleetwm-net") {
+    const RunResult f = run.run({"fusermount3", "-u", "-z", mountpoint});
+    if (f.status != 0) {
+      if (error) *error = f.output;
+      return false;
+    }
+    std::error_code ec;
+    fs::remove(p, ec);
+    return true;
+  }
   const RunResult r = run.run({"gio", "mount", "-u", mountpoint});
   if (r.status != 0 && error) *error = r.output;
   return r.status == 0;

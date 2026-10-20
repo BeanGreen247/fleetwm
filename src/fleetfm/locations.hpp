@@ -73,7 +73,19 @@ struct MountOutcome {
   std::string path;   // the local folder showing the mounted place
   std::string error;
 };
-// `gio mount <uri>`; credentials are answered on its prompts. A place that is already mounted is a success.
+// Where fleetwm-netfs (the built-in FTP / FTPS / SFTP / WebDAV client) mounts places: the sibling "fleetwm-net" of the GVfs folder.
+std::string netfs_root(const std::string& gvfs_dir);
+// The mount folder of `u` when it is already mounted by fleetwm-netfs ("" otherwise).
+std::string find_netfs_dir(const std::string& gvfs_dir, const Uri& u);
+// The helper program, or "" when it is not installed or switched off (FLEETWM_NETFS=off; FLEETWM_NETFS=/path overrides the search).
+std::string netfs_program();
+bool netfs_handles(std::string_view scheme);  // sftp, ftp, ftps, dav, davs
+bool is_mount_point(const std::string& dir);
+// A place served by fleetwm-netfs: unmounting it is `fusermount3 -u`.
+bool is_netfs_path(const std::string& path, const std::string& gvfs_dir);
+
+// Mounts the place: fleetwm-netfs when it handles the protocol, else `gio mount <uri>`; credentials are answered on stdin / its prompts.
+// A place that is already mounted is a success.
 MountOutcome mount_location(const Uri& u, const Credentials& c, CommandRunner& run, const std::string& gvfs_dir);
 bool unmount_location(const std::string& mountpoint, CommandRunner& run, std::string* error);
 
