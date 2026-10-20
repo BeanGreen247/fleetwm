@@ -250,6 +250,7 @@ struct Bar {
   Rect start_rect;
   std::vector<Rect> win_rects;  // parallel to `windows` (zero-size = not shown)
   int hover_win = -1;           // index into `windows`
+  double hover_glow_x = 0;      // where the pointer is inside the hovered taskbar button, in 8 px steps (the glass glow follows it)
   bool hover_start = false;
   int hover_workspace = -1;
 
@@ -1149,6 +1150,36 @@ struct Bar {
     }
   }
 
+  // The Windows 7 taskbar button: a glass sheen with a light rim, and while the pointer is over it a soft light that follows the pointer
+  // sideways (quantised to 8 px, so moving inside a button repaints about 1 in 8 events and not every one).
+  void draw_button_glass(cairo_t* cr, const Rect& r, double radius, bool active, bool hover) {
+    cairo_save(cr);
+    rounded_rect(cr, r.x, r.y, r.w, r.h, radius);
+    cairo_clip(cr);
+    cairo_pattern_t* sheen = cairo_pattern_create_linear(0, r.y, 0, r.y + r.h);
+    cairo_pattern_add_color_stop_rgba(sheen, 0, 1, 1, 1, active ? 0.30 : 0.18);
+    cairo_pattern_add_color_stop_rgba(sheen, 0.5, 1, 1, 1, 0.04);
+    cairo_pattern_add_color_stop_rgba(sheen, 1, 1, 1, 1, 0.0);
+    cairo_set_source(cr, sheen);
+    cairo_paint(cr);
+    cairo_pattern_destroy(sheen);
+    if (hover) {
+      const double gx = std::clamp(r.x + hover_glow_x, r.x, r.x + r.w);
+      cairo_pattern_t* glow = cairo_pattern_create_radial(gx, r.y + r.h * 0.85, 0, gx, r.y + r.h * 0.85, std::max(18.0, r.w * 0.7));
+      cairo_pattern_add_color_stop_rgba(glow, 0, 1, 1, 1, 0.42);
+      cairo_pattern_add_color_stop_rgba(glow, 0.5, 1, 1, 1, 0.14);
+      cairo_pattern_add_color_stop_rgba(glow, 1, 1, 1, 1, 0.0);
+      cairo_set_source(cr, glow);
+      cairo_paint(cr);
+      cairo_pattern_destroy(glow);
+    }
+    cairo_restore(cr);
+    rounded_rect(cr, r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1, radius);
+    set_source(cr, with_alpha({1, 1, 1, 1}, active ? 0.40 : 0.25));
+    cairo_set_line_width(cr, 1);
+    cairo_stroke(cr);
+  }
+
   void draw_window_button(cairo_t* cr, const Rect& r, const WindowEntry& w, bool hover, bool with_title) {
     const bool active = w.focused && !w.minimized;
     const double radius = config.taskbar_rounded && pal.rounded ? 8 : 0;
@@ -1156,23 +1187,7 @@ struct Bar {
       rounded_rect(cr, r.x, r.y, r.w, r.h, radius);
       set_source(cr, with_alpha(pal.accent, active ? 0.22 : 0.12));
       cairo_fill(cr);
-      if (glass) {  // a sheen over the button and a light rim
-        cairo_save(cr);
-        rounded_rect(cr, r.x, r.y, r.w, r.h, radius);
-        cairo_clip(cr);
-        cairo_pattern_t* sheen = cairo_pattern_create_linear(0, r.y, 0, r.y + r.h);
-        cairo_pattern_add_color_stop_rgba(sheen, 0, 1, 1, 1, active ? 0.30 : 0.18);
-        cairo_pattern_add_color_stop_rgba(sheen, 0.5, 1, 1, 1, 0.04);
-        cairo_pattern_add_color_stop_rgba(sheen, 1, 1, 1, 1, 0.0);
-        cairo_set_source(cr, sheen);
-        cairo_paint(cr);
-        cairo_pattern_destroy(sheen);
-        cairo_restore(cr);
-        rounded_rect(cr, r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1, radius);
-        set_source(cr, with_alpha({1, 1, 1, 1}, active ? 0.40 : 0.25));
-        cairo_set_line_width(cr, 1);
-        cairo_stroke(cr);
-      }
+      if (glass) draw_button_glass(cr, r, radius, active, hover);
     }
     const double isz = vertical() ? 28 : 22;
     const double ix = with_title ? r.x + 9 : r.x + (r.w - isz) / 2, iy = r.y + (r.h - isz) / 2;
@@ -1498,6 +1513,7 @@ struct Bar {
       rounded_rect(cr, r.x, r.y, r.w, r.h, radius);
       set_source(cr, with_alpha(pal.accent, active ? 0.22 : 0.12));
       cairo_fill(cr);
+      if (glass) draw_button_glass(cr, r, radius, active, hover);
     }
     const bool with_title = tb_pinned_label_visible(config.taskbar_labels, vertical(), pa.running);
     const double isz = vertical() ? 28 : 22;
@@ -2317,8 +2333,14 @@ struct Bar {
       int hp = -1;
       for (size_t i = 0; i < pinned_rects.size(); ++i)
         if (pinned_rects[i].hit(x, y)) hp = static_cast<int>(i);
+      const Rect* over = hp >= 0 ? &pinned_rects[static_cast<size_t>(hp)] : (hw >= 0 ? &win_rects[static_cast<size_t>(hw)] : nullptr);
+      const double gx = over ? std::floor((x - over->x) / 8.0) * 8.0 : 0.0;
+      const bool glow_moved = glass && over && gx != hover_glow_x;
+      if (over) hover_glow_x = gx;
       if (hp != hover_pinned) {
         hover_pinned = hp;
+        redraw();
+      } else if (glow_moved && hp >= 0) {
         redraw();
       }
       int hws = -1;
@@ -2329,7 +2351,7 @@ struct Bar {
         redraw();
       }
       const bool hs = start_rect.hit(x, y);
-      if (hw != hover_win || hs != hover_start) {
+      if (hw != hover_win || hs != hover_start || (glow_moved && hw >= 0)) {
         hover_win = hw;
         hover_start = hs;
         redraw();
