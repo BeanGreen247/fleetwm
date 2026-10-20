@@ -46,8 +46,9 @@ Color mixc(const Color& a, const Color& b, double t) {
 
 }  // namespace
 
-// Windows 7's default colorization over a blue wallpaper measured (52,157,207) on the frame; this colour at the strength below lands there.
-Color aero_blue() { return parse_color("#2d9ad0"); }
+// Windows 7's default colorization, "Sky" (116,184,252). Fitting the frame colours measured on real Windows 7 screenshots (docs/WINDOWS7_FRAME_REFERENCE.md,
+// sixth pass) with  frame = (1-alpha) * blurred backdrop + alpha * tint  lands exactly on this colour: tint = Sky x 0.857 at alpha 0.55 focused.
+Color aero_blue() { return parse_color("#74b8fc"); }
 
 Color tint_from_pixels(const uint8_t* px, int w, int h) {
   if (!px || w < 1 || h < 1) return aero_blue();
@@ -126,14 +127,16 @@ Color wallpaper_tint() {
 void mix_glass_colors(Palette& pal, const Color& base, int intensity) {
   const double k = std::clamp(intensity, 0, 100) / 100.0;
   // The taskbar, menus and tooltips: the tint darkened (Windows 7's taskbar is the frame colour, deeper), stronger with the intensity.
-  pal.glass_surface = mixc(base, Color{0, 0, 0, 1}, 0.42 - 0.20 * k);
-  // Windows 7 colorization: the colour itself, a little lightened, over the blurred wallpaper at 45-80% strength (never the theme's
-  // dark background, which made every tint look like slate). An unfocused window is greyer and clearer.
-  const Color white{1, 1, 1, 1};
-  pal.glass_title = mixc(base, white, 0.06);
-  pal.glass_title_idle = mixc(base, white, 0.62);  // Windows 7 clears an unfocused frame: more of the wallpaper, a light wash over it
-  pal.glass_alpha = 0.26 + 0.30 * k;       // 0.44 at the default strength: the frosted wallpaper and its ray show through clearly
-  pal.glass_alpha_idle = 0.12 + 0.20 * k;  // an unfocused frame is clearer still
+  pal.glass_surface = mixc(base, Color{0, 0, 0, 1}, 0.25);  // the taskbar: measured tint = colour x 0.75 at alpha 0.6 (fit weight 0.39)
+  // Windows 7 colorization, as DWM adds it up: out = blurBalance x blurred backdrop + afterglow x grey backdrop x colour + colour x colorBalance.
+  // The last two terms are one tint over the backdrop; fitted to measured frames (focused: backdrop weight 0.45, tint = colour x 0.86; unfocused:
+  // weight 0.67, a lighter tint; DWM scales the unfocused colour balance by 0.4 and lifts its blur balance to 0.4 x b + 0.6).
+  const Color white{1, 1, 1, 1}, black{0, 0, 0, 1};
+  pal.glass_title = mixc(base, black, 0.143);
+  pal.glass_title_idle = mixc(base, white, 0.15);
+  pal.glass_surface_alpha = 0.40 + 0.33 * k;  // 0.60 at the default strength
+  pal.glass_alpha = 0.32 + 0.30 * k;       // 0.50 at the default strength (measured 0.55)
+  pal.glass_alpha_idle = 0.14 + 0.27 * k;  // 0.30 (measured 0.33): the backdrop shows through more
   pal.aero_caption = true;
 }
 
@@ -144,6 +147,7 @@ void apply_glass_tint(Palette& pal, const GlassTintConfig& cfg) {
     pal.glass_title_idle = pal.bg_secondary;
     pal.glass_alpha = 0.74;
     pal.glass_alpha_idle = 0.56;
+    pal.glass_surface_alpha = 0.55;
     pal.aero_caption = false;
     return;
   }

@@ -147,7 +147,7 @@ struct Bar {
     if (glass) {
       GlassStyle st;
       st.tint = pal.glass_surface;
-      st.tint_alpha = 0.42;
+      st.tint_alpha = pal.glass_surface_alpha;  // 0.60 by default: measured on the Windows 7 taskbar (backdrop weight 0.39-0.4)
       st.radius = radius;
       st.ray = w >= 160 && h >= 24 ? 0.75 : 0.0;  // the light ray of the Windows 7 taskbar, on the wide surfaces only
       paint_glass(cr, backdrop, monitor_width(), monitor_height(), sx, sy, x, y, w, h, st);

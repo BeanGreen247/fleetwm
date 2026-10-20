@@ -45,6 +45,7 @@ extern "C" {
 #include "scene_node_owner.hpp"
 #include "cursor.hpp"
 #include "glass_backdrop.hpp"
+#include "glass_ray.hpp"
 #include "drag_rate.hpp"
 #include "grab_stats.hpp"
 #include "titlebar.hpp"
@@ -2524,6 +2525,7 @@ void Server::reload_theme_config() {
     }
   }
   glass_backdrop_clear();  // the glass setting or the wallpaper may have changed
+  glass_ray_clear();
   for (const std::unique_ptr<View>& view : views) {
     view->glass_bg_reset();
     view->invalidate_titlebar();

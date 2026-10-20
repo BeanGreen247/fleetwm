@@ -55,6 +55,7 @@ struct Palette {
   // How see-through the glass of a focused / unfocused titlebar and frame is (the colour above over the frosted wallpaper). The Aero
   // model (glass_tint.cpp) is a bright colour at about half strength, as Windows 7's colorization; the Theme tint keeps the old dark look.
   double glass_alpha = 0.74, glass_alpha_idle = 0.56;
+  double glass_surface_alpha = 0.55;  // the same for the taskbar and the bar (glass_surface over the backdrop)
   // true when the tint is an Aero-style colour (bright, translucent): the caption text is dark on a white halo, as in Windows 7.
   bool aero_caption = false;
 };

@@ -10,6 +10,7 @@
 
 #include "app_icon.hpp"
 #include "glass_backdrop.hpp"
+#include "glass_ray.hpp"
 #include "shadow.hpp"
 #include "window_shadow.hpp"
 #include "output.hpp"
@@ -446,6 +447,8 @@ void View::update_glass_backdrop() {
   if (!on) {
     for (wlr_scene_buffer* f : frost_)
       if (f) wlr_scene_node_set_enabled(&f->node, false);
+    for (wlr_scene_buffer* r : ray_)
+      if (r) wlr_scene_node_set_enabled(&r->node, false);
     return;
   }
   wlr_box area{};
@@ -454,8 +457,11 @@ void View::update_glass_backdrop() {
   if (!backdrop) {
     for (wlr_scene_buffer* f : frost_)
       if (f) wlr_scene_node_set_enabled(&f->node, false);
+    for (wlr_scene_buffer* r : ray_)
+      if (r) wlr_scene_node_set_enabled(&r->node, false);
     return;
   }
+  wlr_buffer* ray = glass_ray_for(area.width, area.height);
   int cx = 0, cy = 0;
   wlr_scene_node_coords(&container_tree->node, &cx, &cy);
   const int bt = frame_key_.px, th = frame_key_.th, w = frame_key_.w, h = frame_key_.h;
@@ -482,7 +488,27 @@ void View::update_glass_backdrop() {
                           static_cast<double>(y1 - y0)};
     wlr_scene_buffer_set_source_box(frost_[i], &src);
     wlr_scene_buffer_set_dest_size(frost_[i], x1 - x0, y1 - y0);
+    // The reflection over it. DWM keeps the reflection texture on the screen and moves it with the window by 10% (parallax), so the part of
+    // the picture shown here starts 10% of the window's distance from the screen's left edge further left than the plain screen position.
+    if (!ray) continue;
+    if (!ray_[i]) {
+      ray_[i] = wlr_scene_buffer_create(container_tree, nullptr);
+      ray_[i]->point_accepts_input = [](wlr_scene_buffer*, double*, double*) { return false; };
+    }
+    wlr_scene_node_place_above(&ray_[i]->node, &frost_[i]->node);
+    wlr_scene_node_set_enabled(&ray_[i]->node, true);
+    wlr_scene_node_set_position(&ray_[i]->node, x0 - cx, y0 - cy);
+    if (ray_[i]->buffer != ray) wlr_scene_buffer_set_buffer(ray_[i], ray);
+    constexpr double kParallax = 0.10;
+    const double margin = glass_ray_margin(area.width);
+    const double shift = kParallax * (cx - area.x);
+    const wlr_fbox rsrc = {(static_cast<double>(x0 - area.x) + margin - shift) / kRayScale, static_cast<double>(y0 - area.y) / kRayScale,
+                           static_cast<double>(x1 - x0) / kRayScale, static_cast<double>(y1 - y0) / kRayScale};
+    wlr_scene_buffer_set_source_box(ray_[i], &rsrc);
+    wlr_scene_buffer_set_dest_size(ray_[i], x1 - x0, y1 - y0);
+    wlr_scene_buffer_set_opacity(ray_[i], focused ? 0.70f : 0.40f);
   }
+  if (ray) wlr_buffer_unlock(ray);
   wlr_buffer_unlock(backdrop);  // glass_backdrop_for() hands out a lock, not the producer's reference
 }
 

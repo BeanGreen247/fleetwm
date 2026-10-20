@@ -47,8 +47,6 @@ struct GlassStyle {
 // bright leading edge with a long soft tail, leaning like a "/". A glass rectangle only shows the part of the beam that lies behind it, so
 // a window dragged across the screen slides through the ray. (x, y, w, h) is the rectangle in `cr`'s coordinates and (screen_x, screen_y)
 // is where its top-left corner is on the screen. `strength` is the beam's peak opacity. Painted over what is there, clipped to the rectangle.
-// Raises (factor > 1) the colour saturation of an ARGB32 picture in place; used once on the frosted backdrop (Aero saturates what it blurs).
-void saturate_argb32(unsigned char* pixels, int w, int h, int stride, double factor);
 void paint_screen_ray(cairo_t* cr, double screen_x, double screen_y, double x, double y, double w, double h, int out_w, int out_h,
                       double strength);
 void paint_glass(cairo_t* cr, cairo_surface_t* backdrop, int out_w, int out_h, double screen_x, double screen_y, double x,

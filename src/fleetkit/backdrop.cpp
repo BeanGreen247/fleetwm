@@ -117,8 +117,10 @@ cairo_surface_t* load_backdrop_uncached() {
   if (!img.ok()) return nullptr;
   uint8_t* small = nullptr;
   int w = 0, h = 0;
-  downscale_rgba(img.rgba.data(), img.width, img.height, 192, &small, &w, &h);
-  box_blur_rgba(small, w, h, 5, 3);
+  // Windows 7 blurs with a small radius (the wallpaper's shapes and light streaks stay recognisable through the glass): about 14 px at 1920
+  // wide. 480 px wide and three box passes of radius 3 give that (sigma = 3.5 px here); the old 192 px / radius 5 flattened everything.
+  downscale_rgba(img.rgba.data(), img.width, img.height, 480, &small, &w, &h);
+  box_blur_rgba(small, w, h, 3, 3);
   cairo_surface_t* s = cairo_image_surface_create(CAIRO_FORMAT_RGB24, w, h);
   cairo_surface_flush(s);
   uint8_t* dst = cairo_image_surface_get_data(s);
@@ -171,18 +173,6 @@ cairo_surface_t* load_backdrop(bool recheck) {
   shared = fresh;
   shared_key = key;
   return shared ? cairo_surface_reference(shared) : nullptr;
-}
-
-void saturate_argb32(unsigned char* pixels, int w, int h, int stride, double factor) {
-  const int f = static_cast<int>(factor * 256);
-  for (int y = 0; y < h; ++y) {
-    unsigned char* row = pixels + static_cast<size_t>(y) * stride;
-    for (int x = 0; x < w; ++x) {  // B, G, R, A in memory; the backdrop is opaque, so no premultiplication to undo
-      unsigned char* p = row + x * 4;
-      const int luma = (p[2] * 54 + p[1] * 183 + p[0] * 19) >> 8;
-      for (int c = 0; c < 3; ++c) p[c] = static_cast<unsigned char>(std::clamp(luma + (((p[c] - luma) * f) >> 8), 0, 255));
-    }
-  }
 }
 
 void paint_screen_ray(cairo_t* cr, double screen_x, double screen_y, double x, double y, double w, double h, int out_w, int out_h,

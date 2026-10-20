@@ -141,7 +141,7 @@ TEST(GlassTint, IntensityScalesTheTint) {
   fleetwm::kit::apply_glass_tint(hi, cfg);
   EXPECT_GT(hi.glass_alpha, lo.glass_alpha) << "the Aero model scales how see-through the frame is, not its colour";
   EXPECT_GT(hi.glass_alpha_idle, lo.glass_alpha_idle);
-  EXPECT_GT(hi.glass_surface.g, lo.glass_surface.g);
+  EXPECT_GT(hi.glass_surface_alpha, lo.glass_surface_alpha);
   EXPECT_TRUE(hi.aero_caption);
   EXPECT_GT(lo.glass_title.g, Palette{}.bg_secondary.g);  // even 0 shows a hint of the colour
 }

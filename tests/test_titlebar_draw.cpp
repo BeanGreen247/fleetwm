@@ -643,14 +643,3 @@ TEST(ScreenRay, StaysOnTheScreenWhateverRectangleShowsIt) {
   cairo_surface_destroy(window);
   cairo_surface_destroy(moved);
 }
-
-TEST(ScreenRay, SaturationBoostKeepsGreyAndPushesColourAway) {
-  unsigned char px[8] = {128, 128, 128, 255, 50, 100, 200, 255};  // B,G,R,A: a grey and an orange
-  td::saturate_argb32(px, 2, 1, 8, 1.5);
-  EXPECT_EQ(px[0], 128);
-  EXPECT_EQ(px[1], 128);
-  EXPECT_EQ(px[2], 128);
-  EXPECT_GT(px[6], 200);  // the red of the orange grows
-  EXPECT_LT(px[4], 50);   // the blue shrinks
-  EXPECT_EQ(px[7], 255);
-}
