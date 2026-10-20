@@ -1,4 +1,4 @@
-# GTK-free: only wayland-client + the image codecs + libcommon_core (toml++
+# GTK-free: only wayland-client + the image codecs + libcommon_core (fleettoml
 # config parsing). No GTK/GLib/Pango/Cairo is linked or mapped.
 executable(
   'fleetwm-wallpaper',

@@ -19,7 +19,7 @@ common_conf.set_quoted(
 )
 configure_file(output: 'paths_config.h', configuration: common_conf)
 
-# libcommon_core: everything that needs only toml++ -- config parsing, paths,
+# libcommon_core: everything that needs no GUI toolkit -- config parsing, paths,
 # IPC client, malloc tuning. GTK-free so fleetkit (non-GTK) clients such as
 # fleetwm-wallpaper link it without pulling GTK/GLib/Pango into the process.
 # The git revision, regenerated on every build so About always shows what is installed.
