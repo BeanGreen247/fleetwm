@@ -4,6 +4,7 @@
 # the screen and the user's settings are never touched. The only kill is by the pids this script started.
 #
 #   scripts/grab-stats-run.sh BUILD_DIR OUT_DIR [--renderer gles2|pixman] [--size 1920x1080] [--glass true|false] [--rounds 3] [--gpu] [--win-scale N]
+#   (environment WINDOW_SHADOWS=true|false sets theme.toml window_shadows, default true)
 #
 # BUILD_DIR holds src/compositor/fleetwm, src/bar/fleetwm-bar, src/wallpaper/fleetwm-wallpaper and apps/settings/fleetwm-settings.
 # Phases per round: idle 8 s, move 8 s (titlebar drags), resize 8 s (right-edge drags), idle 4 s. Results: OUT_DIR/summary.txt (median of each
@@ -26,7 +27,7 @@ W=${SIZE%x*}; H=${SIZE#*x}
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 RT=$(mktemp -d /tmp/fleetwm-gs.XXXXXX); chmod 700 "$RT"
 HM=$RT/home; mkdir -p "$HM/.config/fleetwm"
-printf 'window_layout = "desktop"\nglass_effects = %s\n' "$GLASS" > "$HM/.config/fleetwm/theme.toml"
+printf 'window_layout = "desktop"\nglass_effects = %s\nwindow_shadows = %s\n' "$GLASS" "${WINDOW_SHADOWS:-true}" > "$HM/.config/fleetwm/theme.toml"
 PIDS=()
 cleanup() {
   local p
@@ -52,7 +53,7 @@ if [[ ! -x $PTR ]]; then
 fi
 
 export XDG_RUNTIME_DIR=$RT HOME=$HM WLR_BACKENDS=headless WLR_RENDERER=$RENDERER FLEETWM_GRAB_STATS=${GRAB_STATS_LEVEL:-1} LANG=C.UTF-8 LC_ALL=C.UTF-8
-TAG="${RENDERER}-${SIZE}-glass${GLASS}"
+TAG="${RENDERER}-${SIZE}-glass${GLASS}-shadow${WINDOW_SHADOWS:-true}"
 LOG=$OUT/comp-$TAG.log
 dbus-run-session -- bash -c '
   "$0/src/compositor/fleetwm" >> "$1" 2>&1 &

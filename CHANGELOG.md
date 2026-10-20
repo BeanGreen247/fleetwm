@@ -4,6 +4,10 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
 
 ## Unreleased
 
+- Glass looks like Windows 7: dark caption text on a soft white glow, a bright colour over frosted wallpaper (the blurred wallpaper now sits under the titlebar and frame, `View::frost_`), tint strength as see-through-ness, two wide reflections, a deeper taskbar tint, a redder close button, and a soft drop shadow around floating windows (`window_shadows` in theme.toml, Settings -> Theme). docs/WINDOWS7_FRAME_REFERENCE.md, fourth pass.
+- File manager: built-in FTP, FTPS, SFTP, WebDAV and SMB clients (`fleetwm-netfs`, FUSE with libcurl, libssh2 and libsmbclient); GVfs stays the fallback and handles the other protocols. Checked against real vsftpd, OpenSSH, Apache mod_dav and Samba.
+- Chromium crashed in `xkb_state_update_mask` when a window was focused before the first key press: wlroots sends the focus-enter modifiers even when the seat has no keyboard, and no keymap had been sent yet. The seat now gets a keyboard as soon as one is registered (`Server::ensure_seat_keyboard`).
+- Every build is `-O3` (`optimization=3` in `meson.build`, `scripts/test.sh`).
 - Window titlebars no longer rescale the application icon on every redraw (`kit::draw_app_icon`; callgrind: icon paint 64.3M -> 0.88M instructions, per titlebar render about -35%); the tray icons in the bar and the launcher result icons use the same cached copy, which is now stored on the icon surface and freed with it
 - The compositor asks SDL2 programs for Wayland first (`SDL_VIDEODRIVER=wayland,x11`) so an SDL terminal no longer keeps Xwayland running (about 18 MB less on the dev VM)
 - `kit::measure_text` caches its answers (20,000 calls 22.2 ms -> 0.7 ms in the bench) and `draw_text` converts the text to glyphs once (2,000 labels 11.4 -> 8.8 ms); output pixels unchanged
