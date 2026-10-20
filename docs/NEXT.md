@@ -2,7 +2,7 @@
 
 ## Current state (2026-10-13)
 
-Not yet committed (2026-10-13; an 85 s headless session on the dev VM showed no CPU difference, see the section; details in `docs/OPTIMIZATIONS.md` "Round 2026-10-13"): titlebar/tray/launcher icon scaling cached (callgrind -35% per titlebar render), SDL clients no longer start Xwayland, text measure/draw cache, Debian 12/13/14 build support (`docs/DEBIAN_BACKPORT.md`). Open: end-to-end wall-time and GPU numbers on the Celeron laptop; an install and a session on Debian 12 and 14 (only built and unit-tested in Docker).
+Pushed (2026-10-13; an 85 s headless session on the dev VM showed no CPU difference, see the section; details in `docs/OPTIMIZATIONS.md` "Round 2026-10-13"): titlebar/tray/launcher icon scaling cached (callgrind -35% per titlebar render), SDL clients no longer start Xwayland, text measure/draw cache, Debian 12/13/14 build support (`docs/DEBIAN_BACKPORT.md`). Open: end-to-end wall-time and GPU numbers on the Celeron laptop; an install and a session on Debian 12 and 14 (only built and unit-tested in Docker).
 
 Latest work, all pushed (details and numbers in `docs/PERF_LOG_2026-10-11.md`, sections dated 2026-10-12):
 
@@ -11,7 +11,7 @@ Latest work, all pushed (details and numbers in `docs/PERF_LOG_2026-10-11.md`, s
 - `fleetwm-osd` on-screen card for volume, mute and brightness keys. Brightness through logind could only be checked on a real seat.
 - Task Manager memory figures follow `free`; hover explanations; Memory traffic row (memory controller counters, else last-level-cache misses x 64 B because Gemini Lake has no uncore_imc). Open: run once as root on a CPU with uncore_imc.
 - About 60% of the compositor's resize CPU is a Mesa shm texture-upload memcpy; no cheap change found.
-- Other open items: the Chromium XKB crashes (unexplained), Bluetooth and taskbar hardware tests, multi-monitor stages 5-6, native FTP/SFTP/WebDAV/SMB, 0.5.0 release (needs owner OK).
+- Other open items: the Chromium XKB crashes (unexplained), Bluetooth and taskbar hardware tests, multi-monitor stages 5-6, native FTP/SFTP/WebDAV/SMB, 0.5.0 release (after the owner's real-hardware tests finish).
 
 ## Earlier handoff update (2026-10-11)
 
@@ -58,8 +58,8 @@ The same list lives in the memory bank (`projects/fleetwm-state-2026-10-07-v0.4.
 - Glass against flat measured: CPU and GPU identical, nothing left to remove.
 
 ## Left to do
-1. IPC buffer test (Unix socket SO_SNDBUF/SO_RCVBUF, pipe sizes) for bulk transfers (PERFORMANCE_FINDINGS 2.5): not started.
-2. Pointer-motion repaint log (2.2) for the bar, start menu and titlebar buttons: not started.
+1. IPC buffer test (Unix socket SO_SNDBUF/SO_RCVBUF, pipe sizes) for bulk transfers (PERFORMANCE_FINDINGS 2.5): done 2026-10-09, no change needed (PERFORMANCE_FINDINGS item 1).
+2. Pointer-motion repaint log (2.2) for the bar, start menu and titlebar buttons: done 2026-10-09; the bar and start menu already compared the hovered item, the fleetkit Ui was fixed (PERFORMANCE_FINDINGS item 2).
 3. Bar idle wakeups: five unaligned timers (clock 1 s, stats 2 s, disk 5 s, network 5 s, battery 15 s) and a new timerfd per clock tick;
    align them to the clock tick and reuse one timerfd. Not measured as worth it (idle bar 0.33%, compositor 0.25%).
 4. Re-measure the PGO build against a non-PGO build on the laptop (PGO speed was never re-measured; Lestrix found PGO no gain).
@@ -132,7 +132,7 @@ Open, most important first:
 5. Performance next steps with an estimate: prefix-key array for the 100,000-name sort (about 20 ms), overlap read-back with writing for big files.
 6. The pointer was never moved by a real mouse in a running session; everything was driven by tests and the headless compositor.
 
-## Taskbar options (owner request 2026-10-09, not started)
+## Taskbar options (owner request 2026-10-09, implemented; see the 2026-10-20 note below)
 One "Taskbar" page in Settings (the Bar page grows into it; Date & Time keeps only the system clock and NTP, the clock format and bar time zone move here):
 1. Order of the elements (start, workspaces, pinned apps, window list, tray, keyboard layout, volume, network, power mode, battery, metrics, clock) as a list the user reorders (up/down, later drag), saved in `bar.toml` as `taskbar_order`; unknown names are dropped and missing ones appended, so an older file still loads.
 2. A toggle per element (`taskbar_hidden = [...]`).
