@@ -482,6 +482,11 @@ void View::update_glass_backdrop() {
                           static_cast<double>(y1 - y0)};
     wlr_scene_buffer_set_source_box(frost_[i], &src);
     wlr_scene_buffer_set_dest_size(frost_[i], x1 - x0, y1 - y0);
+    // The blurred wallpaper has no transparency: tell the scene, so the wallpaper (and anything else) below the frame is not drawn.
+    pixman_region32_t opaque;
+    pixman_region32_init_rect(&opaque, 0, 0, x1 - x0, y1 - y0);
+    wlr_scene_buffer_set_opaque_region(frost_[i], &opaque);
+    pixman_region32_fini(&opaque);
   }
   wlr_buffer_unlock(backdrop);  // glass_backdrop_for() hands out a lock, not the producer's reference
 }

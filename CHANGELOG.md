@@ -4,6 +4,7 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
 
 ## Unreleased
 
+- Windows 7 light ray across glass titlebars and the taskbar; a softer, wider window shadow; Settings -> Taskbar "Line under each running program" (`taskbar_indicator`), off and greyed out while glass effects are on.
 - Glass looks like Windows 7: dark caption text on a soft white glow, a bright colour over frosted wallpaper (the blurred wallpaper now sits under the titlebar and frame, `View::frost_`), tint strength as see-through-ness, two wide reflections, a deeper taskbar tint, a redder close button, and a soft drop shadow around floating windows (`window_shadows` in theme.toml, Settings -> Theme). docs/WINDOWS7_FRAME_REFERENCE.md, fourth pass.
 - File manager: built-in FTP, FTPS, SFTP, WebDAV and SMB clients (`fleetwm-netfs`, FUSE with libcurl, libssh2 and libsmbclient); GVfs stays the fallback and handles the other protocols. Checked against real vsftpd, OpenSSH, Apache mod_dav and Samba.
 - Chromium crashed in `xkb_state_update_mask` when a window was focused before the first key press: wlroots sends the focus-enter modifiers even when the seat has no keyboard, and no keymap had been sent yet. The seat now gets a keyboard as soon as one is registered (`Server::ensure_seat_keyboard`).
