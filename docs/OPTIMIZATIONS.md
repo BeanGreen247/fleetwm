@@ -974,3 +974,12 @@ Drag cost, `scripts/grab-stats-run.sh build-test OUT --renderer pixman --size 12
 | on (frost) | on | 1.21 | 1.36 | 521k |
 
 Reading: with CPU compositing the shadow ring adds about 0.2-0.3 ms per frame (+20-29%, more damaged area) and the frost layer about 0.1 ms (+8-12%); together +17-20%. On a GPU the cost is texture sampling over the same areas and is expected to be small, but that is not measured (the Celeron was off). `window_shadows = false` in theme.toml removes the shadow cost; the default stays on because the shadow is a large part of the Windows 7 look, and the owner decides after the hardware test.
+
+**Rejected: opaque region on the frost layer (2026-10-20).** Idea: `wlr_scene_buffer_set_opaque_region` on the four frost pieces so the scene would not draw the wallpaper below the frame. A/B on the pixman rig, glass on, shadows off, `commit_ms_avg` per frame, 4 interleaved runs each, 3 rounds per run (dev VM, CPU rendering):
+
+| | move ms/frame (4 runs) | mean | resize ms/frame (4 runs) | mean |
+|---|---|---|---|---|
+| without | 1.27, 1.25, 1.28, 1.29 | 1.27 | 1.35, 1.39, 1.40, 1.37 | 1.38 |
+| with | 1.28, 1.29, 1.24, 1.25 | 1.27 | 1.37, 1.41, 1.40, 1.39 | 1.39 |
+
+No difference (the spread inside one build is larger than the gap), so the change was removed. A first attempt at this A/B compared two identical binaries (the VM's `ninja` thought `view.cpp` was up to date because the extracted file had an older timestamp than the object: after syncing sources to the VM, `touch` them and check with `cmp` that the binaries differ before measuring).
