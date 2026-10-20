@@ -121,7 +121,7 @@ struct BarConfig {
   std::vector<std::string> taskbar_hidden = {"metrics"};
   bool taskbar_autohide = false;   // slides away until the pointer touches its screen edge
   bool start_centered = false;     // Windows 11 style: start button, pinned apps and window buttons centred
-  bool taskbar_labels = true;      // window buttons show the title beside the icon; off: icon only
+  bool taskbar_labels = false;     // window buttons show the title beside the icon; off (the Windows 7 way): icon only
   std::vector<std::string> pinned_apps;  // desktop entry ids ("firefox.desktop") with an icon button on the taskbar
   std::string media_player;        // MPRIS bus name or player identity; empty follows the active player
   MediaDisplay media_display = MediaDisplay::Progress;

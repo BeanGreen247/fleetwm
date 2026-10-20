@@ -262,6 +262,10 @@ void IpcServer::handle_line(Client& client, const std::string& line) {
     send(client.fd, reply.data(), reply.size(), MSG_NOSIGNAL);
     return;
   }
+  if (line == "SHOW_DESKTOP") {
+    server_->toggle_show_desktop();
+    return;
+  }
   if (line == "LAYOUT_NEXT") {
     server_->step_layout(1);
     return;

@@ -17,6 +17,7 @@
 #include "caption_buttons.hpp"
 #include "titlebar_draw.hpp"
 #include "window_shadow.hpp"
+#include "win7_look.hpp"
 #include "theme.hpp"
 
 namespace {
@@ -573,4 +574,41 @@ TEST(TextGlow, HaloAroundDarkTextAndTheKeptPictureMatches) {
   EXPECT_EQ(blue(1, 1), 153) << "far from the text nothing changes";
   cairo_surface_destroy(a);
   cairo_surface_destroy(b);
+}
+
+// The Windows 7 taskbar pieces: an idle pin shows nothing until the pointer is on it, a running one is a tile, the focused one is brighter.
+TEST(Win7Look, TileStatesAndTheOrb) {
+  auto paint = [](bool running, bool focused, bool hover) {
+    cairo_surface_t* s = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 60, 40);
+    cairo_t* cr = cairo_create(s);
+    td::TaskbarTile t;
+    t.running = running;
+    t.focused = focused;
+    t.hover = hover;
+    td::draw_taskbar_tile(cr, 4, 2, 52, 36, t, 20);
+    cairo_destroy(cr);
+    cairo_surface_flush(s);
+    const unsigned char* d = cairo_image_surface_get_data(s);
+    const int stride = cairo_image_surface_get_stride(s);
+    int sum = 0;
+    for (int y = 4; y < 36; ++y)
+      for (int x = 8; x < 52; ++x) sum += d[y * stride + x * 4 + 3];
+    cairo_surface_destroy(s);
+    return sum;
+  };
+  EXPECT_EQ(paint(false, false, false), 0) << "an idle pin draws nothing";
+  const int running = paint(true, false, false), focused = paint(true, true, false), hovered = paint(true, false, true);
+  EXPECT_GT(running, 0);
+  EXPECT_GT(focused, running);
+  EXPECT_GT(hovered, running);
+  cairo_surface_t* s = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 50, 50);
+  cairo_t* cr = cairo_create(s);
+  td::draw_start_orb(cr, 25, 25, 19, false, false);
+  cairo_destroy(cr);
+  cairo_surface_flush(s);
+  const unsigned char* d = cairo_image_surface_get_data(s);
+  const int stride = cairo_image_surface_get_stride(s);
+  EXPECT_EQ(d[25 * stride + 25 * 4 + 3], 255) << "the orb is solid in the middle";
+  EXPECT_EQ(d[1 * stride + 1 * 4 + 3], 0) << "and round: the corner is empty";
+  cairo_surface_destroy(s);
 }

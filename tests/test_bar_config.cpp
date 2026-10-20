@@ -447,7 +447,7 @@ TEST_F(BarConfigTest, TaskbarOptionsDefaults) {
   EXPECT_TRUE(c.pinned_apps.empty());
   EXPECT_FALSE(c.taskbar_autohide);
   EXPECT_FALSE(c.start_centered);
-  EXPECT_TRUE(c.taskbar_labels);
+  EXPECT_FALSE(c.taskbar_labels) << "icon-only buttons, as in Windows 7";
 }
 
 TEST_F(BarConfigTest, TaskbarOptionsRoundTrip) {
@@ -457,7 +457,7 @@ TEST_F(BarConfigTest, TaskbarOptionsRoundTrip) {
   c.pinned_apps = {"firefox.desktop", "org.gnome.Nautilus.desktop"};
   c.taskbar_autohide = true;
   c.start_centered = true;
-  c.taskbar_labels = false;
+  c.taskbar_labels = true;
   save_bar_config(c);
   const BarConfig back = load_bar_config();
   EXPECT_EQ(back.taskbar_order, c.taskbar_order);
@@ -465,7 +465,7 @@ TEST_F(BarConfigTest, TaskbarOptionsRoundTrip) {
   EXPECT_EQ(back.pinned_apps, c.pinned_apps);
   EXPECT_TRUE(back.taskbar_autohide);
   EXPECT_TRUE(back.start_centered);
-  EXPECT_FALSE(back.taskbar_labels);
+  EXPECT_TRUE(back.taskbar_labels);
 }
 
 TEST_F(BarConfigTest, MediaSettingsRoundTrip) {
@@ -484,7 +484,7 @@ TEST_F(BarConfigTest, OlderFileWithoutTaskbarOptionsStillLoads) {
   const BarConfig c = load_bar_config();
   EXPECT_EQ(c.taskbar_position, TaskbarPosition::Top);
   EXPECT_TRUE(c.taskbar_order.empty());
-  EXPECT_TRUE(c.taskbar_labels);
+  EXPECT_FALSE(c.taskbar_labels);
 }
 
 TEST_F(BarConfigTest, WrongTypesInTheListsAreSkipped) {

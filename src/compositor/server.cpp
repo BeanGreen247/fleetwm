@@ -2187,6 +2187,21 @@ void Server::toggle_view_from_taskbar(View* view) {
   }
 }
 
+void Server::toggle_show_desktop() {
+  if (!show_desktop_ids_.empty()) {
+    for (const std::unique_ptr<View>& view : views)
+      if (std::find(show_desktop_ids_.begin(), show_desktop_ids_.end(), view->id) != show_desktop_ids_.end() && view->minimized)
+        view->set_minimized(false);
+    show_desktop_ids_.clear();
+    return;
+  }
+  for (const std::unique_ptr<View>& view : views) {
+    if (!view->workspace || !view->is_window() || view->is_child_window() || view->minimized) continue;
+    view->set_minimized(true);
+    show_desktop_ids_.push_back(view->id);
+  }
+}
+
 std::vector<WindowEntry> Server::window_snapshot() const {
   std::vector<WindowEntry> out;
   wlr_surface* focused = seat_->keyboard_state.focused_surface;

@@ -48,6 +48,7 @@
 #include "prewarm.hpp"
 #include "theme.hpp"
 #include "backdrop.hpp"
+#include "win7_look.hpp"
 #include "keyboard_config.hpp"
 #include "network_glyphs.hpp"
 #include "network_parse.hpp"
@@ -249,6 +250,8 @@ struct Bar {
   std::vector<kit::DesktopEntry> desktop_entries;
   bool desktop_entries_loaded = false;
   Rect start_rect;
+  Rect show_desktop_rect;  // the sliver at the far end of the Windows 7 taskbar
+  bool hover_sliver = false;
   std::vector<Rect> win_rects;  // parallel to `windows` (zero-size = not shown)
   int hover_win = -1;           // index into `windows`
   double hover_glow_x = 0;      // where the pointer is inside the hovered taskbar button, in 8 px steps (the glass glow follows it)
@@ -1137,6 +1140,10 @@ struct Bar {
   }
 
   void draw_start_button(cairo_t* cr, const Rect& r) {
+    if (win7() && !vertical()) {  // the round start orb, a little taller than the buttons beside it
+      kit::draw_start_orb(cr, r.x + r.w / 2, r.y + r.h / 2, std::min(18.0, r.h / 2 + 1), hover_start, false);
+      return;
+    }
     if (hover_start) {
       rounded_rect(cr, r.x, r.y, r.w, r.h, pal.rounded ? 8 : 2);
       set_source(cr, with_alpha(pal.accent, 0.18));
@@ -1182,17 +1189,25 @@ struct Bar {
   }
 
   bool show_indicator() const { return config.taskbar_indicator && !glass; }
+  // The Windows 7 look of the taskbar (tile buttons, orb, light line, white clock) follows the tint: any colour but "Theme colours".
+  bool win7() const { return pal.aero_caption; }
 
   void draw_window_button(cairo_t* cr, const Rect& r, const WindowEntry& w, bool hover, bool with_title) {
     const bool active = w.focused && !w.minimized;
     const double radius = config.taskbar_rounded && pal.rounded ? 8 : 0;
-    if (active || hover) {
+    if (win7()) {
+      kit::TaskbarTile t;
+      t.running = true;  // every window button is a tile; the active one is brighter
+      t.focused = active;
+      t.hover = hover;
+      kit::draw_taskbar_tile(cr, r.x, r.y, r.w, r.h, t, hover_glow_x);
+    } else if (active || hover) {
       rounded_rect(cr, r.x, r.y, r.w, r.h, radius);
       set_source(cr, with_alpha(pal.accent, active ? 0.22 : 0.12));
       cairo_fill(cr);
       if (glass) draw_button_glass(cr, r, radius, active, hover);
     }
-    const double isz = vertical() ? 28 : 22;
+    const double isz = vertical() ? 28 : (win7() ? 28 : 22);
     const double ix = with_title ? r.x + 9 : r.x + (r.w - isz) / 2, iy = r.y + (r.h - isz) / 2;
     draw_window_icon(cr, w, ix, iy, isz);
     if (with_title) {
@@ -1235,28 +1250,52 @@ struct Bar {
       double sx = 0, sy = 0;  // where the taskbar sits on the screen
       if (tb_pos == TaskbarPosition::Bottom) sy = mh - H;
       else if (tb_pos == TaskbarPosition::Right) sx = mw - W;
-      bar_surface(cr, 0, 0, W, H, 0, sx, sy, 0.97);
+      if (win7() && !glass) {
+        kit::paint_basic_taskbar(cr, W, H, pal.glass_title, tb_pos == TaskbarPosition::Bottom ? 0 : tb_pos == TaskbarPosition::Top ? 1 : tb_pos == TaskbarPosition::Left ? 3 : 2);
+      } else {
+        bar_surface(cr, 0, 0, W, H, 0, sx, sy, 0.97);
+      }
     }
-    // Hairline on the edge that faces the desktop.
-    set_source(cr, with_alpha(pal.fg_secondary, 0.22));
-    switch (tb_pos) {
-      case TaskbarPosition::Bottom: cairo_rectangle(cr, 0, 0, W, 1); break;
-      case TaskbarPosition::Top: cairo_rectangle(cr, 0, H - 1, W, 1); break;
-      case TaskbarPosition::Left: cairo_rectangle(cr, W - 1, 0, 1, H); break;
-      case TaskbarPosition::Right: cairo_rectangle(cr, 0, 0, 1, H); break;
+    if (win7() && !glass) {
+      // paint_basic_taskbar drew the edge lines
+    } else if (win7()) {
+      // Windows 7: a dark line on the desktop-facing edge with a light one inside it
+      auto edge = [&](int off, double a, double c) {
+        cairo_set_source_rgba(cr, c, c, c, a);
+        switch (tb_pos) {
+          case TaskbarPosition::Bottom: cairo_rectangle(cr, 0, off, W, 1); break;
+          case TaskbarPosition::Top: cairo_rectangle(cr, 0, H - 1 - off, W, 1); break;
+          case TaskbarPosition::Left: cairo_rectangle(cr, W - 1 - off, 0, 1, H); break;
+          case TaskbarPosition::Right: cairo_rectangle(cr, off, 0, 1, H); break;
+        }
+        cairo_fill(cr);
+      };
+      edge(0, 0.60, 0.0);
+      edge(1, 0.42, 1.0);
+    } else {
+      // Hairline on the edge that faces the desktop.
+      set_source(cr, with_alpha(pal.fg_secondary, 0.22));
+      switch (tb_pos) {
+        case TaskbarPosition::Bottom: cairo_rectangle(cr, 0, 0, W, 1); break;
+        case TaskbarPosition::Top: cairo_rectangle(cr, 0, H - 1, W, 1); break;
+        case TaskbarPosition::Left: cairo_rectangle(cr, W - 1, 0, 1, H); break;
+        case TaskbarPosition::Right: cairo_rectangle(cr, 0, 0, 1, H); break;
+      }
+      cairo_fill(cr);
     }
-    cairo_fill(cr);
     draw_taskbar_elements(cr, m, W, H);
   }
 
   // ---- the Desktop taskbar: one list of elements for both orientations (see taskbar_layout.hpp) ----
   static constexpr double kBtn = 44, kStat = 38, kRow = 28, kClockRowV = 46;
   static constexpr double kPinnedBtnH = kBtn;  // icon-only pinned buttons keep a comfortable Windows-style cell
+  static constexpr double kTileW = 52;         // the width of an icon-only taskbar tile in the horizontal taskbar (Windows 7: about 1.4 x its height)
+  static constexpr double kSliverW = 14;       // the show-desktop sliver
 
   double pinned_width(Metrics& m, const PinnedApp& pa) {
     // An idle pin is a launcher button, so it stays a compact icon cell. Once
     // its application owns a window, it follows the Windows-style label rule.
-    if (!tb_pinned_label_visible(config.taskbar_labels, vertical(), pa.running)) return kPinnedBtnH;
+    if (!tb_pinned_label_visible(config.taskbar_labels, vertical(), pa.running)) return vertical() ? kPinnedBtnH : kTileW;
     return std::clamp(m.text_w(pa.name.empty() ? pa.id : pa.name) + 48.0, kPinnedBtnH, 220.0);
   }
 
@@ -1281,7 +1320,7 @@ struct Bar {
       case TbElement::Windows: {
         if (shown_unpinned.empty()) return 0;
         if (v) return static_cast<double>(shown_unpinned.size()) * (kBtn + 4);
-        const double window_w = config.taskbar_labels ? 200.0 : kBtn;
+        const double window_w = config.taskbar_labels ? 200.0 : kTileW;
         return static_cast<double>(shown_unpinned.size()) * (window_w + 4);
       }
       case TbElement::Metrics: {
@@ -1309,6 +1348,7 @@ struct Bar {
   void clear_tb_rects() {
     start_rect = power_rect = vol_rect = battery_rect = ram_rect = cpu_rect = gpu_rect = disk_rect = net_rect = layout_rect = bt_rect = media_rect = Rect{};
     clock_rect = Rect{};
+    show_desktop_rect = Rect{};
     for (Rect& r : ws_rect) r = Rect{};
     tray_rects.clear();
     pinned_rects.assign(pinned.size(), Rect{});
@@ -1326,7 +1366,8 @@ struct Bar {
       items.push_back({e, tb_natural(e, m, clock_w)});
     }
     TbLayoutParams p;
-    p.length = v ? H : W;
+    const double sliver = (win7() && !v) ? kSliverW : 0;
+    p.length = (v ? H : W) - sliver;
     p.margin = 6;
     p.gap = v ? 4 : 10;
     p.min_windows = v ? kBtn : 44;
@@ -1341,6 +1382,10 @@ struct Bar {
       const Rect box = v ? Rect{0, s.pos, static_cast<double>(W), s.size} : Rect{s.pos, 0, s.size, static_cast<double>(H)};
       draw_tb_element(cr, m, s.id, box, cross, fe);
     }
+    if (sliver > 0) {
+      show_desktop_rect = {W - sliver, 0, sliver, static_cast<double>(H)};
+      kit::draw_show_desktop_sliver(cr, show_desktop_rect.x, 0, sliver, H, hover_sliver);
+    }
   }
 
   // Draws one element inside `box` and records the rectangles clicks and tooltips use.
@@ -1352,7 +1397,7 @@ struct Bar {
     const Color ic = icon_fg();
     switch (e) {
       case TbElement::Start:
-        start_rect = v ? Rect{bx, box.y, bw, box.h} : Rect{box.x, 4, box.w, box.h - 8};
+        start_rect = v ? Rect{bx, box.y, bw, box.h} : Rect{box.x, win7() ? 1.0 : 4.0, box.w, win7() ? box.h - 2 : box.h - 8};
         draw_start_button(cr, start_rect);
         break;
       case TbElement::Workspaces:
@@ -1370,7 +1415,7 @@ struct Bar {
           double d = 0;
           for (size_t i = 0; i < pinned.size(); ++i) {
             const double pw = pinned_width(m, pinned[i]);
-            pinned_rects[i] = {box.x + d, 4, pw, box.h - 8};
+            pinned_rects[i] = {box.x + d, win7() ? 2.0 : 4.0, pw, win7() ? box.h - 4 : box.h - 8};
             draw_pinned_button(cr, pinned_rects[i], pinned[i], static_cast<int>(i) == hover_pinned);
             d += pw + 2;
           }
@@ -1388,7 +1433,7 @@ struct Bar {
         } else {
           const geom::TaskbarSlots slots = geom::taskbar_slots(box.w, shown_unpinned.size());
           for (size_t i = 0; i < slots.fit; ++i) {
-            win_rects[i] = {box.x + static_cast<double>(i) * (slots.bw + 4), 4, slots.bw, box.h - 8};
+            win_rects[i] = {box.x + static_cast<double>(i) * (slots.bw + 4), win7() ? 2.0 : 4.0, slots.bw, win7() ? box.h - 4 : box.h - 8};
             draw_window_button(cr, win_rects[i], shown_unpinned[i], static_cast<int>(i) == hover_win, config.taskbar_labels && slots.bw >= 96);
           }
         }
@@ -1497,11 +1542,11 @@ struct Bar {
         clock_rect = {clock_x - kClockPad, 0, clock_w + 2 * kClockPad, box.h};
         clock_w_drawn = box.w;
         if (date_line.empty()) {
-          draw_text(cr, time_line, clock_x + (clock_w - time_w) / 2, base, kFont, pal.accent, true);
+          draw_text(cr, time_line, clock_x + (clock_w - time_w) / 2, base, kFont, win7() ? Color{1, 1, 1, 0.97} : pal.accent, !win7());
         } else {
           const TextExtents te = measure_text(cr, time_line, kFont, true), de = measure_text(cr, date_line, kSmallFont);
           const double block = te.height + 1 + de.height, top = (box.h - block) / 2.0;
-          draw_text(cr, time_line, clock_x + (clock_w - time_w) / 2, top + te.ascent, kFont, pal.accent, true);
+          draw_text(cr, time_line, clock_x + (clock_w - time_w) / 2, top + te.ascent, kFont, win7() ? Color{1, 1, 1, 0.97} : pal.accent, !win7());
           draw_text(cr, date_line, clock_x + (clock_w - date_w) / 2, top + te.height + 1 + de.ascent, kSmallFont, with_alpha(ic, 0.95));
         }
         break;
@@ -1513,14 +1558,20 @@ struct Bar {
   void draw_pinned_button(cairo_t* cr, const Rect& r, const PinnedApp& pa, bool hover) {
     const bool active = pa.running && pa.focused && !pa.minimized;
     const double radius = config.taskbar_rounded && pal.rounded ? 8 : 0;
-    if (active || hover) {
+    if (win7()) {
+      kit::TaskbarTile t;
+      t.running = pa.running;  // an idle pin has no tile until the pointer is on it
+      t.focused = active;
+      t.hover = hover;
+      kit::draw_taskbar_tile(cr, r.x, r.y, r.w, r.h, t, hover_glow_x);
+    } else if (active || hover) {
       rounded_rect(cr, r.x, r.y, r.w, r.h, radius);
       set_source(cr, with_alpha(pal.accent, active ? 0.22 : 0.12));
       cairo_fill(cr);
       if (glass) draw_button_glass(cr, r, radius, active, hover);
     }
     const bool with_title = tb_pinned_label_visible(config.taskbar_labels, vertical(), pa.running);
-    const double isz = vertical() ? 28 : 22;
+    const double isz = vertical() ? 28 : (win7() ? 28 : 22);
     const double ix = with_title ? r.x + 9 : r.x + (r.w - isz) / 2, iy = r.y + (r.h - isz) / 2;
     if (cairo_surface_t* icon = app_icon(pa.icon_key, 48)) {
       draw_app_icon(cr, icon, ix, iy, isz, pa.minimized ? 0.5 : 1.0);
@@ -2254,6 +2305,10 @@ struct Bar {
     if (taskbar) {
       if (b == 0x111 && !over_status_widget(x, y)) return taskbar_context_menu(x, y);  // right button on a window, a pinned app or empty space
       if (b == kBtnLeft && start_rect.hit(x, y)) return spawn_start_menu();
+      if (b == kBtnLeft && show_desktop_rect.hit(x, y)) {
+        ipc.send_command("SHOW_DESKTOP");
+        return;
+      }
       for (size_t i = 0; i < pinned_rects.size() && i < pinned.size(); ++i) {
         if (!pinned_rects[i].hit(x, y)) continue;
         const PinnedApp& pa = pinned[i];
@@ -2352,6 +2407,11 @@ struct Bar {
         if (ws_rect[i].w > 0 && ws_rect[i].hit(x, y)) hws = i;
       if (hws != hover_workspace) {
         hover_workspace = hws;
+        redraw();
+      }
+      const bool hsd = show_desktop_rect.hit(x, y);
+      if (hsd != hover_sliver) {
+        hover_sliver = hsd;
         redraw();
       }
       const bool hs = start_rect.hit(x, y);

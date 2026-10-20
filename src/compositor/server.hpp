@@ -264,6 +264,8 @@ class Server {
   // Taskbar button semantics: restore if minimized, minimize if it already has
   // focus, otherwise focus it.
   void toggle_view_from_taskbar(View* view);
+  // The taskbar's show-desktop sliver (Windows 7): minimizes every window, or brings back the ones it minimized.
+  void toggle_show_desktop();
   // Coalesces any number of changes within one event-loop iteration into a
   // single WINDOWS broadcast.
   void schedule_windows_broadcast();
@@ -552,6 +554,7 @@ class Server {
   wlr_seat* seat_ = nullptr;
   int keyboard_count_ = 0;
   std::vector<Keyboard*> keyboards_;
+  std::vector<uint32_t> show_desktop_ids_;  // ids of the windows toggle_show_desktop() minimized, to bring back
   KeyboardConfig keyboard_config_;
   MouseConfig mouse_config_;
   std::vector<wlr_input_device*> mouse_devices_;
