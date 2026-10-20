@@ -146,13 +146,10 @@ std::vector<View*> glass_views_below(Server* server, const View* w) {
 }
 
 uint64_t glass_backdrop_key(Server* server, const View* w, const wlr_box rects[4]) {
-  uint64_t key = 1469598103934665603ull;
   wlr_box grown[4];
-  for (int i = 0; i < 4; ++i) {
+  for (int i = 0; i < 4; ++i)
     grown[i] = {rects[i].x - kGlassMargin, rects[i].y - kGlassMargin, rects[i].width + 2 * kGlassMargin, rects[i].height + 2 * kGlassMargin};
-    key = gs_mix(key, static_cast<uint64_t>(grown[i].x) * 31 + static_cast<uint64_t>(grown[i].y));
-    key = gs_mix(key, static_cast<uint64_t>(grown[i].width) * 131 + static_cast<uint64_t>(grown[i].height));
-  }
+  uint64_t key = 0;
   for (View* v : glass_views_below(server, w)) {
     GsRects r;
     if (!gs_rects(v, &r)) continue;
@@ -160,12 +157,19 @@ uint64_t glass_backdrop_key(Server* server, const View* w, const wlr_box rects[4
     for (int i = 0; i < 4; ++i)
       if (gs_intersects(grown[i], r.outer)) touches = true;
     if (!touches) continue;
+    if (key == 0) {  // the first window under the glass: the picture now depends on where the glass is, too
+      key = 1469598103934665603ull;
+      for (int i = 0; i < 4; ++i) {
+        key = gs_mix(key, static_cast<uint64_t>(grown[i].x) * 31 + static_cast<uint64_t>(grown[i].y));
+        key = gs_mix(key, static_cast<uint64_t>(grown[i].width) * 131 + static_cast<uint64_t>(grown[i].height));
+      }
+    }
     key = gs_mix(key, reinterpret_cast<uintptr_t>(v));
     key = gs_mix(key, static_cast<uint64_t>(r.outer.x) * 7919 + static_cast<uint64_t>(r.outer.y));
     key = gs_mix(key, static_cast<uint64_t>(r.outer.width) * 104729 + static_cast<uint64_t>(r.outer.height));
     key = gs_mix(key, v->content_serial + (v->focused ? 1u << 31 : 0u));
   }
-  return key;
+  return key;  // 0: only the wallpaper is under the glass, and the plain blurred wallpaper shows it exactly
 }
 
 void glass_picture_release(GlassPicture* p) {

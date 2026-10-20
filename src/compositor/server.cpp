@@ -2208,8 +2208,13 @@ void Server::mark_glass_dirty(View* view) {
 void Server::flush_glass_dirty() {
   std::set<View*> todo;
   todo.swap(glass_dirty_);
+  const double t0 = grabstats::enabled() ? grabstats::now_s() : 0.0;
   for (const std::unique_ptr<View>& view : views)
-    if (todo.count(view.get())) view->rebuild_glass_pictures();
+    if (todo.count(view.get())) {
+      view->rebuild_glass_pictures();
+      if (grabstats::enabled()) ++grabstats::c().glass_builds;
+    }
+  if (grabstats::enabled()) grabstats::c().glass_ms += (grabstats::now_s() - t0) * 1000.0;
 }
 
 void Server::glass_forget(View* view) { glass_dirty_.erase(view); }

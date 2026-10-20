@@ -546,6 +546,11 @@ void View::rebuild_glass_pictures() {
   wlr_box rects[4];
   for (int i = 0; i < 4; ++i) rects[i] = {cx + pieces[i].x, cy + pieces[i].y, pieces[i].width, pieces[i].height};
   dyn_key_ = glass_backdrop_key(server, this, rects);
+  if (dyn_key_ == 0) {  // nothing but the wallpaper is under the glass
+    for (GlassPicture& p : dyn_) glass_picture_release(&p);
+    update_glass_backdrop();
+    return;
+  }
   if (!glass_build_pictures(server, this, rects, area, dyn_)) return;
   update_glass_backdrop();
 }

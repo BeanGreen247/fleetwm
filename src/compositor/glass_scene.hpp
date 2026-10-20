@@ -32,7 +32,8 @@ struct GlassPicture {
 std::vector<View*> glass_views_below(Server* server, const View* w);
 
 // A number that changes when what lies under the four frame parts `rects` (layout coordinates) changed: the windows below that touch them, their
-// positions, sizes and the serial of their last content commit. Equal keys mean the picture would come out the same.
+// positions, sizes and the serial of their last content commit. Equal keys mean the picture would come out the same; 0 means that no window is
+// under the glass, so the plain blurred wallpaper is exact and no picture is needed.
 uint64_t glass_backdrop_key(Server* server, const View* w, const wlr_box rects[4]);
 
 // Builds the four pictures. `area` is the output's box (the wallpaper is laid out by it). Returns false when nothing could be built.
