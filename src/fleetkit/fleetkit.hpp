@@ -52,6 +52,11 @@ struct Palette {
   // How opaque the background of a Fleetwm window (Ui::begin) is: 1 normally, less with Glass effects, where the compositor puts
   // the frosted wallpaper behind the window (compositor/glass_backdrop.hpp). Programs that paint their own background ignore it.
   double window_alpha = 1.0;
+  // How see-through the glass of a focused / unfocused titlebar and frame is (the colour above over the frosted wallpaper). The Aero
+  // model (glass_tint.cpp) is a bright colour at about half strength, as Windows 7's colorization; the Theme tint keeps the old dark look.
+  double glass_alpha = 0.74, glass_alpha_idle = 0.56;
+  // true when the tint is an Aero-style colour (bright, translucent): the caption text is dark on a white halo, as in Windows 7.
+  bool aero_caption = false;
 };
 
 struct MenuTheme {
@@ -74,6 +79,10 @@ TextExtents measure_text(cairo_t* cr, const std::string& s, double px, bool bold
 // Draws with the baseline at y. Returns the advance width.
 double draw_text(cairo_t* cr, const std::string& s, double x, double y, double px,
                  const Color& c, bool bold = false);
+// The Windows 7 caption look: the text in `c` on a soft halo of `glow` (about 9 px reach), which keeps dark text readable on any glass.
+// The blurred halo shape is kept per (text, size, weight), so a redraw is one masked fill. Returns the advance width.
+double draw_text_glow(cairo_t* cr, const std::string& s, double x, double y, double px, const Color& c, const Color& glow,
+                      bool bold = false);
 
 // ---- input events ----
 enum Mods : uint32_t { kShift = 1, kCtrl = 2, kAlt = 4, kSuper = 8 };

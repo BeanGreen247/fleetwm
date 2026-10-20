@@ -37,7 +37,7 @@ void draw_titlebar(cairo_t* cr, int width, int height, const TitlebarPaint& pain
 
 // The glass background on its own (translucent colour, sheen, diagonal band, edge lines), kept as a finished
 // picture per (size, focus, colour): painting it again is one blit. Exposed for the tests.
-void paint_titlebar_glass_background(cairo_t* cr, int width, int height, bool focused, const Color& base);
+void paint_titlebar_glass_background(cairo_t* cr, int width, int height, bool focused, const Color& base, double alpha = -1);
 
 // The left, right and bottom parts of a window frame, in the same glass (or flat) as the titlebar they hang
 // from: translucent colour with a light line on the outer edge and a darker one against the content.

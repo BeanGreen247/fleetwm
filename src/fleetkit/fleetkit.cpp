@@ -186,6 +186,86 @@ double draw_text(cairo_t* cr, const std::string& s, double x, double y, double p
   return te.x_advance;
 }
 
+namespace {
+
+// Blurred text shapes for draw_text_glow, one A8 picture per (text, size, weight). 3 box passes of radius 4 on the glyph coverage, then
+// boosted so the halo is dense close to the letters, the way Aero's caption glow is.
+struct GlowMask {
+  cairo_surface_t* image = nullptr;
+  int margin = 0;
+  unsigned long used = 0;
+};
+constexpr int kGlowMargin = 10;
+constexpr size_t kGlowBudget = 512u << 10;
+
+void box_blur_a8(unsigned char* p, int w, int h, int stride, int r, int passes) {
+  std::vector<unsigned char> tmp(static_cast<size_t>(stride) * h);
+  const int div = 2 * r + 1;
+  for (int pass = 0; pass < passes; ++pass) {
+    for (int y = 0; y < h; ++y) {
+      const unsigned char* s = p + static_cast<size_t>(y) * stride;
+      unsigned char* d = &tmp[static_cast<size_t>(y) * stride];
+      int sum = 0;
+      for (int x = -r; x <= r; ++x) sum += s[std::clamp(x, 0, w - 1)];
+      for (int x = 0; x < w; ++x) {
+        d[x] = static_cast<unsigned char>(sum / div);
+        sum += s[std::min(x + r + 1, w - 1)] - s[std::max(x - r, 0)];
+      }
+    }
+    for (int x = 0; x < w; ++x) {
+      int sum = 0;
+      for (int y = -r; y <= r; ++y) sum += tmp[static_cast<size_t>(std::clamp(y, 0, h - 1)) * stride + x];
+      for (int y = 0; y < h; ++y) {
+        p[static_cast<size_t>(y) * stride + x] = static_cast<unsigned char>(sum / div);
+        sum += tmp[static_cast<size_t>(std::min(y + r + 1, h - 1)) * stride + x] - tmp[static_cast<size_t>(std::max(y - r, 0)) * stride + x];
+      }
+    }
+  }
+}
+
+}  // namespace
+
+double draw_text_glow(cairo_t* cr, const std::string& s, double x, double y, double px, const Color& c, const Color& glow, bool bold) {
+  static thread_local std::unordered_map<MeasureKey, GlowMask, MeasureKeyHash> cache;
+  static thread_local unsigned long clock = 0;
+  const TextExtents te = measure_text(cr, s, px, bold);
+  const MeasureKey key{s, static_cast<float>(px), 1.0f, bold};
+  auto it = cache.find(key);
+  if (it == cache.end()) {
+    GlowMask m;
+    m.margin = kGlowMargin;
+    const int w = static_cast<int>(std::ceil(te.width)) + 2 * kGlowMargin, h = static_cast<int>(std::ceil(te.height)) + 2 * kGlowMargin;
+    m.image = cairo_image_surface_create(CAIRO_FORMAT_A8, w, h);
+    cairo_t* mc = cairo_create(m.image);
+    apply_font(mc, px, bold);
+    cairo_set_source_rgba(mc, 0, 0, 0, 1);
+    cairo_move_to(mc, kGlowMargin, kGlowMargin + te.ascent);
+    cairo_show_text(mc, s.c_str());
+    cairo_destroy(mc);
+    cairo_surface_flush(m.image);
+    unsigned char* d = cairo_image_surface_get_data(m.image);
+    const int stride = cairo_image_surface_get_stride(m.image);
+    box_blur_a8(d, w, h, stride, 4, 3);
+    for (int row = 0; row < h; ++row)
+      for (int col = 0; col < w; ++col) {
+        unsigned char& v = d[static_cast<size_t>(row) * stride + col];
+        v = static_cast<unsigned char>(std::min(255, v * 5 / 2));
+      }
+    cairo_surface_mark_dirty(m.image);
+    size_t bytes = 0;
+    for (auto& [k, e] : cache) bytes += static_cast<size_t>(cairo_image_surface_get_stride(e.image)) * cairo_image_surface_get_height(e.image);
+    if (bytes > kGlowBudget) {
+      for (auto& [k, e] : cache) cairo_surface_destroy(e.image);
+      cache.clear();
+    }
+    it = cache.emplace(key, m).first;
+  }
+  it->second.used = ++clock;
+  set_source(cr, glow);
+  cairo_mask_surface(cr, it->second.image, x - it->second.margin, y - te.ascent - it->second.margin);
+  return draw_text(cr, s, x, y, px, c, bold);
+}
+
 // --------------------------------------------------------------- Surface ---
 
 Surface::Surface(App& app, const Config& cfg) : app_(app), cfg_(cfg) {

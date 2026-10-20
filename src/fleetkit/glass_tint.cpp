@@ -125,8 +125,14 @@ Color wallpaper_tint() {
 void mix_glass_colors(Palette& pal, const Color& base, int intensity) {
   const double k = std::clamp(intensity, 0, 100) / 100.0;
   pal.glass_surface = mixc(pal.bg_primary, base, 0.25 + 0.60 * k);
-  pal.glass_title = mixc(pal.bg_secondary, base, 0.30 + 0.65 * k);
-  pal.glass_title_idle = mixc(pal.bg_secondary, base, 0.12 + 0.30 * k);
+  // Windows 7 colorization: the colour itself, a little lightened, over the blurred wallpaper at 45-80% strength (never the theme's
+  // dark background, which made every tint look like slate). An unfocused window is greyer and clearer.
+  const Color white{1, 1, 1, 1}, grey{0.72, 0.74, 0.78, 1};
+  pal.glass_title = mixc(base, white, 0.10);
+  pal.glass_title_idle = mixc(mixc(base, grey, 0.55), white, 0.10);
+  pal.glass_alpha = 0.45 + 0.35 * k;
+  pal.glass_alpha_idle = 0.28 + 0.22 * k;
+  pal.aero_caption = true;
 }
 
 void apply_glass_tint(Palette& pal, const GlassTintConfig& cfg) {
@@ -134,6 +140,9 @@ void apply_glass_tint(Palette& pal, const GlassTintConfig& cfg) {
     pal.glass_surface = pal.bg_primary;
     pal.glass_title = mixc(pal.bg_secondary, pal.accent, 0.12);
     pal.glass_title_idle = pal.bg_secondary;
+    pal.glass_alpha = 0.74;
+    pal.glass_alpha_idle = 0.56;
+    pal.aero_caption = false;
     return;
   }
   Color base = aero_blue();

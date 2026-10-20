@@ -32,9 +32,9 @@ void rounded_rect_path(cairo_t* cr, double x0, double y0, double x1, double y1, 
 
 // The glass background, drawn from scratch: the theme colour see-through, a sheen fading down from the top
 // and one soft diagonal band; a light line along the top edge and a darker one under the bar.
-void draw_glass_background(cairo_t* cr, int width, int height, bool focused, const Color& bg) {
+void draw_glass_background(cairo_t* cr, int width, int height, bool focused, const Color& bg, double alpha) {
   cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
-  cairo_set_source_rgba(cr, bg.r, bg.g, bg.b, focused ? 0.74 : 0.56);
+  cairo_set_source_rgba(cr, bg.r, bg.g, bg.b, alpha);
   cairo_paint(cr);
   cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
   cairo_pattern_t* sheen = cairo_pattern_create_linear(0, 0, 0, height);
@@ -44,19 +44,24 @@ void draw_glass_background(cairo_t* cr, int width, int height, bool focused, con
   cairo_set_source(cr, sheen);
   cairo_paint(cr);
   cairo_pattern_destroy(sheen);
-  const double bx = width * 0.22, bw = std::max(30.0, width * 0.10), slant = height * 0.6;
-  cairo_pattern_t* band = cairo_pattern_create_linear(bx, 0, bx + bw, 0);
-  cairo_pattern_add_color_stop_rgba(band, 0, 1, 1, 1, 0.0);
-  cairo_pattern_add_color_stop_rgba(band, 0.5, 1, 1, 1, focused ? 0.09 : 0.05);
-  cairo_pattern_add_color_stop_rgba(band, 1, 1, 1, 1, 0.0);
-  cairo_set_source(cr, band);
-  cairo_move_to(cr, bx + slant, 0);
-  cairo_line_to(cr, bx + bw + slant, 0);
-  cairo_line_to(cr, bx + bw, height);
-  cairo_line_to(cr, bx, height);
-  cairo_close_path(cr);
-  cairo_fill(cr);
-  cairo_pattern_destroy(band);
+  // Aero's reflections: two wide, soft diagonal streaks across the glass, brighter when the window has focus.
+  struct Streak { double at, wide, a; } streaks[] = {{0.16, 0.20, focused ? 0.14 : 0.08}, {0.52, 0.09, focused ? 0.09 : 0.05}};
+  const double slant = height * 0.9;
+  for (const Streak& st : streaks) {
+    const double bx = width * st.at, bw = std::max(40.0, width * st.wide);
+    cairo_pattern_t* band = cairo_pattern_create_linear(bx, 0, bx + bw, 0);
+    cairo_pattern_add_color_stop_rgba(band, 0, 1, 1, 1, 0.0);
+    cairo_pattern_add_color_stop_rgba(band, 0.5, 1, 1, 1, st.a);
+    cairo_pattern_add_color_stop_rgba(band, 1, 1, 1, 1, 0.0);
+    cairo_set_source(cr, band);
+    cairo_move_to(cr, bx + slant, 0);
+    cairo_line_to(cr, bx + bw + slant, 0);
+    cairo_line_to(cr, bx + bw, height);
+    cairo_line_to(cr, bx, height);
+    cairo_close_path(cr);
+    cairo_fill(cr);
+    cairo_pattern_destroy(band);
+  }
   cairo_set_source_rgba(cr, 0, 0, 0, 0.30);
   cairo_rectangle(cr, 0, height - 1, width, 1);
   cairo_fill(cr);
@@ -68,7 +73,7 @@ void draw_glass_background(cairo_t* cr, int width, int height, bool focused, con
 struct GlassEntry {
   int w = 0, h = 0;
   bool focused = false;
-  double r = 0, g = 0, b = 0;
+  double r = 0, g = 0, b = 0, a = 0;
   cairo_surface_t* image = nullptr;
   unsigned long used = 0;
 };
@@ -80,9 +85,10 @@ size_t entry_bytes(const GlassEntry& e) { return static_cast<size_t>(e.w) * e.h 
 
 }  // namespace
 
-void paint_titlebar_glass_background(cairo_t* cr, int width, int height, bool focused, const Color& base) {
+void paint_titlebar_glass_background(cairo_t* cr, int width, int height, bool focused, const Color& base, double alpha) {
+  if (alpha < 0) alpha = focused ? 0.74 : 0.56;
   for (GlassEntry& e : g_glass)
-    if (e.w == width && e.h == height && e.focused == focused && e.r == base.r && e.g == base.g && e.b == base.b) {
+    if (e.w == width && e.h == height && e.focused == focused && e.r == base.r && e.g == base.g && e.b == base.b && e.a == alpha) {
       e.used = ++g_glass_clock;
       cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
       cairo_set_source_surface(cr, e.image, 0, 0);
@@ -94,13 +100,14 @@ void paint_titlebar_glass_background(cairo_t* cr, int width, int height, bool fo
   made.w = width;
   made.h = height;
   made.focused = focused;
+  made.a = alpha;
   made.r = base.r;
   made.g = base.g;
   made.b = base.b;
   if (entry_bytes(made) <= kGlassBudget / 2) {  // an unreasonably wide bar is just drawn, not kept
     made.image = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, width, height);
     cairo_t* ic = cairo_create(made.image);
-    draw_glass_background(ic, width, height, focused, base);
+    draw_glass_background(ic, width, height, focused, base, alpha);
     cairo_destroy(ic);
     size_t total = entry_bytes(made);
     for (const GlassEntry& e : g_glass) total += entry_bytes(e);
@@ -118,7 +125,7 @@ void paint_titlebar_glass_background(cairo_t* cr, int width, int height, bool fo
     cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
     return;
   }
-  draw_glass_background(cr, width, height, focused, base);
+  draw_glass_background(cr, width, height, focused, base, alpha);
 }
 
 TitlebarCacheStats titlebar_glass_cache_stats() {
@@ -289,7 +296,7 @@ void draw_frame_strip(cairo_t* cr, int width, int height, FrameEdge edge, bool f
   const Color bg = glass ? (focused ? pal.glass_title : pal.glass_title_idle) : (focused ? tb_mix(pal.bg_secondary, pal.accent, 0.12) : pal.bg_secondary);
   const bool left = edge == FrameEdge::Left, right = edge == FrameEdge::Right;
   cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
-  if (glass) cairo_set_source_rgba(cr, bg.r, bg.g, bg.b, focused ? 0.74 : 0.56);
+  if (glass) cairo_set_source_rgba(cr, bg.r, bg.g, bg.b, focused ? pal.glass_alpha : pal.glass_alpha_idle);
   else cairo_set_source_rgba(cr, bg.r, bg.g, bg.b, 1.0);
   cairo_paint(cr);
   cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
@@ -339,7 +346,7 @@ void draw_titlebar(cairo_t* cr, int width, int height, const TitlebarPaint& p, c
   const bool glass_look = p.glass;  // read before the buttons, which are drawn the same either way
 
   if (p.glass) {
-    paint_titlebar_glass_background(cr, width, height, p.focused, bg);
+    paint_titlebar_glass_background(cr, width, height, p.focused, bg, p.focused ? pal.glass_alpha : pal.glass_alpha_idle);
   } else {
     set_source(cr, bg);
     cairo_paint(cr);
@@ -378,7 +385,12 @@ void draw_titlebar(cairo_t* cr, int width, int height, const TitlebarPaint& p, c
     if (cut) text += "...";
     const TextExtents te = measure_text(cr, text, font, p.focused);
     const double x = geom::title_x(lay, te.width, p.align, width);
-    draw_text(cr, text, x, (height - te.height) / 2.0 + te.ascent - 0.5, font, fg, p.focused);
+    const double ty = (height - te.height) / 2.0 + te.ascent - 0.5;
+    if (p.glass && pal.aero_caption)  // Windows 7: dark text on a soft white halo, readable on any glass
+      draw_text_glow(cr, text, x, ty, font, p.focused ? Color{0, 0, 0, 0.92} : Color{0.20, 0.22, 0.26, 0.85},
+                     Color{1, 1, 1, p.focused ? 0.80 : 0.55}, false);
+    else
+      draw_text(cr, text, x, ty, font, fg, p.focused);
   }
 
   // Buttons: one joined Windows 7 style strip (pin, minimize, maximize, close), see caption_buttons.hpp.
