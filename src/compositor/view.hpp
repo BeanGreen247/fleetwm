@@ -316,6 +316,9 @@ class View {
   FrameKey frame_key_;
   wlr_scene_buffer* glass_bg_ = nullptr;
   int glass_bg_w_ = 0, glass_bg_h_ = 0;  // output size of the picture it shows, to set it only when it changes
+  // The frosted wallpaper behind the translucent frame: one piece per part of the frame (titlebar, left, right, bottom), each showing the
+  // part of the blurred wallpaper that lies under it. Below the client and the frame, so Aero glass looks frosted and not just tinted.
+  wlr_scene_buffer* frost_[4] = {};
   void update_frame(int content_h);
   // Rounded outer corners: the theme asks for them and the window is a free-floating one, not filling the screen.
   bool round_corners() const;

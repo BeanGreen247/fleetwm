@@ -399,8 +399,53 @@ void View::update_frame(int content_h) {
 
 void View::update_glass_backdrop() {
   // Fleetwm's own windows used to get a frosted picture behind their (then see-through) body. Their body is opaque now, only the
-  // frame is glass, so the picture is never wanted; this just switches off one made earlier.
+  // frame is glass, so that picture is never wanted; this switches off one made earlier.
   if (glass_bg_) wlr_scene_node_set_enabled(&glass_bg_->node, false);
+
+  // The frame itself is translucent: put the blurred wallpaper under each of its parts, aimed at the same part of the screen, so the
+  // glass is frosted the way Windows 7's is. The pieces have the frame's geometry (update_titlebar and update_frame).
+  const bool on = server->theme_config().glass && output && wants_titlebar() && frame_key_.w >= 0 && frame_key_.px > 0;
+  if (!on) {
+    for (wlr_scene_buffer* f : frost_)
+      if (f) wlr_scene_node_set_enabled(&f->node, false);
+    return;
+  }
+  wlr_box area{};
+  wlr_output_layout_get_box(server->output_layout(), output->wlr_output_ptr, &area);
+  wlr_buffer* backdrop = glass_backdrop_for(area.width, area.height);
+  if (!backdrop) {
+    for (wlr_scene_buffer* f : frost_)
+      if (f) wlr_scene_node_set_enabled(&f->node, false);
+    return;
+  }
+  int cx = 0, cy = 0;
+  wlr_scene_node_coords(&container_tree->node, &cx, &cy);
+  const int bt = frame_key_.px, th = frame_key_.th, w = frame_key_.w, h = frame_key_.h;
+  const int y = top_border() + th;
+  const wlr_box pieces[4] = {{0, 0, w + 2 * bt, th}, {0, y, bt, h}, {bt + w, y, bt, h}, {0, y + h, w + 2 * bt, bt}};
+  for (int i = 0; i < 4; ++i) {
+    // The part of the piece that lies on this output; the rest has nothing to show.
+    const int x0 = std::max(cx + pieces[i].x, area.x), y0 = std::max(cy + pieces[i].y, area.y);
+    const int x1 = std::min(cx + pieces[i].x + pieces[i].width, area.x + area.width);
+    const int y1 = std::min(cy + pieces[i].y + pieces[i].height, area.y + area.height);
+    if (!frost_[i]) {
+      frost_[i] = wlr_scene_buffer_create(container_tree, nullptr);
+      frost_[i]->node.data = &tag;  // part of the decoration, like the strips above it
+      wlr_scene_node_lower_to_bottom(&frost_[i]->node);
+    }
+    if (x1 <= x0 || y1 <= y0) {
+      wlr_scene_node_set_enabled(&frost_[i]->node, false);
+      continue;
+    }
+    wlr_scene_node_set_enabled(&frost_[i]->node, true);
+    wlr_scene_node_set_position(&frost_[i]->node, x0 - cx, y0 - cy);
+    if (frost_[i]->buffer != backdrop) wlr_scene_buffer_set_buffer(frost_[i], backdrop);
+    const wlr_fbox src = {static_cast<double>(x0 - area.x), static_cast<double>(y0 - area.y), static_cast<double>(x1 - x0),
+                          static_cast<double>(y1 - y0)};
+    wlr_scene_buffer_set_source_box(frost_[i], &src);
+    wlr_scene_buffer_set_dest_size(frost_[i], x1 - x0, y1 - y0);
+  }
+  wlr_buffer_unlock(backdrop);  // glass_backdrop_for() hands out a lock, not the producer's reference
 }
 
 bool View::round_corners() const {

@@ -36,7 +36,7 @@ Glass glass_from(const Rgb& base, bool dark, double shine = 1.0) {
   return g;
 }
 
-constexpr Rgb kRed = {0.80, 0.26, 0.20}, kRedLit = {0.98, 0.46, 0.15}, kGlowRed = {1.00, 0.60, 0.12};
+constexpr Rgb kRed = {0.84, 0.22, 0.15}, kRedLit = {0.98, 0.46, 0.15}, kGlowRed = {1.00, 0.60, 0.12};
 
 // The glass of a button in its current state, from the theme colours.
 Glass glass_for(int id, bool hover, bool pressed, bool toggled, const CaptionState& st, bool dark) {

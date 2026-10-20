@@ -1969,6 +1969,7 @@ void Server::update_grab() {
     }
     if (grabstats::enabled()) ++grabstats::c().pos;
     wlr_scene_node_set_position(&view->container_tree->node, x, y);
+    view->update_glass_backdrop();  // the frosted wallpaper under the frame follows the window
     view->sync_x11_position();
     update_snap_preview(view);
     return;
@@ -1980,6 +1981,7 @@ void Server::update_grab() {
     const int x = nb.x, y = nb.y, w = nb.w, h = nb.h;
     if (grabstats::enabled()) ++grabstats::c().pos;
     wlr_scene_node_set_position(&view->container_tree->node, x, y);
+    view->update_glass_backdrop();
     if (w != view->last_requested_content_w || h != view->last_requested_content_h) request_grab_size(view, w, h);
   }
 }

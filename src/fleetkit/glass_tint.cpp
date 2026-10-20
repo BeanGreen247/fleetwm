@@ -124,7 +124,8 @@ Color wallpaper_tint() {
 
 void mix_glass_colors(Palette& pal, const Color& base, int intensity) {
   const double k = std::clamp(intensity, 0, 100) / 100.0;
-  pal.glass_surface = mixc(pal.bg_primary, base, 0.25 + 0.60 * k);
+  // The taskbar, menus and tooltips: the tint darkened (Windows 7's taskbar is the frame colour, deeper), stronger with the intensity.
+  pal.glass_surface = mixc(base, Color{0, 0, 0, 1}, 0.42 - 0.20 * k);
   // Windows 7 colorization: the colour itself, a little lightened, over the blurred wallpaper at 45-80% strength (never the theme's
   // dark background, which made every tint look like slate). An unfocused window is greyer and clearer.
   const Color white{1, 1, 1, 1}, grey{0.72, 0.74, 0.78, 1};
