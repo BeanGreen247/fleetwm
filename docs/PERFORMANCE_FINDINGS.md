@@ -397,3 +397,11 @@ cost approaching the reported ~40%; CPU task-clock and scripted drag duration
 show no repeatable glass penalty. It does not measure a 1920x1080 full-desktop
 workload, frame cadence, or input-to-present latency, and therefore does not
 justify an unmeasured renderer change.
+
+## Install on a ThinkPad E490 (i5-8265U), 2026-10-20
+
+`install.sh` on real modern hardware: ThinkPad E490 (20N9S19A00), Core i5-8265U (4 cores, 8 threads, 3.9 GHz boost), UHD Graphics 620, 39 GB RAM, ext4 SSD, Debian 13, kernel 6.12.107, running Fleetwm itself. Total 12 min 55 s = dependencies 38 s (1 package), instrumented build 4 min 22 s, training run 1 min 29 s, optimized build 6 min 10 s, install and set-up 8 s. 1198 tests from 186 suites in 13.2 s. 55513 source lines built twice at 176 lines/s; 4810 s of CPU in 632 s = 7.61x on 8 threads (the CPU counter works now). Disk write 458 MB/s, read 111 MB/s. Installed size 2.7 MB.
+
+- Against the Celeron N4020 laptop (about 25 min, owner's figure, an older version): about 1.9x faster end to end, on a larger code base.
+- Against the dev VM (6 min 35 s, 2 vCPU of an i5-8500, 31005 lines, 225 lines/s, 738 tests in 0.88 s): the total is longer and lines/s lower, not faster. The code base is 1.8x larger and a 15 W laptop CPU throttles under a long build, so this is not a like-for-like comparison. The training run is unchanged (1 min 29 s against 1 min 32 s).
+- Open: 1198 tests take 13.2 s here against 0.88 s for 738 on the VM. The extra 460 tests or the laptop alone do not obviously explain a 15x gap; worth a per-suite timing (`--gtest_print_time`).
