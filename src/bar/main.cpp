@@ -1141,7 +1141,7 @@ struct Bar {
 
   void draw_start_button(cairo_t* cr, const Rect& r) {
     if (win7() && !vertical()) {  // the round start orb, a little taller than the buttons beside it
-      kit::draw_start_orb(cr, r.x + r.w / 2, r.y + r.h / 2, std::min(18.0, r.h / 2 + 1), hover_start, false);
+      kit::draw_start_orb(cr, r.x + r.w / 2, r.y + r.h / 2, std::min(18.0, r.h / 2 + 1), pal.accent, hover_start, false);
       return;
     }
     if (hover_start) {

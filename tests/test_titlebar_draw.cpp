@@ -603,7 +603,7 @@ TEST(Win7Look, TileStatesAndTheOrb) {
   EXPECT_GT(hovered, running);
   cairo_surface_t* s = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 50, 50);
   cairo_t* cr = cairo_create(s);
-  td::draw_start_orb(cr, 25, 25, 19, false, false);
+  td::draw_start_orb(cr, 25, 25, 19, td::Color{0.2, 0.5, 0.9, 1}, false, false);
   cairo_destroy(cr);
   cairo_surface_flush(s);
   const unsigned char* d = cairo_image_surface_get_data(s);

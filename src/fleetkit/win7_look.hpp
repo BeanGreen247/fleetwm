@@ -22,8 +22,8 @@ struct TaskbarTile {
 void draw_taskbar_tile(cairo_t* cr, double x, double y, double w, double h, const TaskbarTile& st, double glow_x);
 
 // The round start button, centred on (cx, cy) with radius r: dark rim, light inner rim, blue glass body, a glossy highlight over the top
-// half and a four-pane mark in the middle.
-void draw_start_orb(cairo_t* cr, double cx, double cy, double r, bool hover, bool pressed);
+// half and a four-pane mark in the middle, its panes light and dark variants of `accent` (the theme's colour).
+void draw_start_orb(cairo_t* cr, double cx, double cy, double r, const Color& accent, bool hover, bool pressed);
 
 // The thin button at the far end of the taskbar that shows the desktop.
 void draw_show_desktop_sliver(cairo_t* cr, double x, double y, double w, double h, bool hover);

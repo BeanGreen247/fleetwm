@@ -63,7 +63,7 @@ void draw_taskbar_tile(cairo_t* cr, double x, double y, double w, double h, cons
   cairo_stroke(cr);
 }
 
-void draw_start_orb(cairo_t* cr, double cx, double cy, double r, bool hover, bool pressed) {
+void draw_start_orb(cairo_t* cr, double cx, double cy, double r, const Color& accent, bool hover, bool pressed) {
   cairo_save(cr);
   // shadow ring and dark rim
   cairo_arc(cr, cx, cy, r + 1.2, 0, 2 * M_PI);
@@ -84,12 +84,13 @@ void draw_start_orb(cairo_t* cr, double cx, double cy, double r, bool hover, boo
   cairo_set_source_rgba(cr, 1, 1, 1, 0.55);
   cairo_set_line_width(cr, 1);
   cairo_stroke(cr);
-  // the mark: four panes, slightly tilted, in the four classic colours
+  // the mark: four panes, slightly tilted, in light and dark variants of the theme colour
   cairo_save(cr);
   cairo_translate(cr, cx, cy - 0.5);
   cairo_rotate(cr, -0.14);
   const double sq = r * 0.40, gap = r * 0.08;
-  const Color cols[4] = {{0.96, 0.36, 0.16, 1}, {0.50, 0.80, 0.20, 1}, {0.20, 0.55, 0.95, 1}, {1.0, 0.82, 0.18, 1}};
+  const Color white{1, 1, 1, 1}, black{0, 0, 0, 1};
+  const Color cols[4] = {mixc(accent, white, 0.55), mixc(accent, white, 0.22), mixc(accent, black, 0.18), mixc(accent, white, 0.38)};
   for (int i = 0; i < 4; ++i) {
     const double px = (i % 2 ? gap / 2 : -sq - gap / 2), py = (i / 2 ? gap / 2 : -sq - gap / 2);
     cairo_pattern_t* pane = cairo_pattern_create_linear(0, py, 0, py + sq);
