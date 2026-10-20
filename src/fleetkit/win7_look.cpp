@@ -7,7 +7,7 @@ namespace fleetwm::kit {
 
 namespace {
 
-void rrect(cairo_t* cr, double x, double y, double w, double h, double r) {
+void w7_rrect(cairo_t* cr, double x, double y, double w, double h, double r) {
   r = std::min(r, std::min(w, h) / 2);
   cairo_new_sub_path(cr);
   cairo_arc(cr, x + w - r, y + r, r, -M_PI / 2, 0);
@@ -17,7 +17,7 @@ void rrect(cairo_t* cr, double x, double y, double w, double h, double r) {
   cairo_close_path(cr);
 }
 
-Color mixc(const Color& a, const Color& b, double t) {
+Color w7_mix(const Color& a, const Color& b, double t) {
   return {a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t, 1.0};
 }
 
@@ -33,7 +33,7 @@ void draw_taskbar_tile(cairo_t* cr, double x, double y, double w, double h, cons
   if (st.hover) top += 0.14, mid += 0.08;
   if (st.pressed) top *= 0.55, mid *= 0.5;
   cairo_save(cr);
-  rrect(cr, x + 0.5, y + 0.5, w - 1, h - 1, 3);
+  w7_rrect(cr, x + 0.5, y + 0.5, w - 1, h - 1, 3);
   cairo_clip(cr);
   cairo_pattern_t* g = cairo_pattern_create_linear(0, y, 0, y + h);
   cairo_pattern_add_color_stop_rgba(g, 0.00, 1, 1, 1, top);
@@ -54,11 +54,11 @@ void draw_taskbar_tile(cairo_t* cr, double x, double y, double w, double h, cons
     cairo_pattern_destroy(r);
   }
   cairo_restore(cr);
-  rrect(cr, x + 0.5, y + 0.5, w - 1, h - 1, 3);
+  w7_rrect(cr, x + 0.5, y + 0.5, w - 1, h - 1, 3);
   cairo_set_source_rgba(cr, 0, 0, 0, 0.55);
   cairo_set_line_width(cr, 1);
   cairo_stroke(cr);
-  rrect(cr, x + 1.5, y + 1.5, w - 3, h - 3, 2);
+  w7_rrect(cr, x + 1.5, y + 1.5, w - 3, h - 3, 2);
   cairo_set_source_rgba(cr, 1, 1, 1, st.focused ? 0.55 : 0.38);
   cairo_stroke(cr);
 }
@@ -90,13 +90,13 @@ void draw_start_orb(cairo_t* cr, double cx, double cy, double r, const Color& ac
   cairo_rotate(cr, -0.14);
   const double sq = r * 0.40, gap = r * 0.08;
   const Color white{1, 1, 1, 1}, black{0, 0, 0, 1};
-  const Color cols[4] = {mixc(accent, white, 0.55), mixc(accent, white, 0.22), mixc(accent, black, 0.18), mixc(accent, white, 0.38)};
+  const Color cols[4] = {w7_mix(accent, white, 0.55), w7_mix(accent, white, 0.22), w7_mix(accent, black, 0.18), w7_mix(accent, white, 0.38)};
   for (int i = 0; i < 4; ++i) {
     const double px = (i % 2 ? gap / 2 : -sq - gap / 2), py = (i / 2 ? gap / 2 : -sq - gap / 2);
     cairo_pattern_t* pane = cairo_pattern_create_linear(0, py, 0, py + sq);
     cairo_pattern_add_color_stop_rgba(pane, 0, std::min(1.0, cols[i].r + 0.25), std::min(1.0, cols[i].g + 0.25), std::min(1.0, cols[i].b + 0.25), 1);
     cairo_pattern_add_color_stop_rgba(pane, 1, cols[i].r, cols[i].g, cols[i].b, 1);
-    rrect(cr, px, py, sq, sq, 1.5);
+    w7_rrect(cr, px, py, sq, sq, 1.5);
     cairo_set_source(cr, pane);
     cairo_fill_preserve(cr);
     cairo_set_source_rgba(cr, 1, 1, 1, 0.45);
@@ -146,7 +146,7 @@ void paint_basic_taskbar(cairo_t* cr, double w, double h, const Color& tint, int
   const bool vertical = top_edge >= 2;
   const bool flip = top_edge == 1 || top_edge == 3;  // the desktop-facing edge is at the far end
   cairo_pattern_t* g = cairo_pattern_create_linear(0, 0, vertical ? w : 0, vertical ? 0 : h);
-  const Color a = mixc(tint, Color{0, 0, 0, 1}, 0.40), b = mixc(tint, Color{0, 0, 0, 1}, 0.62);
+  const Color a = w7_mix(tint, Color{0, 0, 0, 1}, 0.40), b = w7_mix(tint, Color{0, 0, 0, 1}, 0.62);
   cairo_pattern_add_color_stop_rgba(g, flip ? 1.0 : 0.0, a.r, a.g, a.b, 1);
   cairo_pattern_add_color_stop_rgba(g, flip ? 0.0 : 1.0, b.r, b.g, b.b, 1);
   cairo_set_source(cr, g);
