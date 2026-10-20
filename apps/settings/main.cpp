@@ -1156,7 +1156,7 @@ struct Settings {
     ui.row("Running-program line");
     {  // glass has no line, so the switch is off and greyed out while glass effects are on
       bool shown = config.glass ? false : bar.taskbar_indicator;
-      if (ui.checkbox("Line under running programs", &shown, desktop && !config.glass)) {
+      if (ui.checkbox("Line under running apps", &shown, desktop && !config.glass)) {
         bar.taskbar_indicator = shown;
         save_bar();
       }
