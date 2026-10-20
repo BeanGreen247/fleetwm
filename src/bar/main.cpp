@@ -723,13 +723,13 @@ struct Bar {
       cairo_fill(cr);
     } else if (kind == 2 || kind == 3) {  // previous / next
       const double direction = kind == 2 ? -1.0 : 1.0;
-      cairo_move_to(cr, cx + direction * 5, cy - 6);
-      cairo_line_to(cr, cx - direction * 3, cy);
-      cairo_line_to(cr, cx + direction * 5, cy + 6);
+      cairo_move_to(cr, cx - direction * 3, cy - 6);
+      cairo_line_to(cr, cx + direction * 5, cy);
+      cairo_line_to(cr, cx - direction * 3, cy + 6);
       cairo_close_path(cr);
       cairo_fill(cr);
-      cairo_move_to(cr, cx - direction * 6, cy - 6);
-      cairo_line_to(cr, cx - direction * 6, cy + 6);
+      cairo_move_to(cr, cx + direction * 6, cy - 6);
+      cairo_line_to(cr, cx + direction * 6, cy + 6);
       cairo_stroke(cr);
     }
     cairo_restore(cr);
@@ -802,36 +802,40 @@ struct Bar {
     const std::string fitted = fit_text(cr, label, kFont - 1, text_w);
     const TextExtents te = measure_text(cr, fitted, kFont - 1);
     draw_text(cr, fitted, text_x, cy - 1 + te.ascent / 2, kFont - 1, bright);
-    if (s.duration_us > 0 && !controls_only) {
-      const double duration = s.duration_us / 1000000.0;
-      const double f = std::clamp(media->position_seconds() / duration, 0.0, 1.0);
+    const bool has_length = s.duration_us > 0;
+    const double duration = has_length ? s.duration_us / 1000000.0 : 0;
+    const double f = has_length ? std::clamp(media->position_seconds() / duration, 0.0, 1.0) : 0.0;
+    if (!controls_only && (has_length || waveform)) {
       const double line_y = waveform ? r.y + r.h - 5 : r.y + r.h - 4;
       const double line_x = text_x;
       const double line_w = std::max(20.0, r.x + r.w - line_x - 6);
-      rounded_rect(cr, line_x, line_y, line_w, 2, 1);
-      set_source(cr, with_alpha(secondary, 0.35));
-      cairo_fill(cr);
       if (waveform) {
+        // Moving bars (the applet cannot hear the audio, so they follow the clock, not the sound); they rest low while paused.
+        // Bars up to the play position take the accent colour, the rest are dim; a stream with no length is all accent.
+        const bool playing = s.status == "Playing";
         const int bars = std::max(8, std::min(32, static_cast<int>(line_w / 5)));
         const double step = line_w / bars;
-        const double phase = media->position_seconds() * 5.0;
+        const double phase = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count() * 6.0;
         for (int i = 0; i < bars; ++i) {
-          const double beat = 0.5 + 0.5 * std::sin(phase + i * 1.7);
-          const double bh = 3 + beat * 8;
-          rounded_rect(cr, line_x + i * step, line_y - bh + 1, std::max(1.5, step - 1.5), bh, 1);
-          set_source(cr, with_alpha(pal.accent, i / static_cast<double>(bars) <= f ? 0.95 : 0.35));
+          const double beat = playing ? 0.5 + 0.25 * std::sin(phase + i * 1.7) + 0.25 * std::sin(phase * 1.7 + i * 0.9) : 0.15;
+          const double bh = 2 + beat * 9;
+          rounded_rect(cr, line_x + i * step, line_y - bh + 2, std::max(1.5, step - 1.5), bh, 1);
+          set_source(cr, with_alpha(pal.accent, !has_length || i / static_cast<double>(bars) <= f ? 0.95 : 0.35));
           cairo_fill(cr);
         }
       } else {
+        rounded_rect(cr, line_x, line_y, line_w, 2, 1);
+        set_source(cr, with_alpha(secondary, 0.35));
+        cairo_fill(cr);
         rounded_rect(cr, line_x, line_y, line_w * f, 2, 1);
         set_source(cr, pal.accent);
         cairo_fill(cr);
       }
-      if (!controls_only) {
-        const std::string t = media_time(media->position_seconds()) + " / " + media_time(duration);
-        const TextExtents tt = measure_text(cr, t, 10.5);
-        draw_text(cr, t, r.x + r.w - tt.width - 6, r.y + 12, 10.5, secondary);
-      }
+    }
+    if (has_length && !controls_only) {
+      const std::string t = media_time(media->position_seconds()) + " / " + media_time(duration);
+      const TextExtents tt = measure_text(cr, t, 10.5);
+      draw_text(cr, t, r.x + r.w - tt.width - 6, r.y + 12, 10.5, secondary);
     }
   }
 
@@ -2190,7 +2194,8 @@ struct Bar {
       media_timer = 0;
     }
     if (media && media->state().available && media->state().status == "Playing") {
-      media_timer = app.add_timer(1000, [this] {
+      // The waveform moves, so it redraws about eight times a second; the other displays only need the seconds counter.
+      media_timer = app.add_timer(config.media_display == MediaDisplay::Waveform ? 125 : 1000, [this] {
         if (!media || !media->state().available || media->state().status != "Playing") {
           if (media_timer) {
             app.unwatch(media_timer);

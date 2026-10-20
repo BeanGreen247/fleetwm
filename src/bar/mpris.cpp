@@ -162,17 +162,21 @@ void Mpris::read_metadata(const std::string& service, std::string* title, std::s
       sd_bus_message_exit_container(message);
       continue;
     }
-    const char* signature = sd_bus_message_get_signature(message, true);
-    if (key && std::strcmp(key, "xesam:title") == 0 && signature && std::strcmp(signature, "s") == 0) {
+    // What the variant holds. (sd_bus_message_get_signature(m, true) answers "v" inside it on current systemd, which made every
+    // field here look like the wrong type: no title, artist or length ever came through.)
+    char type = 0;
+    const char* contents = nullptr;
+    sd_bus_message_peek_type(message, &type, &contents);
+    if (key && std::strcmp(key, "xesam:title") == 0 && type == 's') {
       const char* value = nullptr;
       if (sd_bus_message_read(message, "s", &value) >= 0 && value) *title = value;
-    } else if (key && std::strcmp(key, "xesam:artist") == 0 && signature && std::strcmp(signature, "as") == 0) {
+    } else if (key && std::strcmp(key, "xesam:artist") == 0 && type == 'a' && contents && std::strcmp(contents, "s") == 0) {
       if (sd_bus_message_enter_container(message, 'a', "s") >= 0) {
         const char* value = nullptr;
         if (sd_bus_message_read(message, "s", &value) >= 0 && value) *artist = value;
         sd_bus_message_exit_container(message);
       }
-    } else if (key && std::strcmp(key, "mpris:length") == 0 && signature && std::strcmp(signature, "x") == 0) {
+    } else if (key && std::strcmp(key, "mpris:length") == 0 && type == 'x') {
       int64_t value = 0;
       if (sd_bus_message_read(message, "x", &value) >= 0) *duration = value;
     } else {
