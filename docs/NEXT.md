@@ -149,3 +149,14 @@ The current pass fixes the initial-render out-of-bounds tab write, keeps tabs wi
 
 ## Renderer performance follow-up (2026-10-11)
 The active drag baseline is complete in `docs/PERF_LOG_2026-10-11.md`; it measured modest glass-associated Render/3D increase and no repeatable CPU penalty in the verified nested workload. The current Celeron target at `192.168.0.182` is an i915 UMA UHD 600 at 1920x1080; its six-second idle sample showed ~62 MiB compositor-client tracked system memory, not dedicated VRAM. This is one low-end reference, not the supported-GPU design point: Fleetwm must remain appropriate for Intel integrated/discrete, AMD integrated/discrete, NVIDIA discrete, and other supported GPUs. Memory instrumentation must distinguish dedicated and shared memory where available, and changes should be backend-neutral unless a capability-based path is justified. Next memory work: collect workload high-water marks and test an explicitly lower-resolution wallpaper buffer with viewport scaling; verify existing direct scanout before changing compositor allocation. Next latency work: instrument per-frame damage/presentation timing and reproduce the user's active workload. See `docs/OPTIMIZATIONS.md` and `docs/PERF_LOG_2026-10-11.md`.
+
+## Left from the 2026-10-22 cross-project perf pass (Lestrix, Painite, CreeperCrest)
+Done and recorded in `OPTIMIZATIONS.md` "Round 2026-10-22": stats timers removed while Metrics is hidden (measured), thumbnail thread on demand, cache hit counters in the Task Manager.
+Open: the `nvidia-smi` spawn count on an NVIDIA machine; the same A/B on the Celeron laptop and the VM; counters for the remaining caches (icon scaling in the compositor, backdrop engine, fleetfm icons shown in the Task Manager); cache counters across processes (each program shows its own).
+
+## Left from the 2026-10-22 PGO and code scan pass
+1. Deterministic PGO A/B (callgrind instruction counts on a fixed scripted scene) to resolve a few percent; only then decide whether the install keeps its 10-minute PGO step (`OPTIMIZATIONS.md` "Round 2026-10-22, PGO").
+2. The code-scan candidates were all measured and rejected (`OPTIMIZATIONS.md` "Scan candidates measured"); only a glass scene with windows under the frame (`glass_builds` above 0) and the file manager redraw on real hardware are left to profile.
+
+## Glass, left after the second pass (2026-10-22)
+Glass on costs 2.0x (idle), 1.6x (move), 1.5x (resize) of glass off in the three-terminal scene; before it was 5.9x, 2.8x, 2.2x. Left: the blur is 63% of a rebuild (a smaller margin than 32 px is tied to the blur reach, about 36 px, so it cannot shrink without changing the look); the output commit costs 0.26 ms against 0.17 ms for translucent frames; GLES, the Celeron laptop and a screenshot check of a drag are untested (install `grim` to add a visual check to `scripts/grab-stats-run.sh`).

@@ -1,0 +1,4 @@
+COMPCPU idle ticks=8 dt=8.011466787
+COMPCPU move ticks=19 dt=7.954379770
+COMPCPU resize ticks=30 dt=7.985790615
+COMPCPU idle2 ticks=4 dt=4.008515934
