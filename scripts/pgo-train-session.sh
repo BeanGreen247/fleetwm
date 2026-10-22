@@ -787,6 +787,18 @@ echo "    final workspace switches..."
 send_ipc "WORKSPACE 1"
 send_ipc "WORKSPACE 0"
 
+# FLEETWM_PGO_CPU_REPORT=file: CPU ticks (utime+stime, 100 per second) of every program still running, for A/B timing of builds.
+if [[ -n "${FLEETWM_PGO_CPU_REPORT:-}" ]]; then
+  {
+    echo "rounds ${round}"
+    for d in /proc/[0-9]*; do  # every program of this build that is still running, whoever started it
+      exe="$(readlink "$d/exe" 2>/dev/null)" || continue
+      [[ "$exe" == "${BUILD_DIR}"/* ]] || continue
+      awk -v n="$(basename "$exe")" '{ sub(/^.*\) /, "", $0); split($0, f, " "); print n, f[12] + f[13] }' "$d/stat" 2>/dev/null
+    done
+  } > "$FLEETWM_PGO_CPU_REPORT"
+fi
+
 echo "    training pass complete after ${round} rounds, shutting everything down cleanly..."
 # cleanup() (the EXIT trap) does the actual SIGTERM + wait for every
 # child, compositor last.

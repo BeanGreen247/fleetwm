@@ -3,8 +3,12 @@
 # intel_gpu_top attributed to the compositor's pid. Runs a headless compositor of its own (own runtime directory and HOME): the live session,
 # the screen and the user's settings are never touched. The only kill is by the pids this script started.
 #
-#   scripts/grab-stats-run.sh BUILD_DIR OUT_DIR [--renderer gles2|pixman] [--size 1920x1080] [--glass true|false] [--rounds 3] [--gpu] [--win-scale N]
-#   (environment WINDOW_SHADOWS=true|false sets theme.toml window_shadows, default true)
+#   scripts/grab-stats-run.sh BUILD_DIR OUT_DIR [--renderer gles2|pixman] [--size 1920x1080] [--glass true|false] [--rounds 3] [--gpu] [--win-scale N] [--terminals N]
+#   --terminals N: N `foot` terminals that keep printing (window sizes FW x FH, default 640x340) instead of the Settings window; the last one is the front
+#   window and is the one dragged, so the glass of its frame sits over N-1 windows that repaint (needs foot). The titlebar is aimed from the cascade rule
+#   (no screenshot tool needed); TB (taskbar height, default 40) and TITLE_DY adjust it.
+#   (environment WINDOW_SHADOWS=true|false sets theme.toml window_shadows, default true; COMP_WRAP="valgrind --tool=callgrind ..." starts the compositor under
+#   that command, then also set SOCK_WAIT=1200 (tenths of a second to wait for it) and ONLYIDLE=SECONDS or ONLYMOVE=SECONDS to run just one idle or window-move phase)
 #
 # BUILD_DIR holds src/compositor/fleetwm, src/bar/fleetwm-bar, src/wallpaper/fleetwm-wallpaper and apps/settings/fleetwm-settings.
 # Phases per round: idle 8 s, move 8 s (titlebar drags), resize 8 s (right-edge drags), idle 4 s. Results: OUT_DIR/summary.txt (median of each
@@ -12,7 +16,7 @@
 # `sudo -n`, or `sudo -S` with the password in $GPU_SUDO_PW (never printed or written down).
 set -uo pipefail
 BUILD=$(realpath "$1"); OUT=$(mkdir -p "$2" && realpath "$2"); shift 2
-RENDERER=gles2; SIZE=1920x1080; GLASS=true; ROUNDS=3; GPU=0
+RENDERER=gles2; SIZE=1920x1080; GLASS=true; ROUNDS=3; GPU=0; NFOOT=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --renderer) RENDERER=$2; shift 2 ;;
@@ -20,6 +24,7 @@ while [[ $# -gt 0 ]]; do
     --glass) GLASS=$2; shift 2 ;;
     --rounds) ROUNDS=$2; shift 2 ;;
     --gpu) GPU=1; shift ;;
+    --terminals) NFOOT=$2; shift 2 ;;
     *) echo "unknown option $1" >&2; exit 2 ;;
   esac
 done
@@ -56,12 +61,12 @@ export XDG_RUNTIME_DIR=$RT HOME=$HM WLR_BACKENDS=headless WLR_RENDERER=$RENDERER
 TAG="${RENDERER}-${SIZE}-glass${GLASS}-shadow${WINDOW_SHADOWS:-true}"
 LOG=$OUT/comp-$TAG.log
 dbus-run-session -- bash -c '
-  "$0/src/compositor/fleetwm" >> "$1" 2>&1 &
+  ${COMP_WRAP:-} "$0/src/compositor/fleetwm" >> "$1" 2>&1 &
   echo $! > "$2/comp.pid"
   wait
 ' "$BUILD" "$LOG" "$RT" &
 PIDS+=("$!")
-for _ in $(seq 1 100); do [[ -S $RT/fleetwm.sock ]] && break; sleep 0.1; done
+for _ in $(seq 1 "${SOCK_WAIT:-100}"); do [[ -S $RT/fleetwm.sock ]] && break; sleep 0.1; done
 [[ -S $RT/fleetwm.sock ]] || { echo "compositor did not start; see $LOG" >&2; exit 1; }
 sleep 0.5; CP=$(cat "$RT/comp.pid")
 export WAYLAND_DISPLAY=wayland-0
@@ -77,6 +82,18 @@ ipc "OUTPUT_SET $OUTNAME $W $H 60000 0 0" >/dev/null; sleep 1
 "$BUILD/src/wallpaper/fleetwm-wallpaper" >/dev/null 2>&1 & PIDS+=("$!")
 "$BUILD/src/bar/fleetwm-bar" >/dev/null 2>&1 & PIDS+=("$!")
 sleep 2
+if (( NFOOT > 0 )); then
+  for i in $(seq 0 $((NFOOT-1))); do
+    foot --window-size-pixels=${FW:-640}x${FH:-340} -e bash -c 'while :; do seq 1 60; sleep 0.08; done' >/dev/null 2>&1 & PIDS+=("$!")
+    sleep 1
+  done
+  sleep 2
+  export PGO_W=$W PGO_H=$H
+  OW=$((${FW:-640}+14)); OH=$((${FH:-340}+14+30)); STEP=$(( ((NFOOT-1) % 8) * 32 ))
+  WX=$(( (W - OW)/2 + STEP - 112 )); WY=$(( (H - ${TB:-40} - OH)/2 + STEP - 112 )); (( WX < 0 )) && WX=0; (( WY < 0 )) && WY=0
+  CX=${TITLE_X:-$((WX + OW/2))}; TY=${TITLE_Y:-$((WY + ${TITLE_DY:-14}))}; REDGE_X=$((WX + OW + 2)); REDGE_Y=$((WY + OH/2)); CLOSE_X=
+  echo "front terminal guessed at $WX,$WY size ${OW}x${OH}; titlebar drag at $CX,$TY" | tee -a "$LOG" >&2
+else
 "$BUILD/apps/settings/fleetwm-settings" --page theme >/dev/null 2>&1 & PIDS+=("$!")
 sleep 3
 command -v grim >/dev/null && grim "$OUT/layout-$TAG.png" 2>/dev/null
@@ -113,6 +130,7 @@ else
   CX=${TITLE_X:-$((W / 2))}; TY=${TITLE_Y:-14}; REDGE_X=${REDGE_X:-$((W / 2 + 405))}; REDGE_Y=${REDGE_Y:-$((H / 2))}
   echo "window not found in the screenshot; using guessed positions" >&2
 fi
+fi
 
 # SHRINK_DX / SHRINK_DY (pixels): drag the window's bottom-right corner inward first, to measure a smaller window; the window is found again afterwards.
 if [[ -n ${SHRINK_DX:-} && -n ${CLOSE_X:-} ]]; then
@@ -148,6 +166,8 @@ phase() {  # phase NAME SECONDS command...
 move_once() { "$PTR" drag $CX $TY $((CX - 220)) $((TY + 220)) 100 drag $((CX - 220)) $((TY + 220)) $CX $TY 100 >/dev/null 2>&1; }
 resize_once() { "$PTR" drag $REDGE_X $REDGE_Y $((REDGE_X + 100)) $REDGE_Y 100 drag $((REDGE_X + 100)) $REDGE_Y $REDGE_X $REDGE_Y 100 >/dev/null 2>&1; }
 
+if [[ -n ${ONLYIDLE:-} ]]; then phase idle "$ONLYIDLE"; echo "COMPOSITOR_PID $CP" >> "$LOG"; exit 0; fi
+if [[ -n ${ONLYMOVE:-} ]]; then phase move "$ONLYMOVE" move_once; echo "COMPOSITOR_PID $CP" >> "$LOG"; exit 0; fi
 for r in $(seq 1 "$ROUNDS"); do
   phase idle 8
   phase move 8 move_once

@@ -32,7 +32,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BUILD_DIR="${SCRIPT_DIR}/build-pgo"
+BUILD_DIR="${FLEETWM_PGO_DIR:-${SCRIPT_DIR}/build-pgo}"
+export FLEETWM_PGO_DIR="$BUILD_DIR"
 TRAIN_SECONDS="${1:-85}"
 
 for tool in dbus-run-session python3; do

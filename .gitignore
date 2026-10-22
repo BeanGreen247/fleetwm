@@ -7,3 +7,4 @@ subprojects/packagecache/
 *.swp
 .cache/
 build-pgo.*
+build-pgo-v*

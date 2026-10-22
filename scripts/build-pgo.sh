@@ -35,11 +35,11 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BUILD_DIR="${SCRIPT_DIR}/build-pgo"
+BUILD_DIR="${FLEETWM_PGO_DIR:-${SCRIPT_DIR}/build-pgo}"
 
 MODE="${1:-}"
-if [[ "$MODE" != "generate" && "$MODE" != "use" ]]; then
-  echo "Usage: $0 {generate|use}" >&2
+if [[ "$MODE" != "generate" && "$MODE" != "use" && "$MODE" != "none" ]]; then
+  echo "Usage: $0 {generate|use|none}   (none: the same flags and LTO without profile data, for A/B timing)" >&2
   exit 1
 fi
 
@@ -74,13 +74,25 @@ COMMON_FLAGS="$(echo "${COMMON_FLAGS}" | tr '\n' ' ')"
 if [[ "$MODE" == "use" ]]; then
   COMMON_FLAGS+=" -fprofile-partial-training"
 fi
+# FLEETWM_PGO_AGGRESSIVE=1 (opt-in, measured in docs/OPTIMIZATIONS.md "Round 2026-10-22"): count with atomic updates so the
+# threads of the bar and the file manager do not lose counts, and let LTO see the whole program as one unit (slower, much
+# more memory at link time).
+if [[ -n "${FLEETWM_PGO_AGGRESSIVE:-}" ]]; then
+  [[ "$MODE" == "generate" ]] && COMMON_FLAGS+=" -fprofile-update=prefer-atomic"
+fi
 LINK_FLAGS='-no-pie -Wl,--gc-sections -Wl,-O1 -Wl,--as-needed -Wl,--sort-common -Wl,-z,lazy -Wl,-z,norelro -Wl,-z,noseparate-code'
 
 # shellcheck source=scripts/install-ui.sh
+if [[ -n "${FLEETWM_PGO_AGGRESSIVE:-}" && "$MODE" != "generate" ]]; then
+  LINK_FLAGS+=" -flto-partition=one"
+fi
+
 source "${SCRIPT_DIR}/scripts/install-ui.sh"
 
 # Configure and build quietly: the full output goes to a log, the terminal gets a live
 # progress line (counter, current file, time spent) and any real error.
+PGO_MESON_MODE="$MODE"
+[[ "$MODE" == "none" ]] && PGO_MESON_MODE=off
 LOG="${BUILD_DIR}.log"
 : > "${LOG}"
 fail() {
@@ -92,7 +104,7 @@ fail() {
 echo "==> Configuring (${MODE}): checking the libraries and choosing the compiler flags"
 ui_live plain "Meson" "${LOG}.setup" \
   meson setup "${BUILD_DIR}" "${SCRIPT_DIR}" --prefix=/usr/local --buildtype=release \
-  -Db_ndebug=true -Db_lto=true -Db_pgo="${MODE}" -Dtests=true -Dunity=on -Dwarning_level=0 -Ddefault_library=static \
+  -Db_ndebug=true -Db_lto=true -Db_pgo="${PGO_MESON_MODE}" -Dtests=true -Dunity=on -Dwarning_level=0 -Ddefault_library=static \
   -Dc_args="${COMMON_FLAGS}" -Dcpp_args="${COMMON_FLAGS}" \
   -Dc_link_args="${LINK_FLAGS}" -Dcpp_link_args="${LINK_FLAGS}" \
   "${EXTRA_OPTS[@]}" --reconfigure || fail

@@ -25,7 +25,7 @@ for line in open(log, errors="replace"):
     rows.setdefault(re.sub(r"2$", "", phase), []).append(d)
 
 print(f"== {tag}: GRABSTATS, rates per second over each phase (all rounds together; the seconds are the time the lines cover)")
-counts = ["events", "pos", "resize_req", "snap", "frames", "cap_wait", "cap_idle", "commits", "present", "missed", "titlebar_renders", "strip_renders", "glass_builds", "glass_ms"]
+counts = ["events", "pos", "resize_req", "snap", "frames", "cap_wait", "cap_idle", "commits", "present", "missed", "titlebar_renders", "strip_renders", "glass_builds", "glass_ms", "glass_pieces", "glass_same", "gl_wall_ms", "gl_content_ms", "gl_blur_ms", "gl_post_ms"]
 for mode in ("idle", "move", "resize"):
     rs = rows.get(mode, [])
     secs = sum(r["dt"] for r in rs)
