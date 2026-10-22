@@ -195,6 +195,12 @@ class Server {
   void begin_resize(View* view, uint32_t edges);
   // Follows the cursor while a grab is active.
   void update_grab();
+  // Pointer motion during a move or resize only notes that the grab moved; the window follows once per output frame (just before it is committed),
+  // with the latest pointer position. Each position change of a window with glass costs the scene about eight source-box updates, measured at
+  // 37% of the compositor's work in a drag, and the frame rate cap lets only a fifth of the pointer events reach the screen anyway.
+  void note_grab_motion();
+  void flush_grab_motion();
+  bool grab_motion_pending() const { return grab_dirty_; }
   void end_grab();
   // Forgets `view` everywhere it is remembered by pointer (grab, hover).
   void forget_view(View* view);
@@ -269,7 +275,9 @@ class Server {
   void toggle_show_desktop();
   // The glass of a window shows the windows below it, blurred (glass_scene.hpp). These keep that picture current: a window below changed
   // (moved, resized, new content, stacking), so the glass above it is rebuilt a moment later, at most every 45 ms.
-  void mark_glass_dirty(View* view);
+  // Rebuild the glass pictures of `view` in at most `delay_ms` (an earlier request for another window keeps its earlier time).
+  static constexpr int kGlassLayoutDelayMs = 45, kGlassContentDelayMs = 120;
+  void mark_glass_dirty(View* view, int delay_ms = kGlassLayoutDelayMs);
   void glass_forget(View* view);  // the window is going away
   void refresh_glass_under(View* changed);
   void refresh_all_glass();
@@ -563,6 +571,7 @@ class Server {
   std::vector<Keyboard*> keyboards_;
   std::set<View*> glass_dirty_;
   wl_event_source* glass_timer_ = nullptr;
+  int64_t glass_due_ms_ = 0;  // when glass_timer_ fires (CLOCK_MONOTONIC ms), 0 while it is not armed
   void flush_glass_dirty();
   std::vector<uint32_t> show_desktop_ids_;  // ids of the windows toggle_show_desktop() minimized, to bring back
   KeyboardConfig keyboard_config_;
@@ -608,6 +617,7 @@ class Server {
 
   enum class GrabMode { None, Move, Resize };
   GrabMode grab_mode_ = GrabMode::None;
+  bool grab_dirty_ = false;  // the pointer moved since the grab last followed it
   View* grab_view_ = nullptr;
   View* hover_view_ = nullptr;
   View* last_click_view_ = nullptr;

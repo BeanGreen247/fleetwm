@@ -806,7 +806,7 @@ const char* resize_cursor_name(uint32_t edges) {
 
 static void process_cursor_motion(Server* server, uint32_t time_msec) {
   if (server->grab_active()) {
-    server->update_grab();
+    server->note_grab_motion();
     return;
   }
   double sx, sy;
@@ -1946,6 +1946,18 @@ void Server::begin_resize(View* view, uint32_t edges) {
   wlr_seat_pointer_clear_focus(seat_);
 }
 
+void Server::note_grab_motion() {
+  if (grabstats::enabled()) ++grabstats::c().events;
+  grab_dirty_ = true;
+  for (const std::unique_ptr<Output>& output : outputs) wlr_output_schedule_frame(output->wlr_output_ptr);
+}
+
+void Server::flush_grab_motion() {
+  if (!grab_dirty_) return;
+  grab_dirty_ = false;
+  if (grab_active()) update_grab();
+}
+
 void Server::update_grab() {
   View* view = grab_view_;
   if (!view) {
@@ -1953,7 +1965,6 @@ void Server::update_grab() {
     return;
   }
   const double dx = cursor_->x - grab_cursor_x_, dy = cursor_->y - grab_cursor_y_;
-  if (grabstats::enabled()) ++grabstats::c().events;
 
   if (grab_mode_ == GrabMode::Move) {
     if (grab_unmaximize_pending_) {
@@ -2084,6 +2095,7 @@ void Server::hide_snap_preview() {
 }
 
 void Server::end_grab() {
+  flush_grab_motion();  // the window ends where the pointer ended
   flush_grab_size();
   if (resize_flush_timer_) wl_event_source_timer_update(resize_flush_timer_, 0);
   if (grab_mode_ == GrabMode::Move && grab_view_ && snap_pending_ != geom::SnapZone::None) {
@@ -2107,6 +2119,7 @@ void Server::end_grab() {
 void Server::forget_view(View* view) {
   if (grab_view_ == view) {
     resize_pending_ = false;
+    grab_dirty_ = false;  // the window is going away: nothing to follow
     end_grab();
   }
   if (hover_view_ == view) hover_view_ = nullptr;
@@ -2193,7 +2206,15 @@ void Server::toggle_view_from_taskbar(View* view) {
   }
 }
 
-void Server::mark_glass_dirty(View* view) {
+namespace {
+int64_t monotonic_ms() {
+  timespec ts{};
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return static_cast<int64_t>(ts.tv_sec) * 1000 + ts.tv_nsec / 1000000;
+}
+}  // namespace
+
+void Server::mark_glass_dirty(View* view, int delay_ms) {
   glass_dirty_.insert(view);
   if (!glass_timer_) {
     glass_timer_ = wl_event_loop_add_timer(
@@ -2204,10 +2225,14 @@ void Server::mark_glass_dirty(View* view) {
         },
         this);
   }
-  wl_event_source_timer_update(glass_timer_, 45);
+  const int64_t due = monotonic_ms() + delay_ms;
+  if (glass_due_ms_ != 0 && glass_due_ms_ <= due) return;  // already set to fire as soon as this needs
+  glass_due_ms_ = due;
+  wl_event_source_timer_update(glass_timer_, delay_ms);
 }
 
 void Server::flush_glass_dirty() {
+  glass_due_ms_ = 0;
   std::set<View*> todo;
   todo.swap(glass_dirty_);
   const double t0 = grabstats::enabled() ? grabstats::now_s() : 0.0;

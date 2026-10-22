@@ -101,7 +101,7 @@ void output_frame(wl_listener* listener, void*) {
         // frames a second forever. With no pending damage the output goes idle
         // and wakes again by itself when something changes.
         wlr_scene_output* pending = wlr_scene_get_scene_output(server->scene(), output->wlr_output_ptr);
-        if (pending == nullptr || !pixman_region32_not_empty(&FLEETWM_PENDING_DAMAGE(pending))) {
+        if (!server->grab_motion_pending() && (pending == nullptr || !pixman_region32_not_empty(&FLEETWM_PENDING_DAMAGE(pending)))) {
           if (stats) {
             ++grabstats::c().cap_idle;
             grabstats::tick(output->wlr_output_ptr->width, output->wlr_output_ptr->height);
@@ -124,6 +124,8 @@ void output_frame(wl_listener* listener, void*) {
     output->fps_cap_last_commit = now;
     output->fps_cap_has_last_commit = true;
   }
+
+  server->flush_grab_motion();  // a window being dragged or resized follows the pointer once per frame that is committed
 
   wlr_scene* scene = server->scene();
   wlr_scene_output* scene_output =

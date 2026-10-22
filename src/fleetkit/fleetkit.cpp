@@ -5,6 +5,7 @@
 #include "glass_tint.hpp"
 
 #include "backdrop.hpp"
+#include "box_blur.hpp"
 
 #include <unordered_map>
 #include <poll.h>
@@ -265,6 +266,14 @@ struct MeasureKeyHash {
 };
 }  // namespace
 
+namespace {
+// Per thread, like the caches themselves; read by text_cache_stats().
+thread_local CacheLine g_measure_line{"Text measure", 0, 0, 0, 0};
+thread_local CacheLine g_glow_line{"Caption glow", 0, 0, 0, 0};
+}  // namespace
+
+std::vector<CacheLine> text_cache_stats() { return {g_measure_line, g_glow_line}; }
+
 TextExtents measure_text(cairo_t* cr, const std::string& s, double px, bool bold) {
   // About 11 us a call, and the same labels are measured on every repaint. The answer depends only
   // on string, size, weight and the target's device scale while the matrix is the identity; any
@@ -278,7 +287,11 @@ TextExtents measure_text(cairo_t* cr, const std::string& s, double px, bool bold
   const MeasureKey key{s, static_cast<float>(px), static_cast<float>(dsx), bold};
   if (plain) {
     const auto it = cache.find(key);
-    if (it != cache.end()) return it->second;
+    if (it != cache.end()) {
+      ++g_measure_line.hits;
+      return it->second;
+    }
+    ++g_measure_line.misses;
   }
   apply_font(cr, px, bold);
   cairo_text_extents_t te;
@@ -290,6 +303,7 @@ TextExtents measure_text(cairo_t* cr, const std::string& s, double px, bool bold
   if (plain) {
     if (cache.size() >= 4096) cache.clear();  // file and process names come and go
     cache.emplace(key, r);
+    g_measure_line.entries = cache.size();
   }
   return r;
 }
@@ -341,30 +355,7 @@ struct GlowTile {
 constexpr int kGlowMargin = 14;
 constexpr size_t kGlowBudget = 512u << 10;
 
-void box_blur_a8(unsigned char* p, int w, int h, int stride, int r, int passes) {
-  std::vector<unsigned char> tmp(static_cast<size_t>(stride) * h);
-  const int div = 2 * r + 1;
-  for (int pass = 0; pass < passes; ++pass) {
-    for (int y = 0; y < h; ++y) {
-      const unsigned char* s = p + static_cast<size_t>(y) * stride;
-      unsigned char* d = &tmp[static_cast<size_t>(y) * stride];
-      int sum = 0;
-      for (int x = -r; x <= r; ++x) sum += s[std::clamp(x, 0, w - 1)];
-      for (int x = 0; x < w; ++x) {
-        d[x] = static_cast<unsigned char>(sum / div);
-        sum += s[std::min(x + r + 1, w - 1)] - s[std::max(x - r, 0)];
-      }
-    }
-    for (int x = 0; x < w; ++x) {
-      int sum = 0;
-      for (int y = -r; y <= r; ++y) sum += tmp[static_cast<size_t>(std::clamp(y, 0, h - 1)) * stride + x];
-      for (int y = 0; y < h; ++y) {
-        p[static_cast<size_t>(y) * stride + x] = static_cast<unsigned char>(sum / div);
-        sum += tmp[static_cast<size_t>(std::min(y + r + 1, h - 1)) * stride + x] - tmp[static_cast<size_t>(std::max(y - r, 0)) * stride + x];
-      }
-    }
-  }
-}
+void box_blur_a8(unsigned char* p, int w, int h, int stride, int r, int passes) { box_blur_u8(p, w, h, stride, 1, r, passes); }
 
 }  // namespace
 
@@ -379,7 +370,9 @@ double draw_text_glow(cairo_t* cr, const std::string& s, double x, double y, dou
                 glow.b, glow.a, fx, fy);
   const std::string k = std::string(key) + s;
   auto it = cache.find(k);
+  if (it != cache.end()) ++g_glow_line.hits;
   if (it == cache.end()) {
+    ++g_glow_line.misses;
     GlowTile t;
     t.margin = kGlowMargin;
     const int w = static_cast<int>(std::ceil(te.width + fx)) + 2 * kGlowMargin + 1, h = static_cast<int>(std::ceil(te.height + fy)) + 2 * kGlowMargin + 1;
@@ -414,6 +407,8 @@ double draw_text_glow(cairo_t* cr, const std::string& s, double x, double y, dou
     }
     cache_bytes += bytes;
     it = cache.emplace(k, t).first;
+    g_glow_line.entries = cache.size();
+    g_glow_line.bytes = cache_bytes;
   }
   cairo_set_source_surface(cr, it->second.image, ox - it->second.margin, oy - it->second.margin);
   cairo_paint(cr);

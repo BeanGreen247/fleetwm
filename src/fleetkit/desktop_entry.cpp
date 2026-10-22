@@ -14,6 +14,7 @@
 #include <map>
 #include <set>
 #include <sstream>
+#include <string_view>
 
 namespace fleetwm::kit {
 
@@ -69,15 +70,24 @@ bool on_path(const std::string& prog) {
   return false;
 }
 
-bool parse_file(const std::string& file, const std::string& id, DesktopEntry* out) {
-  std::ifstream in(file);
-  if (!in) return false;
-  const auto locales = locale_keys();
-  std::string line;
+// One read of the whole file, then the lines are walked in place. The keys that are kept: everything without a [locale], and
+// Name[...] / Comment[...] for the user's own locales; the dozens of other translations are skipped without a copy.
+bool parse_file(const std::string& file, const std::string& id, DesktopEntry* out, const std::vector<std::string>& locales) {
+  const int fd = open(file.c_str(), O_RDONLY | O_CLOEXEC);
+  if (fd < 0) return false;
+  std::string text;
+  char chunk[8192];
+  for (ssize_t n; (n = read(fd, chunk, sizeof chunk)) > 0;) text.append(chunk, static_cast<size_t>(n));
+  close(fd);
   bool in_entry = false;
   std::map<std::string, std::string> kv;
-  while (std::getline(in, line)) {
-    line = trim(line);
+  for (size_t pos = 0; pos < text.size();) {
+    size_t end = text.find('\n', pos);
+    if (end == std::string::npos) end = text.size();
+    std::string_view line(text.data() + pos, end - pos);
+    pos = end + 1;
+    while (!line.empty() && (line.front() == ' ' || line.front() == '\t')) line.remove_prefix(1);
+    while (!line.empty() && (line.back() == ' ' || line.back() == '\t' || line.back() == '\r')) line.remove_suffix(1);
     if (line.empty() || line[0] == '#') continue;
     if (line[0] == '[') {
       if (in_entry) break;  // only [Desktop Entry]; actions come after
@@ -86,8 +96,21 @@ bool parse_file(const std::string& file, const std::string& id, DesktopEntry* ou
     }
     if (!in_entry) continue;
     const size_t eq = line.find('=');
-    if (eq == std::string::npos) continue;
-    kv[trim(line.substr(0, eq))] = trim(line.substr(eq + 1));
+    if (eq == std::string_view::npos) continue;
+    std::string_view key = line.substr(0, eq);
+    while (!key.empty() && (key.back() == ' ' || key.back() == '\t')) key.remove_suffix(1);
+    const size_t br = key.find('[');
+    if (br != std::string_view::npos) {
+      const std::string_view base = key.substr(0, br);
+      bool wanted = false;
+      if (base == "Name" || base == "Comment")
+        for (const auto& l : locales)
+          if (key.size() == br + l.size() + 2 && key.compare(br + 1, l.size(), l) == 0) wanted = true;
+      if (!wanted) continue;
+    }
+    std::string_view val = line.substr(eq + 1);
+    while (!val.empty() && (val.front() == ' ' || val.front() == '\t')) val.remove_prefix(1);
+    kv[std::string(key)] = std::string(val);
   }
   if (kv["Type"] != "Application") return false;
   if (kv["NoDisplay"] == "true" || kv["Hidden"] == "true") return false;
@@ -125,7 +148,7 @@ bool parse_file(const std::string& file, const std::string& id, DesktopEntry* ou
 }
 
 void scan_dir(const std::string& base, const std::string& rel, std::set<std::string>* seen,
-              std::vector<DesktopEntry>* out) {
+              std::vector<DesktopEntry>* out, const std::vector<std::string>& locales) {
   const std::string dir = rel.empty() ? base : base + "/" + rel;
   DIR* d = opendir(dir.c_str());
   if (!d) return;
@@ -137,7 +160,7 @@ void scan_dir(const std::string& base, const std::string& rel, std::set<std::str
     if (stat(full.c_str(), &st) != 0) continue;
     const std::string rel_name = rel.empty() ? name : rel + "-" + name;  // subdir/foo.desktop -> subdir-foo.desktop
     if (S_ISDIR(st.st_mode)) {
-      scan_dir(base, rel.empty() ? name : rel + "/" + name, seen, out);
+      scan_dir(base, rel.empty() ? name : rel + "/" + name, seen, out, locales);
       continue;
     }
     if (name.size() < 9 || name.compare(name.size() - 8, 8, ".desktop") != 0) continue;
@@ -146,7 +169,7 @@ void scan_dir(const std::string& base, const std::string& rel, std::set<std::str
     if (!rel.empty()) id += "-" + name;
     if (!seen->insert(id).second) continue;  // earlier (higher priority) dir wins
     DesktopEntry entry;
-    if (parse_file(full, id, &entry)) out->push_back(std::move(entry));
+    if (parse_file(full, id, &entry, locales)) out->push_back(std::move(entry));
     (void)rel_name;
   }
   closedir(d);
@@ -176,7 +199,8 @@ std::vector<DesktopEntry> load_desktop_entries() {
     dirs.push_back(d + "/applications");
   std::set<std::string> seen;
   std::vector<DesktopEntry> out;
-  for (const auto& d : dirs) scan_dir(d, "", &seen, &out);
+  const auto locales = locale_keys();
+  for (const auto& d : dirs) scan_dir(d, "", &seen, &out, locales);
   for (const DesktopEntry& builtin : fleetwm_builtin_desktop_entries()) {
     if (seen.count(builtin.id) || !on_path(exec_basename(builtin))) continue;
     out.push_back(builtin);

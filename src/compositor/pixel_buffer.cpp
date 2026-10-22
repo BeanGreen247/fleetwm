@@ -3,6 +3,7 @@
 #include <drm_fourcc.h>
 
 #include <cstdlib>
+#include <cstring>
 
 extern "C" {
 #include <wlr/interfaces/wlr_buffer.h>
@@ -52,6 +53,16 @@ wlr_buffer* create_pixel_buffer(int width, int height, void** pixels, size_t* st
   *pixels = pb->data;
   *stride = pb->stride;
   return &pb->base;
+}
+
+bool pixel_buffer_matches(wlr_buffer* b, const void* data, int width, int height, size_t stride) {
+  if (!b || b->impl != &kImpl || b->width != width || b->height != height) return false;
+  PixelBuffer* pb = wl_container_of(b, pb, base);
+  for (int y = 0; y < height; ++y)
+    if (std::memcmp(static_cast<const unsigned char*>(pb->data) + pb->stride * static_cast<size_t>(y), static_cast<const unsigned char*>(data) + stride * static_cast<size_t>(y),
+                    static_cast<size_t>(width) * 4) != 0)
+      return false;
+  return true;
 }
 
 }  // namespace fleetwm

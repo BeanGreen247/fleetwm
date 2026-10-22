@@ -90,6 +90,15 @@ double draw_text(cairo_t* cr, const std::string& s, double x, double y, double p
 double draw_text_glow(cairo_t* cr, const std::string& s, double x, double y, double px, const Color& c, const Color& glow,
                       bool bold = false);
 
+// Entries, bytes and lookups of this thread's text caches (measure, caption glow), for the Task Manager and tests. Bytes are 0 where the
+// cache does not track them.
+struct CacheLine {
+  const char* name;
+  size_t entries, bytes;
+  uint64_t hits, misses;
+};
+std::vector<CacheLine> text_cache_stats();
+
 // ---- input events ----
 enum Mods : uint32_t { kShift = 1, kCtrl = 2, kAlt = 4, kSuper = 8 };
 

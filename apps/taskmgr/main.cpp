@@ -40,6 +40,7 @@
 #include "proc_stats.hpp"
 #include "quit_signals.hpp"
 #include "theme.hpp"
+#include "titlebar_draw.hpp"
 #include "version.hpp"
 
 namespace {
@@ -1229,11 +1230,22 @@ struct TaskMgr {
     text_at(cr, "Cache hit rate scopes", dx, y, 16, pal.fg_primary, true);
     y += 24;
     const std::string hit = cache_counters.hit_rate() >= 0 ? std::to_string(static_cast<int>(cache_counters.hit_rate() + 0.5)) + "% hit" : cache_counter_status;
-    info_grid(cr, dx, y, dw, {{"Overall", hit},
-                              {"Fleetwm apps", "requires perf access or instrumentation"},
-                              {"Per module", "requires symbols or instrumentation"},
-                              {"Per item", "requires explicit counters"}});
-    y += 88;
+    std::vector<std::pair<std::string, std::string>> scopes = {{"Overall", hit}, {"Per module", "requires symbols or instrumentation"}};
+    // Counted inside this window's own process; the other Fleetwm programs keep their own caches.
+    auto lookups = [&](const std::string& name, uint64_t hits, uint64_t misses, size_t entries, size_t bytes, uint64_t evictions) {
+      const uint64_t n = hits + misses;
+      std::string v = n ? std::to_string(hits * 100 / n) + "% hit of " + std::to_string(n) : "no lookups yet";
+      v += "  " + std::to_string(entries) + " entries";
+      if (bytes) v += ", " + format_kib(static_cast<long long>(bytes / 1024));
+      if (evictions) v += ", " + std::to_string(evictions) + " evicted";
+      scopes.emplace_back(name, v);
+    };
+    for (const kit::CacheLine& c : kit::text_cache_stats()) lookups(c.name, c.hits, c.misses, c.entries, c.bytes, 0);
+    const kit::TitlebarCacheStats tg = kit::titlebar_glass_cache_stats(), ts = kit::titlebar_strip_cache_stats();
+    lookups("Titlebar glass", tg.hits, tg.misses, static_cast<size_t>(tg.entries), tg.bytes, tg.evictions);
+    lookups("Caption buttons", ts.hits, ts.misses, static_cast<size_t>(ts.entries), ts.bytes, ts.evictions);
+    info_grid(cr, dx, y, dw, scopes);
+    y += static_cast<double>((scopes.size() + 1) / 2) * 38 + 16;
     text_at(cr, "PCIe and GPU memory bandwidth", dx, y, 16, pal.fg_primary, true);
     y += 24;
     std::vector<std::pair<std::string, std::string>> gpus;

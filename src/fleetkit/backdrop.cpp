@@ -1,4 +1,5 @@
 #include "backdrop.hpp"
+#include "box_blur.hpp"
 
 #include <sys/stat.h>
 
@@ -18,31 +19,7 @@ namespace fleetwm::kit {
 
 namespace fs = std::filesystem;
 
-void box_blur_rgba(uint8_t* p, int w, int h, int radius, int passes) {
-  if (w < 1 || h < 1 || radius < 1) return;
-  std::vector<uint8_t> tmp(static_cast<size_t>(w) * h * 4);
-  const int span = 2 * radius + 1;
-  for (int pass = 0; pass < passes; ++pass) {
-    for (int dir = 0; dir < 2; ++dir) {  // horizontal, then vertical
-      const int lines = dir == 0 ? h : w, len = dir == 0 ? w : h;
-      const size_t step = dir == 0 ? 4 : static_cast<size_t>(w) * 4;
-      const size_t line_step = dir == 0 ? static_cast<size_t>(w) * 4 : 4;
-      for (int l = 0; l < lines; ++l) {
-        const uint8_t* in = p + l * line_step;
-        uint8_t* out = tmp.data() + l * line_step;
-        for (int c = 0; c < 4; ++c) {
-          int sum = 0;
-          for (int i = -radius; i <= radius; ++i) sum += in[std::clamp(i, 0, len - 1) * step + c];
-          for (int i = 0; i < len; ++i) {
-            out[i * step + c] = static_cast<uint8_t>(sum / span);
-            sum += in[std::min(i + radius + 1, len - 1) * step + c] - in[std::max(i - radius, 0) * step + c];
-          }
-        }
-      }
-      std::copy(tmp.begin(), tmp.end(), p);
-    }
-  }
-}
+void box_blur_rgba(uint8_t* p, int w, int h, int radius, int passes) { box_blur_u8(p, w, h, w * 4, 4, radius, passes); }
 
 void downscale_rgba(const uint8_t* src, int sw, int sh, int max_w, uint8_t** dst, int* dw, int* dh) {
   const int w = std::max(1, std::min(sw, max_w));
@@ -142,8 +119,8 @@ void paint_backdrop(cairo_t* cr, cairo_surface_t* bd, int out_w, int out_h, doub
                     double w, double h) {
   if (!bd || out_w < 1 || out_h < 1) return;
   const double bw = cairo_image_surface_get_width(bd), bh = cairo_image_surface_get_height(bd);
-  const double scale = std::max(out_w / bw, out_h / bh);  // cover-fit, as the wallpaper itself
-  const double ox = (out_w - bw * scale) / 2, oy = (out_h - bh * scale) / 2;
+  const BackdropMap m = backdrop_map(static_cast<int>(bw), static_cast<int>(bh), out_w, out_h);  // cover-fit, as the wallpaper itself
+  const double scale = m.scale, ox = m.ox, oy = m.oy;
   cairo_save(cr);
   cairo_rectangle(cr, x, y, w, h);
   cairo_clip(cr);

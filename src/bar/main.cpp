@@ -130,6 +130,7 @@ struct Bar {
   int media_timer = 0;
 
   // Display text.
+  int stats_timer = 0, disk_timer = 0;
   std::string clock_text = "--:--:--", cpu_text = "CPU --%", ram_text = "RAM --%", gpu_text = "GPU --%",
               disk_text = "Disk --%", vol_text = "Vol --%";
   bool vol_muted = false;
@@ -2286,7 +2287,25 @@ struct Bar {
     return std::find(hidden.begin(), hidden.end(), TbElement::Metrics) == hidden.end();
   }
 
+  // Nothing reads the texts while Metrics is hidden, so skip the /proc reads, the GPU sysfs reads and the nvidia-smi process spawn.
+  // A config reload runs clock_tick (and update_disk) again, which refreshes everything the moment Metrics is shown.
+  // The 2 s stats and 5 s disk timers exist only while the texts are shown, so a hidden Metrics element costs no wake-ups either.
+  void sync_stats_timers() {
+    const bool want = stats_shown();
+    if (want && !stats_timer) {
+      stats_timer = app.add_timer(2000, [this] { stats_tick(); });
+      disk_timer = app.add_timer(5000, [this] {
+        if (update_disk()) redraw();
+      });
+    } else if (!want && stats_timer) {
+      app.unwatch(stats_timer);
+      app.unwatch(disk_timer);
+      stats_timer = disk_timer = 0;
+    }
+  }
+
   void stats_tick() {
+    if (!stats_shown()) return;
     bool ch = update_cpu();
     ch |= update_ram();
     ch |= update_gpu();
@@ -2600,7 +2619,9 @@ struct Bar {
     }
     refresh_glass();
     apply_layout();
+    sync_stats_timers();
     clock_tick();  // show a changed hour format / time zone right away
+    update_disk();
     redraw();
   }
 };
@@ -2685,10 +2706,7 @@ int main(int argc, char** argv) {
   B.apply_layout();
   B.try_connect();
 
-  B.app.add_timer(2000, [&B] { B.stats_tick(); });
-  B.app.add_timer(5000, [&B] {
-    if (B.update_disk() && B.stats_shown()) B.redraw();
-  });
+  B.sync_stats_timers();
   B.app.add_timer(15000, [&B] {
     if (B.update_battery()) B.redraw();
   });

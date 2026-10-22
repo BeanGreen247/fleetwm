@@ -2,9 +2,6 @@
 
 #include <cairo.h>
 
-#include <map>
-#include <utility>
-
 extern "C" {
 #include <wlr/types/wlr_buffer.h>
 }
@@ -19,17 +16,16 @@ struct Kept {
   wlr_buffer* buffer = nullptr;
   cairo_surface_t* source = nullptr;  // the blurred wallpaper it was made from; a different one means the wallpaper changed
 };
-std::map<std::pair<int, int>, Kept>& kept() {
-  static std::map<std::pair<int, int>, Kept> m;
-  return m;
+Kept& kept() {
+  static Kept k;
+  return k;
 }
 }  // namespace
 
-wlr_buffer* glass_backdrop_for(int out_w, int out_h) {
-  if (out_w < 1 || out_h < 1) return nullptr;
+wlr_buffer* glass_backdrop() {
   cairo_surface_t* backdrop = kit::load_backdrop();  // one reference; the picture itself is shared and re-checked every few seconds
   if (!backdrop) return nullptr;
-  Kept& k = kept()[{out_w, out_h}];
+  Kept& k = kept();
   if (k.buffer && k.source == backdrop) {
     cairo_surface_destroy(backdrop);
     return wlr_buffer_lock(k.buffer);
@@ -38,14 +34,17 @@ wlr_buffer* glass_backdrop_for(int out_w, int out_h) {
   if (k.source) cairo_surface_destroy(k.source);  // the cache keeps a reference, so a new wallpaper can never reuse its address
   k.buffer = nullptr;
   k.source = nullptr;
+  const int bw = cairo_image_surface_get_width(backdrop), bh = cairo_image_surface_get_height(backdrop);
   void* pixels = nullptr;
   size_t stride = 0;
-  wlr_buffer* buffer = create_pixel_buffer(out_w, out_h, &pixels, &stride);
+  wlr_buffer* buffer = create_pixel_buffer(bw, bh, &pixels, &stride);
   if (buffer) {
-    cairo_surface_t* surf = cairo_image_surface_create_for_data(static_cast<unsigned char*>(pixels), CAIRO_FORMAT_ARGB32, out_w,
-                                                                out_h, static_cast<int>(stride));
+    cairo_surface_t* surf = cairo_image_surface_create_for_data(static_cast<unsigned char*>(pixels), CAIRO_FORMAT_ARGB32, bw, bh,
+                                                                static_cast<int>(stride));
     cairo_t* cr = cairo_create(surf);
-    kit::paint_backdrop(cr, backdrop, out_w, out_h, 0, 0, 0, 0, out_w, out_h);
+    cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);  // the picture is RGB24: this makes the alpha opaque
+    cairo_set_source_surface(cr, backdrop, 0, 0);
+    cairo_paint(cr);
     cairo_destroy(cr);
     cairo_surface_destroy(surf);
     k.buffer = buffer;  // the cache owns this reference
@@ -57,12 +56,10 @@ wlr_buffer* glass_backdrop_for(int out_w, int out_h) {
 }
 
 void glass_backdrop_clear() {
-  for (auto& [size, k] : kept())
-    {
-      if (k.buffer) wlr_buffer_drop(k.buffer);
-      if (k.source) cairo_surface_destroy(k.source);
-    }
-  kept().clear();
+  Kept& k = kept();
+  if (k.buffer) wlr_buffer_drop(k.buffer);
+  if (k.source) cairo_surface_destroy(k.source);
+  k = Kept{};
 }
 
 }  // namespace fleetwm

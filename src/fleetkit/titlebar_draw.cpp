@@ -95,6 +95,7 @@ struct GlassEntry {
   unsigned long used = 0;
 };
 std::vector<GlassEntry> g_glass;
+uint64_t g_glass_hits = 0, g_glass_misses = 0, g_glass_evictions = 0;
 unsigned long g_glass_clock = 0;
 constexpr size_t kGlassBudget = 2u << 20;
 
@@ -107,12 +108,14 @@ void paint_titlebar_glass_background(cairo_t* cr, int width, int height, bool fo
   for (GlassEntry& e : g_glass)
     if (e.w == width && e.h == height && e.focused == focused && e.r == base.r && e.g == base.g && e.b == base.b && e.a == alpha) {
       e.used = ++g_glass_clock;
+      ++g_glass_hits;
       cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
       cairo_set_source_surface(cr, e.image, 0, 0);
       cairo_paint(cr);
       cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
       return;
     }
+  ++g_glass_misses;
   GlassEntry made;
   made.w = width;
   made.h = height;
@@ -133,6 +136,7 @@ void paint_titlebar_glass_background(cairo_t* cr, int width, int height, bool fo
       total -= entry_bytes(*lru);
       cairo_surface_destroy(lru->image);
       g_glass.erase(lru);
+      ++g_glass_evictions;
     }
     made.used = ++g_glass_clock;
     g_glass.push_back(made);
@@ -149,6 +153,9 @@ TitlebarCacheStats titlebar_glass_cache_stats() {
   TitlebarCacheStats s;
   s.entries = static_cast<int>(g_glass.size());
   for (const GlassEntry& e : g_glass) s.bytes += entry_bytes(e);
+  s.hits = g_glass_hits;
+  s.misses = g_glass_misses;
+  s.evictions = g_glass_evictions;
   return s;
 }
 
@@ -175,6 +182,7 @@ struct StripEntry {
   unsigned long used = 0;
 };
 std::vector<StripEntry> g_strips;
+uint64_t g_strip_hits = 0, g_strip_misses = 0, g_strip_evictions = 0;
 unsigned long g_strip_clock = 0;
 constexpr size_t kStripBudget = 1u << 20;
 
@@ -217,9 +225,11 @@ void draw_strip_cached(cairo_t* cr, const CaptionButton* b, int count, const Cap
   for (StripEntry& e : g_strips)
     if (same_strip(e, b, count, st, bar_h)) {
       e.used = ++g_strip_clock;
+      ++g_strip_hits;
       blit_strip(cr, e);
       return;
     }
+  ++g_strip_misses;
   double x0 = b[0].x, x1 = b[0].x + b[0].w;
   for (int i = 1; i < count; ++i) {
     x0 = std::min(x0, b[i].x);
@@ -263,6 +273,7 @@ void draw_strip_cached(cairo_t* cr, const CaptionButton* b, int count, const Cap
     total -= strip_bytes(*lru);
     cairo_surface_destroy(lru->image);
     g_strips.erase(lru);
+    ++g_strip_evictions;
   }
   e.used = ++g_strip_clock;
   g_strips.push_back(e);
@@ -275,6 +286,9 @@ TitlebarCacheStats titlebar_strip_cache_stats() {
   TitlebarCacheStats s;
   s.entries = static_cast<int>(g_strips.size());
   for (const StripEntry& e : g_strips) s.bytes += strip_bytes(e);
+  s.hits = g_strip_hits;
+  s.misses = g_strip_misses;
+  s.evictions = g_strip_evictions;
   return s;
 }
 

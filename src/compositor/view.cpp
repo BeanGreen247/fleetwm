@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "app_icon.hpp"
+#include "backdrop.hpp"
 #include "glass_backdrop.hpp"
 #include "glass_ray.hpp"
 #include "shadow.hpp"
@@ -438,6 +439,16 @@ void View::update_shadow() {
   wlr_buffer_unlock(pic);
 }
 
+namespace {
+// wlr_scene_buffer_set_source_box recomputes the damage and what is visible over the whole scene each time, measured at about 20,000 instructions a call; the
+// glass pieces ask for it up to three times per pointer event with the same box.
+void set_source_box_if_changed(wlr_scene_buffer* node, wlr_fbox* last, const wlr_fbox& box) {
+  if (node->buffer && last->x == box.x && last->y == box.y && last->width == box.width && last->height == box.height) return;
+  *last = box;
+  wlr_scene_buffer_set_source_box(node, &box);
+}
+}  // namespace
+
 void View::update_glass_backdrop() {
   update_shadow();
   // Fleetwm's own windows used to get a frosted picture behind their (then see-through) body. Their body is opaque now, only the
@@ -456,7 +467,7 @@ void View::update_glass_backdrop() {
   }
   wlr_box area{};
   wlr_output_layout_get_box(server->output_layout(), output->wlr_output_ptr, &area);
-  wlr_buffer* backdrop = glass_backdrop_for(area.width, area.height);
+  wlr_buffer* backdrop = glass_backdrop();
   if (!backdrop) {
     for (wlr_scene_buffer* f : frost_)
       if (f) wlr_scene_node_set_enabled(&f->node, false);
@@ -474,9 +485,16 @@ void View::update_glass_backdrop() {
   // of the glass are rebuilt a moment later (Server::mark_glass_dirty); until then the old ones are shown.
   wlr_box layout_rects[4];
   for (int i = 0; i < 4; ++i) layout_rects[i] = {cx + pieces[i].x, cy + pieces[i].y, pieces[i].width, pieces[i].height};
-  if (!dyn_pending_ && glass_backdrop_key(server, this, layout_rects) != dyn_key_) {
-    dyn_pending_ = true;
-    server->mark_glass_dirty(this);
+  if (!dyn_pending_) {
+    GlassKeys keys;
+    glass_backdrop_keys(server, this, layout_rects, &keys);
+    bool layout_changed = false;
+    if (glass_stale_parts(keys, layout_rects, area, &layout_changed)) {
+      dyn_pending_ = true;
+      // A move, a resize or a restack is followed closely; a window below that only repainted (a terminal printing, a video) is blurred
+      // under the glass, and six to ten updates a second look the same as twenty.
+      server->mark_glass_dirty(this, layout_changed ? Server::kGlassLayoutDelayMs : Server::kGlassContentDelayMs);
+    }
   }
   for (int i = 0; i < 4; ++i) {
     // The part of the piece that lies on this output; the rest has nothing to show.
@@ -501,12 +519,13 @@ void View::update_glass_backdrop() {
       if (frost_[i]->buffer != dp.buffer) wlr_scene_buffer_set_buffer(frost_[i], dp.buffer);
       const wlr_fbox src = {static_cast<double>(x0 - dp.origin.x) / kGlassScale, static_cast<double>(y0 - dp.origin.y) / kGlassScale,
                             static_cast<double>(x1 - x0) / kGlassScale, static_cast<double>(y1 - y0) / kGlassScale};
-      wlr_scene_buffer_set_source_box(frost_[i], &src);
+      set_source_box_if_changed(frost_[i], &frost_src_[i], src);
     } else {
       if (frost_[i]->buffer != backdrop) wlr_scene_buffer_set_buffer(frost_[i], backdrop);
-      const wlr_fbox src = {static_cast<double>(x0 - area.x), static_cast<double>(y0 - area.y), static_cast<double>(x1 - x0),
-                            static_cast<double>(y1 - y0)};
-      wlr_scene_buffer_set_source_box(frost_[i], &src);
+      const kit::BackdropBox sb = kit::backdrop_source(kit::backdrop_map(backdrop->width, backdrop->height, area.width, area.height), backdrop->width,
+                                             backdrop->height, x0 - area.x, y0 - area.y, x1 - x0, y1 - y0);
+      const wlr_fbox src = {sb.x, sb.y, sb.w, sb.h};
+      set_source_box_if_changed(frost_[i], &frost_src_[i], src);
     }
     wlr_scene_buffer_set_dest_size(frost_[i], x1 - x0, y1 - y0);
     // The reflection over it. DWM keeps the reflection texture on the screen and moves it with the window by 10% (parallax), so the part of
@@ -525,12 +544,12 @@ void View::update_glass_backdrop() {
     const double shift = kParallax * (cx - area.x);
     const wlr_fbox rsrc = {(static_cast<double>(x0 - area.x) + margin - shift) / kRayScale, static_cast<double>(y0 - area.y) / kRayScale,
                            static_cast<double>(x1 - x0) / kRayScale, static_cast<double>(y1 - y0) / kRayScale};
-    wlr_scene_buffer_set_source_box(ray_[i], &rsrc);
+    set_source_box_if_changed(ray_[i], &ray_src_[i], rsrc);
     wlr_scene_buffer_set_dest_size(ray_[i], x1 - x0, y1 - y0);
     wlr_scene_buffer_set_opacity(ray_[i], focused ? 0.70f : 0.40f);
   }
   if (ray) wlr_buffer_unlock(ray);
-  wlr_buffer_unlock(backdrop);  // glass_backdrop_for() hands out a lock, not the producer's reference
+  wlr_buffer_unlock(backdrop);  // glass_backdrop() hands out a lock, not the producer's reference
 }
 
 void View::rebuild_glass_pictures() {
@@ -545,14 +564,45 @@ void View::rebuild_glass_pictures() {
   const wlr_box pieces[4] = {{0, 0, w + 2 * bt, th}, {0, y, bt, h}, {bt + w, y, bt, h}, {0, y + h, w + 2 * bt, bt}};
   wlr_box rects[4];
   for (int i = 0; i < 4; ++i) rects[i] = {cx + pieces[i].x, cy + pieces[i].y, pieces[i].width, pieces[i].height};
-  dyn_key_ = glass_backdrop_key(server, this, rects);
-  if (dyn_key_ == 0) {  // nothing but the wallpaper is under the glass
-    for (GlassPicture& p : dyn_) glass_picture_release(&p);
-    update_glass_backdrop();
-    return;
+  GlassKeys keys;
+  glass_backdrop_keys(server, this, rects, &keys);
+  const unsigned stale = glass_stale_parts(keys, rects, area, nullptr);
+  unsigned build = 0;
+  for (int i = 0; i < 4; ++i) {
+    if (!(stale & (1u << i))) continue;
+    dyn_key_[i] = keys.key[i];
+    dyn_layout_[i] = keys.layout[i];
+    if (keys.key[i] == 0) glass_picture_release(&dyn_[i]);  // nothing but the wallpaper is under this part
+    else build |= 1u << i;
   }
-  if (!glass_build_pictures(server, this, rects, area, dyn_)) return;
+  if (build) glass_build_pictures(server, this, rects, area, dyn_, build);
   update_glass_backdrop();
+}
+
+unsigned View::glass_stale_parts(const GlassKeys& keys, const wlr_box rects[4], const wlr_box& area, bool* layout_changed) const {
+  unsigned mask = 0;
+  bool layout = false;
+  for (int i = 0; i < 4; ++i) {
+    if (rects[i].width < 1 || rects[i].height < 1) continue;
+    if (keys.key[i] != dyn_key_[i]) {
+      mask |= 1u << i;
+      if (keys.layout[i] != dyn_layout_[i]) layout = true;
+      continue;
+    }
+    // The pictures hold the frame part and a margin; once the glass has moved or grown past it the picture no longer covers it.
+    const GlassPicture& dp = dyn_[i];
+    if (keys.key[i] == 0 || !dp.buffer) continue;
+    const int x0 = std::max(rects[i].x, area.x), y0 = std::max(rects[i].y, area.y);
+    const int x1 = std::min(rects[i].x + rects[i].width, area.x + area.width);
+    const int y1 = std::min(rects[i].y + rects[i].height, area.y + area.height);
+    if (x1 <= x0 || y1 <= y0) continue;
+    if (x0 < dp.origin.x || y0 < dp.origin.y || x1 > dp.origin.x + dp.origin.width || y1 > dp.origin.y + dp.origin.height) {
+      mask |= 1u << i;
+      layout = true;
+    }
+  }
+  if (layout_changed) *layout_changed = layout;
+  return mask;
 }
 
 bool View::round_corners() const {

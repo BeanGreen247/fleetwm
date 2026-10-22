@@ -32,7 +32,6 @@ FmWindow::FmWindow(Host host, FmSettings settings, kit::Palette theme)
   Browser b;
   new_tab_state(&b);
   tabs_.push_back(std::move(b));
-  thumb_thread_ = std::thread([this] { thumb_worker(); });
   // Pick the checksum for verified copies now, off the main thread, so the first copy does not wait for the measurement (about 25 ms).
   std::thread([] { resolve_algo(HashAlgo::Auto); }).detach();
   load_folder_views();
@@ -830,6 +829,8 @@ void FmWindow::request_thumb(const std::string& path, int64_t mtime, int px) {
   if (thumbs_.count(k) || thumb_pending_.count(k)) return;
   thumb_pending_[k] = true;
   thumb_queue_.push_back(k);
+  // Started with the first request: a window that never shows an image or a folder preview never owns this thread.
+  if (!thumb_thread_.joinable()) thumb_thread_ = std::thread([this] { thumb_worker(); });
   thumb_cv_.notify_one();
 }
 

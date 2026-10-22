@@ -49,6 +49,31 @@ struct GlassStyle {
 // is where its top-left corner is on the screen. `strength` is the beam's peak opacity. Painted over what is there, clipped to the rectangle.
 void paint_screen_ray(cairo_t* cr, double screen_x, double screen_y, double x, double y, double w, double h, int out_w, int out_h,
                       double strength);
+// Where an output of out_w x out_h shows a backdrop of bw x bh: cover-fit and centred, as the wallpaper itself (paint_backdrop uses the same).
+struct BackdropMap {
+  double scale, ox, oy;
+};
+inline BackdropMap backdrop_map(int bw, int bh, int out_w, int out_h) {
+  const double sx = static_cast<double>(out_w) / bw, sy = static_cast<double>(out_h) / bh;
+  const double s = sx > sy ? sx : sy;
+  return {s, (out_w - bw * s) / 2, (out_h - bh * s) / 2};
+}
+struct BackdropBox {
+  double x, y, w, h;
+};
+// The part of the backdrop (in its own pixels) that lies under the output-relative rectangle (x, y, w, h), kept inside the picture.
+inline BackdropBox backdrop_source(const BackdropMap& m, int bw, int bh, double x, double y, double w, double h) {
+  BackdropBox b{(x - m.ox) / m.scale, (y - m.oy) / m.scale, w / m.scale, h / m.scale};
+  // half a pixel in from every edge, so bilinear sampling never reaches outside the picture (the renderers do not all clamp there)
+  if (b.w > bw - 1) b.w = bw - 1;
+  if (b.h > bh - 1) b.h = bh - 1;
+  if (b.x < 0.5) b.x = 0.5;
+  if (b.y < 0.5) b.y = 0.5;
+  if (b.x + b.w > bw - 0.5) b.x = bw - 0.5 - b.w;
+  if (b.y + b.h > bh - 0.5) b.y = bh - 0.5 - b.h;
+  return b;
+}
+
 void paint_glass(cairo_t* cr, cairo_surface_t* backdrop, int out_w, int out_h, double screen_x, double screen_y, double x,
                  double y, double w, double h, const GlassStyle& style);
 

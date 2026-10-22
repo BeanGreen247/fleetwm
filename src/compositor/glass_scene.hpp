@@ -31,13 +31,21 @@ struct GlassPicture {
 // The windows below `w` (nearest the bottom first): the stacking order with the always-on-top and pinned layers above the rest, then everything under `w`.
 std::vector<View*> glass_views_below(Server* server, const View* w);
 
-// A number that changes when what lies under the four frame parts `rects` (layout coordinates) changed: the windows below that touch them, their
-// positions, sizes and the serial of their last content commit. Equal keys mean the picture would come out the same; 0 means that no window is
-// under the glass, so the plain blurred wallpaper is exact and no picture is needed.
-uint64_t glass_backdrop_key(Server* server, const View* w, const wlr_box rects[4]);
+// Per frame part (titlebar, left, right, bottom), a number that changes when what lies under it (the part grown by the margin, layout coordinates `rects`)
+// changed: the windows below that touch it, their positions and sizes, and the serial of their last content commit. `layout` is the same without the content
+// serials: if only `key` changed, only what the windows below show changed, not where they are, and the rebuild can wait a little longer. A key of 0 means
+// no window is under that part, so the plain blurred wallpaper is exact and no picture is needed. The keys do not depend on where the glass itself is: the
+// pictures are laid out in layout coordinates, so they stay right while the glass moves inside the area they hold (View::update_glass_backdrop).
+struct GlassKeys {
+  uint64_t key[4] = {0, 0, 0, 0};
+  uint64_t layout[4] = {0, 0, 0, 0};
+};
+void glass_backdrop_keys(Server* server, const View* w, const wlr_box rects[4], GlassKeys* out);
 
-// Builds the four pictures. `area` is the output's box (the wallpaper is laid out by it). Returns false when nothing could be built.
-bool glass_build_pictures(Server* server, const View* w, const wlr_box rects[4], const wlr_box& area, GlassPicture out[4]);
+// Builds the pictures of the frame parts in `mask` (bit i = part i; the others are left as they are). `area` is the output's box (the wallpaper is laid out by it).
+// A new picture that comes out byte for byte like the one it replaces is dropped and the old one kept, so the scene sees no change and nothing is redrawn.
+// Returns false when nothing could be built.
+bool glass_build_pictures(Server* server, const View* w, const wlr_box rects[4], const wlr_box& area, GlassPicture out[4], unsigned mask = 15);
 
 void glass_picture_release(GlassPicture* p);
 

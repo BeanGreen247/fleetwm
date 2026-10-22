@@ -222,6 +222,19 @@ TEST(TitlebarDraw, RepeatedRedrawsHitTheCachesInsteadOfGrowingThem) {
   EXPECT_EQ(td::titlebar_strip_cache_stats().entries, 5) << "one strip picture per button state, however often it is redrawn";
 }
 
+TEST(TitlebarDraw, CountsHitsAndMisses) {
+  td_clear();
+  const td::TitlebarCacheStats g0 = td::titlebar_glass_cache_stats(), s0 = td::titlebar_strip_cache_stats();
+  TdImage img(800, 32);
+  td::TitlebarPaint p = td_paint(800, true);
+  for (int i = 0; i < 10; ++i) td_draw(img, p);
+  const td::TitlebarCacheStats g1 = td::titlebar_glass_cache_stats(), s1 = td::titlebar_strip_cache_stats();
+  EXPECT_EQ(g1.misses - g0.misses, 1u);
+  EXPECT_EQ(g1.hits - g0.hits, 9u);
+  EXPECT_EQ(s1.misses - s0.misses, 1u);
+  EXPECT_EQ(s1.hits - s0.hits, 9u);
+}
+
 TEST(TitlebarDraw, DifferentSizesFocusAndColoursGetTheirOwnBackground) {
   td_clear();
   TdImage a(800, 32), b(900, 32), c(800, 32);
@@ -642,4 +655,54 @@ TEST(ScreenRay, StaysOnTheScreenWhateverRectangleShowsIt) {
   cairo_surface_destroy(whole);
   cairo_surface_destroy(window);
   cairo_surface_destroy(moved);
+}
+
+// The glass backdrop is one small picture that the scene scales when it draws a frame part (it used to be painted out to the
+// whole output first). Both routes must give the same pixels for the part under a frame.
+TEST(GlassBackdropMap, SmallPictureScaledByTheSceneMatchesTheFullOutputPicture) {
+  const int bw = 480, bh = 270;
+  cairo_surface_t* small = cairo_image_surface_create(CAIRO_FORMAT_RGB24, bw, bh);
+  {
+    cairo_t* c = cairo_create(small);
+    cairo_pattern_t* g = cairo_pattern_create_linear(0, 0, bw, bh);
+    cairo_pattern_add_color_stop_rgb(g, 0, 0.1, 0.3, 0.7);
+    cairo_pattern_add_color_stop_rgb(g, 1, 0.9, 0.6, 0.2);
+    cairo_set_source(c, g);
+    cairo_paint(c);
+    cairo_pattern_destroy(g);
+    cairo_destroy(c);
+  }
+  struct Case { int ow, oh, x, y, w, h; };
+  for (const Case cs : {Case{1920, 1080, 100, 40, 700, 30}, Case{1280, 720, 0, 0, 1280, 720}, Case{1024, 768, 300, 500, 200, 268}, Case{2560, 1080, 2000, 10, 500, 60}}) {
+    cairo_surface_t* full = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, cs.ow, cs.oh);  // the old route
+    {
+      cairo_t* c = cairo_create(full);
+      fleetwm::kit::paint_backdrop(c, small, cs.ow, cs.oh, 0, 0, 0, 0, cs.ow, cs.oh);
+      cairo_destroy(c);
+    }
+    cairo_surface_t* part = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, cs.w, cs.h);  // the new route: source box scaled to the piece
+    {
+      const auto m = fleetwm::kit::backdrop_map(bw, bh, cs.ow, cs.oh);
+      const auto b = fleetwm::kit::backdrop_source(m, bw, bh, cs.x, cs.y, cs.w, cs.h);
+      cairo_t* c = cairo_create(part);
+      cairo_scale(c, cs.w / b.w, cs.h / b.h);
+      cairo_set_source_surface(c, small, -b.x, -b.y);
+      cairo_pattern_set_filter(cairo_get_source(c), CAIRO_FILTER_BILINEAR);
+      cairo_paint(c);
+      cairo_destroy(c);
+    }
+    cairo_surface_flush(full);
+    cairo_surface_flush(part);
+    int worst = 0;
+    for (int y = 0; y < cs.h; ++y)
+      for (int x = 0; x < cs.w; ++x) {
+        const unsigned char* a = cairo_image_surface_get_data(full) + static_cast<size_t>(cs.y + y) * cairo_image_surface_get_stride(full) + (cs.x + x) * 4;
+        const unsigned char* d = cairo_image_surface_get_data(part) + static_cast<size_t>(y) * cairo_image_surface_get_stride(part) + x * 4;
+        for (int k = 0; k < 3; ++k) worst = std::max(worst, std::abs(int(a[k]) - int(d[k])));
+      }
+    EXPECT_LE(worst, 3) << cs.ow << "x" << cs.oh << " piece at " << cs.x << "," << cs.y;
+    cairo_surface_destroy(full);
+    cairo_surface_destroy(part);
+  }
+  cairo_surface_destroy(small);
 }

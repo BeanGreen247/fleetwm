@@ -14,4 +14,7 @@ namespace fleetwm {
 // The caller owns one reference (wlr_buffer_drop() it once handed over).
 wlr_buffer* create_pixel_buffer(int width, int height, void** pixels, size_t* stride);
 
+// True when `b` was made by create_pixel_buffer, is width x height and holds exactly these pixels (rows `stride` bytes apart in `data`).
+bool pixel_buffer_matches(wlr_buffer* b, const void* data, int width, int height, size_t stride);
+
 }  // namespace fleetwm

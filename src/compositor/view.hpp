@@ -327,9 +327,14 @@ class View {
   wlr_scene_buffer* frost_[4] = {};
   // The glass reflection over the frost, one piece per frame part like the frost: the screen-fixed ray, shifted 10% with the window.
   wlr_scene_buffer* ray_[4] = {};
+  wlr_fbox frost_src_[4] = {}, ray_src_[4] = {};  // the source boxes last given to the scene, so an unchanged one is not set again
   GlassPicture dyn_[4];       // the blurred backdrop pieces built from the windows below; empty until the first rebuild
-  uint64_t dyn_key_ = 0;      // what they were built from (glass_backdrop_key)
-  bool dyn_pending_ = false;  // a rebuild is scheduled
+  uint64_t dyn_key_[4] = {};     // what each was built from (glass_backdrop_keys)
+  uint64_t dyn_layout_[4] = {};  // the same without the content serials: where the windows below were
+  bool dyn_pending_ = false;     // a rebuild is scheduled
+  // The frame parts whose picture is out of date (bit i = part i): what lies under it changed, or the glass has moved or grown past the area the picture holds.
+  // `layout_changed` is set when it is more than a repaint of a window below.
+  unsigned glass_stale_parts(const GlassKeys& keys, const wlr_box rects[4], const wlr_box& area, bool* layout_changed) const;
   // The drop shadow: four corners and four edges around the window's outer rectangle, all cut from one small blurred picture.
   wlr_scene_buffer* shadow_[8] = {};
   void update_shadow();

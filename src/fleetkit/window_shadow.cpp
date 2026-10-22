@@ -1,5 +1,7 @@
 #include "window_shadow.hpp"
 
+#include "box_blur.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <vector>
@@ -8,30 +10,7 @@ namespace fleetwm::kit {
 
 namespace {
 
-void box_blur(unsigned char* p, int w, int h, int stride, int r, int passes) {
-  std::vector<unsigned char> tmp(static_cast<size_t>(stride) * h);
-  const int div = 2 * r + 1;
-  for (int pass = 0; pass < passes; ++pass) {
-    for (int y = 0; y < h; ++y) {
-      const unsigned char* s = p + static_cast<size_t>(y) * stride;
-      unsigned char* d = &tmp[static_cast<size_t>(y) * stride];
-      int sum = 0;
-      for (int x = -r; x <= r; ++x) sum += s[std::clamp(x, 0, w - 1)];
-      for (int x = 0; x < w; ++x) {
-        d[x] = static_cast<unsigned char>(sum / div);
-        sum += s[std::min(x + r + 1, w - 1)] - s[std::max(x - r, 0)];
-      }
-    }
-    for (int x = 0; x < w; ++x) {
-      int sum = 0;
-      for (int y = -r; y <= r; ++y) sum += tmp[static_cast<size_t>(std::clamp(y, 0, h - 1)) * stride + x];
-      for (int y = 0; y < h; ++y) {
-        p[static_cast<size_t>(y) * stride + x] = static_cast<unsigned char>(sum / div);
-        sum += tmp[static_cast<size_t>(std::min(y + r + 1, h - 1)) * stride + x] - tmp[static_cast<size_t>(std::max(y - r, 0)) * stride + x];
-      }
-    }
-  }
-}
+void box_blur(unsigned char* p, int w, int h, int stride, int r, int passes) { box_blur_u8(p, w, h, stride, 1, r, passes); }
 
 }  // namespace
 

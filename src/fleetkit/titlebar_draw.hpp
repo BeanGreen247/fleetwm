@@ -63,6 +63,7 @@ void draw_window_edge(cairo_t* cr, double x0, double y0, double x1, double y1, d
 struct TitlebarCacheStats {
   int entries = 0;
   size_t bytes = 0;
+  uint64_t hits = 0, misses = 0, evictions = 0;
 };
 TitlebarCacheStats titlebar_glass_cache_stats();
 void titlebar_glass_cache_clear();

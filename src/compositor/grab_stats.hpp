@@ -13,6 +13,7 @@
 //   commit_ms     average/max wall time of wlr_scene_output_commit       damage_px    average/max pixels of pending scene damage per commit
 //   present       wlr_output present events                              missed       present events with presented=false
 //   *_renders     titlebar / frame-strip pictures drawn on the CPU (cache misses)
+//   glass_pieces/glass_same  frame parts rebuilt, and how many of those came out byte-identical to the picture they replace (kept, no damage)
 //   glass_builds  backdrops of glass frames built from the windows below (glass_scene.cpp) and glass_ms the milliseconds they took
 //
 // What it cannot show: GPU execution time (commit_ms is the CPU side of the call), or whether a pixel reached the panel (damage is queued scene
@@ -26,8 +27,9 @@
 namespace fleetwm::grabstats {
 
 struct Counters {
-  uint64_t events = 0, pos = 0, resize_req = 0, snap = 0, frames = 0, cap_wait = 0, cap_idle = 0, commits = 0, present = 0, missed = 0, titlebar_renders = 0, strip_renders = 0, glass_builds = 0;
+  uint64_t events = 0, pos = 0, resize_req = 0, snap = 0, frames = 0, cap_wait = 0, cap_idle = 0, commits = 0, present = 0, missed = 0, titlebar_renders = 0, strip_renders = 0, glass_builds = 0, glass_pieces = 0, glass_same = 0;
   double glass_ms = 0;  // time spent building glass backdrops (glass_scene.cpp)
+  double gl_wall_ms = 0, gl_content_ms = 0, gl_blur_ms = 0, gl_post_ms = 0;  // of that: wallpaper + frames, reading and shrinking the windows below, blur, compare + buffer
   double commit_ms = 0, commit_ms_max = 0, damage_px = 0, damage_px_max = 0;
   bool any() const { return events || pos || frames || commits || present || titlebar_renders || strip_renders || glass_builds; }
 };
@@ -70,13 +72,14 @@ inline void print_and_reset(int out_w, int out_h) {
   last_print() = t;
   if (k.any() && dt > 0)
     std::fprintf(stderr,
-                 "GRABSTATS mode=%s dt=%.3f out=%dx%d events=%llu pos=%llu resize_req=%llu snap=%llu frames=%llu cap_wait=%llu cap_idle=%llu commits=%llu commit_ms=%.2f/%.2f damage_px=%.0f/%.0f present=%llu missed=%llu titlebar_renders=%llu strip_renders=%llu glass_builds=%llu glass_ms=%.2f\n",
+                 "GRABSTATS mode=%s dt=%.3f out=%dx%d events=%llu pos=%llu resize_req=%llu snap=%llu frames=%llu cap_wait=%llu cap_idle=%llu commits=%llu commit_ms=%.2f/%.2f damage_px=%.0f/%.0f present=%llu missed=%llu titlebar_renders=%llu strip_renders=%llu glass_builds=%llu glass_ms=%.2f glass_pieces=%llu glass_same=%llu gl_wall_ms=%.2f gl_content_ms=%.2f gl_blur_ms=%.2f gl_post_ms=%.2f\n",
                  mode(), dt, out_w, out_h, static_cast<unsigned long long>(k.events), static_cast<unsigned long long>(k.pos), static_cast<unsigned long long>(k.resize_req),
                  static_cast<unsigned long long>(k.snap), static_cast<unsigned long long>(k.frames), static_cast<unsigned long long>(k.cap_wait),
                  static_cast<unsigned long long>(k.cap_idle), static_cast<unsigned long long>(k.commits), k.commits ? k.commit_ms / static_cast<double>(k.commits) : 0.0,
                  k.commit_ms_max, k.commits ? k.damage_px / static_cast<double>(k.commits) : 0.0, k.damage_px_max, static_cast<unsigned long long>(k.present),
                  static_cast<unsigned long long>(k.missed), static_cast<unsigned long long>(k.titlebar_renders), static_cast<unsigned long long>(k.strip_renders),
-                 static_cast<unsigned long long>(k.glass_builds), k.glass_ms);
+                 static_cast<unsigned long long>(k.glass_builds), k.glass_ms, static_cast<unsigned long long>(k.glass_pieces),
+                 static_cast<unsigned long long>(k.glass_same), k.gl_wall_ms, k.gl_content_ms, k.gl_blur_ms, k.gl_post_ms);
   k = Counters{};
 }
 
