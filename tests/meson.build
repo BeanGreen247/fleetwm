@@ -40,6 +40,9 @@ fleetwm_test_sources = files(
   'test_terminal_launch.cpp',
   'test_workspace_list.cpp',
   'test_power_config.cpp',
+  'test_remote_config.cpp',
+  'test_fleetremote.cpp',
+  'test_remote_usage.cpp',
   'test_lock_tooltip.cpp',
   'test_network.cpp',
   'test_network_glyphs.cpp',
@@ -84,7 +87,7 @@ fleetwm_unit_tests = executable(
   fleetwm_test_sources,
   dependencies: [gtest_dep, libcommon_core_dep, libfleetkit_dep, libnetmgr_dep, libbtmgr_dep, libfleetfm_core_dep, libfleetfm_icons_dep, libfleetfm_window_dep, libnetfs_core_dep],
   # the power menu's header-only parts, and the source tree for the tests that read the polkit rule and install.sh
-  include_directories: include_directories('../apps/powermenu'),
+  include_directories: include_directories('../apps/powermenu', '../src/fleetremote'),
   cpp_args: ['-DFLEETWM_SOURCE_DIR="' + meson.project_source_root() + '"'],
 )
 
@@ -111,6 +114,7 @@ test_areas = {
   'fm': 'Fm*',
   'build': 'PgoTraining.*:PgoTrainingShim.*',
   'osd': 'OsdLogic.*',
+  'remote': 'RemoteConfigTest.*:RemotePassword.*:RemoteShadow.*:RemoteQuality.*:RemoteThrottle.*:RemoteScale.*:RemoteResolution.*:RemoteBandwidth.*:RemoteLiveStats.*:RemoteFormat.*:RemoteUsage.*',
   'power': 'PowerActions.*:PowerPolkitRule.*:PowerInstaller.*:PowerIcons.*:PolkitRules.*:PolkitRuleBehaviour.*',
 }
 foreach area, filter : test_areas

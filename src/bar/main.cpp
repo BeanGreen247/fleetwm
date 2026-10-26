@@ -64,6 +64,7 @@
 #include "child_signals.hpp"
 #include "version.hpp"
 #include "mpris.hpp"
+#include "remote_usage.hpp"
 
 extern char** environ;
 
@@ -185,7 +186,7 @@ struct Bar {
             pal.fg_secondary.g + (pal.fg_primary.g - pal.fg_secondary.g) * 0.6,
             pal.fg_secondary.b + (pal.fg_primary.b - pal.fg_secondary.b) * 0.6, 1.0};
   }
-  Rect net_rect, layout_rect;
+  Rect net_rect, layout_rect, remote_rect;
   // Where the clock was drawn last and how wide its text was: a tick that keeps the width repaints
   // only this strip (the glass behind it is repainted inside the clip, so it stays seamless).
   static constexpr double kClockPad = 6;
@@ -476,6 +477,10 @@ struct Bar {
     }
     if (bt_state.available) {
       t += kBtW;
+      ++children;
+    }
+    if (!remote_label.empty()) {
+      t += remote_pill_w(m);
       ++children;
     }
     t += kModeW + battery_w(m);  // power-mode glyph + battery/plug, shown on every machine
@@ -997,6 +1002,14 @@ struct Bar {
     } else {
       bt_rect = {};
     }
+    if (!remote_label.empty()) {
+      const double rw = remote_pill_w(m);
+      remote_rect = {rx, 0, rw, static_cast<double>(H)};
+      draw_remote_pill(cr, rx, H / 2.0, rw);
+      rx += rw + kRightGap;
+    } else {
+      remote_rect = {};
+    }
     draw_mode_glyph(cr, rx + kModeW / 2, H / 2.0, icon_fg());
     rx += kModeW + kRightGap;
     const double bw_total = battery_w(m);
@@ -1124,6 +1137,39 @@ struct Bar {
     if (changed) apply_layout_if_island();
     return changed;
   }
+
+  // ---- Remote desktop: a pill with the protocol while a viewer is connected. fleetwm-remote writes the stats file every ten seconds
+  // and at every change then; the directory is watched, so nothing is polled and nothing is drawn when nobody is connected. ----
+  fleetwm::RemoteLive remote_live;
+  std::string remote_label;
+  int remote_watch = 0;
+
+  void start_remote() {
+    remote_watch = kit::watch_dirs(app, {fleetwm::remote_stats_dir()}, [this] {
+      if (update_remote()) redraw();
+    });
+    update_remote();
+  }
+
+  bool update_remote() {
+    remote_live = fleetwm::load_remote_live();
+    std::string label = fleetwm::remote_live_label(remote_live);
+    const bool changed = label != remote_label;
+    remote_label = std::move(label);
+    if (changed) apply_layout_if_island();
+    return changed;
+  }
+
+  double remote_pill_w(Metrics& m) { return std::max(36.0, m.text_w(remote_label) + 16); }
+  void draw_remote_pill(cairo_t* cr, double x, double cy, double w) {
+    const double h = 20;
+    rounded_rect(cr, x, cy - h / 2, w, h, pal.rounded ? h / 2 : 3);
+    set_source(cr, with_alpha(pal.accent, 0.35));
+    cairo_fill(cr);
+    const TextExtents te = measure_text(cr, remote_label, 11.5, true);
+    draw_text(cr, remote_label, x + (w - te.width) / 2, cy - te.height / 2 + te.ascent, 11.5, pal.fg_primary, true);
+  }
+  std::string remote_tooltip_text() { return fleetwm::remote_live_tooltip(fleetwm::load_remote_live()); }
 
   void draw_bluetooth(cairo_t* cr, double cx, double cy, const Color& c) {
     const bt::Glyph g = bt::glyph_for(bt_state);
@@ -1393,6 +1439,7 @@ struct Bar {
       case TbElement::Volume: return v ? kRow : kSpeakerW + kStatPad;
       case TbElement::Network: return !net_have ? 0 : v ? kRow : kNetW;
       case TbElement::Bluetooth: return !bt_state.available ? 0 : v ? kRow : kBtW;
+      case TbElement::Remote: return remote_label.empty() ? 0 : v ? kRow : remote_pill_w(m);
       case TbElement::Mode: return v ? kRow : kModeW;
       case TbElement::Battery: return v ? kRow : battery_w(m);
       case TbElement::Media: return media_width(m);
@@ -1402,7 +1449,7 @@ struct Bar {
   }
 
   void clear_tb_rects() {
-    start_rect = power_rect = vol_rect = battery_rect = ram_rect = cpu_rect = gpu_rect = disk_rect = net_rect = layout_rect = bt_rect = media_rect = Rect{};
+    start_rect = power_rect = vol_rect = battery_rect = ram_rect = cpu_rect = gpu_rect = disk_rect = net_rect = layout_rect = bt_rect = media_rect = remote_rect = Rect{};
     clock_rect = Rect{};
     show_desktop_rect = Rect{};
     for (Rect& r : ws_rect) r = Rect{};
@@ -1554,6 +1601,14 @@ struct Bar {
         bt_rect = v ? Rect{bx, box.y, bw, box.h} : box;
         draw_bluetooth(cr, cx, cy, ic);
         break;
+      case TbElement::Remote: {
+        if (remote_label.empty()) break;
+        Metrics pm{cr};
+        const double rw = v ? std::min(bw, remote_pill_w(pm)) : box.w;
+        remote_rect = v ? Rect{bx, box.y, bw, box.h} : box;
+        draw_remote_pill(cr, v ? (cross - rw) / 2.0 : box.x, cy, rw);
+        break;
+      }
       case TbElement::Mode:
         draw_mode_glyph(cr, cx, cy, ic);
         break;
@@ -2154,6 +2209,7 @@ struct Bar {
       case 8: return layout_tooltip_text();
       case 9: return bt_tooltip_text();
       case 10: return media_tooltip_text();
+      case 11: return remote_tooltip_text();
       default: return vol_tooltip_text();
     }
   }
@@ -2433,6 +2489,7 @@ struct Bar {
       if (battery_rect.hit(x, y)) return spawn_settings_page("power");
       if (net_have && net_rect.hit(x, y)) return spawn_settings_page("network");
       if (bt_state.available && bt_rect.hit(x, y)) return spawn_settings_page("bluetooth");
+      if (!remote_label.empty() && remote_rect.hit(x, y)) return spawn_settings_page("remote");
       if (power_rect.hit(x, y)) return spawn("fleetwm-powermenu");
     }
     for (size_t i = 0; i < tray_rects.size(); ++i)
@@ -2514,6 +2571,10 @@ struct Bar {
     if (media && media->state().available && media_rect.hit(x, y)) {
       want = 10;
       r = media_rect;
+    }
+    if (!remote_label.empty() && remote_rect.hit(x, y)) {
+      want = 11;
+      r = remote_rect;
     }
     for (size_t i = 0; i < tray_rects.size(); ++i)
       if (tray_rects[i].hit(x, y)) {
@@ -2702,6 +2763,7 @@ int main(int argc, char** argv) {
   B.update_battery();
   B.update_network();
   B.start_bluetooth();
+  B.start_remote();
   B.clock_tick();
   B.apply_layout();
   B.try_connect();
@@ -2711,7 +2773,9 @@ int main(int argc, char** argv) {
     if (B.update_battery()) B.redraw();
   });
   B.app.add_timer(5000, [&B] {
-    if (B.update_network()) B.redraw();
+    bool changed = B.update_network();
+    if (!B.remote_label.empty()) changed = B.update_remote() || changed;  // a stats file that stopped being written (the daemon died)
+    if (changed) B.redraw();
   });
   B.app.on_outputs_changed = [&B] { B.apply_layout(); };
 

@@ -22,6 +22,7 @@ constexpr Info kInfo[kTbElementCount] = {
     {TbElement::Volume, "volume", "Volume"},
     {TbElement::Network, "network", "Network"},
     {TbElement::Bluetooth, "bluetooth", "Bluetooth"},
+    {TbElement::Remote, "remote", "Remote desktop"},
     {TbElement::Mode, "mode", "Power mode"},
     {TbElement::Battery, "battery", "Battery"},
     {TbElement::Media, "media", "Media player"},

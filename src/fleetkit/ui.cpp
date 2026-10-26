@@ -610,12 +610,12 @@ bool Ui::spin(int* value, int min, int max, int step, bool enabled) {
   return mark(changed);
 }
 
-bool Ui::slider(int* value, int min, int max, double width, bool enabled) {
+bool Ui::slider(int* value, int min, int max, double width, bool enabled, const std::string& value_text) {
   const int id = next_id();
   register_focusable_if(id, enabled);
   if (width <= 0) width = std::max(100.0, w_ - right_ - cx_ - 4);
   const UiRect r = place(width, 24);
-  const double pad = 8, val_w = 36, tx = r.x + pad, tw = r.w - 2 * pad - val_w;
+  const double pad = 8, val_w = value_text.empty() ? 36 : 150, tx = r.x + pad, tw = r.w - 2 * pad - val_w;
   bool changed = false;
   auto set = [&](int v) {
     v = std::clamp(v, min, max);
@@ -684,7 +684,7 @@ bool Ui::slider(int* value, int min, int max, double width, bool enabled) {
     } else {
       cairo_new_path(cr_);
     }
-    const std::string vtxt = std::to_string(*value);
+    const std::string vtxt = value_text.empty() ? std::to_string(*value) : value_text;
     const TextExtents vt = measure_text(cr_, vtxt, 13);
     draw_text(cr_, vtxt, r.x + r.w - val_w + (val_w - vt.width) / 2, r.y + (r.h - vt.height) / 2 + vt.ascent, 13,
               enabled ? pal_.fg_secondary : with_alpha(pal_.fg_secondary, 0.5));

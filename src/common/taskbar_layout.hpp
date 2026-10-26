@@ -4,7 +4,7 @@
 // bar lays elements out along x, the vertical one along y. Pure arithmetic and names; the bar draws, Settings edits the lists.
 //
 // Two zones: the main zone (start button, workspaces, pinned apps, the window list) fills from the start edge, the status zone
-// (tray, keyboard layout, volume, network, Bluetooth, power mode, battery, metrics, clock) fills from the far edge. The window list
+// (tray, keyboard layout, volume, network, Bluetooth, remote desktop, power mode, battery, metrics, clock) fills from the far edge. The window list
 // takes whatever room is left between them. Inside a zone the order is the user's.
 
 #include <string>
@@ -12,8 +12,8 @@
 
 namespace fleetwm {
 
-enum class TbElement { Start, Workspaces, Pinned, Windows, Metrics, Tray, Layout, Volume, Network, Bluetooth, Mode, Battery, Media, Clock };
-inline constexpr int kTbElementCount = 14;
+enum class TbElement { Start, Workspaces, Pinned, Windows, Metrics, Tray, Layout, Volume, Network, Bluetooth, Remote, Mode, Battery, Media, Clock };
+inline constexpr int kTbElementCount = 15;
 
 const char* tb_element_name(TbElement e);   // the name saved in bar.toml: "start", "workspaces", ...
 const char* tb_element_label(TbElement e);  // what Settings shows: "Start button", "Workspaces", ...

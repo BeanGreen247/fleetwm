@@ -117,7 +117,8 @@ class Ui {
   bool radio_group(const std::vector<std::string>& options, int* value, bool enabled = true);
   bool button(const std::string& label, bool enabled = true, bool accent = false);
   bool spin(int* value, int min, int max, int step = 1, bool enabled = true);
-  bool slider(int* value, int min, int max, double width = 0, bool enabled = true);
+  // `value_text` replaces the number shown at the right end (for a slider over a list of choices); it gets a wider field.
+  bool slider(int* value, int min, int max, double width = 0, bool enabled = true, const std::string& value_text = "");
   bool color_button(std::string* hex, bool enabled = true);
   bool tabs(const std::vector<std::string>& names, int* current);
   // `mask` shows bullets instead of the text (passwords).

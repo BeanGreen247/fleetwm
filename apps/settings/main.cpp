@@ -43,6 +43,7 @@
 #include "prewarm.hpp"
 #include "cursor_draw.hpp"
 #include "keyboard_tab.hpp"
+#include "remote_tab.hpp"
 #include "mouse_config.hpp"
 #include "user_profile.hpp"
 #include "bluetooth_tab.hpp"
@@ -195,7 +196,7 @@ struct Settings {
 
   int tab = 0;
   double scroll[24] = {};
-  std::vector<std::string> tab_names{"Home", "Theme", "Taskbar", "Wallpaper", "Display", "Network", "Bluetooth", "Keyboard", "Mouse", "Power", "Date & Time", "Default Apps", "Audio", "Performance", "File Manager", "Desktop Icons", "About"};
+  std::vector<std::string> tab_names{"Home", "Theme", "Taskbar", "Wallpaper", "Display", "Network", "Bluetooth", "Keyboard", "Mouse", "Power", "Date & Time", "Default Apps", "Audio", "Performance", "File Manager", "Desktop Icons", "Remote Desktop", "About"};
   UserProfile profile;
   std::string profile_draft_name;
 
@@ -203,6 +204,7 @@ struct Settings {
   std::unique_ptr<NetworkTab> net_tab;
   std::unique_ptr<BluetoothTab> bt_tab;
   std::unique_ptr<KeyboardTab> kb_tab;
+  std::unique_ptr<RemoteTab> remote_tab;
 
   // power
   bool has_battery = false;
@@ -1697,6 +1699,7 @@ struct Settings {
       case 13: tab_performance(cr); break;
       case 14: tab_file_manager(cr); break;
       case 15: tab_desktop_icons(cr); break;
+      case 16: remote_tab->draw(ui, cr); break;
       default: tab_about(cr); break;
     }
     ui.space(24);
@@ -1746,6 +1749,7 @@ int main(int argc, char** argv) {
 
   if (!S.app.connect()) return 1;
   S.kb_tab = std::make_unique<KeyboardTab>(S.app, [&S] { S.redraw(); });
+  S.remote_tab = std::make_unique<RemoteTab>(S.app, [&S] { S.redraw(); });
 
   Surface::Config cfg;
   cfg.toplevel = true;
