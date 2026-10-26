@@ -184,6 +184,7 @@ void Capture::set_active(bool on) {
 
 void Capture::request_frame() {
   if (!active_ || frame_ || !screencopy_) return;
+  last_request_ = std::chrono::steady_clock::now();
   damage_.clear();
   y_invert_ = false;
   frame_ = zwlr_screencopy_manager_v1_capture_output(screencopy_, 1 /* with cursor */, output_);
@@ -257,7 +258,15 @@ void Capture::on_ready() {
   first_ = false;
   hub_.publish(static_cast<int>(w_), static_cast<int>(h_), map_, static_cast<int>(stride_), swap, y_invert_, damage_);
   drop_frame();
-  request_frame();
+  // Ask for the next frame no sooner than the fastest viewer can use one: a 24 fps viewer on a 60 Hz screen would otherwise make the
+  // compositor copy, and this process publish, 60 frames a second of which most are dropped unseen.
+  const auto due = last_request_ + std::chrono::microseconds(1000000 / std::clamp(hub_.max_viewer_fps(), 1, 240));
+  if (std::chrono::steady_clock::now() < due) {
+    retry_pending_ = active_;
+    retry_at_ = due;
+  } else {
+    request_frame();
+  }
   flush();
 }
 

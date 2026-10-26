@@ -116,7 +116,7 @@ TEST(MouseSettings, TheCompositorAppliesItToEveryPointerAndWatchesTheFile) {
 
 TEST(MouseSettings, SettingsHasAMouseTabWithTheSliderTheToggleAndAPreview) {
   const std::string settings = mouse_read("apps/settings/main.cpp");
-  EXPECT_NE(settings.find("\"Keyboard\", \"Mouse\""), std::string::npos);
+  EXPECT_NE(mouse_read("src/common/settings_catalog.cpp").find("{\"Mouse\","), std::string::npos) << "the page list has a Mouse page";
   EXPECT_NE(settings.find("Enhance pointer precision"), std::string::npos);
   EXPECT_NE(settings.find("Pointer speed"), std::string::npos);
   EXPECT_NE(settings.find("save_mouse_config("), std::string::npos);

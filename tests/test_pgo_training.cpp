@@ -5,6 +5,8 @@
 // the scripts as text; nothing is started.
 #include <gtest/gtest.h>
 
+#include "settings_catalog.hpp"
+
 #include <unistd.h>
 
 #include <algorithm>
@@ -93,14 +95,9 @@ TEST(PgoTraining, VisitsEverySettingsPage) {
   std::set<std::string> pages;
   std::stringstream ss(m[1]);
   for (std::string p; ss >> p;) pages.insert(p);
-  // The tab names are in apps/settings/main.cpp; a page argument matches the start of a tab name, case-insensitively.
-  const std::string settings = tr_read(tr_root() / "apps/settings/main.cpp");
-  std::smatch names;
-  ASSERT_TRUE(std::regex_search(settings, names, std::regex(R"(tab_names\{([^}]*)\})")));
+  // The tab names come from the page catalog; a page argument matches the start of a tab name, case-insensitively.
   std::vector<std::string> tabs;
-  const std::string tab_list = names[1];
-  const std::regex quoted("\"([^\"]+)\"");
-  for (std::sregex_iterator it(tab_list.begin(), tab_list.end(), quoted), end; it != end; ++it) tabs.push_back((*it)[1]);
+  for (const fleetwm::SettingsPageInfo& page : fleetwm::settings_pages()) tabs.push_back(page.name);
   ASSERT_GE(tabs.size(), 10u);
   for (const std::string& tab : tabs) {
     bool visited = false;
@@ -404,4 +401,29 @@ TEST(PgoTrainingCoverage, ACrashOfOneOfOurOwnProgramsIsReported) {
   const std::string script = tr_script();
   EXPECT_NE(script.find("WARNING: "), std::string::npos);
   EXPECT_NE(script.find("crashes.log"), std::string::npos);
+}
+
+TEST(GreeterPam, UnlocksTheLoginKeyringAtLogin) {
+  for (const char* conf : {"packaging/fleetwm-greeter-pam.conf", "packaging/fleetwm-greeter-pam-alpine.conf"}) {
+    const std::string pam = tr_read(tr_root() / conf);
+    const auto unix_auth = pam.find("auth       required   pam_unix.so");
+    const auto key_auth = pam.find("-auth       optional   pam_gnome_keyring.so");
+    ASSERT_NE(key_auth, std::string::npos) << conf << ": no keyring unlock in the auth stack";
+    EXPECT_GT(key_auth, unix_auth) << conf << ": the keyring module must come after pam_unix so it sees the password";
+    const auto key_session = pam.find("-session    optional   pam_gnome_keyring.so auto_start");
+    ASSERT_NE(key_session, std::string::npos) << conf << ": the keyring daemon is not started in the session stack";
+    EXPECT_GT(key_session, pam.find("pam_systemd.so") == std::string::npos ? pam.find("pam_elogind.so") : pam.find("pam_systemd.so"))
+        << conf << ": the keyring must start after the login session exists";
+  }
+  EXPECT_NE(tr_read(tr_root() / "install.sh").find("libpam-gnome-keyring"), std::string::npos);
+}
+
+TEST(InstallerFirewall, AllowsTheRemoteDesktopPortsAndSshWithoutSwitchingTheFirewallOn) {
+  const std::string install = tr_read(tr_root() / "install.sh");
+  for (const char* rule : {"22/tcp", "5900/tcp", "5900/udp", "5901/tcp", "5901/udp", "3389/tcp", "3389/udp"}) EXPECT_NE(install.find(rule), std::string::npos) << rule;
+  EXPECT_NE(install.find("apt_install ufw"), std::string::npos);
+  EXPECT_NE(install.find("FLEETWM_NO_FIREWALL"), std::string::npos);
+  EXPECT_EQ(install.find("ufw enable\\n"), std::string::npos);
+  EXPECT_EQ(install.find("sudo ufw enable >"), std::string::npos) << "the installer must not switch the firewall on by itself";
+  EXPECT_EQ(install.find("sudo ufw --force enable"), std::string::npos);
 }

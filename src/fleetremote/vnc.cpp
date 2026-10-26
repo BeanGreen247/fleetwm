@@ -17,6 +17,7 @@
 #include <thread>
 
 #include "conn.hpp"
+#include "vnc_codec.hpp"
 #include "net_util.hpp"
 #include "scale.hpp"
 #include "shadow.hpp"
@@ -25,43 +26,6 @@
 namespace fleetremote {
 
 namespace {
-
-struct PixelFormat {
-  int bpp = 32, depth = 24;
-  bool big_endian = false, true_colour = true;
-  int max[3] = {255, 255, 255};  // r g b
-  int shift[3] = {16, 8, 0};
-  std::array<std::array<uint32_t, 256>, 3> lut{};
-
-  void build() {
-    for (int c = 0; c < 3; ++c)
-      for (int v = 0; v < 256; ++v) lut[c][v] = (static_cast<uint32_t>(v * max[c] + 127) / 255) << shift[c];
-  }
-  uint32_t convert(uint32_t xrgb) const { return lut[0][(xrgb >> 16) & 0xFF] | lut[1][(xrgb >> 8) & 0xFF] | lut[2][xrgb & 0xFF]; }
-  // ZRLE sends 3 bytes per pixel when the format is 32 bits with all colour bits in the low (or high) three bytes.
-  bool cpixel3() const {
-    if (bpp != 32 || depth > 24) return false;
-    uint32_t used = 0;
-    for (int c = 0; c < 3; ++c) used |= static_cast<uint32_t>(max[c]) << shift[c];
-    return (used & 0xFF000000u) == 0 || (used & 0x000000FFu) == 0;
-  }
-  bool cpixel_high() const {  // the three bytes are the high ones
-    uint32_t used = 0;
-    for (int c = 0; c < 3; ++c) used |= static_cast<uint32_t>(max[c]) << shift[c];
-    return (used & 0xFF000000u) != 0;
-  }
-  void put(std::vector<uint8_t>& out, uint32_t v) const {
-    const int n = bpp / 8;
-    for (int i = 0; i < n; ++i) out.push_back(uint8_t(big_endian ? v >> (8 * (n - 1 - i)) : v >> (8 * i)));
-  }
-  void put_c(std::vector<uint8_t>& out, uint32_t v) const {
-    if (!cpixel3()) return put(out, v);
-    uint8_t wire[4];
-    for (int i = 0; i < 4; ++i) wire[i] = uint8_t(big_endian ? v >> (8 * (3 - i)) : v >> (8 * i));
-    const bool drop_first = big_endian != cpixel_high();  // the unused byte is the zero one
-    out.insert(out.end(), wire + (drop_first ? 1 : 0), wire + (drop_first ? 4 : 3));
-  }
-};
 
 // Standard VNC DES: each key byte has its bits reversed.
 std::array<uint8_t, 16> vnc_response(const std::string& password, const uint8_t challenge[16]) {
@@ -81,69 +45,6 @@ std::array<uint8_t, 16> vnc_response(const std::string& password, const uint8_t 
     std::memcpy(out.data() + 8 * blk, res, 8);
   }
   return out;
-}
-
-// One ZRLE tile (<= 64x64): solid, packed palette (2..16 colours) or raw CPIXELs. The palette is built on the
-// unconverted pixels (a new colour is looked up only when it differs from the one before) and only its entries are
-// converted to the client's format; a tile of plain colour costs one pass of comparisons.
-void zrle_tile(const PixelFormat& pf, const Tile& t, int x0, int y0, int w, int h, std::vector<uint8_t>& out) {
-  uint32_t pal[17];
-  uint8_t idx[kTile * kTile];
-  int npal = 0, last = 0;
-  bool many = false;
-  for (int y = 0; y < h && !many; ++y) {
-    const uint32_t* row = &t.px[static_cast<size_t>(y0 + y) * t.w + x0];
-    uint8_t* irow = idx + y * w;
-    for (int x = 0; x < w; ++x) {
-      const uint32_t v = row[x];
-      if (npal && v == pal[last]) {
-        irow[x] = static_cast<uint8_t>(last);
-        continue;
-      }
-      int i = 0;
-      while (i < npal && pal[i] != v) ++i;
-      if (i == npal) {
-        if (npal == 16) {
-          many = true;
-          break;
-        }
-        pal[npal++] = v;
-      }
-      last = i;
-      irow[x] = static_cast<uint8_t>(i);
-    }
-  }
-  if (many) {
-    out.push_back(0);
-    for (int y = 0; y < h; ++y) {
-      const uint32_t* row = &t.px[static_cast<size_t>(y0 + y) * t.w + x0];
-      for (int x = 0; x < w; ++x) pf.put_c(out, pf.convert(row[x]));
-    }
-    return;
-  }
-  if (npal == 1) {
-    out.push_back(1);
-    pf.put_c(out, pf.convert(pal[0]));
-    return;
-  }
-  out.push_back(uint8_t(npal));
-  for (int i = 0; i < npal; ++i) pf.put_c(out, pf.convert(pal[i]));
-  const int bits = npal == 2 ? 1 : npal <= 4 ? 2 : 4;
-  for (int y = 0; y < h; ++y) {
-    const uint8_t* irow = idx + y * w;
-    uint32_t acc = 0;
-    int nbits = 0;
-    for (int x = 0; x < w; ++x) {
-      acc = (acc << bits) | irow[x];
-      nbits += bits;
-      if (nbits == 8) {
-        out.push_back(uint8_t(acc));
-        acc = 0;
-        nbits = 0;
-      }
-    }
-    if (nbits) out.push_back(uint8_t(acc << (8 - nbits)));
-  }
 }
 
 class VncClient {
@@ -169,7 +70,13 @@ class VncClient {
     int one = 1, sndbuf = 256 * 1024;  // a small send buffer makes a slow link show up in how long a send takes
     setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof one);
     setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof sndbuf);
-    if (!handshake()) return;
+    peer_ = peer_address(fd);
+    remote_log("vnc %s: connection", peer_.c_str());
+    if (!handshake()) {
+      remote_log("vnc %s: the connection ended before login finished", peer_.c_str());
+      return;
+    }
+    remote_log("vnc %s: logged in", peer_.c_str());
     tv = {0, 0};
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);  // an idle viewer is fine once logged in
     loop();
@@ -239,6 +146,7 @@ class VncClient {
     unsigned diff = 0;
     for (int i = 0; i < 16; ++i) diff |= expect[i] ^ answer[i];
     if (diff != 0 || opt_.password.empty()) {
+      remote_log("vnc %s: wrong password", peer_.c_str());
       hub_.auth_failed();
       fail_with("Wrong password", v);
       std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -346,12 +254,15 @@ class VncClient {
         uint8_t b[3];
         if (!conn_.read_exact(b, 3)) return false;
         const int n = (b[1] << 8) | b[2];
-        zrle_ = desktop_size_ = copyrect_ = false;
+        zrle_ = desktop_size_ = copyrect_ = tight_ = false;
+        jpeg_level_ = -1;
         for (int i = 0; i < n; ++i) {
           uint8_t e[4];
           if (!conn_.read_exact(e, 4)) return false;
           const int32_t enc = static_cast<int32_t>((uint32_t(e[0]) << 24) | (e[1] << 16) | (e[2] << 8) | e[3]);
           if (enc == 16) zrle_ = true;
+          if (enc == 7) tight_ = true;
+          if (enc >= -32 && enc <= -23 && jpeg_level_ < 0) jpeg_level_ = enc + 32;  // JPEG quality level pseudo-encodings
           if (enc == 1) copyrect_ = true;
           if (enc == -223) desktop_size_ = true;
         }
@@ -448,8 +359,11 @@ class VncClient {
       hub_.mark_all_dirty(session_);  // the tiles taken above were discarded; send the new picture next round
       return conn_.write_all(out);
     }
+    throttle_.set_frame(w, h);
     const auto started = Clock::now();
-    const int bits = throttle_.quant_bits();
+    // Tight keeps text and flat colour exact and lets JPEG take the loss, so the colour bits are only dropped for ZRLE.
+    const bool use_tight = tight_ && jpeg_level_ >= 0 && pf_.bpp >= 16;
+    const int bits = use_tight ? 0 : throttle_.quant_bits();
     const int depth = session_.tuning.depth.load();
     for (size_t i = 0; i < batch.n; ++i) {
       quantize_to_depth(batch.v[i].px.data(), batch.v[i].px.size(), depth);
@@ -476,7 +390,9 @@ class VncClient {
       i = j;
     }
     out = {0, 0};
-    put16be(out, static_cast<uint32_t>(runs.size() + (moved ? 1 : 0)));
+    const size_t count_pos = out.size();
+    put16be(out, 0);  // the number of rectangles, filled in below
+    size_t nrects = moved ? 1 : 0;
     if (moved) {
       put16be(out, mv.x);
       put16be(out, mv.y);
@@ -493,8 +409,18 @@ class VncClient {
         zlevel_ = level;
       }
     }
+    // Tight (lossless palette/fill for text and flat colour, JPEG for photographs) when the viewer can take JPEG; else ZRLE.
+    TightEncoder::Options topt;
+    topt.quality = throttle_.quality();
+    topt.jpeg_quality = jpeg_quality_for(throttle_.quality());  // the viewer's quality level is only a hint; the server's slider decides
+    topt.zlib_level = session_.tuning.max_kbps.load() > 0 ? 6 : 3;
     std::vector<uint8_t>& payload = payload_;
     for (auto [a, b] : runs) {
+      if (use_tight) {
+        nrects += static_cast<size_t>(tight_enc_.encode_run(pf_, &batch.v[a], b - a, topt, out));
+        continue;
+      }
+      ++nrects;
       const int rx = batch.v[a].x, ry = batch.v[a].y, rw = batch.v[b - 1].x + batch.v[b - 1].w - rx, rh = batch.v[a].h;
       put16be(out, rx);
       put16be(out, ry);
@@ -520,6 +446,8 @@ class VncClient {
             for (int x = 0; x < batch.v[k].w; ++x) pf_.put(out, pf_.convert(batch.v[k].px[static_cast<size_t>(row) * batch.v[k].w + x]));
       }
     }
+    out[count_pos] = static_cast<uint8_t>(nrects >> 8);
+    out[count_pos + 1] = static_cast<uint8_t>(nrects);
     for (size_t k = 0; k < kept; ++k) shadow_.commit(batch.v[k]);
     trim_batch(batch);
     if (payload_.capacity() > 256 * 1024) std::vector<uint8_t>().swap(payload_);  // a full picture grew these; a scroll needs far less
@@ -534,7 +462,7 @@ class VncClient {
 
   // What this viewer's buffers hold (the screen copy, the tiles, the encoder's buffers and the deflate state).
   void update_memory_estimate() {
-    size_t m = shadow_.bytes() + payload_.capacity() + zbuf_.capacity() + 300 * 1024;
+    size_t m = shadow_.bytes() + payload_.capacity() + zbuf_.capacity() + tight_enc_.memory() + 300 * 1024;
     for (const Tile& t : batch_.v) m += t.px.capacity() * sizeof(uint32_t);
     session_.mem = m;
   }
@@ -544,12 +472,15 @@ class VncClient {
   ServeOptions opt_;
   Session session_;
   Throttle throttle_;
+  std::string peer_;
   PixelFormat pf_;
   Shadow shadow_;
   TileBatch batch_;
   std::vector<uint8_t> payload_, zbuf_;
   int w_ = 0, h_ = 0;
-  bool zrle_ = false, desktop_size_ = false, copyrect_ = false;
+  bool zrle_ = false, desktop_size_ = false, copyrect_ = false, tight_ = false;
+  int jpeg_level_ = -1;
+  TightEncoder tight_enc_;
   int buttons_ = 0, zlevel_ = 3;
   z_stream zs_{};
   bool zs_ok_ = false;

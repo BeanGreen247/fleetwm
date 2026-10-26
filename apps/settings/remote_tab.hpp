@@ -60,12 +60,12 @@ class RemoteTab {
 
     ui.section("VNC");
     if (server(ui, {"VNC server", &cfg_.vnc_enabled, &cfg_.vnc_port, &cfg_.vnc_password, kVncPasswordLength, &cfg_.vnc_tls, &cfg_.vnc_quality,
-                    &cfg_.vnc_max_kbps, &cfg_.vnc_resolution, &cfg_.vnc_depth, false, vnc_status_, ""}))
+                    &cfg_.vnc_max_kbps, &cfg_.vnc_resolution, &cfg_.vnc_depth, false, vnc_status_, "", &cfg_.vnc_fps, &cfg_.vnc_password_keep, &vnc_edit_}))
       save();
     ui.space(6);
     ui.section("RDP (Remote Desktop)");
     if (server(ui, {"RDP server", &cfg_.rdp_enabled, &cfg_.rdp_port, &cfg_.rdp_password, kRdpPasswordLength, &cfg_.rdp_tls, &cfg_.rdp_quality,
-                    &cfg_.rdp_max_kbps, &cfg_.rdp_resolution, &cfg_.rdp_depth, true, rdp_status_, remote_login_name()}))
+                    &cfg_.rdp_max_kbps, &cfg_.rdp_resolution, &cfg_.rdp_depth, true, rdp_status_, remote_login_name(), &cfg_.rdp_fps, &cfg_.rdp_password_keep, &rdp_edit_}))
       save();
 
     ui.space(8);
@@ -96,6 +96,9 @@ class RemoteTab {
     bool rdp;
     const std::string& status;
     std::string user;
+    int* fps;
+    bool* keep;         // keep the password when the server is switched off and on
+    std::string* edit;  // the password being typed
   };
 
   // One server's block. Returns true when the configuration changed and must be saved.
@@ -114,10 +117,10 @@ class RemoteTab {
       *enabled = on;
       changed = true;
       if (!on) {
-        password->clear();  // a switched-off server keeps no secret on disk
+        if (!*sv.keep) password->clear();  // a switched-off server keeps no secret on disk, unless the password is permanent
       } else {
         try {
-          *password = generate_remote_password(password_length);
+          if (!*sv.keep || password->empty()) *password = generate_remote_password(password_length);
         } catch (const std::exception& e) {
           *enabled = false;
           message_ = e.what();
@@ -152,15 +155,39 @@ class RemoteTab {
     ui.row("Quality");
     if (ui.slider(sv.quality, kQualityMin, kQualityMax, 340)) changed = true;
     ui.newline();
-    ui.paragraph("90-100 keeps every colour; lower drops colour detail and updates less often, which saves bandwidth.", true);
+    ui.paragraph("90-100 keeps every colour; lower drops colour detail (text and flat colour stay exact, photographs and video are compressed harder), which saves bandwidth.", true);
+    ui.row("Frame rate");
+    {
+      std::vector<std::string> labels;
+      for (int f : remote_fps_choices()) labels.push_back(std::to_string(f) + " frames per second");
+      int idx = nearest_fps_index(*sv.fps);
+      if (ui.dropdown(labels, &idx, 220)) {
+        *sv.fps = remote_fps_choices()[static_cast<size_t>(idx)];
+        changed = true;
+      }
+    }
+    ui.newline();
+    ui.paragraph("The most updates a second a viewer gets; the picture is only sent when something changed. 24 is smooth, 30 is the usual remote desktop rate; 5-15 for a slow link.", true);
     ui.row("Bandwidth limit");
+    // A limit under what the frame rate needs at this quality only makes the picture lag, so the slider skips those steps.
+    int rw = 1920, rh = 1080;
+    parse_resolution(*sv.resolution, &rw, &rh);
+    const int floor_kbps = remote_min_kbps(*sv.quality, *sv.fps, rw, rh);
+    const auto& choices = remote_bandwidth_choices();
+    const int last = static_cast<int>(choices.size()) - 1;
+    int lowest = 1;
+    while (lowest < last && choices[static_cast<size_t>(lowest)] < floor_kbps) ++lowest;
     int bw = nearest_bandwidth_index(*sv.max_kbps);
-    const int last = static_cast<int>(remote_bandwidth_choices().size()) - 1;
+    if (bw > 0 && bw < lowest) bw = lowest;
     if (ui.slider(&bw, 0, last, 340, true, remote_bandwidth_label(*sv.max_kbps))) {
-      *sv.max_kbps = remote_bandwidth_choices()[static_cast<size_t>(bw)];
+      if (bw > 0 && bw < lowest) bw = lowest;
+      *sv.max_kbps = choices[static_cast<size_t>(bw)];
       changed = true;
     }
     ui.newline();
+    ui.paragraph("Needed for " + std::to_string(*sv.fps) + " frames per second at this quality and size: about " + remote_bandwidth_label(floor_kbps) +
+                     " while the picture is moving. A lower limit is raised to it; lower the frame rate, the quality or the render resolution to need less.",
+                 true);
     ui.row("Render resolution");
     {
       std::vector<std::string> labels;
@@ -201,6 +228,29 @@ class RemoteTab {
     ui.same_line();
     if (ui.button("Copy password")) app_.set_clipboard({{"text/plain;charset=utf-8", *password}, {"text/plain", *password}});
     ui.newline();
+    ui.row("Keep this password");
+    if (ui.toggle(sv.keep)) changed = true;
+    ui.newline();
+    ui.paragraph("On: the password stays when the server is switched off and on (or the session restarts), so a saved connection in Apache Guacamole keeps working. "
+                 "It is stored as plain text in ~/.config/fleetwm/remote.toml (readable only by you), because the viewer's login needs the password itself.",
+                 true);
+    ui.row("Set your own");
+    ui.text_entry(sv.edit, 220, true, true);
+    ui.same_line();
+    {
+      const size_t min_len = password_length == kVncPasswordLength ? 6 : 12;
+      const bool ok = sv.edit->size() >= min_len && sv.edit->size() <= static_cast<size_t>(password_length == kVncPasswordLength ? 8 : 64);
+      if (ui.button("Use it", ok)) {
+        *password = *sv.edit;
+        sv.edit->clear();
+        *sv.keep = true;
+        changed = true;
+      }
+    }
+    ui.newline();
+    ui.paragraph(password_length == kVncPasswordLength ? "6 to 8 characters (the protocol only looks at the first 8). Using your own password keeps it."
+                                                       : "12 to 64 characters. Using your own password keeps it.",
+                 true);
     if (password_length == kVncPasswordLength) {
       ui.paragraph("A VNC password is only ever 8 characters long; that is a limit of the protocol.", true);
     }
@@ -318,7 +368,7 @@ class RemoteTab {
   kit::App& app_;
   std::function<void()> redraw_;
   RemoteConfig cfg_;
-  std::string message_, vnc_status_, rdp_status_;
+  std::string message_, vnc_status_, rdp_status_, vnc_edit_, rdp_edit_;
   std::vector<std::string> addresses_;
   int clients_ = 0;
   UsageHistory usage_;

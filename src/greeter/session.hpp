@@ -7,6 +7,10 @@
 
 struct passwd;
 
+namespace fleetwm {
+struct SessionEntry;
+}
+
 namespace fleetwm::session {
 
 // Drops privileges to pw's uid/gid (initgroups, setgid, setuid -- in that
@@ -15,6 +19,7 @@ namespace fleetwm::session {
 // nothing else. Aborts the process (never execs) if any privilege-drop step
 // fails. Never returns.
 [[noreturn]] void exec_as_user(const passwd* pw,
-                                const std::vector<std::string>& pam_envlist);
+                                const std::vector<std::string>& pam_envlist,
+                                const SessionEntry& session, const std::string& tty_name);
 
 }  // namespace fleetwm::session

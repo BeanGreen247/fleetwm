@@ -13,7 +13,7 @@ You can use it in two ways and switch at any time in Settings:
 
 ## Install
 
-You need Debian 13 (Trixie) or Ubuntu/Kubuntu 26.04. On Alpine Linux 3.21 or newer run `./install-alpine.sh` instead (see `docs/ALPINE.md`).
+You need Debian 13 (Trixie) or Ubuntu/Kubuntu 26.04. On Alpine Linux 3.21 or newer (experimental support) run `./install-alpine.sh` instead (see `docs/ALPINE.md`).
 
 ```sh
 git clone https://github.com/BeanGreen247/fleetwm.git

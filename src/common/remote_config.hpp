@@ -17,6 +17,8 @@ struct RemoteConfig {
   int vnc_max_kbps = 0;      // KB/s a viewer may use, 0 = no limit
   std::string vnc_resolution;  // largest picture sent, "1280x720"; empty = the screen's own size
   int vnc_depth = 0;           // 0 = decided by quality, 8, 16 or 24 bits
+  int vnc_fps = 30;            // most updates per second a viewer gets (the picture is only sent when something changed)
+  bool vnc_password_keep = false;  // keep the password when the server is switched off and on (for Apache Guacamole and the like)
   bool rdp_enabled = false;
   int rdp_port = 3389;
   std::string rdp_password;
@@ -25,11 +27,14 @@ struct RemoteConfig {
   int rdp_max_kbps = 0;
   std::string rdp_resolution;
   int rdp_depth = 0;           // 0 = decided by quality, 16 or 32 bits
+  int rdp_fps = 30;
+  bool rdp_password_keep = false;
   bool operator==(const RemoteConfig&) const = default;
 };
 
 constexpr int kVncPasswordLength = 8;
 constexpr int kQualityMin = 1, kQualityMax = 100;
+constexpr int kFpsMin = 1, kFpsMax = 120, kFpsDefault = 30;
 constexpr int kRdpPasswordLength = 16;
 
 std::string remote_user_config_path();
@@ -74,5 +79,15 @@ std::string remote_login_name();
 // <XDG_RUNTIME_DIR>/fleetwm-remote.status, written by the daemon: lines "vnc=<listening|off|error text>",
 // "rdp=...", "clients=<n>".
 std::string remote_status_path();
+
+// Frame rates offered in Settings. 24 is film, 30 the usual remote desktop rate (Citrix HDX and RDP GFX default to 30, TigerVNC's
+// server default is 60); 5-15 are for slow links.
+const std::vector<int>& remote_fps_choices();
+int nearest_fps_index(int fps);
+
+// The bandwidth (KB/s) a viewer needs to get `fps` updates a second at this quality: a window-sized update (a quarter of
+// the screen, what a drag or scroll changes) times the bytes per changed pixel the encoders measured at that quality
+// (docs/REMOTE_DESKTOP_INTERNALS.md, "Bandwidth floor"). A limit below this makes the picture lag, so it is raised to it.
+int remote_min_kbps(int quality, int fps, int width, int height);
 
 }  // namespace fleetwm

@@ -49,7 +49,7 @@ for arg in "$@"; do
 done
 
 # shellcheck source=scripts/install-ui.sh
-UI_TOTAL_STEPS=13  # keep equal to the number of ui_step calls below
+UI_TOTAL_STEPS=14  # keep equal to the number of ui_step calls below
 source "${SCRIPT_DIR}/scripts/install-ui.sh"
 # shellcheck source=scripts/install-stats.sh
 source "${SCRIPT_DIR}/scripts/install-stats.sh"
@@ -523,10 +523,14 @@ if [[ -x "${BUILD_DIR}/src/greeter/fleetwm-greet" ]]; then
   # specifically doesn't work here: it segfaults on a real login).
   ui_step "Setting up the login screen" \
     "What: installs seatd, the login screen's PAM files and service, and enables it on tty1 (unless a" \
-    "      display manager is already in charge or FLEETWM_NO_GREETER=1 is set)." \
+    "      FLEETWM_NO_GREETER=1 is set). An enabled display manager is disabled for the next boot (not stopped," \
+    "      you stay logged in; FLEETWM_KEEP_DM=1 keeps it and skips the login screen instead)." \
     "Why:  the login screen runs its own small compositor, which needs seatd to open the screen before" \
     "      anyone is logged in. Other consoles keep a normal text login in case you need it."
-  apt_install seatd
+  apt_install seatd xinit xauth  # xinit + xauth let the login screen start X11 desktops (MATE, Xfce, ...)
+  # The login keyring is unlocked by the password typed at the login screen (packaging/fleetwm-greeter-pam.conf); services that need it, such as ssh keys, Chromium and
+  # git credentials, then find it open. Without these two packages the lines in the PAM file are skipped.
+  apt_install gnome-keyring libpam-gnome-keyring
   sudo systemctl enable --now seatd.service
 
   echo "==> Installing greeter PAM config and systemd unit"
@@ -536,21 +540,40 @@ if [[ -x "${BUILD_DIR}/src/greeter/fleetwm-greet" ]]; then
 
   # The Fleetwm login screen is the default way in: enable it on tty1. It takes
   # over at the next boot (or when you start it by hand, below); starting it right
-  # now would replace the console this installer is running on. Skipped when a
-  # display manager is already enabled (they would fight over the screen), or when
-  # you set FLEETWM_NO_GREETER=1.
+  # now would replace the console this installer is running on. An enabled display
+  # manager is disabled (never stopped); FLEETWM_KEEP_DM=1 or FLEETWM_NO_GREETER=1 skips this.
+  dm_present() {
+    systemctl is-enabled display-manager.service >/dev/null 2>&1 \
+      || systemctl is-enabled lightdm.service gdm.service gdm3.service sddm.service greetd.service >/dev/null 2>&1
+  }
   GREETER_TTY="${FLEETWM_GREETER_TTY:-tty1}"
   GREETER_ENABLED=0
   if [[ "${FLEETWM_NO_GREETER:-0}" == "1" ]]; then
     echo "==> FLEETWM_NO_GREETER=1: leaving the login screen disabled"
-  elif systemctl is-enabled display-manager.service >/dev/null 2>&1 \
-      || systemctl is-active --quiet display-manager.service \
-      || [[ -s /etc/X11/default-display-manager ]] \
-      || systemctl is-enabled lightdm.service gdm.service gdm3.service sddm.service greetd.service >/dev/null 2>&1 \
-      || systemctl is-active --quiet lightdm.service gdm.service gdm3.service sddm.service greetd.service; then
-    echo "==> A display manager is enabled; leaving the Fleetwm login screen disabled."
+  elif [[ "${FLEETWM_KEEP_DM:-0}" == "1" ]] && dm_present; then
+    echo "==> FLEETWM_KEEP_DM=1 and a display manager is enabled; leaving the Fleetwm login screen disabled."
     echo "    Pick 'Fleetwm' from its session list instead."
   else
+    # An enabled display manager and the login screen would fight over the screen at boot (the
+    # greeter cannot get DRM master, the running session glitches). The login screen lists every
+    # installed desktop, so it replaces the display manager: disable it for the next boot but do NOT
+    # stop it, or the user running this installer would be logged out in the middle of it.
+    REPLACED_DMS=()
+    for dm in lightdm gdm gdm3 sddm greetd lxdm slim; do
+      if systemctl is-enabled --quiet "${dm}.service" 2>/dev/null; then
+        sudo systemctl disable "${dm}.service" 2>/dev/null || true
+        REPLACED_DMS+=("${dm}")
+      fi
+    done
+    if systemctl is-enabled --quiet display-manager.service 2>/dev/null; then
+      # an alias left behind by a display manager that is not in the list above
+      sudo systemctl disable display-manager.service 2>/dev/null || true
+    fi
+    if (( ${#REPLACED_DMS[@]} )); then
+      echo "==> Disabled the display manager (${REPLACED_DMS[*]}) for the next boot; it keeps running now so you stay logged in."
+      sudo mkdir -p /var/lib/fleetwm-greeter
+      echo "${REPLACED_DMS[*]}" | sudo tee /var/lib/fleetwm-greeter/replaced-display-manager >/dev/null
+    fi
     echo "==> Enabling the Fleetwm login screen on ${GREETER_TTY}"
     sudo systemctl disable "getty@${GREETER_TTY}.service" 2>/dev/null || true
     sudo systemctl enable "fleetwm-greeter@${GREETER_TTY}.service"
@@ -574,6 +597,25 @@ else
     "Skipped: this build was made without the greeter (-Dgreeter=false)."
 fi
 
+# The remote desktop servers (VNC 5900 and 5901, RDP 3389; 5900 and 3389 are the defaults; Settings -> Remote Desktop can change them) are only reachable from other
+# computers when the firewall lets them through. ufw is installed for managing the firewall and the four rules are added. Adding a rule does not
+# switch the firewall on or change what is already allowed: enable it yourself with `sudo ufw enable` (SSH is allowed first, below, so that cannot lock you out).
+# FLEETWM_NO_FIREWALL=1 skips all of this.
+if [[ "${FLEETWM_NO_FIREWALL:-0}" == "1" ]]; then
+  ui_step "Firewall rules for remote desktop" "Skipped: FLEETWM_NO_FIREWALL=1."
+else
+  ui_step "Firewall rules for remote desktop" \
+    "What: installs ufw (the firewall manager) and allows VNC (5900 and 5901) and RDP (3389) on TCP and UDP, plus SSH (22/tcp) so enabling the firewall never" \
+    "      locks you out. The firewall itself is not switched on or off by this; \`sudo ufw enable\` does that." \
+    "Why:  without these rules another computer, a phone or Apache Guacamole cannot reach the remote desktop you switch on in Settings." \
+    "      If you change a port in Settings, allow the new one with \`sudo ufw allow PORT/tcp\`."
+  apt_install ufw
+  for rule in "22/tcp:SSH" "5900/tcp:Fleetwm VNC" "5900/udp:Fleetwm VNC" "5901/tcp:Fleetwm VNC" "5901/udp:Fleetwm VNC" "3389/tcp:Fleetwm RDP" "3389/udp:Fleetwm RDP"; do
+    sudo ufw allow "${rule%%:*}" comment "${rule#*:}" >/dev/null || echo "(could not add the ufw rule ${rule%%:*}; add it by hand)"
+  done
+  echo "==> ufw: $(sudo ufw status | head -1)  (rules for 22, 5900, 5901 and 3389 are stored)"
+fi
+
 stats_phase_end install
 stats_summary "${SCRIPT_DIR}" "${BUILD_DIR}"
 
@@ -583,16 +625,25 @@ echo "Run 'fleetwm update' at any time to pull and rebuild the latest version."
 
 if [[ "${GREETER_ENABLED:-0}" == "1" ]]; then
   echo
-  echo "The Fleetwm login screen is enabled on ${GREETER_TTY}. Reboot to see it, or start it now"
-  echo "(this replaces the login on that console):"
-  echo "  sudo systemctl start fleetwm-greeter@${GREETER_TTY}.service"
+  echo "The Fleetwm login screen is enabled on ${GREETER_TTY}. Reboot to see it. Do not start it by hand while"
+  echo "you are logged in: it would take the screen from your running session."
+  if (( ${#REPLACED_DMS[@]} )); then
+    echo "Your display manager (${REPLACED_DMS[*]}) was disabled, not removed, and keeps running until you reboot."
+  fi
   echo "Other consoles (Ctrl+Alt+F2 and up) keep a normal text login in case you need it."
-  echo "To go back to the normal login:"
-  echo "  sudo systemctl disable --now fleetwm-greeter@${GREETER_TTY}.service"
-  echo "  sudo systemctl enable --now getty@${GREETER_TTY}.service"
+  echo "To go back to the normal login (takes effect at the next boot, so nobody is logged out):"
+  echo "  sudo systemctl disable fleetwm-greeter@${GREETER_TTY}.service"
+  echo "  sudo systemctl enable getty@${GREETER_TTY}.service"
+  if (( ${#REPLACED_DMS[@]} )); then
+    echo "  sudo systemctl enable ${REPLACED_DMS[0]}.service"
+  fi
+  echo "  sudo systemctl reboot"
 elif [[ -x "${BUILD_DIR}/src/greeter/fleetwm-greet" ]]; then
   echo
-  echo "The Fleetwm login screen (fleetwm-greet) is installed but not enabled. To use it on tty1:"
-  echo "  sudo systemctl disable --now getty@tty1.service"
-  echo "  sudo systemctl enable --now fleetwm-greeter@tty1.service"
+  echo "The Fleetwm login screen (fleetwm-greet) is installed but not enabled. To use it on tty1, disable any"
+  echo "display manager first (for example lightdm), then switch at the next boot:"
+  echo "  sudo systemctl disable lightdm.service      # whichever display manager you use"
+  echo "  sudo systemctl disable getty@tty1.service"
+  echo "  sudo systemctl enable fleetwm-greeter@tty1.service"
+  echo "  sudo systemctl reboot"
 fi

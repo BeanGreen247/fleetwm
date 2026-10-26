@@ -125,3 +125,31 @@ TEST(RemotePassword, HasTheLengthAndOnlyUnambiguousCharacters) {
   }
   EXPECT_EQ(seen.size(), 50u);  // 57^16 possibilities: a repeat means the random source is broken
 }
+
+TEST_F(RemoteConfigTest, FrameRateAndKeptPasswordRoundTrip) {
+  RemoteConfig c;
+  c.vnc_enabled = true;
+  c.vnc_password = "abcd1234";
+  c.vnc_password_keep = true;
+  c.vnc_fps = 24;
+  c.rdp_fps = 60;
+  save_remote_config(c);
+  const RemoteConfig r = load_remote_config();
+  EXPECT_EQ(r.vnc_fps, 24);
+  EXPECT_EQ(r.rdp_fps, 60);
+  EXPECT_TRUE(r.vnc_password_keep);
+  EXPECT_FALSE(r.rdp_password_keep);
+  EXPECT_EQ(RemoteConfig{}.vnc_fps, kFpsDefault);
+}
+
+TEST(RemoteFps, ChoicesAndTheBandwidthFloor) {
+  const auto& c = remote_fps_choices();
+  EXPECT_NE(std::find(c.begin(), c.end(), 24), c.end());
+  EXPECT_EQ(c[static_cast<size_t>(nearest_fps_index(25))], 24);
+  EXPECT_EQ(c[static_cast<size_t>(nearest_fps_index(1000))], 60);
+  // More frames, more pixels or more quality all need more bandwidth.
+  EXPECT_LT(remote_min_kbps(40, 15, 1920, 1080), remote_min_kbps(40, 30, 1920, 1080));
+  EXPECT_LT(remote_min_kbps(40, 24, 1280, 720), remote_min_kbps(40, 24, 1920, 1080));
+  EXPECT_LT(remote_min_kbps(60, 24, 1920, 1080), remote_min_kbps(100, 24, 1920, 1080));
+  EXPECT_GE(remote_min_kbps(1, 1, 1, 1), 1);
+}

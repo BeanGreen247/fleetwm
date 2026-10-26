@@ -3,6 +3,7 @@
 // A viewer's connection: the socket, plus TLS once it has been started. Blocking reads and writes, as the session
 // threads want them. Used by both servers so that TLS is a switch, not a second code path.
 
+#include <openssl/err.h>
 #include <openssl/ssl.h>
 #include <poll.h>
 #include <unistd.h>
@@ -18,7 +19,7 @@ namespace fleetremote {
 
 class Conn {
  public:
-  explicit Conn(int fd) : fd_(fd) {}
+  explicit Conn(int fd) : fd_(fd), peer_(peer_address(fd)) {}
   ~Conn() {
     if (ssl_) {
       SSL_shutdown(ssl_);
@@ -42,7 +43,12 @@ class Conn {
     ssl_ = SSL_new(ctx);
     if (!ssl_) return false;
     SSL_set_fd(ssl_, fd_);
-    return SSL_accept(ssl_) == 1;
+    if (SSL_accept(ssl_) == 1) return true;
+    char err[160] = "the client closed the connection";
+    if (const unsigned long e = ERR_get_error()) ERR_error_string_n(e, err, sizeof err);
+    remote_log("%s: TLS handshake failed (%s). Usual causes: the client does not trust the self-signed certificate (tell it to ignore or accept it), or it insists on NLA "
+               "(Network Level Authentication), which this server does not offer", peer_.c_str(), err);
+    return false;
   }
 
   bool read_exact(void* buf, size_t n) {
@@ -77,6 +83,7 @@ class Conn {
 
  private:
   int fd_;
+  std::string peer_;  // taken at the start: a socket the client already closed cannot say who it was
   SSL* ssl_ = nullptr;
   std::atomic<uint64_t>* tx_ = nullptr;
   std::atomic<uint64_t>* rx_ = nullptr;

@@ -31,6 +31,7 @@ executable(
     pam_dep,
     protocols_dep,
     dl_dep,
+    libcommon_core_dep,
   ],
   install: true,
 )

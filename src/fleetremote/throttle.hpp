@@ -2,7 +2,7 @@
 
 // What a viewer is allowed to cost: the quality and bandwidth limit from Settings, and what the link turns out to
 // carry. Quality 1-100 sets how many low bits of each colour channel are dropped (a flat colour compresses to almost
-// nothing, noise and gradients much better) and the shortest time between two updates. The bandwidth limit (KB/s,
+// nothing, noise and gradients much better) and the frame rate setting is the shortest time between two updates. The bandwidth limit (KB/s,
 // 0 = none) paces the sends; when a viewer takes more than the budget the colour depth drops one more bit at a time
 // and returns when there is room. The link's own speed is learned from how long the sends take, so a viewer on a
 // slow connection is not flooded even with no limit set.
@@ -13,12 +13,14 @@
 #include <cstdint>
 
 #include "hub.hpp"
+#include "remote_config.hpp"
 #include "net_util.hpp"
 
 namespace fleetremote {
 
 inline int quality_quant_bits(int q) { return q >= 85 ? 0 : q >= 70 ? 1 : q >= 50 ? 2 : q >= 30 ? 3 : 4; }
-inline int quality_interval_ms(int q) { return q >= 85 ? 25 : q >= 70 ? 50 : q >= 50 ? 100 : q >= 30 ? 200 : 400; }
+// The shortest time between two updates for a frame rate setting.
+inline int fps_interval_us(int fps) { return 1000000 / std::clamp(fps, 1, 240); }
 
 // Drops the low `bits` bits of each channel of 0x00RRGGBB pixels and puts the channel's midpoint back so the picture does
 // not darken. 0 bits leaves the pixels alone.
@@ -53,16 +55,23 @@ class Throttle {
   // Bits to drop now: from the quality setting plus whatever the congestion control has added.
   int quant_bits() const { return std::min(5, quality_quant_bits(quality()) + extra_); }
   // Bytes per second the viewer may use, 0 when nothing limits it.
+  // The picture's size, so the floor below follows the real screen.
+  void set_frame(int w, int h) {
+    frame_w_ = w;
+    frame_h_ = h;
+  }
+  // A limit lower than what the frame rate needs is raised to it (docs/REMOTE_DESKTOP_INTERNALS.md, "Bandwidth floor").
+  double floor_budget() const { return fleetwm::remote_min_kbps(quality(), tuning_.fps.load(), frame_w_, frame_h_) * 1024.0; }
   double budget() const {
     double b = 0;
     const int kb = tuning_.max_kbps.load();
-    if (kb > 0) b = kb * 1024.0;
+    if (kb > 0) b = std::max(kb * 1024.0, floor_budget());
     if (link_ > 0 && (b == 0 || link_ * 0.8 < b)) b = link_ * 0.8;
     return b;
   }
   // The earliest time the next update may go out.
   Clock::time_point next_allowed() const {
-    const auto interval = std::chrono::milliseconds(quality_interval_ms(quality()));
+    const auto interval = std::chrono::microseconds(fps_interval_us(tuning_.fps.load()));
     return std::max(last_start_ + interval, paced_until_);
   }
   // Call after an update of `bytes` that took `took` to hand to the network.
@@ -98,6 +107,7 @@ class Throttle {
  private:
   const Tuning& tuning_;
   Clock::time_point last_start_{}, paced_until_{}, window_start_{};
+  int frame_w_ = 1920, frame_h_ = 1080;
   double link_ = 0;  // bytes/s the link was seen to carry, 0 = not known
   double window_bytes_ = 0;
   int extra_ = 0;

@@ -81,6 +81,7 @@ class Capture {
   bool y_invert_ = false;
   std::vector<Hub::Rect> damage_;
   std::chrono::steady_clock::time_point retry_at_{};
+  std::chrono::steady_clock::time_point last_request_{};  // when the last frame was asked for; the capture rate follows the viewers' frame rate
   bool retry_pending_ = false;
 
   wl_shm_pool* pool_ = nullptr;

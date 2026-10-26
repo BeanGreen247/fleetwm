@@ -15,6 +15,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <memory>
 #include <string>
 #include <vector>
@@ -24,6 +25,7 @@
 #include "image.hpp"
 #include "login_ipc.hpp"
 #include "malloc_tuning.hpp"
+#include "sessions.hpp"
 #include "theme.hpp"
 #include "wallpaper_config.hpp"
 
@@ -74,6 +76,8 @@ struct Login {
   int ipc_watch = 0;
 
   std::vector<std::string> users;
+  std::vector<SessionEntry> sessions;  // Fleetwm first; the card shows a picker when there is more than one
+  size_t session_idx = 0;
   bool picker = true;
   std::string selected;  // "" = Other User
   std::string username;  // typed name for Other User
@@ -88,7 +92,7 @@ struct Login {
   int bg_w = 0, bg_h = 0, bg_scale = 0;
 
   Rect tiles[32];
-  Rect back, eye, submit, reboot, poweroff, user_entry, pass_entry;
+  Rect back, eye, submit, reboot, poweroff, user_entry, pass_entry, session_btn;
   int ntiles = 0;
 
   ~Login() {
@@ -253,7 +257,7 @@ struct Login {
     const bool locked = !selected.empty();
     const double avatar_s = 124, entry_w = 222, entry_h = 40, btn = 40;
     const double row_w = entry_w + 6 + btn;
-    double total_h = avatar_s + 12 + (locked ? 30 : entry_h) + 10 + entry_h + (error.empty() ? 0 : 10 + 20) + 24 + 32;
+    double total_h = avatar_s + 12 + (locked ? 30 : entry_h) + 10 + entry_h + (error.empty() ? 0 : 10 + 20) + (sessions.size() > 1 ? 10 + 30 : 0) + 24 + 32;
     double y = (h - total_h) / 2;
     const double cx = w / 2.0;
 
@@ -319,6 +323,29 @@ struct Login {
       draw_text(cr, error, cx - ee.width / 2, y + ee.ascent, 14, parse_color("#f38ba8"));
       y += 20;
     }
+    session_btn = {};
+    if (sessions.size() > 1) {
+      y += 10;
+      session_btn = {cx - row_w / 2, y, row_w, 30};
+      const bool hot = hover == -7;
+      rounded_rect(cr, session_btn.x, session_btn.y, session_btn.w, session_btn.h, pal.rounded ? 8 : 0);
+      set_source(cr, hot ? mix(pal.bg_secondary, pal.accent, 0.3) : pal.bg_secondary);
+      cairo_fill(cr);
+      const std::string label = sessions[session_idx].name;
+      const TextExtents te = measure_text(cr, label, 14);
+      draw_text(cr, label, cx - te.width / 2, session_btn.y + (session_btn.h - te.height) / 2 + te.ascent, 14,
+                pal.fg_primary);
+      set_source(cr, pal.fg_secondary);
+      cairo_set_line_width(cr, 1.5);
+      cairo_move_to(cr, session_btn.x + 14, session_btn.y + 9);
+      cairo_line_to(cr, session_btn.x + 9, session_btn.y + 15);
+      cairo_line_to(cr, session_btn.x + 14, session_btn.y + 21);
+      cairo_move_to(cr, session_btn.x + session_btn.w - 14, session_btn.y + 9);
+      cairo_line_to(cr, session_btn.x + session_btn.w - 9, session_btn.y + 15);
+      cairo_line_to(cr, session_btn.x + session_btn.w - 14, session_btn.y + 21);
+      cairo_stroke(cr);
+      y += 30;
+    }
     y += 24;
     power_row(cr, cx, y);
   }
@@ -368,7 +395,8 @@ struct Login {
     const std::string& user = selected.empty() ? username : selected;
     if (user.empty()) return;
     busy = true;
-    greeter_ipc::send_login_attempt(ipc_fd, user, password);
+    greeter_ipc::send_login_attempt(ipc_fd, user, password,
+                                    sessions.empty() ? std::string() : sessions[session_idx].id);
     surface->queue_draw();
   }
 
@@ -377,6 +405,13 @@ struct Login {
     wipe();
     busy = false;
     focus = 1;
+    surface->queue_draw();
+  }
+
+  void cycle_session(int step) {
+    if (sessions.size() < 2) return;
+    const int n = static_cast<int>(sessions.size());
+    session_idx = static_cast<size_t>((static_cast<int>(session_idx) + step + n) % n);
     surface->queue_draw();
   }
 
@@ -395,6 +430,7 @@ struct Login {
       if (back.w > 0 && back.hit(x, y)) return -4;
       if (submit.hit(x, y)) return -5;
       if (eye.hit(x, y)) return -6;
+      if (session_btn.w > 0 && session_btn.hit(x, y)) return -7;
     }
     if (reboot.hit(x, y)) return -2;
     if (poweroff.hit(x, y)) return -3;
@@ -417,6 +453,8 @@ struct Login {
     } else if (t == -6) {
       reveal = !reveal;
       surface->queue_draw();
+    } else if (t == -7) {
+      cycle_session(x < session_btn.x + session_btn.w / 2 ? -1 : 1);
     } else if (!picker) {
       if (user_entry.w > 0 && user_entry.hit(x, y)) {
         focus = 0;
@@ -460,6 +498,7 @@ struct Login {
     }
     if (busy) return;
     switch (ev.sym) {
+      case XKB_KEY_F2: cycle_session(1); return;
       case XKB_KEY_Return:
       case XKB_KEY_KP_Enter:
         if (focus == 0 && selected.empty() && !username.empty()) {
@@ -529,6 +568,18 @@ int main() {
   L.wallpaper = load_wallpaper_config();
   L.pal = load_palette(L.theme);
   L.users = list_login_users();
+  L.sessions = discover_sessions(default_wayland_session_dirs(), default_x11_session_dirs(), x11_sessions_available(),
+                                 "/usr/local/bin/fleetwm");
+  {
+    // The greeter (root) writes the last session that logged in here.
+    std::ifstream last("/var/lib/fleetwm-greeter/last-session");
+    std::string id;
+    if (last && std::getline(last, id)) {
+      for (size_t i = 0; i < L.sessions.size(); ++i) {
+        if (L.sessions[i].id == id) L.session_idx = i;
+      }
+    }
+  }
   L.password.reserve(kMaxField + 1);
   L.picker = !L.users.empty();
   L.focus = L.users.empty() ? 0 : 1;

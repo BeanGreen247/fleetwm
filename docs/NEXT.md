@@ -4,9 +4,15 @@
 
 Open: pixman-only wlroots on real KMS (dumb-buffer output) and on the Celeron laptop (RAM and CPU against GLES2); Alpine boot test (inittab login screen, seatd, pam_elogind); VirtIO-GPU and VirGL were never run (the dev VM has Standard VGA); switch the VM's display in Proxmox and follow `docs/HARDWARE.md` ("How to find out"); the glass read-back on virgl is the likely cost. A whole system under 200 MB needs a minimal OS image; the desktop itself is 43.5 MB (`docs/OPTIMIZATIONS.md`, memory budget). Lock applet duplication is fixed (`/proc/<pid>/exe` check); greeter `malloc_trim` is unmeasured.
 
+Login screen as a display-manager replacement (2026-10-26, code and 1242 tests done, not run on hardware): session picker for all installed desktops, X11 via xinit, backoff in the unit. Open, owner's PeakPulse test: disable lightdm, enable `fleetwm-greeter@tty1`, reboot (over ssh as a safety net); then try Fleetwm, MATE (needs `xinit`) and a logout back to the greeter; check logind session type for X11 sessions (PAM opens the session before the type is known).
+
 ## Remote desktop (2026-10-26)
 
 Built: `fleetwm-remote` (VNC + RDP, Settings -> Remote Desktop, quality and bandwidth sliders, encryption switch, CopyRect, run-length coded RDP), see `docs/REMOTE_DESKTOP.md`. Open: Apache Guacamole itself was not run (FreeRDP, which it uses for RDP, was); no NLA, so a client that insists on NLA (default mstsc) must allow TLS; RDP has 16 bit run-length coding only (no RemoteFX/planar/scroll orders); one encode is not shared between viewers; the limit and link learning were tested on loopback, not a real slow link; no clipboard, audio or drive redirection; only the first monitor; no cursor shape (the pointer is drawn into the picture); a firewall must be opened by hand; not tried on real hardware or over the internet (use an SSH tunnel or VPN, not the open internet).
+
+Remote desktop 2026-10-26 (code, 1254 unit tests, libvncclient round trip done; see `docs/REMOTE_DESKTOP_INTERNALS.md` sections 9-10): Tight/JPEG, frame rate, bandwidth floor, capture pacing, kept password. Open: live Guacamole run on the new encoder; remote cursor (RichCursor); ZRLE-or-Tight per rectangle (dense UI frames are 12% larger with Tight at the top quality); RDP planar/RemoteFX/H.264 (needs FreeRDP to verify); Settings page at 1024x768.
+
+Settings redesign 2026-10-26 (`docs/SETTINGS.md`; 1262 tests; checked in a private headless compositor, not on a real pointer): grouped sidebar with scrollbar, search, Home with Control-Panel categories, page headers, Account page. Open: dragging the sidebar scrollbar and the Home/search with a real mouse; restyle the pages' own rows as grouped cards; check the Remote Desktop page rows at 1024x768.
 
 ## Current state (2026-10-13)
 

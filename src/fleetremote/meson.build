@@ -2,9 +2,23 @@
 # input through the virtual pointer and keyboard protocols, so it is a normal Wayland client of the compositor.
 # Needs zlib (VNC ZRLE), OpenSSL (RDP's TLS, the VNC login's DES) and xkbcommon (keyboard layout).
 openssl_dep_fleetremote = dependency('openssl', required: false)
-zlib_dep_fleetremote = dependency('zlib', required: false)
+zlib_dep_fleetremote = dependency('zlib')
+jpeg_dep_fleetremote = dependency('libjpeg')
 
-if openssl_dep_fleetremote.found() and zlib_dep_fleetremote.found()
+# The picture encoders (ZRLE, Tight with JPEG) are a library of their own so the unit tests can run them.
+libfleetremote_codec = static_library(
+  'fleetremote-codec',
+  files('vnc_codec.cpp'),
+  include_directories: include_directories('.'),
+  dependencies: [zlib_dep_fleetremote, jpeg_dep_fleetremote],
+)
+libfleetremote_codec_dep = declare_dependency(
+  link_with: libfleetremote_codec,
+  include_directories: include_directories('.'),
+  dependencies: [zlib_dep_fleetremote, jpeg_dep_fleetremote],
+)
+
+if openssl_dep_fleetremote.found()
   fleetremote_protocols = [
     ['wlr-screencopy-unstable-v1', files('protocols/wlr-screencopy-unstable-v1.xml')],
     ['wlr-virtual-pointer-unstable-v1', files('protocols/wlr-virtual-pointer-unstable-v1.xml')],
@@ -31,7 +45,7 @@ if openssl_dep_fleetremote.found() and zlib_dep_fleetremote.found()
     files('main.cpp', 'hub.cpp', 'capture.cpp', 'vnc.cpp', 'rdp.cpp', 'tls.cpp'),
     fleetremote_generated,
     include_directories: include_directories('.'),
-    dependencies: [wayland_client, xkbcommon_dep, openssl_dep_fleetremote, zlib_dep_fleetremote, libcommon_core_dep, dependency('threads')],
+    dependencies: [wayland_client, xkbcommon_dep, openssl_dep_fleetremote, zlib_dep_fleetremote, libfleetremote_codec_dep, libcommon_core_dep, dependency('threads')],
     install: true,
   )
 endif

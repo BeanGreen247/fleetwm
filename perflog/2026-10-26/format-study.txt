@@ -1,0 +1,49 @@
+SSIM target 0.985, 1280x800, best of 3 encode time
+
+== ui  (raw 3000 KB)
+  webp_ll      q=  - size=    73.1 KB  ratio=  41.0x  ssim=1.0000  enc=   23.3 ms
+  webp_m4      q= 55 size=   110.7 KB  ratio=  27.1x  ssim=0.9858  enc=  104.5 ms
+  webp_m0      q= 65 size=   138.7 KB  ratio=  21.6x  ssim=0.9865  enc=   31.2 ms
+  zlib3 raw    q=  - size=   216.2 KB  ratio=  13.9x  ssim=1.0000  enc=    0.0 ms
+  png6         q=  - size=   256.4 KB  ratio=  11.7x  ssim=1.0000  enc=   55.5 ms
+  png1         q=  - size=   257.4 KB  ratio=  11.7x  ssim=1.0000  enc=   37.0 ms
+  jpeg420prog  q= 90 size=   258.6 KB  ratio=  11.6x  ssim=0.9896  enc=   28.6 ms
+  jpeg420opt   q= 90 size=   277.1 KB  ratio=  10.8x  ssim=0.9896  enc=    9.5 ms
+  jpeg420      q= 90 size=   288.6 KB  ratio=  10.4x  ssim=0.9896  enc=    4.1 ms
+  jpeg444      q= 90 size=   359.2 KB  ratio=   8.4x  ssim=0.9897  enc=    6.5 ms
+
+== wallpaper  (raw 3000 KB)
+  webp_m4      q= 30 size=     4.1 KB  ratio= 735.3x  ssim=0.9934  enc=   59.2 ms
+  webp_m0      q= 30 size=     5.4 KB  ratio= 554.5x  ssim=0.9934  enc=   16.3 ms
+  jpeg420opt   q= 30 size=     8.2 KB  ratio= 366.7x  ssim=0.9896  enc=    3.9 ms
+  jpeg420prog  q= 30 size=     8.7 KB  ratio= 343.1x  ssim=0.9896  enc=   10.6 ms
+  jpeg420      q= 30 size=    18.1 KB  ratio= 165.9x  ssim=0.9896  enc=    2.6 ms
+  jpeg444      q= 30 size=    29.9 KB  ratio= 100.3x  ssim=0.9896  enc=    4.6 ms
+  webp_ll      q=  - size=    96.2 KB  ratio=  31.2x  ssim=1.0000  enc=   69.9 ms
+  png6         q=  - size=   135.8 KB  ratio=  22.1x  ssim=1.0000  enc=   70.8 ms
+  zlib3 raw    q=  - size=   182.1 KB  ratio=  16.5x  ssim=1.0000  enc=    0.0 ms
+  png1         q=  - size=   251.5 KB  ratio=  11.9x  ssim=1.0000  enc=   38.4 ms
+
+== text  (raw 3000 KB)
+  webp_ll      q=  - size=    12.9 KB  ratio= 232.3x  ssim=1.0000  enc=   18.8 ms
+  webp_m4      q= 30 size=   234.9 KB  ratio=  12.8x  ssim=0.9855  enc=  149.4 ms
+  zlib3 raw    q=  - size=   237.0 KB  ratio=  12.7x  ssim=1.0000  enc=    0.0 ms
+  png1         q=  - size=   265.1 KB  ratio=  11.3x  ssim=1.0000  enc=   40.7 ms
+  webp_m0      q= 35 size=   266.5 KB  ratio=  11.3x  ssim=0.9855  enc=   46.0 ms
+  png6         q=  - size=   290.5 KB  ratio=  10.3x  ssim=1.0000  enc=   64.2 ms
+  jpeg420prog  q= 85 size=   482.7 KB  ratio=   6.2x  ssim=0.9850  enc=   48.3 ms
+  jpeg420opt   q= 85 size=   521.4 KB  ratio=   5.8x  ssim=0.9850  enc=   15.5 ms
+  jpeg420      q= 85 size=   547.0 KB  ratio=   5.5x  ssim=0.9850  enc=    5.9 ms
+  jpeg444      q= 85 size=   557.5 KB  ratio=   5.4x  ssim=0.9850  enc=    7.9 ms
+
+== video  (raw 3000 KB)
+  webp_m0      never reaches the target
+  webp_m4      never reaches the target
+  jpeg420prog  q= 95 size=   129.9 KB  ratio=  23.1x  ssim=0.9852  enc=   20.0 ms
+  jpeg420opt   q= 95 size=   135.6 KB  ratio=  22.1x  ssim=0.9852  enc=    7.8 ms
+  jpeg420      q= 95 size=   147.9 KB  ratio=  20.3x  ssim=0.9852  enc=    3.9 ms
+  jpeg444      q= 95 size=   218.2 KB  ratio=  13.7x  ssim=0.9852  enc=    6.7 ms
+  png6         q=  - size=  1259.1 KB  ratio=   2.4x  ssim=1.0000  enc=  632.9 ms
+  webp_ll      q=  - size=  1370.2 KB  ratio=   2.2x  ssim=1.0000  enc=  177.9 ms
+  png1         q=  - size=  1490.6 KB  ratio=   2.0x  ssim=1.0000  enc=   91.8 ms
+  zlib3 raw    q=  - size=  2555.0 KB  ratio=   1.2x  ssim=1.0000  enc=    0.0 ms

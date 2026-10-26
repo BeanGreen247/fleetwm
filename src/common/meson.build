@@ -58,6 +58,8 @@ libcommon_core = static_library(
     'shortcut_list.cpp',
     'power_config.cpp',
     'remote_config.cpp',
+    'sessions.cpp',
+    'settings_catalog.cpp',
     'remote_usage.cpp',
     'keyboard_config.cpp',
     'mouse_config.cpp',

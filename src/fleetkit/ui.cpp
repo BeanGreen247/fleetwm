@@ -1183,66 +1183,137 @@ bool Ui::segmented(const std::vector<std::string>& options, int* index, bool ena
 }
 
 bool Ui::nav(const std::vector<std::string>& names, int* current, UiRect area) {
+  std::vector<NavEntry> entries;
+  entries.reserve(names.size());
+  for (const std::string& n : names) entries.push_back({n, false});
+  return nav_entries(entries, current, area);
+}
+
+bool Ui::nav_entries(const std::vector<NavEntry>& entries, int* current, UiRect area,
+                     const std::function<void(cairo_t*, const UiRect&, int)>& draw_icon) {
   const int id = next_id();
   register_focusable_if(id, true);
   bool changed = false;
+  const int count = static_cast<int>(entries.size());
   if (focused(id) && input_ok()) {
     for (size_t i = 0; i < keys_.size();) {
       const KeyEvent& k = keys_[i];
       bool eaten = true;
-      if (k.sym == XKB_KEY_Up && *current > 0) {
-        --*current;
-        changed = true;
-      } else if (k.sym == XKB_KEY_Down && *current + 1 < static_cast<int>(names.size())) {
-        ++*current;
-        changed = true;
-      } else {
-        eaten = false;
-      }
+      auto step = [&](int dir) {  // next selectable entry in that direction
+        for (int j = *current + dir; j >= 0 && j < count; j += dir)
+          if (!entries[static_cast<size_t>(j)].header) {
+            *current = j;
+            changed = true;
+            return;
+          }
+      };
+      if (k.sym == XKB_KEY_Up) step(-1);
+      else if (k.sym == XKB_KEY_Down) step(1);
+      else eaten = false;
       if (eaten) keys_.erase(keys_.begin() + static_cast<long>(i));
       else ++i;
     }
   }
-  const double item_h = 36, pad = 10;
-  const double content_h = pad * 2 + names.size() * (item_h + 2);
+  const double item_h = 36, head_h = 30, gap = 2, pad = 10;
+  double content_h = pad * 2;
+  for (const NavEntry& e : entries) content_h += (e.header ? head_h : item_h) + gap;
   const double max_scroll = std::max(0.0, content_h - area.h);
   if (wheel_ != 0 && input_ok() && area.hit(mx_, my_)) {
     nav_scroll_ += wheel_ * 18.0 * scroll_lines_;
     wheel_ = 0;
+  }
+  // Scrollbar: a thumb at the right edge, dragged with the pointer (the wheel and the arrow keys work as well).
+  const UiRect bar_zone{area.x + area.w - 14, area.y, 14, area.h};
+  if (max_scroll > 0 && input_ok()) {
+    if (press_pending_ && bar_zone.hit(press_pos_.x, press_pos_.y)) {
+      nav_drag_ = true;
+      press_pending_ = false;
+    }
+    if (nav_drag_) {
+      motion_all_ = true;
+      if (down_) {
+        const double th = std::max(28.0, area.h * area.h / content_h);
+        const double frac = std::clamp((my_ - area.y - th / 2) / std::max(1.0, area.h - th), 0.0, 1.0);
+        nav_scroll_ = frac * max_scroll;
+        again_ = true;
+      } else {
+        nav_drag_ = false;
+        release_pending_ = false;
+      }
+    }
   }
   nav_scroll_ = std::clamp(nav_scroll_, 0.0, max_scroll);
   cairo_save(cr_);
   cairo_rectangle(cr_, area.x, area.y, area.w, area.h);
   cairo_clip(cr_);
   double y = area.y + pad - nav_scroll_;
-  for (size_t i = 0; i < names.size(); ++i) {
-    const UiRect it{area.x + pad, y, area.w - 2 * pad, item_h};
-    if (press_pending_ && input_ok() && it.hit(press_pos_.x, press_pos_.y)) {
+  double focus_y = area.y, focus_h = item_h;
+  for (int i = 0; i < count; ++i) {
+    const NavEntry& e = entries[static_cast<size_t>(i)];
+    if (e.header) {
+      std::string up = e.label;
+      for (auto& ch : up) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+      const TextExtents te = measure_text(cr_, up, 10.5, true);
+      draw_text(cr_, up, area.x + pad + 14, y + head_h - 8 - te.height + te.ascent, 10.5, with_alpha(pal_.fg_secondary, 0.8), true);
+      y += head_h + gap;
+      continue;
+    }
+    const UiRect it{area.x + pad, y, area.w - 2 * pad - (max_scroll > 0 ? 6 : 0), item_h};
+    if (press_pending_ && input_ok() && !bar_zone.hit(press_pos_.x, press_pos_.y) && it.hit(press_pos_.x, press_pos_.y) &&
+        area.hit(press_pos_.x, press_pos_.y)) {
       press_pending_ = false;
       focus_id_ = id;
-      if (*current != static_cast<int>(i)) {
-        *current = static_cast<int>(i);
+      if (*current != i) {
+        *current = i;
         changed = true;
       }
     }
-    const bool sel = static_cast<int>(i) == *current;
+    const bool sel = i == *current;
     if (sel || hovered(it)) {
       rounded_rect(cr_, it.x, it.y, it.w, it.h, pal_.rounded ? 10 : 3);
       set_source(cr_, sel ? with_alpha(pal_.accent, 0.22) : with_alpha(pal_.fg_secondary, 0.10));
       cairo_fill(cr_);
     }
-    const TextExtents te = measure_text(cr_, names[i], kFont, sel);
-    draw_text(cr_, names[i], it.x + 14, it.y + (it.h - te.height) / 2 + te.ascent, kFont,
-              sel ? pal_.fg_primary : pal_.fg_secondary, sel);
-    y += item_h + 2;
+    double text_x = it.x + 14;
+    if (draw_icon) {
+      draw_icon(cr_, UiRect{it.x + 10, it.y + (it.h - 22) / 2, 22, 22}, i);
+      text_x = it.x + 42;
+    }
+    const TextExtents te = measure_text(cr_, e.label, kFont, sel);
+    draw_text(cr_, e.label, text_x, it.y + (it.h - te.height) / 2 + te.ascent, kFont, sel ? pal_.fg_primary : pal_.fg_secondary, sel);
+    if (sel) {
+      focus_y = it.y;
+      focus_h = it.h;
+    }
+    y += item_h + gap;
   }
-  if (focused(id)) {
-    const double focus_y = area.y + pad + (*current) * (item_h + 2) - nav_scroll_;
-    if (focus_y + item_h >= area.y && focus_y <= area.y + area.h)
-      draw_focus_ring({area.x + pad, focus_y, area.w - 2 * pad, item_h}, 10);
+  if (focused(id) && focus_y + focus_h >= area.y && focus_y <= area.y + area.h)
+    draw_focus_ring({area.x + pad, focus_y, area.w - 2 * pad, focus_h}, 10);
+  if (max_scroll > 0) {
+    const double th = std::max(28.0, area.h * area.h / content_h);
+    const double ty = area.y + (area.h - th) * (nav_scroll_ / max_scroll);
+    rounded_rect(cr_, area.x + area.w - 8, ty, 4, th, 2);
+    set_source(cr_, with_alpha(pal_.fg_secondary, nav_drag_ || hovered(bar_zone) ? 0.8 : 0.5));
+    cairo_fill(cr_);
   }
   cairo_restore(cr_);
   return mark(changed);
+}
+
+bool Ui::tile(const UiRect& r, bool* hover, bool* focus) {
+  const int id = next_id();
+  register_focusable_if(id, true);
+  const bool clicked = click_widget(id, r) || key_activate(id);
+  if (hover) *hover = hovered(r);
+  if (focus) *focus = focused(id);
+  return mark(clicked);
+}
+
+UiRect Ui::reserve(double height) {
+  if (line_h_ > 0 || cx_ > left_) newline();
+  const UiRect r{left_, cy_, w_ - left_ - right_, height};
+  cy_ += height + 8;
+  return r;
 }
 
 void Ui::title(const std::string& text) {

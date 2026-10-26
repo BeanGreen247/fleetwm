@@ -281,6 +281,12 @@ void process_cursor_motion(wlr_cursor* cursor, wlr_scene* scene, wlr_seat* seat,
   double sx = 0, sy = 0;
   wlr_surface* surface = surface_at(scene, cursor->x, cursor->y, &sx, &sy);
   if (surface) {
+    // The login client never asks for a pointer image, and the whole screen is its surface, so
+    // without this the pointer was invisible. Set the default arrow when the focus arrives; a
+    // client that does ask (request_set_cursor) still overrides it right after the enter.
+    if (seat->pointer_state.focused_surface != surface) {
+      wlr_cursor_set_xcursor(cursor, cursor_mgr, "left_ptr");
+    }
     wlr_seat_pointer_notify_enter(seat, surface, sx, sy);
     wlr_seat_pointer_notify_motion(seat, time_msec, sx, sy);
   } else {
@@ -432,7 +438,18 @@ std::string GreeterCompositor::init() {
 
   cursor_ = wlr_cursor_create();
   wlr_cursor_attach_output_layout(cursor_, output_layout_);
-  cursor_mgr_ = wlr_xcursor_manager_create(nullptr, 24);
+  // The greeter runs as root with no theme settings, so name a theme that is installed (the
+  // session compositor's list, src/compositor/cursor.cpp); nullptr means "default", which is only
+  // an alias that inherits another theme and is missing on some systems.
+  const char* theme = nullptr;
+  for (const char* candidate : {"DMZ-White", "DMZ-Black", "Adwaita", "Breeze_Snow", "Breeze", "Bibata-Modern-Classic",
+                                "Yaru", "Vanilla-DMZ", "whiteglass", "redglass"}) {
+    for (const char* base : {"/usr/local/share/icons/", "/usr/share/icons/"}) {
+      if (!theme && access((std::string(base) + candidate + "/cursors/left_ptr").c_str(), R_OK) == 0) theme = candidate;
+    }
+  }
+  cursor_mgr_ = wlr_xcursor_manager_create(theme, 24);
+  wlr_cursor_set_xcursor(cursor_, cursor_mgr_, "left_ptr");
 
   cursor_motion_.notify = greeter_cursor_motion;
   wl_signal_add(&cursor_->events.motion, &cursor_motion_);

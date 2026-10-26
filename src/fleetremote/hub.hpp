@@ -5,6 +5,7 @@
 // of the 64x64 tiles that changed since it last sent them, so a quiet desktop costs nothing and a busy one
 // sends only what moved.
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -48,6 +49,7 @@ inline void trim_batch(TileBatch& b, size_t keep = 32) {
 struct Tuning {
   std::atomic<int> quality{90};  // 1..100
   std::atomic<int> max_kbps{0};  // KB/s, 0 = unlimited
+  std::atomic<int> fps{30};      // most updates per second
   std::atomic<int> res_w{0}, res_h{0};  // largest picture to send, 0 = the screen's own size
   std::atomic<int> depth{0};            // colour depth to send: 0 = decided by quality, else 8, 16, 24 or 32 bits
 };
@@ -105,6 +107,14 @@ class Hub {
   // Failed logins: after five in a minute new logins are refused for the rest of the minute.
   bool auth_allowed();
   void auth_failed();
+
+  // The highest frame rate any connected viewer is set to (60 when none is known).
+  int max_viewer_fps() {
+    int f = 0;
+    if (count("vnc") > 0) f = std::max(f, vnc_tuning.fps.load());
+    if (count("rdp") > 0) f = std::max(f, rdp_tuning.fps.load());
+    return f > 0 ? f : 60;
+  }
 
   Tuning vnc_tuning, rdp_tuning;
 

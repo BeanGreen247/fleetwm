@@ -405,3 +405,17 @@ justify an unmeasured renderer change.
 - Against the Celeron N4020 laptop (about 25 min, owner's figure, an older version): about 1.9x faster end to end, on a larger code base.
 - Against the dev VM (6 min 35 s, 2 vCPU of an i5-8500, 31005 lines, 225 lines/s, 738 tests in 0.88 s): the total is longer and lines/s lower, not faster. The code base is 1.8x larger and a 15 W laptop CPU throttles under a long build, so this is not a like-for-like comparison. The training run is unchanged (1 min 29 s against 1 min 32 s).
 - Open: 1198 tests take 13.2 s here against 0.88 s for 738 on the VM. The extra 460 tests or the laptop alone do not obviously explain a 15x gap; worth a per-suite timing (`--gtest_print_time`).
+
+### ThinkPad E490 install, 2026-10-26 (current master, 59,927 lines, 1234 tests)
+Same machine as above, `install.sh`, everything already installed.
+
+| Step | Time |
+|---|---|
+| Dependencies | 35 s (0 packages set up) |
+| Instrumented build | 4 min 15 s |
+| Training run | 1 min 29 s |
+| Optimized build | 6 min 39 s |
+| Install and setup | 9 s |
+| **Total** | **13 min 07 s** (was 12 min 55 s on 2026-10-20) |
+
+Unit tests: 1234 tests, 200 suites, 12.0 s. Compile: 183 lines/s, 4890 s of CPU in 654 s = 7.48x on 8 cores. Disk write 520.4 MB/s, read 146.1 MB/s. Installed: 3.1 MB of programs. The 12 s test time is still the open question above.

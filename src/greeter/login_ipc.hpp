@@ -25,6 +25,7 @@ struct ClientMessage {
   ClientMsgType type = ClientMsgType::LoginAttempt;
   std::string username;  // LoginAttempt only
   std::string password;  // LoginAttempt only
+  std::string session;   // LoginAttempt only: a SessionEntry::id; empty or unknown = Fleetwm
   std::string action;    // PowerAction only: "poweroff" or "reboot"
 };
 
@@ -35,7 +36,8 @@ struct ServerMessage {
 
 // All return false on a short write/read or EOF/error -- callers should
 // treat that as "the other end is gone" and stop the session, not retry.
-bool send_login_attempt(int fd, const std::string& username, const std::string& password);
+bool send_login_attempt(int fd, const std::string& username, const std::string& password,
+                        const std::string& session);
 bool send_power_action(int fd, const std::string& action);
 bool send_auth_failed(int fd, const std::string& message);
 

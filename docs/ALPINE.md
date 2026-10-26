@@ -1,5 +1,7 @@
 # Alpine Linux
 
+**Status: experimental.** The build, install script and unit tests work in a container; booting into the login screen on a real machine or VM has not been tested yet (owner will test it), so expect rough edges.
+
 Fleetwm builds and runs on Alpine Linux 3.21 or newer (musl libc, OpenRC, elogind, seatd). `./install-alpine.sh` does what `install.sh` does on Debian:
 installs the packages with `apk`, builds into `build/`, installs to `/usr/local`, enables dbus, elogind, seatd and udev, adds you to the input, video,
 render, audio and seat groups, and puts the Fleetwm login screen on tty1 through `/etc/inittab` (`packaging/fleetwm-greeter-run`, PAM service with

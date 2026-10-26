@@ -31,7 +31,10 @@
 #include "config_backup.hpp"
 #include "battery_reading.hpp"
 #include "power_config.hpp"
+#include "settings_catalog.hpp"
 #include "settings_pages.hpp"
+#include "icon_theme.hpp"
+#include <unistd.h>
 #include "default_apps.hpp"
 #include "desktop.hpp"
 #include "fm_settings_ui.hpp"
@@ -183,6 +186,8 @@ struct MimeRow {
 struct Settings {
   ~Settings() {
     if (profile_surface) cairo_surface_destroy(profile_surface);
+    for (auto& [name, surf] : icon_cache)
+      if (surf) cairo_surface_destroy(surf);
   }
   App app;
   Palette pal;
@@ -196,7 +201,20 @@ struct Settings {
 
   int tab = 0;
   double scroll[24] = {};
-  std::vector<std::string> tab_names{"Home", "Theme", "Taskbar", "Wallpaper", "Display", "Network", "Bluetooth", "Keyboard", "Mouse", "Power", "Date & Time", "Default Apps", "Audio", "Performance", "File Manager", "Desktop Icons", "Remote Desktop", "About"};
+  std::vector<std::string> tab_names = [] {
+    std::vector<std::string> names;
+    for (const fleetwm::SettingsPageInfo& pg : fleetwm::settings_pages()) names.push_back(pg.name);
+    return names;
+  }();
+  // The look of the window: Windows 11 Settings (search, recent, a profile card), macOS System Settings (grouped sidebar, page descriptions)
+  // and the classic Control Panel (category view with task links, View by, back and forward).
+  fleetwm::SettingsUiState ui_state;
+  std::string search;                    // the header's "Find a setting" box
+  std::vector<int> history{0};           // pages visited, for back and forward
+  size_t hist_pos = 0;
+  std::map<std::string, cairo_surface_t*> icon_cache;
+  std::vector<int> nav_pages;            // the page of each sidebar entry, -1 for a group heading
+  std::string host_name;
   UserProfile profile;
   std::string profile_draft_name;
 
@@ -292,6 +310,16 @@ struct Settings {
     if (kb_tab) kb_tab->reload();
     apply_theme();
     redraw();
+  }
+
+  // Shortens a label at the end ("Change the screen reso...") so it fits `max_w` px at `px` pixels.
+  std::string fit_text(cairo_t* cr, std::string s, double max_w, double px, bool bold = false) {
+    if (measure_text(cr, s, px, bold).width <= max_w) return s;
+    while (s.size() > 1 && measure_text(cr, s + "...", px, bold).width > max_w) {
+      s.pop_back();
+      while (s.size() > 1 && (static_cast<unsigned char>(s.back()) & 0xC0) == 0x80) s.pop_back();  // not in the middle of a UTF-8 character
+    }
+    return s + "...";
   }
 
   // Shortens a path in the middle so it fits `max_w` px.
@@ -1412,7 +1440,272 @@ struct Settings {
     });
   }
 
+
+  // ------------------------------------------------ navigation and look --
+  // Goes to a page, keeping the back/forward history and the recent list.
+  void go(int page) {
+    if (page < 0 || page >= static_cast<int>(tab_names.size())) return;
+    search.clear();
+    if (page != tab) {
+      history.resize(hist_pos + 1);
+      history.push_back(page);
+      hist_pos = history.size() - 1;
+      tab = page;
+      fleetwm::note_recent_page(ui_state.recent, page);
+      fleetwm::save_settings_ui_state(ui_state);
+    }
+    redraw();
+  }
+  void go_back_forward(int dir) {
+    const long to = static_cast<long>(hist_pos) + dir;
+    if (to < 0 || to >= static_cast<long>(history.size())) return;
+    hist_pos = static_cast<size_t>(to);
+    tab = history[hist_pos];
+    search.clear();
+    redraw();
+  }
+
+  // The icon theme's picture for `name`, kept per size; nullptr when the theme has none.
+  cairo_surface_t* themed_icon(const std::string& name, int size) {
+    const std::string key = name + "@" + std::to_string(size);
+    auto it = icon_cache.find(key);
+    if (it != icon_cache.end()) return it->second;
+    cairo_surface_t* surf = kit::load_icon(name, size);
+    icon_cache[key] = surf;
+    return surf;
+  }
+  // An icon in a `size` px square: the theme's picture, or a coloured rounded tile with the first letter when the theme has none.
+  void draw_icon(cairo_t* cr, const std::string& name, unsigned colour, const std::string& label, double x, double y, double size) {
+    if (cairo_surface_t* icon = themed_icon(name, static_cast<int>(size))) {
+      const double iw = cairo_image_surface_get_width(icon), ih = cairo_image_surface_get_height(icon), sc = size / std::max(iw, ih);
+      cairo_save(cr);
+      cairo_translate(cr, x + (size - iw * sc) / 2, y + (size - ih * sc) / 2);
+      cairo_scale(cr, sc, sc);
+      cairo_set_source_surface(cr, icon, 0, 0);
+      cairo_paint(cr);
+      cairo_restore(cr);
+      return;
+    }
+    kit::rounded_rect(cr, x, y, size, size, size * 0.24);
+    set_source(cr, Color{((colour >> 16) & 255) / 255.0, ((colour >> 8) & 255) / 255.0, (colour & 255) / 255.0, 0.92});
+    cairo_fill(cr);
+    const double px = size * 0.5;
+    const std::string letter = label.empty() ? "?" : label.substr(0, 1);
+    const TextExtents te = measure_text(cr, letter, px, true);
+    draw_text(cr, letter, x + (size - te.width) / 2, y + (size + te.ascent - (te.height - te.ascent)) / 2, px, Color{1, 1, 1, 1}, true);
+  }
+  void draw_page_icon(cairo_t* cr, int page, double x, double y, double size) {
+    const auto& pg = fleetwm::settings_pages()[static_cast<size_t>(page)];
+    const unsigned colour = pg.category >= 0 ? fleetwm::settings_categories()[static_cast<size_t>(pg.category)].colour : 0x3B82F6;
+    draw_icon(cr, pg.icon, colour, pg.name, x, y, size);
+  }
+  void draw_avatar(cairo_t* cr, double cx, double cy, double r) {
+    const Palette& p = ui.palette();
+    refresh_profile_image();
+    cairo_save(cr);
+    cairo_arc(cr, cx, cy, r, 0, 2 * 3.141592653589793);
+    if (profile_surface) {
+      cairo_clip(cr);
+      cairo_translate(cr, cx - r, cy - r);
+      cairo_scale(cr, 2 * r / 64.0, 2 * r / 64.0);
+      cairo_set_source_surface(cr, profile_surface, 0, 0);
+      cairo_paint(cr);
+      cairo_restore(cr);
+      return;
+    }
+    Color c = p.accent;
+    c.a = 0.85;
+    set_source(cr, c);
+    cairo_fill(cr);
+    cairo_restore(cr);
+    std::string initials;
+    for (const char ch : profile.display_name) {
+      if (std::isalpha(static_cast<unsigned char>(ch))) initials += static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+      if (initials.size() == 2) break;
+    }
+    if (initials.empty()) initials = "F";
+    const TextExtents te = measure_text(cr, initials, r * 0.72, true);
+    draw_text(cr, initials, cx - te.width / 2, cy + (te.ascent - (te.height - te.ascent)) / 2, r * 0.72, p.bg_primary, true);
+  }
+  static Color with_alpha(Color c, double a) {
+    c.a = a;
+    return c;
+  }
+  static Color blend(const Color& a, const Color& b, double t) {
+    return {a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t, 1.0};
+  }
+
+  // A full-width row card: icon, title, a dim line under it and a chevron. Returns true when clicked.
+  bool row_card(int page, const std::string& title, const std::string& sub) {
+    const UiRect r = ui.reserve(52);
+    bool hover = false, focus = false;
+    const bool clicked = ui.tile(r, &hover, &focus);
+    cairo_t* cr = ui.cr();
+    const Palette& p = ui.palette();
+    kit::rounded_rect(cr, r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1, p.rounded ? 8 : 0);
+    set_source(cr, hover ? blend(p.bg_secondary, p.accent, 0.14) : p.bg_secondary);
+    cairo_fill_preserve(cr);
+    set_source(cr, focus ? p.accent : with_alpha(p.fg_secondary, 0.12));
+    cairo_set_line_width(cr, focus ? 1.6 : 1);
+    cairo_stroke(cr);
+    draw_page_icon(cr, page, r.x + 14, r.y + (r.h - 28) / 2, 28);
+    draw_text(cr, fit_text(cr, title, r.w - 100, kFont, true), r.x + 58, r.y + 22, kFont, p.fg_primary, true);
+    draw_text(cr, fit_text(cr, sub, r.w - 100, 12.5), r.x + 58, r.y + 40, 12.5, p.fg_secondary);
+    cairo_set_line_width(cr, 1.8);
+    cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
+    set_source(cr, with_alpha(p.fg_secondary, 0.8));
+    cairo_move_to(cr, r.x + r.w - 22, r.y + r.h / 2 - 5);
+    cairo_line_to(cr, r.x + r.w - 17, r.y + r.h / 2);
+    cairo_line_to(cr, r.x + r.w - 22, r.y + r.h / 2 + 5);
+    cairo_stroke(cr);
+    return clicked;
+  }
+  std::string category_of(int page) const {
+    const int c = fleetwm::settings_pages()[static_cast<size_t>(page)].category;
+    return c >= 0 ? fleetwm::settings_categories()[static_cast<size_t>(c)].name : "";
+  }
+
+  // Page title with its icon and a one line description (macOS System Settings).
+  void page_header(int page) {
+    const UiRect r = ui.reserve(58);
+    cairo_t* cr = ui.cr();
+    const Palette& p = ui.palette();
+    draw_page_icon(cr, page, r.x, r.y + 4, 40);
+    draw_text(cr, tab_names[static_cast<size_t>(page)], r.x + 54, r.y + 24, 21, p.fg_primary, true);
+    draw_text(cr, fit_text(cr, fleetwm::settings_pages()[static_cast<size_t>(page)].description, r.w - 60, 12.5), r.x + 54, r.y + 44, 12.5, p.fg_secondary);
+  }
+
+  // -------------------------------------------------------------- Home --
   void tab_home(cairo_t*) {
+    cairo_t* cr = ui.cr();
+    const Palette& p = ui.palette();
+    // Banner: who and what this is (Windows 11 Home).
+    {
+      const UiRect r = ui.reserve(92);
+      kit::rounded_rect(cr, r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1, p.rounded ? 10 : 0);
+      set_source(cr, p.bg_secondary);
+      cairo_fill(cr);
+      draw_avatar(cr, r.x + 52, r.y + 46, 30);
+      const std::string who = profile.display_name.empty() ? "Fleetwm" : profile.display_name;
+      draw_text(cr, who, r.x + 98, r.y + 40, 20, p.fg_primary, true);
+      draw_text(cr, host_name + "  |  Fleetwm " + version_string(), r.x + 98, r.y + 62, 12.5, p.fg_secondary);
+      bool hover = false, focus = false;
+      if (ui.tile(r, &hover, &focus)) go(fleetwm::kPageAccount);  // the whole banner opens the account page
+      if (hover || focus) {
+        kit::rounded_rect(cr, r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1, p.rounded ? 10 : 0);
+        set_source(cr, focus ? p.accent : with_alpha(p.accent, 0.5));
+        cairo_set_line_width(cr, 1.4);
+        cairo_stroke(cr);
+      }
+      draw_text(cr, "Edit your name and picture", r.x + 98, r.y + 82, 12, p.accent);
+    }
+    // Recent pages (Windows 11 "Recommended settings").
+    if (!ui_state.recent.empty()) {
+      ui.section("Recent");
+      for (int page : ui_state.recent)
+        if (row_card(page, tab_names[static_cast<size_t>(page)], fleetwm::settings_pages()[static_cast<size_t>(page)].description)) go(page);
+    }
+    // All settings (the Control Panel's "Adjust your computer's settings").
+    ui.section("All settings");
+    ui.row("View by");
+    {
+      std::vector<std::string> labels = {"Categories", "Large icons", "Small icons"};
+      int idx = static_cast<int>(ui_state.view);
+      if (ui.dropdown(labels, &idx, 170)) {
+        ui_state.view = static_cast<fleetwm::HomeView>(idx);
+        fleetwm::save_settings_ui_state(ui_state);
+      }
+    }
+    ui.newline();
+    const auto& cats = fleetwm::settings_categories();
+    if (ui_state.view == fleetwm::HomeView::Categories) {
+      for (size_t i = 0; i < cats.size(); i += 2) {
+        auto block_h = [&](size_t c) { return c < cats.size() ? 20.0 + std::max(54.0, 34.0 + 24.0 * fleetwm::settings_tasks(static_cast<int>(c)).size()) : 0.0; };
+        const double bh = std::max(block_h(i), block_h(i + 1));
+        const UiRect r = ui.reserve(bh);
+        const double colw = r.w / 2;
+        for (size_t col = 0; col < 2 && i + col < cats.size(); ++col) {
+          const size_t c = i + col;
+          const double x = r.x + col * colw;
+          const auto& cat = cats[c];
+          draw_icon(cr, cat.icon, cat.colour, cat.name, x + 4, r.y + 8, 44);
+          bool hover = false, focus = false;
+          const UiRect title{x + 58, r.y + 6, colw - 70, 26};
+          if (ui.tile(title, &hover, &focus)) go(cat.pages.front());
+          draw_text(cr, fit_text(cr, cat.name, title.w, 15.5, true), title.x, title.y + 19, 15.5, hover ? p.accent : blend(p.accent, p.fg_primary, 0.55), true);
+          if (focus) {
+            kit::rounded_rect(cr, title.x - 3, title.y, std::min(title.w, measure_text(cr, cat.name, 15.5, true).width + 6), title.h, 4);
+            set_source(cr, with_alpha(p.accent, 0.9));
+            cairo_set_line_width(cr, 1.5);
+            cairo_stroke(cr);
+          }
+          double ty = r.y + 36;
+          for (const fleetwm::SettingsTask& task : fleetwm::settings_tasks(static_cast<int>(c))) {
+            const UiRect tr{x + 58, ty, colw - 70, 22};
+            bool h2 = false, f2 = false;
+            if (ui.tile(tr, &h2, &f2)) go(task.page);
+            const double tw = draw_text(cr, fit_text(cr, task.text, tr.w, 13), tr.x, tr.y + 16, 13, h2 ? p.accent : blend(p.accent, p.fg_primary, 0.4));
+            if (h2 || f2) {
+              cairo_rectangle(cr, tr.x, tr.y + 19, tw, 1);
+              set_source(cr, p.accent);
+              cairo_fill(cr);
+            }
+            ty += 24;
+          }
+        }
+      }
+    } else {
+      std::vector<int> order;
+      for (const auto& cat : cats)
+        for (int page : cat.pages) order.push_back(page);
+      const bool large = ui_state.view == fleetwm::HomeView::LargeIcons;
+      const double tw = large ? 132 : 210, th = large ? 108 : 40;
+      const UiRect area = ui.reserve(0);
+      const int cols = std::max(1, static_cast<int>(area.w / tw));
+      const int rows = (static_cast<int>(order.size()) + cols - 1) / cols;
+      const UiRect grid = ui.reserve(rows * (th + 4));
+      for (size_t i = 0; i < order.size(); ++i) {
+        const int page = order[i];
+        const UiRect r{grid.x + (i % cols) * tw, grid.y + (i / cols) * (th + 4), tw - 6, th};
+        bool hover = false, focus = false;
+        if (ui.tile(r, &hover, &focus)) go(page);
+        if (hover || focus) {
+          kit::rounded_rect(cr, r.x, r.y, r.w, r.h, p.rounded ? 8 : 0);
+          set_source(cr, focus ? with_alpha(p.accent, 0.25) : with_alpha(p.fg_secondary, 0.12));
+          cairo_fill(cr);
+        }
+        const std::string& name = tab_names[static_cast<size_t>(page)];
+        if (large) {
+          draw_page_icon(cr, page, r.x + (r.w - 48) / 2, r.y + 10, 48);
+          const TextExtents te = measure_text(cr, name, 13);
+          draw_text(cr, name, r.x + (r.w - te.width) / 2, r.y + 82, 13, p.fg_primary);
+        } else {
+          draw_page_icon(cr, page, r.x + 8, r.y + 8, 24);
+          draw_text(cr, name, r.x + 42, r.y + 25, kFont, p.fg_primary);
+        }
+      }
+    }
+    ui.space(8);
+    ui.paragraph("Press the search box at the top and type what you want to change, for example wifi, dark mode or resolution.", true);
+  }
+
+  // ---------------------------------------------------- search results --
+  void tab_search() {
+    const auto hits = fleetwm::search_settings(search, 12);
+    ui.title("Search results");
+    if (hits.empty()) {
+      ui.paragraph("No setting matches \"" + search + "\". Try another word, such as wifi, theme, volume or resolution.");
+      return;
+    }
+    int target = -1;
+    for (const fleetwm::SearchHit& h : hits) {
+      const std::string where = category_of(h.page).empty() ? tab_names[static_cast<size_t>(h.page)] : category_of(h.page) + "  >  " + tab_names[static_cast<size_t>(h.page)];
+      if (row_card(h.page, h.title, where)) target = h.page;
+    }
+    if (target >= 0) go(target);
+  }
+
+  void tab_account(cairo_t*) {
     ui.section("Welcome");
     refresh_profile_image();
     UiRect avatar;
@@ -1456,12 +1749,6 @@ struct Settings {
     if (ui.button("Save profile", !profile_draft_name.empty(), true)) save_profile();
     ui.newline();
     ui.space(8);
-    ui.section("Quick settings");
-    if (ui.button("Theme")) tab = 1;
-    if (ui.button("Display")) tab = 4;
-    if (ui.button("Mouse")) tab = 8;
-    if (ui.button("Audio")) tab = 12;
-    ui.newline();
     ui.paragraph("The display name is shown by Fleetwm and does not change your Linux username.", true);
   }
 
@@ -1656,51 +1943,148 @@ struct Settings {
   }
 
   // ---------------------------------------------------------------- draw --
+  // The sidebar's entries: Home, then each category's heading followed by its pages.
+  void build_nav(std::vector<Ui::NavEntry>* entries) {
+    nav_pages.clear();
+    entries->push_back({"Home", false});
+    nav_pages.push_back(fleetwm::kPageHome);
+    for (const fleetwm::SettingsCategory& cat : fleetwm::settings_categories()) {
+      entries->push_back({cat.name, true});
+      nav_pages.push_back(-1);
+      for (int page : cat.pages) {
+        entries->push_back({tab_names[static_cast<size_t>(page)], false});
+        nav_pages.push_back(page);
+      }
+    }
+  }
+
+  void draw_sidebar(cairo_t* cr, int h) {
+    const Palette& p = ui.palette();
+    cairo_rectangle(cr, 0, 0, kSidebarW, h);
+    Color sidebar = p.bg_secondary;
+    sidebar.a = p.window_alpha;  // see-through with Glass effects, like the rest of the window
+    set_source(cr, sidebar);
+    cairo_fill(cr);
+    cairo_rectangle(cr, kSidebarW - 1, 0, 1, h);
+    Color line = p.fg_secondary;
+    line.a = 0.18;
+    set_source(cr, line);
+    cairo_fill(cr);
+    // Profile card (macOS and Windows 11): opens the account page.
+    const UiRect card{10, 10, kSidebarW - 20, 58};
+    bool hover = false, focus = false;
+    if (ui.tile(card, &hover, &focus)) go(fleetwm::kPageAccount);
+    if (hover || focus || tab == fleetwm::kPageAccount) {
+      kit::rounded_rect(cr, card.x, card.y, card.w, card.h, p.rounded ? 10 : 3);
+      set_source(cr, tab == fleetwm::kPageAccount ? with_alpha(p.accent, 0.22) : with_alpha(p.fg_secondary, 0.10));
+      cairo_fill(cr);
+    }
+    draw_avatar(cr, card.x + 30, card.y + 29, 19);
+    draw_text(cr, fit_text(cr, profile.display_name.empty() ? "Fleetwm" : profile.display_name, card.w - 70, 14.5, true), card.x + 58, card.y + 26, 14.5, p.fg_primary, true);
+    draw_text(cr, "Your account", card.x + 58, card.y + 44, 12, p.fg_secondary);
+    std::vector<Ui::NavEntry> entries;
+    build_nav(&entries);
+    int current = 0;
+    for (size_t i = 0; i < nav_pages.size(); ++i)
+      if (nav_pages[i] == tab) current = static_cast<int>(i);
+    const int shown = tab == fleetwm::kPageAccount ? -1 : current;
+    int pick = shown < 0 ? 0 : shown;
+    auto icon = [this](cairo_t* c, const UiRect& box, int i) {
+      if (nav_pages[static_cast<size_t>(i)] >= 0) draw_page_icon(c, nav_pages[static_cast<size_t>(i)], box.x, box.y, box.w);
+    };
+    if (ui.nav_entries(entries, &pick, {0, 76, kSidebarW, static_cast<double>(h) - 76}, icon) && nav_pages[static_cast<size_t>(pick)] >= 0)
+      go(nav_pages[static_cast<size_t>(pick)]);
+  }
+
+  // Back and forward, the breadcrumb and the search box (Control Panel's address bar, Windows 11's search).
+  void draw_header(cairo_t* cr, int w) {
+    const Palette& p = ui.palette();
+    const double x0 = kSidebarW + 14;
+    for (int dir = -1; dir <= 1; dir += 2) {
+      const UiRect b{x0 + (dir < 0 ? 0 : 36), 12, 32, 32};
+      const bool can = dir < 0 ? hist_pos > 0 : hist_pos + 1 < history.size();
+      bool hover = false, focus = false;
+      if (ui.tile(b, &hover, &focus) && can) go_back_forward(dir);
+      if (can && (hover || focus)) {
+        kit::rounded_rect(cr, b.x, b.y, b.w, b.h, p.rounded ? 8 : 3);
+        set_source(cr, with_alpha(p.fg_secondary, 0.16));
+        cairo_fill(cr);
+      }
+      set_source(cr, with_alpha(p.fg_primary, can ? 0.9 : 0.3));
+      cairo_set_line_width(cr, 2);
+      cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
+      const double cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+      cairo_move_to(cr, cx - dir * 3, cy - 6);
+      cairo_line_to(cr, cx + dir * 3, cy);
+      cairo_line_to(cr, cx - dir * 3, cy + 6);
+      cairo_stroke(cr);
+    }
+    // Breadcrumb: Settings > Category > Page
+    std::string crumb = "Settings";
+    if (!search.empty()) {
+      crumb += "  >  Search";
+    } else if (tab != fleetwm::kPageHome) {
+      const std::string cat = category_of(tab);
+      if (!cat.empty()) crumb += "  >  " + cat;
+      crumb += "  >  " + tab_names[static_cast<size_t>(tab)];
+    }
+    const double search_w = std::clamp((w - kSidebarW) * 0.34, 170.0, 280.0);
+    const double crumb_x = x0 + 80, crumb_max = w - 28 - search_w - 16 - crumb_x;
+    if (crumb_max > 40) draw_text(cr, fit_text(cr, crumb, crumb_max, 13.5), crumb_x, 33, 13.5, p.fg_secondary);
+    ui.set_cursor(w - 28 - search_w, 10);
+    ui.text_entry(&search, search_w);
+    if (search.empty()) draw_text(cr, "Find a setting", w - 28 - search_w + 12, 33, 13.5, with_alpha(p.fg_secondary, 0.65));
+    if (ui.entry_submitted() && !search.empty()) {
+      const auto hits = fleetwm::search_settings(search, 1);
+      if (!hits.empty()) go(hits.front().page);
+    }
+    cairo_rectangle(cr, kSidebarW, 55, w - kSidebarW, 1);
+    set_source(cr, with_alpha(p.fg_secondary, 0.14));
+    cairo_fill(cr);
+  }
+
   void draw(cairo_t* cr, int w, int h) {
     ui.begin(cr, w, h);
     ui.set_scroll_lines(mouse.scroll_lines);
-    // Sidebar.
-    {
-      const Palette& p = ui.palette();
-      cairo_rectangle(cr, 0, 0, kSidebarW, h);
-      Color sidebar = p.bg_secondary;
-      sidebar.a = p.window_alpha;  // see-through with Glass effects, like the rest of the window
-      set_source(cr, sidebar);
-      cairo_fill(cr);
-      cairo_rectangle(cr, kSidebarW - 1, 0, 1, h);
-      Color line = p.fg_secondary;
-      line.a = 0.18;
-      set_source(cr, line);
-      cairo_fill(cr);
-      draw_text(cr, "Settings", 24, 38, 17, p.fg_primary, true);
+    if (host_name.empty()) {
+      char buf[128] = {};
+      host_name = gethostname(buf, sizeof buf - 1) == 0 && buf[0] ? buf : "this computer";
     }
-    ui.nav(tab_names, &tab, {0, 52, kSidebarW, static_cast<double>(h) - 52});
+    draw_sidebar(cr, h);
+    ui.set_margins(kSidebarW + 14, 10, 28);
+    draw_header(cr, w);
 
-    // Content: title + the tab's sections in a scrolling pane.
+    // Content: the tab's sections in a scrolling pane under the header.
     ui.set_margins(28, 8, 28);
     ui.set_label_width(220);
-    ui.begin_scroll({kSidebarW, 0, static_cast<double>(w) - kSidebarW, static_cast<double>(h)}, &scroll[tab]);
+    constexpr double kHeaderH = 56;
+    ui.begin_scroll({kSidebarW, kHeaderH, static_cast<double>(w) - kSidebarW, static_cast<double>(h) - kHeaderH}, &scroll[tab]);
     ui.space(10);
-    ui.title(tab_names[static_cast<size_t>(tab)]);
-    switch (tab) {
-      case 0: tab_home(cr); break;
-      case 1: tab_theme(cr); break;
-      case 2: tab_bar(cr); break;
-      case 3: tab_wallpaper(cr); break;
-      case 4: tab_display(cr); break;
-      case 5: net_tab->draw(ui, cr); break;
-      case 6: bt_tab->draw(ui, cr); break;
-      case 7: kb_tab->draw(ui, cr); break;
-      case 8: tab_mouse(cr); break;
-      case 9: tab_power(cr); break;
-      case 10: tab_datetime(cr); break;
-      case 11: tab_default_apps(cr); break;
-      case 12: tab_audio(cr); break;
-      case 13: tab_performance(cr); break;
-      case 14: tab_file_manager(cr); break;
-      case 15: tab_desktop_icons(cr); break;
-      case 16: remote_tab->draw(ui, cr); break;
-      default: tab_about(cr); break;
+    if (!search.empty()) {
+      tab_search();
+    } else {
+      if (tab != fleetwm::kPageHome) page_header(tab);
+      switch (tab) {
+        case 0: tab_home(cr); break;
+        case 1: tab_theme(cr); break;
+        case 2: tab_bar(cr); break;
+        case 3: tab_wallpaper(cr); break;
+        case 4: tab_display(cr); break;
+        case 5: net_tab->draw(ui, cr); break;
+        case 6: bt_tab->draw(ui, cr); break;
+        case 7: kb_tab->draw(ui, cr); break;
+        case 8: tab_mouse(cr); break;
+        case 9: tab_power(cr); break;
+        case 10: tab_datetime(cr); break;
+        case 11: tab_default_apps(cr); break;
+        case 12: tab_audio(cr); break;
+        case 13: tab_performance(cr); break;
+        case 14: tab_file_manager(cr); break;
+        case 15: tab_desktop_icons(cr); break;
+        case 16: remote_tab->draw(ui, cr); break;
+        case 17: tab_about(cr); break;
+        default: tab_account(cr); break;
+      }
     }
     ui.space(24);
     ui.end_scroll();
@@ -1713,7 +2097,7 @@ struct Settings {
 
 int main(int argc, char** argv) {
   fleetwm::block_quit_signals();  // before any thread exists, see quit_signals.hpp
-  if (fleetwm::handle_info_flags(argc, argv, "fleetwm-settings", "[--page NAME]")) return 0;
+  if (fleetwm::handle_info_flags(argc, argv, "fleetwm-settings", "[--page NAME] [--search TEXT]")) return 0;
   fleetwm::tune_malloc_for_low_rss();
   fleetwm::prewarm::start("fleetwm-settings");
   signal(SIGCHLD, SIG_IGN);
@@ -1729,14 +2113,19 @@ int main(int argc, char** argv) {
   S.mouse = load_mouse_config();
   S.profile = load_user_profile();
   S.profile_draft_name = S.profile.display_name;
+  S.ui_state = fleetwm::load_settings_ui_state();
   S.apply_theme();
   S.net_tab = std::make_unique<NetworkTab>(S.app, [&S] { S.redraw(); });
   S.bt_tab = std::make_unique<BluetoothTab>(S.app, [&S] { S.redraw(); });
   // `fleetwm-settings --page power` opens on that page (the bar's battery icon uses it).
   for (int i = 1; i + 1 < argc; ++i) {
+    if (std::string(argv[i]) == "--search") S.search = argv[i + 1];
     if (std::string(argv[i]) == "--page") {
       const int page = find_settings_page(S.tab_names, argv[i + 1]);
-      if (page >= 0) S.tab = page;
+      if (page >= 0) {
+        S.tab = page;
+        S.history = {page};
+      }
     }
   }
   S.battery_dir = find_battery_dir();

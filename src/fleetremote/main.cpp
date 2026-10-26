@@ -147,6 +147,8 @@ int main() {
     // Quality and bandwidth are read live by the sessions: no reconnect.
     hub.vnc_tuning.quality = c.vnc_quality;
     hub.vnc_tuning.max_kbps = c.vnc_max_kbps;
+    hub.vnc_tuning.fps = c.vnc_fps;
+    hub.rdp_tuning.fps = c.rdp_fps;
     hub.rdp_tuning.quality = c.rdp_quality;
     hub.rdp_tuning.max_kbps = c.rdp_max_kbps;
     int rw = 0, rh = 0;

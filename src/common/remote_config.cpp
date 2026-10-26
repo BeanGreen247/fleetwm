@@ -51,6 +51,10 @@ RemoteConfig load_remote_config() {
           if (c.bits == d) *depth = d;
       }
     };
+    auto fps_keep = [](toml::table* t, int* fps, bool* keep) {
+      if (auto* v = (*t)["fps"].as_integer()) *fps = static_cast<int>(std::clamp<int64_t>(v->get(), kFpsMin, kFpsMax));
+      if (auto v = (*t)["password_keep"].value<bool>()) *keep = *v;
+    };
     auto limits = [](toml::table* t, int* quality, int* kbps) {
       if (auto* v = (*t)["quality"].as_integer()) *quality = static_cast<int>(std::clamp<int64_t>(v->get(), kQualityMin, kQualityMax));
       if (auto* v = (*t)["max_kbps"].as_integer()) *kbps = static_cast<int>(std::clamp<int64_t>(v->get(), 0, 1000000));
@@ -61,6 +65,7 @@ RemoteConfig load_remote_config() {
       if (auto v = (*t)["password"].value<std::string>()) config.vnc_password = *v;
       if (auto v = (*t)["tls"].value<bool>()) config.vnc_tls = *v;
       limits(t, &config.vnc_quality, &config.vnc_max_kbps);
+      fps_keep(t, &config.vnc_fps, &config.vnc_password_keep);
       picture(t, &config.vnc_resolution, &config.vnc_depth, false);
     }
     if (auto* t = root["rdp"].as_table()) {
@@ -69,6 +74,7 @@ RemoteConfig load_remote_config() {
       if (auto v = (*t)["password"].value<std::string>()) config.rdp_password = *v;
       if (auto v = (*t)["tls"].value<bool>()) config.rdp_tls = *v;
       limits(t, &config.rdp_quality, &config.rdp_max_kbps);
+      fps_keep(t, &config.rdp_fps, &config.rdp_password_keep);
       picture(t, &config.rdp_resolution, &config.rdp_depth, true);
     }
   } catch (const toml::parse_error&) {
@@ -89,6 +95,8 @@ void save_remote_config(const RemoteConfig& config) {
   vnc.insert_or_assign("max_kbps", static_cast<int64_t>(config.vnc_max_kbps));
   vnc.insert_or_assign("resolution", config.vnc_resolution);
   vnc.insert_or_assign("depth", static_cast<int64_t>(config.vnc_depth));
+  vnc.insert_or_assign("fps", static_cast<int64_t>(config.vnc_fps));
+  vnc.insert_or_assign("password_keep", config.vnc_password_keep);
   rdp.insert_or_assign("enabled", config.rdp_enabled);
   rdp.insert_or_assign("port", static_cast<int64_t>(config.rdp_port));
   rdp.insert_or_assign("password", config.rdp_password);
@@ -97,6 +105,8 @@ void save_remote_config(const RemoteConfig& config) {
   rdp.insert_or_assign("max_kbps", static_cast<int64_t>(config.rdp_max_kbps));
   rdp.insert_or_assign("resolution", config.rdp_resolution);
   rdp.insert_or_assign("depth", static_cast<int64_t>(config.rdp_depth));
+  rdp.insert_or_assign("fps", static_cast<int64_t>(config.rdp_fps));
+  rdp.insert_or_assign("password_keep", config.rdp_password_keep);
   root.insert_or_assign("vnc", vnc);
   root.insert_or_assign("rdp", rdp);
 
@@ -153,6 +163,27 @@ int nearest_bandwidth_index(int kbps) {
   for (size_t i = 1; i < c.size(); ++i)
     if (std::abs(c[i] - kbps) < std::abs(c[best] - kbps)) best = i;
   return static_cast<int>(best);
+}
+
+const std::vector<int>& remote_fps_choices() {
+  static const std::vector<int> kChoices = {5, 10, 15, 20, 24, 30, 45, 60};
+  return kChoices;
+}
+
+int nearest_fps_index(int fps) {
+  const auto& c = remote_fps_choices();
+  size_t best = 0;
+  for (size_t i = 1; i < c.size(); ++i)
+    if (std::abs(c[i] - fps) < std::abs(c[best] - fps)) best = i;
+  return static_cast<int>(best);
+}
+
+int remote_min_kbps(int quality, int fps, int width, int height) {
+  // Bytes per changed pixel: about 0.10 up to quality 90 (text, UI and photographs averaged), rising to 0.15 at 100 where JPEG
+  // gives way to lossless. A drag or scroll changes about a quarter of the screen.
+  const double per_pixel = 0.10 + (quality > 90 ? 0.005 * (quality - 90) : 0.0);
+  const double bytes = static_cast<double>(std::max(width, 1)) * std::max(height, 1) * 0.25 * per_pixel;
+  return std::max(1, static_cast<int>(bytes * std::max(fps, 1) / 1024.0 + 0.5));
 }
 
 const std::vector<ResolutionChoice>& remote_resolution_choices() {

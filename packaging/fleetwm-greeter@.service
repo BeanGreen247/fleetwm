@@ -10,6 +10,10 @@ ExecStart=/usr/local/bin/fleetwm-greet %I
 Type=simple
 Restart=always
 RestartSec=1
+# Another session may hold the screen (a display manager still running): back off instead of
+# asking seatd for DRM master every second, which makes that session glitch.
+RestartSteps=6
+RestartMaxDelaySec=30
 # fleetwm-greet now runs its own wlroots compositor before any user is
 # authenticated (see src/greeter/compositor.{hpp,cpp}), which needs
 # libseat to hand it the DRM device. Two things were tried and rejected

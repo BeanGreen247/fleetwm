@@ -122,32 +122,71 @@ TEST(RemoteQuality, QuantizingKeepsTheMidpoint) {
   EXPECT_EQ(same[0], 0x123456u);
 }
 
-TEST(RemoteQuality, LowerQualityDropsMoreAndUpdatesLessOften) {
+TEST(RemoteQuality, LowerQualityDropsMoreColourDetail) {
   EXPECT_EQ(quality_quant_bits(100), 0);
   EXPECT_EQ(quality_quant_bits(60), 2);
   EXPECT_EQ(quality_quant_bits(1), 4);
-  EXPECT_LT(quality_interval_ms(100), quality_interval_ms(50));
-  EXPECT_LT(quality_interval_ms(50), quality_interval_ms(10));
+}
+
+TEST(RemoteThrottle, TheFrameRateSetsTheShortestInterval) {
+  EXPECT_EQ(fps_interval_us(24), 41666);
+  EXPECT_EQ(fps_interval_us(60), 16666);
+  EXPECT_EQ(fps_interval_us(0), 1000000);  // a nonsense value is clamped, not a division by zero
+  Tuning tuning;
+  tuning.fps = 24;
+  Throttle t(tuning);
+  const auto start = Clock::now();
+  t.sent(1000, std::chrono::milliseconds(1), start);
+  EXPECT_GE(t.next_allowed(), start + std::chrono::microseconds(41000));
+  EXPECT_LE(t.next_allowed(), start + std::chrono::microseconds(42000));
+}
+
+TEST(RemoteThrottle, AQualityChangeDoesNotChangeTheFrameRate) {
+  Tuning tuning;
+  tuning.fps = 30;
+  Throttle t(tuning);
+  const auto start = Clock::now();
+  tuning.quality = 10;
+  t.sent(1000, std::chrono::milliseconds(1), start);
+  const auto low = t.next_allowed();
+  tuning.quality = 100;
+  EXPECT_EQ(low, t.next_allowed());
+}
+
+TEST(RemoteThrottle, ALimitBelowTheFloorIsRaisedToIt) {
+  Tuning tuning;
+  tuning.fps = 24;
+  tuning.quality = 40;
+  tuning.max_kbps = 32;
+  Throttle t(tuning);
+  t.set_frame(1920, 1080);
+  const double floor_kb = fleetwm::remote_min_kbps(40, 24, 1920, 1080);
+  EXPECT_GT(floor_kb, 32);
+  EXPECT_NEAR(t.budget(), floor_kb * 1024.0, 1);
+  tuning.max_kbps = 100000;  // a generous limit is left alone
+  EXPECT_NEAR(t.budget(), 100000 * 1024.0, 1);
 }
 
 TEST(RemoteThrottle, ABandwidthLimitSpacesTheUpdates) {
   Tuning tuning;
   tuning.max_kbps = 100;  // 100 KB/s
+  tuning.fps = 1;         // a floor far below the limit
   Throttle t(tuning);
+  t.set_frame(100, 100);
   EXPECT_NEAR(t.budget(), 100 * 1024.0, 1);
   const auto start = Clock::now();
   t.sent(102400, std::chrono::milliseconds(1), start);  // one second's worth of bytes
   EXPECT_GE(t.next_allowed(), start + std::chrono::milliseconds(990));
 }
 
-TEST(RemoteThrottle, NoLimitMeansOnlyTheQualityInterval) {
+TEST(RemoteThrottle, NoLimitMeansOnlyTheFrameInterval) {
   Tuning tuning;
   tuning.quality = 90;
   Throttle t(tuning);
   EXPECT_EQ(t.budget(), 0);
   const auto start = Clock::now();
   t.sent(1000, std::chrono::milliseconds(1), start);
-  EXPECT_LE(t.next_allowed(), start + std::chrono::milliseconds(quality_interval_ms(90) + 1));
+  EXPECT_LE(t.next_allowed(), start + std::chrono::microseconds(fps_interval_us(30) + 1000));
 }
 
 TEST(RemoteThrottle, ASlowLinkIsLearnedFromTheSends) {

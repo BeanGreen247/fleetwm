@@ -106,8 +106,29 @@ class Ui {
   // Segmented control: one pill split into options, the selected one filled.
   // Falls back to nothing if it would not fit; returns true when changed.
   bool segmented(const std::vector<std::string>& options, int* index, bool enabled = true);
-  // Vertical navigation list occupying `area` (sidebar); returns true when changed.
+  // Vertical navigation list occupying `area` (sidebar); returns true when changed. Shows a scrollbar when the list is taller than
+  // the area; the wheel, the arrow keys and dragging the scrollbar move it.
   bool nav(const std::vector<std::string>& names, int* current, UiRect area);
+  // The same with group headers (small dim labels that cannot be selected) and an optional icon per entry: `draw_icon` is called
+  // with the icon box (a square at the left of the row) and the entry's index. `*current` is an index into `entries`.
+  struct NavEntry {
+    std::string label;
+    bool header = false;
+  };
+  bool nav_entries(const std::vector<NavEntry>& entries, int* current, UiRect area,
+                   const std::function<void(cairo_t*, const UiRect&, int)>& draw_icon = {});
+  // A clickable, focusable rectangle for custom drawn cards and tiles: draws nothing. `r` is in content coordinates (as returned by
+  // reserve()). Returns true on a click or Space/Enter; `*hover` and `*focus` say what to draw.
+  bool tile(const UiRect& r, bool* hover = nullptr, bool* focus = nullptr);
+  // Reserves a full-width area `height` tall at the cursor and moves below it; draws nothing.
+  UiRect reserve(double height);
+  // Moves the flow cursor (content coordinates) so a control can be placed at an exact spot, e.g. the right end of a header.
+  void set_cursor(double x, double y) {
+    cx_ = x;
+    cy_ = y;
+    line_h_ = 0;
+  }
+  bool pointer_over(const UiRect& r) const { return hovered(r); }
   // Page title (large) and section label (small, dim, upper case).
   void title(const std::string& text);
   void section(const std::string& text);
@@ -200,6 +221,7 @@ class Ui {
   double wheel_ = 0;
   double scroll_lines_ = 3.0;
   double nav_scroll_ = 0;
+  bool nav_drag_ = false;
   std::vector<KeyEvent> keys_;
   int focus_id_ = 0;
   std::vector<int> focusables_, last_focusables_, modal_focusables_;

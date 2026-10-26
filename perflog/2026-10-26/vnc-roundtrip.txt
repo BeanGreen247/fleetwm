@@ -1,0 +1,33 @@
+== quality 40, tight, JPEG level 5, 32 bit
+149682 bytes ui        enc=tight  q= 40 level= 5  PSNR 32.6 dB, 91.1% of pixels exact 
+84126 bytes text      enc=tight  q= 40 level= 5  PSNR 99.0 dB, 100.0% of pixels exact 
+27141 bytes wallpaper enc=tight  q= 40 level= 5  PSNR 42.9 dB, 2.0% of pixels exact 
+22669 bytes video     enc=tight  q= 40 level= 5  PSNR 40.3 dB, 0.4% of pixels exact 
+== quality 70, tight, JPEG level 5, 32 bit
+159849 bytes ui        enc=tight  q= 70 level= 5  PSNR 34.6 dB, 91.9% of pixels exact 
+84126 bytes text      enc=tight  q= 70 level= 5  PSNR 99.0 dB, 100.0% of pixels exact 
+30346 bytes wallpaper enc=tight  q= 70 level= 5  PSNR 45.7 dB, 8.0% of pixels exact 
+31494 bytes video     enc=tight  q= 70 level= 5  PSNR 42.3 dB, 0.9% of pixels exact 
+== quality 90, tight, JPEG level 5, 32 bit
+170732 bytes ui        enc=tight  q= 90 level= 5  PSNR 99.0 dB, 100.0% of pixels exact 
+84126 bytes text      enc=tight  q= 90 level= 5  PSNR 99.0 dB, 100.0% of pixels exact 
+41333 bytes wallpaper enc=tight  q= 90 level= 5  PSNR 48.4 dB, 16.1% of pixels exact 
+59267 bytes video     enc=tight  q= 90 level= 5  PSNR 43.3 dB, 1.2% of pixels exact 
+== quality 100, tight, JPEG level 5, 32 bit
+170732 bytes ui        enc=tight  q=100 level= 5  PSNR 99.0 dB, 100.0% of pixels exact 
+84126 bytes text      enc=tight  q=100 level= 5  PSNR 99.0 dB, 100.0% of pixels exact 
+82016 bytes wallpaper enc=tight  q=100 level= 5  PSNR 49.9 dB, 20.9% of pixels exact 
+148754 bytes video     enc=tight  q=100 level= 5  PSNR 43.4 dB, 1.3% of pixels exact 
+== tight 90 5, 16 bit
+130969 bytes ui        enc=tight  q= 90 level= 5  PSNR 36.7 dB, 1.1% of pixels exact 
+81413 bytes text      enc=tight  q= 90 level= 5  PSNR 36.8 dB, 2.3% of pixels exact 
+41293 bytes wallpaper enc=tight  q= 90 level= 5  PSNR 39.8 dB, 0.2% of pixels exact 
+== zrle 90 -1, 16 bit
+105218 bytes ui        enc=zrle   q= 90 level=-1  PSNR 36.7 dB, 1.1% of pixels exact 
+99466 bytes text      enc=zrle   q= 90 level=-1  PSNR 36.8 dB, 2.3% of pixels exact 
+55667 bytes wallpaper enc=zrle   q= 90 level=-1  PSNR 40.5 dB, 0.2% of pixels exact 
+== zrle 90, 32 bit
+150894 bytes ui        enc=zrle   q= 90 level=-1  PSNR 99.0 dB, 100.0% of pixels exact 
+162191 bytes text      enc=zrle   q= 90 level=-1  PSNR 99.0 dB, 100.0% of pixels exact 
+216498 bytes wallpaper enc=zrle   q= 90 level=-1  PSNR 99.0 dB, 100.0% of pixels exact 
+2324870 bytes video     enc=zrle   q= 90 level=-1  PSNR 99.0 dB, 100.0% of pixels exact 

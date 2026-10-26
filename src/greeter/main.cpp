@@ -10,11 +10,14 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
+#include <sys/stat.h>
 
 #include "auth.hpp"
 #include "compositor.hpp"
 #include "login_ipc.hpp"
 #include "session.hpp"
+#include "sessions.hpp"
 
 namespace {
 
@@ -72,6 +75,7 @@ pid_t spawn_login_client(const std::string& wayland_socket, int ipc_fd) {
 bool run_login_cycle(const std::string& tty_name) {
   fleetwm::auth::AuthResult auth_result;
   bool authenticated = false;
+  std::string requested_session;
 
   {
     fleetwm::greeter::GreeterCompositor compositor;
@@ -117,6 +121,7 @@ bool run_login_cycle(const std::string& tty_name) {
         auth_result = fleetwm::auth::authenticate(tty_name, msg.username, msg.password);
         if (auth_result.ok) {
           authenticated = true;
+          requested_session = msg.session;
           compositor.stop();
         } else {
           fleetwm::greeter_ipc::send_auth_failed(ipc_fd, "Login incorrect");
@@ -171,6 +176,16 @@ bool run_login_cycle(const std::string& tty_name) {
   // any further PAM/libc calls between here and the fork.
   passwd pw_copy = *pw;
 
+  // The client sends only an id; the command always comes from the .desktop files found here.
+  const std::vector<fleetwm::SessionEntry> sessions = fleetwm::discover_sessions(
+      fleetwm::default_wayland_session_dirs(), fleetwm::default_x11_session_dirs(),
+      fleetwm::x11_sessions_available(), "/usr/local/bin/fleetwm");
+  const fleetwm::SessionEntry* chosen = fleetwm::find_session(sessions, requested_session);
+  if (chosen == nullptr) chosen = &sessions.front();
+  mkdir("/var/lib/fleetwm-greeter", 0755);
+  if (std::ofstream last("/var/lib/fleetwm-greeter/last-session"); last) last << chosen->id << "\n";
+  const fleetwm::SessionEntry session = *chosen;
+
   pid_t child = fork();
   if (child < 0) {
     std::perror("fleetwm-greet: fork failed");
@@ -179,7 +194,7 @@ bool run_login_cycle(const std::string& tty_name) {
   }
 
   if (child == 0) {
-    fleetwm::session::exec_as_user(&pw_copy, auth_result.pam_envlist);
+    fleetwm::session::exec_as_user(&pw_copy, auth_result.pam_envlist, session, tty_name);
     // Unreachable: exec_as_user never returns.
   }
 

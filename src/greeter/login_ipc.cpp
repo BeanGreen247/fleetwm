@@ -60,10 +60,11 @@ bool read_string(int fd, std::string& out) {
 
 }  // namespace
 
-bool send_login_attempt(int fd, const std::string& username, const std::string& password) {
+bool send_login_attempt(int fd, const std::string& username, const std::string& password,
+                        const std::string& session) {
   uint8_t type = static_cast<uint8_t>(ClientMsgType::LoginAttempt);
   return write_all(fd, &type, sizeof(type)) && write_string(fd, username) &&
-         write_string(fd, password);
+         write_string(fd, password) && write_string(fd, session);
 }
 
 bool send_power_action(int fd, const std::string& action) {
@@ -84,7 +85,8 @@ bool recv_client_message(int fd, ClientMessage& out) {
   switch (static_cast<ClientMsgType>(type)) {
     case ClientMsgType::LoginAttempt:
       out.type = ClientMsgType::LoginAttempt;
-      return read_string(fd, out.username) && read_string(fd, out.password);
+      return read_string(fd, out.username) && read_string(fd, out.password) &&
+             read_string(fd, out.session);
     case ClientMsgType::PowerAction:
       out.type = ClientMsgType::PowerAction;
       return read_string(fd, out.action);

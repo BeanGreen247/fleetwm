@@ -105,8 +105,16 @@ class RdpClient {
     int one = 1, sndbuf = 256 * 1024;  // a small send buffer makes a slow link show up in how long a send takes
     setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof one);
     setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof sndbuf);
-    if (!hub_.auth_allowed()) return;
-    if (!negotiate() || !connect_mcs()) return;
+    peer_ = peer_address(fd);
+    if (!hub_.auth_allowed()) {
+      remote_log("rdp %s: refused, too many failed logins in the last minute", peer_.c_str());
+      return;
+    }
+    if (!negotiate()) return;
+    if (!connect_mcs()) {
+      remote_log("rdp %s: the client stopped before the connection settings arrived", peer_.c_str());
+      return;
+    }
     tv = {0, 0};
     setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
     loop();
@@ -176,7 +184,10 @@ class RdpClient {
   // ---- connection sequence ----
   bool negotiate() {
     Buf req(4);
-    if (!conn_.read_exact(req.data(), 4) || req[0] != 3) return false;
+    if (!conn_.read_exact(req.data(), 4) || req[0] != 3) {
+      remote_log("rdp %s: not an RDP client (the first bytes are not an RDP connection request)", peer_.c_str());
+      return false;
+    }
     const size_t len = rd16be(&req[2]);
     if (len < 11 || len > 1024) return false;
     req.resize(len);
@@ -185,7 +196,10 @@ class RdpClient {
     if (len >= 19 && req[len - 8] == 0x01 && rd16(&req[len - 6]) == 8) protocols = rd32(&req[len - 4]);
     const bool want_tls = opt_.tls != nullptr;
     Buf cc = {0x0E, 0xD0, 0, 0, 0x12, 0x34, 0};
+    remote_log("rdp %s: connection request, the client offers security 0x%x (1 = TLS, 2 = NLA/CredSSP; this server uses %s)", peer_.c_str(), protocols,
+               want_tls ? "TLS" : "standard RDP security");
     if (want_tls && !(protocols & 1)) {  // TLS is switched on: refuse a client that will not use it
+      remote_log("rdp %s: refused, the client does not offer TLS (allow TLS in the client, or in Guacamole set Security to tls or any)", peer_.c_str());
       cc.insert(cc.end(), {0x03, 0x00, 0x08, 0x00});
       put32le(cc, 1);  // SSL_REQUIRED_BY_SERVER
       conn_.write_all(tpkt(cc));
@@ -575,6 +589,7 @@ class RdpClient {
     if (bs != std::string::npos) user = user.substr(bs + 1);
     const bool ok = !opt_.password.empty() && same_secret(user, opt_.user) & same_secret(pass, opt_.password);
     if (!ok) {
+      remote_log("rdp %s: login rejected for user '%s' (this server's user name is '%s'; the password is not shown)", peer_.c_str(), user.c_str(), opt_.user.c_str());
       hub_.auth_failed();
       std::this_thread::sleep_for(std::chrono::seconds(1));
       return false;
@@ -593,6 +608,7 @@ class RdpClient {
     crop_w_ = width_ & ~3;  // some clients want a multiple of four
     width_ = crop_w_;
     if (!send_license_ok() || !send_demand_active()) return false;
+    remote_log("rdp %s: logged in, %dx%d, %d bit", peer_.c_str(), width_, height_, bpp_);
     state_ = State::AwaitConfirm;
     return true;
   }
@@ -732,6 +748,7 @@ class RdpClient {
     bool resized;
     if (!hub_.take_dirty(session_, &batch, &w, &h, &resized, session_.tuning.res_w.load(), session_.tuning.res_h.load())) return true;
     if ((w & ~3) != crop_w_ || h != height_) return false;  // the client cannot follow a new size; it reconnects
+    throttle_.set_frame(w, h);
     const auto started = Clock::now();
     const int bits = throttle_.quant_bits();
     const int depth = session_.tuning.depth.load();
@@ -830,6 +847,7 @@ class RdpClient {
   ServeOptions opt_;
   Session session_;
   Throttle throttle_;
+  std::string peer_;
   Shadow shadow_;
   State state_ = State::AwaitInfo;
   uint32_t requested_protocols_ = 0;
