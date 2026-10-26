@@ -117,6 +117,10 @@ int op_mkdir(const char* path, mode_t) { return g_vfs->mkdir(path); }
 int op_unlink(const char* path) { return g_vfs->unlink(path); }
 int op_rmdir(const char* path) { return g_vfs->rmdir(path); }
 
+#ifndef RENAME_NOREPLACE
+#define RENAME_NOREPLACE (1 << 0)  // musl before 1.2.6 does not define it; the value is the kernel ABI
+#endif
+
 int op_rename(const char* from, const char* to, unsigned flags) {
   if (flags & RENAME_NOREPLACE) {
     NetStat n;

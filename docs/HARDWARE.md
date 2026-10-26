@@ -23,3 +23,52 @@ fallback the Exynos5422 board uses above -- see
 `wlr_pixman_renderer_create()` in `src/compositor/server.cpp`. That
 keeps the desktop usable, just without GPU acceleration, on hardware
 like older/unsupported Mali Midgard GPUs.
+
+
+## Virtual GPUs and Proxmox (analysis 2026-10-26)
+
+What is verified: the dev VM is a QEMU/KVM guest (Proxmox) with **Standard VGA** (`bochs-drm`, PCI 1234:1111, no render node). Fleetwm
+starts on the pixman (CPU) renderer there and has been run on it continuously. **VirtIO-GPU and VirGL have not been run**: nothing in
+this repository was ever started on a `virtio_gpu` device, so everything below is reading the code, not a test.
+
+How the code chooses (`src/compositor/server.cpp`, "renderer"): an explicit `WLR_RENDERER` always wins; with no `/dev/dri/renderD*`
+(Standard VGA, headless) it uses pixman; otherwise wlroots tries GLES2 and, if that fails or only Mesa's software rasteriser
+(llvmpipe) is available, Fleetwm falls back to pixman. The session log now says which: `fleetwm: renderer GLES2 (GPU); display
+devices: card0=virtio_gpu`.
+
+| Proxmox VM display | Guest sees | Expected renderer | Notes |
+|---|---|---|---|
+| Standard VGA (default) | `bochs-drm`, no render node | pixman | verified |
+| VirtIO-GPU (no 3D) | `virtio_gpu`, a render node, feature bit 0 (virgl) off | pixman, chosen by Fleetwm (`only_software_gpus()`) | **verified 2026-10-26** on the dev VM: compositor 21 MB and 0.4% CPU; before the change it ran Mesa's llvmpipe because the greeter sets `WLR_RENDERER_ALLOW_SOFTWARE=1`: 146 MB and 8.4% CPU |
+| VirGL GPU | `virtio_gpu` with virgl 3D | GLES2 through Mesa's virgl driver (host GPU) | needs `libvirglrenderer` and an EGL-capable GPU on the Proxmox host; the guest needs Mesa >= 21 (Debian 13 has 25.0, the `virtio_gpu_dri.so` driver is present) |
+| VMware compatible | `vmwgfx` | pixman or GLES2 (svga3d) | not looked at |
+| Intel/AMD/NVIDIA passthrough (vfio) | the real driver | GLES2 | same as the laptops below |
+
+Update 2026-10-26: the dev VM was switched to VirtIO-GPU (PCI 1af4:1050, render node `renderD128`, virgl off). The first run showed the
+trap this analysis suspected, in a worse form: `fleetwm-greet` starts the session with `WLR_RENDERER_ALLOW_SOFTWARE=1`, so wlroots accepted
+llvmpipe and the compositor ran software GL (146 MB PSS, 8.4% of a core with one terminal scrolling 10 lines a second). Fleetwm now picks pixman
+when every display device is basic or virtual without 3D (`only_software_gpus()` in `src/compositor/server.cpp`: Standard VGA, Cirrus, QXL,
+VirtualBox, Hyper-V, firmware framebuffers, virtio-gpu without the virgl feature): compositor 21.4 MB and 0.4% CPU on the same scene (compositor
+-125 MB, CPU /21). VirGL (3D) was not available on this VM, so GLES2 on virgl is still untested.
+
+Risks found by reading the code, to be measured before anything is changed:
+1. **Glass read-back.** `glass_scene.cpp` reads window pixels with `wlr_texture_read_pixels` (a `glReadPixels` on GLES2) every 45-120 ms
+   while glass windows overlap repainting windows. On virgl every read is a round trip to the host GPU process, so glass could cost far more
+   than on a real GPU (the notes already record GLES2 at 9x the compositor CPU of pixman on the Celeron, mostly a Mesa copy). If it does, the
+   fix is a policy (no window read-back on virtual GPUs, or pixman by default there), not a rewrite.
+2. **Frame pacing and damage** rely on `wlr_output` presentation feedback; virtio-gpu's page flips complete on the host's schedule, which
+   `FLEETWM_DRAG_FPS` (default 24) already caps for drags.
+3. **Cursor.** If the pointer is missing or lags on virtio, `WLR_NO_HARDWARE_CURSORS=1` is the known wlroots switch.
+
+How to find out (about 20 minutes on the dev VM): in Proxmox set Hardware -> Display to VirtIO-GPU, restart the VM, run
+`scripts/gpu-report.sh` (it prints the driver, whether the device has 3D, the Mesa renderer string and the renderer Fleetwm will pick),
+log in, and run `scripts/grab-stats-run.sh build OUT --renderer pixman` and `--renderer gles2` on the same scene; repeat with VirGL GPU.
+The numbers decide the default per GPU kind.
+
+### What went wrong on the ThinkPad E490 (from the repository history)
+The E490 (Intel UHD 620, Debian 13) is the real-hardware check of 2026-10-20. Problems found there and their fixes: the installer
+enabled the Fleetwm login screen on a machine that already had a display manager (lightdm), which fought over the screen (fixed:
+`ecca50f`, `1e1e0d4`); a session started by a display manager was given the idle seatd seat and drew nothing (`gbm_bo_create failed`;
+fixed: the compositor asks logind for the seat when `XDG_SESSION_ID` is set, `57d7fe2`); power profiles never applied (`f9e091e`); a
+Chromium crash in the seat keyboard (`fd05c2a`, argued from the wlroots source, never reproduced); and 1198 tests taking 13.2 s there against
+0.88 s for 738 on the VM (not explained). Not known to this analysis: anything that went wrong on that laptop and is not in the commits or notes.

@@ -15,6 +15,10 @@ project(
 # The project version, available to every target as FLEETWM_VERSION.
 add_project_arguments('-DFLEETWM_VERSION="' + meson.project_version() + '"', language: ['c', 'cpp'])
 
+# Link only the libraries a program really calls: libcrypto came along into the desktop (and others) through the file manager core
+# without being used, and every loaded library costs its relocation pages and start-up time.
+add_project_link_arguments('-Wl,--as-needed', language: ['c', 'cpp'])
+
 cpp = meson.get_compiler('cpp')
 
 # ---------------------------------------------------------------------------
@@ -112,8 +116,9 @@ libinput_dep = dependency('libinput')
 xkbcommon_dep = dependency('xkbcommon')
 pixman_dep = dependency('pixman-1')
 drm_dep = dependency('libdrm')
-egl_dep = dependency('egl')
-gles2_dep = dependency('glesv2')
+# EGL and GLES2 are optional: a wlroots built with the pixman renderer only (low-memory build) needs neither.
+egl_dep = dependency('egl', required: false)
+gles2_dep = dependency('glesv2', required: false)
 
 # ---------------------------------------------------------------------------
 # Subprojects: each produces one installable binary
@@ -126,6 +131,7 @@ subdir('src/netfs')
 subdir('src/netmgr')
 subdir('src/btmgr')
 subdir('src/compositor')
+subdir('src/fleetremote')
 subdir('src/bar')
 subdir('apps/settings')
 subdir('apps/config')

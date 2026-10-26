@@ -1,5 +1,7 @@
 #include "transfer.hpp"
 
+#include <stdio.h>
+#include <sys/syscall.h>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/sysmacros.h>
@@ -19,6 +21,15 @@
 #ifndef RENAME_NOREPLACE
 #define RENAME_NOREPLACE (1 << 0)
 #endif
+
+namespace fleetwm::fm {
+namespace {
+// renameat2(RENAME_NOREPLACE) through the syscall: musl before 1.2.6 has no wrapper for it.
+int rename_noreplace(const char* from, const char* to) {
+  return static_cast<int>(::syscall(SYS_renameat2, AT_FDCWD, from, AT_FDCWD, to, 1u /* RENAME_NOREPLACE */));
+}
+}  // namespace
+}  // namespace fleetwm::fm
 
 namespace fleetwm::fm {
 
@@ -214,7 +225,7 @@ bool Transfer::discover() {
       }
     }
     if (opt_.move && same_file(s, dst)) continue;
-    if (opt_.move && !exists(dst) && ::renameat2(AT_FDCWD, s.c_str(), AT_FDCWD, dst.c_str(), RENAME_NOREPLACE) == 0) {
+    if (opt_.move && !exists(dst) && rename_noreplace(s.c_str(), dst.c_str()) == 0) {
       ++result_.files_copied;  // same file system: a rename, nothing to copy or check
       result_.top_level.emplace_back(s, dst);
       continue;
@@ -631,7 +642,7 @@ bool Transfer::copy_file(const Item& it, std::string* final_dst) {
       copied += static_cast<uint64_t>(n);
       // Big file: start the device writing while the rest is still being read and hashed, so the final fsync has little left to wait for.
       if (it.size >= opt_.big_file_bytes && opt_.sync != SyncMode::Never && copied - flushed_to >= kStartWriteback) {
-        ::sync_file_range(out, static_cast<off64_t>(flushed_to), static_cast<off64_t>(copied - flushed_to), SYNC_FILE_RANGE_WRITE);
+        ::sync_file_range(out, static_cast<off_t>(flushed_to), static_cast<off_t>(copied - flushed_to), SYNC_FILE_RANGE_WRITE);
         flushed_to = copied;
       }
     }

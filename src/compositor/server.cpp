@@ -15,6 +15,7 @@ extern "C" {
 #include <wlr/backend/libinput.h>
 #include <wlr/backend/multi.h>
 #include <wlr/interfaces/wlr_keyboard.h>
+#include "gles2_compat.hpp"
 #include <wlr/render/pixman.h>
 #include <wlr/types/wlr_drm.h>
 #include <wlr/types/wlr_linux_dmabuf_v1.h>
@@ -25,6 +26,7 @@ extern "C" {
 
 #include <algorithm>
 #include <cerrno>
+#include <climits>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -1024,35 +1026,38 @@ namespace {
 //
 // Guards against a duplicate instance first: an autostarted helper is
 // forked as a child of the compositor, but killing the compositor
-// (this project's usual dev-cycle restart, e.g. `pkill -f
-// '^/usr/local/bin/fleetwm$'`) does not kill its children -- an old
-// instance from a previous compositor run would be orphaned (reparented
-// to PID 1) and keep running against a dead Wayland socket, then a
-// second one would spawn on the next login. Checks via `pgrep -f
-// <full path>` (not `-x <basename>`) for two reasons: `-x` matches
-// against the kernel's 15-character-truncated comm name, which silently
-// never matches "fleetwm-wallpaper" (17 chars) or any future autostart
-// target that long; matching the full absolute path via `-f` instead of
-// a bare basename avoids the self-match footgun `pkill -f
-// 'fleetwm-bar'` hit earlier this session (a bare basename can appear
-// inside this very process's own argv/environment).
+// (this project's usual dev-cycle restart) does not kill its children --
+// an old instance would be orphaned (reparented to PID 1) and a second one
+// would spawn on the next login. Compares /proc/<pid>/exe with the
+// installed path: argv[0] of these helpers is the bare name (execlp), so a
+// `pgrep -f <full path>` never matched, and it cost a fork+exec per helper.
+// Only this user's processes are readable, which is the set that matters.
 bool already_running(const char* full_path) {
-  pid_t pid = fork();
-  if (pid < 0) {
+  DIR* proc = opendir("/proc");
+  if (!proc) {
     return false;  // can't tell; fall through and spawn anyway
   }
-  if (pid == 0) {
-    fleetwm::reset_signals_for_exec();
-    int devnull = open("/dev/null", O_WRONLY);
-    if (devnull >= 0) {
-      dup2(devnull, STDOUT_FILENO);
+  const size_t len = std::strlen(full_path);
+  const pid_t self = getpid();
+  bool found = false;
+  char link[64];
+  char target[PATH_MAX];
+  while (const dirent* e = readdir(proc)) {
+    char* end = nullptr;
+    const long pid = std::strtol(e->d_name, &end, 10);
+    if (*end != '\0' || pid <= 0 || pid == self) continue;
+    std::snprintf(link, sizeof link, "/proc/%ld/exe", pid);
+    const ssize_t n = readlink(link, target, sizeof target - 1);
+    if (n < static_cast<ssize_t>(len)) continue;
+    target[n] = '\0';
+    // " (deleted)" follows the path after the binary was reinstalled under it
+    if (std::strncmp(target, full_path, len) == 0 && (target[len] == '\0' || target[len] == ' ')) {
+      found = true;
+      break;
     }
-    execlp("pgrep", "pgrep", "-f", full_path, nullptr);
-    _exit(1);
   }
-  int status = 0;
-  waitpid(pid, &status, 0);
-  return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+  closedir(proc);
+  return found;
 }
 
 // `name` is the bare binary name (resolved via this process's own PATH,
@@ -1217,6 +1222,90 @@ bool has_render_node() {
   }
   closedir(dir);
   return found;
+}
+
+// True when every display device is a basic or virtual GPU that cannot do 3D: Standard VGA (bochs), Cirrus, QXL, VirtualBox, Hyper-V,
+// a firmware framebuffer, and virtio-gpu without the virgl feature. On those, Mesa's GL is its software rasteriser (llvmpipe): about
+// 120 MB more resident (measured on a virtio-gpu VM: compositor 146 MB against 18 MB) and more CPU than pixman, for no GPU at all.
+// A virtio-gpu WITH virgl (Proxmox "VirGL GPU") and every real GPU keep GLES2.
+bool only_software_gpus() {
+  auto read_line = [](const std::string& path) {
+    std::string v;
+    if (FILE* f = std::fopen(path.c_str(), "r")) {
+      char buf[256] = {0};
+      if (std::fgets(buf, sizeof buf, f)) v = buf;
+      std::fclose(f);
+    }
+    while (!v.empty() && (v.back() == '\n' || v.back() == ' ')) v.pop_back();
+    return v;
+  };
+  auto virtio_gpu_has_virgl = [&]() {
+    DIR* d = opendir("/sys/bus/virtio/devices");
+    if (!d) return false;
+    bool virgl = false;
+    while (dirent* e = readdir(d)) {
+      const std::string base = std::string("/sys/bus/virtio/devices/") + e->d_name;
+      if (read_line(base + "/device") != "0x0010") continue;  // virtio device id 16 = GPU
+      const std::string features = read_line(base + "/features");
+      if (!features.empty() && features[0] == '1') virgl = true;  // feature bit 0: VIRGL (3D through the host GPU)
+    }
+    closedir(d);
+    return virgl;
+  };
+  DIR* dir = opendir("/sys/class/drm");
+  if (!dir) return false;
+  int cards = 0, software = 0;
+  while (dirent* e = readdir(dir)) {
+    const std::string n = e->d_name;
+    if (n.rfind("card", 0) != 0 || n.find('-') != std::string::npos) continue;
+    ++cards;
+    const std::string base = "/sys/class/drm/" + n + "/device";
+    char buf[256];
+    const ssize_t len = readlink((base + "/driver").c_str(), buf, sizeof buf - 1);
+    std::string drv;
+    if (len > 0) {
+      drv.assign(buf, static_cast<size_t>(len));
+      const size_t slash = drv.rfind('/');
+      if (slash != std::string::npos) drv = drv.substr(slash + 1);
+    }
+    bool sw = false;
+    if (read_line(base + "/vendor") == "0x1af4") {
+      sw = !virtio_gpu_has_virgl();
+    } else {
+      for (const char* name : {"bochs-drm", "bochs", "cirrus", "cirrus-qemu", "qxl", "vboxvideo", "hyperv_drm", "simple-framebuffer", "simpledrm", "vkms"})
+        if (drv == name) sw = true;
+    }
+    if (sw) ++software;
+  }
+  closedir(dir);
+  return cards > 0 && software == cards;
+}
+
+// "card0=bochs-drm card1=i915": the kernel driver of every display device, for the log line that says which renderer was chosen. A
+// virtual GPU (virtio_gpu, bochs, qxl, vmwgfx) in that line is the first thing to look at when a VM feels slow.
+std::string describe_gpu_drivers() {
+  std::string out;
+  DIR* dir = opendir("/sys/class/drm");
+  if (!dir) return "unknown";
+  std::vector<std::string> names;
+  while (dirent* e = readdir(dir)) {
+    const std::string n = e->d_name;
+    if (n.rfind("card", 0) == 0 && n.find('-') == std::string::npos) names.push_back(n);
+  }
+  closedir(dir);
+  std::sort(names.begin(), names.end());
+  for (const std::string& n : names) {
+    char buf[256];
+    const ssize_t len = readlink(("/sys/class/drm/" + n + "/device/driver").c_str(), buf, sizeof buf - 1);
+    std::string drv = "?";
+    if (len > 0) {
+      drv.assign(buf, static_cast<size_t>(len));
+      const size_t slash = drv.rfind('/');
+      if (slash != std::string::npos) drv = drv.substr(slash + 1);
+    }
+    out += (out.empty() ? "" : " ") + n + "=" + drv;
+  }
+  return out.empty() ? "none" : out;
 }
 
 }  // namespace
@@ -1455,8 +1544,8 @@ bool Server::init() {
   // gallium driver (about 65 MB resident) and is no faster than pixman for a
   // tiling desktop. Use pixman directly there. An explicit WLR_RENDERER in the
   // environment always wins, and any machine with a render node keeps GLES2.
-  if (std::getenv("WLR_RENDERER") == nullptr && !has_render_node()) {
-    wlr_log(WLR_INFO, "fleetwm: no GPU render node, using the pixman renderer");
+  if (std::getenv("WLR_RENDERER") == nullptr && (!has_render_node() || only_software_gpus())) {
+    wlr_log(WLR_INFO, "fleetwm: %s, using the pixman renderer", has_render_node() ? "only basic or virtual GPUs without 3D" : "no GPU render node");
     renderer_ = wlr_pixman_renderer_create();
   }
   if (!renderer_) {
@@ -1470,6 +1559,8 @@ bool Server::init() {
   if (!renderer_) {
     return false;
   }
+  wlr_log(WLR_INFO, "fleetwm: renderer %s; display devices: %s",
+          wlr_renderer_is_pixman(renderer_) ? "pixman (CPU)" : renderer_is_gles2(renderer_) ? "GLES2 (GPU)" : "other", describe_gpu_drivers().c_str());
   // What wlr_renderer_init_wl_display() does (shm, drm, linux-dmabuf), spelled out so the dmabuf object
   // is kept: the scene needs it to tell each client which buffer formats the display hardware can scan
   // out directly, and without that a fullscreen video or game is always composited instead of shown
@@ -1671,6 +1762,7 @@ bool Server::init() {
   autostart_done_ = true;
   for (const std::unique_ptr<Output>& o : outputs) start_output_helpers(o->wlr_output_ptr);
   spawn_autostart("fleetwm-lockapplet", FLEETWM_BINDIR "/fleetwm-lockapplet");
+  spawn_autostart("fleetwm-remote", FLEETWM_BINDIR "/fleetwm-remote");  // exits at once unless Settings -> Remote Desktop has a server on
 
   return true;
 }

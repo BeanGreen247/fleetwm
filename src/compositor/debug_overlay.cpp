@@ -11,7 +11,7 @@
 #include <string>
 
 extern "C" {
-#include <wlr/render/gles2.h>
+#include "gles2_compat.hpp"
 #include <wlr/render/pixman.h>
 #include <wlr/types/wlr_output_layout.h>
 }
@@ -32,7 +32,7 @@ double ov_ms_of(const timespec& t) { return t.tv_sec * 1000.0 + t.tv_nsec / 1e6;
 
 const char* ov_renderer_name(wlr_renderer* r) {
   if (wlr_renderer_is_pixman(r)) return "PIXMAN";
-  if (wlr_renderer_is_gles2(r)) return "GLES2";
+  if (renderer_is_gles2(r)) return "GLES2";
   return "RENDER";
 }
 

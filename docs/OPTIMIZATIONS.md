@@ -1061,3 +1061,78 @@ Same scene as above (`scripts/grab-stats-run.sh build OUT --renderer pixman --si
 Stage timing inside a rebuild (new GRABSTATS fields `gl_wall_ms`, `gl_content_ms`, `gl_blur_ms`, `gl_post_ms`, idle, ms per second): before the shrink change 0.5 / 4.7 / 3.7 / 0.1, after 0.4 / 1.5 / 3.6 / 0.1. The blur of the glass pictures is now the largest part of a rebuild (63%); in a generic build (`-O3`, no `-march`) a 181x24 RGBA blur is 71 us, with `-march=native` 37 us (the old loop 250 us), so an install gains more than this dev build shows.
 The drag path: callgrind of the move phase showed `View::update_glass_backdrop` at 37.9% of all instructions, and 36.8% of everything inside `wlr_scene_buffer_set_source_box` (193,296 calls, about 20,000 instructions each; the scene recomputes damage and visibility over the tree for each change). The dragged window's frost and ray pieces (eight scene buffers) change on every pointer event. wlroots already returns early for an unchanged box (caching the last box in the view changed nothing: 42 to 43 ticks), so the fix is to ask less often: `Server::note_grab_motion` records the motion and asks for a frame; `Server::flush_grab_motion` applies the grab (position, glass, snap preview, resize request) in `output_frame` just before the commit, and in `end_grab`, so the window ends where the pointer ended. `GRABSTATS`: events 125/s, positions applied 16-20/s. The frame-rate cap's timer path treats a pending grab as pending work, so a drag cannot stall behind the cap.
 `glass_same`/`glass_pieces` in this scene is 40/41 per second at idle: the pictures come out identical to the ones they replace because the terminals repeat the same final screen; with a log that scrolls continuously the share will be lower. Not measured: GLES, the Celeron laptop, a screenshot of a drag (no screenshot tool here). Behaviour change to know about: while dragging, the window is placed with the pointer position at the time the frame is committed, not at the time of each event; with the 24 FPS drag cap the picture on screen was the last position of the same frame before, so what is shown is the same except that it is one sample newer.
+
+## Round 2026-10-26: remote desktop server cost (fleetwm-remote)
+
+Workload: dev VM (Debian 13, headless compositor, pixman, 1280x720), one terminal printing `seq 1 60` every 80 ms (about 12 screen updates a second), one VNC viewer pulling incremental updates for 18 s (`rfb_load.py`-style loop, CPU read from `/proc/<pid>/stat` over 12 s). Compositor CPU: 0.6% with no viewer, 1.1% with one (the grab with damage is cheap). Server CPU per viewer: Raw 18.7% of a core at 41 MB/s, ZRLE 6.5% at 314 KB/s (one run). Then the ZRLE tile encoder was changed: solid and palette tiles are found in one pass over the raw pixels (a new colour is looked up only when it differs from the previous pixel's), only the palette entries are converted to the viewer's pixel format, no heap allocation per tile, and the tile buffers handed out by the hub are reused between updates. Result, same load, same bytes on the wire (314-321 KB/s): ZRLE 4.2, 4.2 and 4.4% of a core (three runs), about 35% less. The decoded picture is unchanged (the test client checks every tile and the length of the deflate stream). Not measured: RDP CPU (uncompressed bitmaps, no encoder work to tune), a real network, more than one viewer, a 4K output.
+
+### Remote desktop, second pass (2026-10-26): CopyRect, unchanged tiles, RLE, limits
+
+Same VM and method as above. Workload B: one terminal 1000x600 in the 1280x720 output printing a random 120-character line every 100 ms (so every line scrolls the whole window). VNC, ZRLE, one viewer that only counts bytes, 16 s: without CopyRect 1734 KB/s and the daemon 142 permille of a core; with CopyRect 157 KB/s and 53 permille (bytes -91%, CPU -63%); 149 of 155 updates were CopyRects, and a slower scripted viewer that applied 71 CopyRects ended with 0 differing pixels below the bar against a fresh Raw picture. Each scroll update took 220 tiles from the hub and sent 12. Detection cost is in the numbers above (row hashes of the changed block, one memcmp pass to verify). RDP, FreeRDP 3.15, 14 s on workload B at 0.2 s per line: 32 bit raw 154.2 MB (76 updates), 16 bit run-length coded at quality 50 35.9 MB (72 updates), TLS off 154.2 MB (the same bytes, no cipher cost measured). Limits (VNC, no CopyRect, quality 90): no limit 1717 KB/s, 256 KB/s limit 264, 64 KB/s limit 76 (an update of about 150 KB is not split). Quality alone on this text workload changed bytes little (quality 50: 1569, quality 30: 1643 KB/s, the viewer's own request rate caps the update rate at about 10/s); the update interval now grows to 100/200/400 ms below quality 50/30/10, and quality matters most for RDP (16 bit) and for photographic content, which was not measured. Idle: 0 voluntary wake-ups in 30 s with no viewer (before: one per second by design, not measured). Not measured: RDP CPU per viewer, a real WAN link (the limit and link learning were checked on loopback), 4K, several viewers.
+
+## Memory budget of the whole desktop (2026-10-26)
+
+Measured on the dev VM (Debian 13, 2 GB, the real session of user dev, my test sessions stopped) with `scripts/ram-budget.sh`, PSS so shared
+libraries are split fairly: **Fleetwm 43.5 MB** in 6 processes (compositor 18.4, desktop 8.3, bar 7.5, greeter 6.9 which stays resident
+on tty1, lock applet 1.6, wallpaper 0.9). The system as a whole uses 517 MB (total minus available): the biggest non-Fleetwm items are
+tailscaled 98.5 MB, journald 46.5 MB, the Samba and Apache servers set up for the file manager tests (about 35 MB), PipeWire/WirePlumber 14 MB,
+udisks 6 MB, and 61 MB of kernel memory that cannot be given back. So **the desktop is about a fifth of a 200 MB budget, but the
+whole system cannot be below 200 MB on this VM**: removing tailscaled, Samba, Apache and capping journald (`SystemMaxUse=`, `RuntimeMaxUse=`)
+would take about 180 MB off and still leave roughly 330 MB of system use. A system under 200 MB in total needs a minimal OS image (no
+tailscale, no Samba, a small journal, few services) on top of the 43 MB. Candidates inside Fleetwm, none done: the resident greeter
+(6.9 MB), one desktop-icon process per output (8.3 MB), a smaller compositor heap. Each needs a measurement against responsiveness first.
+
+Remote desktop memory: fleetwm-remote idle 3.7 MB PSS; with one VNC and one RDP viewer at 1280x720 it was 26.4 MB, then 21.7 MB after the
+tile buffers are given back after a full picture, the encoder buffers are freed when they grew past 256 KB and glibc's thresholds are pinned
+(`tune_malloc_for_low_rss`). Each viewer holds its own screen copy (3.7 MB at 720p, 8.3 MB at 1080p) so a viewer costs about 9 MB at 720p.
+Bar updates from the daemon were cut from every second to every 10 s and at each change.
+
+Fixed (2026-10-26): the autostart check compared `pgrep -f <full path>` with helpers started by bare name, so it never matched and a killed
+compositor left its lock applet (0.7 MB PSS) behind for the next one to duplicate. `already_running()` in `src/compositor/server.cpp` now
+compares `/proc/<pid>/exe` with the installed path, which also drops one fork+exec of `pgrep` per helper at start-up. The resident greeter
+calls `malloc_trim(0)` once its login compositor is gone (anon heap 4.1 MB of its 7.2 MB PSS; effect not yet measured, needs a logout on a real greeter).
+
+Where the rest sits (dev VM, PSS): compositor 20.4 MB = 7.8 anon + 4.1 wallpaper buffer (one full-screen XRGB, inherent) + 2.3 toolkit shm + libraries;
+bar 6.9 (3.1 anon); desktop 6.1 (2.2 anon); greeter 7.2. Lightweight-desktop idle figures from other projects could not be found
+(search came back empty), so there is no outside reference to compare against.
+
+### Second memory pass (2026-10-26)
+
+- **libcrypto no longer loaded by programs that never hash.** `src/fleetfm/hasher.cpp` opens `libcrypto.so.3` with `dlopen` on the first checksum (the header is used for types only); before, every program that linked the file manager core (desktop, Settings, file manager, ...) mapped it and paid for its relocations at start-up. A/B on the headless rig, `fleetwm-desktop` with `LD_PRELOAD=libcrypto.so.3` (the old state) against without: **3621 -> 3023 KB PSS (-0.6 MB, -17%)**, anon 1988 -> 1448 KB, one desktop process per screen. `-Wl,--as-needed` is now set project-wide (it removed nothing else; every other linked library is used).
+- Allocator: `M_ARENA_MAX=2` for the helpers (a few threads share one extra arena instead of each growing a heap). Unmeasured.
+- Greeter: after the login compositor is gone it runs `malloc_trim(0)` and asks jemalloc (preloaded by the service) to purge all arenas. Unmeasured: it needs a logout on a real greeter, and if the 4.1 MB anon is live data (PAM, wlroots statics) this gains nothing. Moving the login screen into a child process so the waiting parent stays small would cut more but touches the PAM session ownership, so it was not done blind.
+- Per-output desktop process: 3.0 MB PSS here (2.2 on the VM before this pass), 0.7 MB for the wallpaper process; merging them saves only the per-process baseline (under 1 MB per extra screen), not done.
+- Looked at and left: the 4 MB wallpaper buffer (one full-screen XRGB; 16-bit would halve it but bands gradients), the compositor's pixman swap chain (2 full-screen buffers, inherent), bar libraries (libpipewire 268 KB is the only large one and is used).
+- Outside research (searches, no paid APIs): little published. Confirmed ideas already used here: pixman renderer (Cage and others run on it), glibc trim/mmap thresholds, arena cap, jemalloc background purge; `PR_SET_THP_DISABLE` is not used: the dev VM has THP `always`, and the compositor shows 6 MB of huge pages, but they back its two full-screen 4 MB buffers that are fully written anyway, so turning THP off would save about 2 MB at most (a headless A/B showed 0 huge pages, so it could not be reproduced without restarting the real session). sway's `max_render_time` is a latency setting, not a CPU saver.
+
+Exact breakdown, dev VM 1280x800, pixman, PSS in KB (anon / file-backed / shared memory):
+
+| Process | Total | Anon | File | Shmem | Source |
+|---|---|---|---|---|---|
+| fleetwm (compositor) | 20362 | 8908 | 5098 | 6356 | `src/compositor/` (server, output, view, workspace, input, layer_surface, glass_*, titlebar, shadow, ipc_server) |
+| fleetwm-bar | 6970 | 3188 | 3546 | 236 | `src/bar/` (main, tray, mpris, volume_source, spectrum_source) |
+| fleetwm-desktop | 6127 | 2188 | 1899 | 2040 | `apps/desktop/main.cpp` |
+| fleetwm-greet (root, tty1) | 7163 | 4144 | 3019 | 0 | `src/greeter/` (main, compositor, auth, session, login_ipc) |
+| fleetwm-lockapplet | 1664 | 632 | 1032 | 0 | `apps/lockapplet/main.cpp` |
+| fleetwm-wallpaper | 713 | 308 | 405 | 0 | `src/wallpaper/main.cpp` |
+
+Shared by all of them: `src/fleetkit/` (cairo text, icons, widgets, the memfd surfaces named `fleetwm-kit`) and `src/common/` (config, malloc tuning). In the compositor, the shared part is 4080 KB of wallpaper buffer, 2276 KB of toolkit surfaces (counted half in each client), two 4 MB anonymous full-screen buffers (huge pages), and 7824 KB other anonymous data. Kernel: 40 MB unreclaimable slab, 6 MB page tables.
+
+Research for very small machines (secondhand, no official figures for 128 MB desktops): Tiny Core needs 64 MB and Damn Small Linux 16 MB graphical, both with FLTK-class toolkits and no fontconfig; antiX reports about 57 MB idle on tuned old hardware; musl instead of glibc gives static programs of 9 KB against 431 KB and 128 KB thread stacks against 2-10 MB (Bootlin, openwall); zram sized to about 20% of RAM with priority above disk swap; `journald Storage=volatile` with `RuntimeMaxUse` and `RuntimeMaxFileSize` caps (journald was 43-46 MB on the dev VM); no data found for KSM, RGB565 framebuffers or kernel slab trimming. For Fleetwm the levers that follow are: a 16-bit render path (halves every full-screen buffer: 3 x 4 MB on this screen), fewer fonts loaded through fontconfig, and shipping a small-system profile (volatile journal, zram, no tailscale/Samba). None built yet.
+
+### Realistic whole-system profile, real GPU, no tailscale (2026-10-26)
+Fleetwm: compositor 71 MB PSS on real GLES2 (Celeron N4020 laptop, boot report `perflog/2026-10-08/ram-report-laptop-boot.txt`, older build, file-backed 48 = Mesa, anon 22; there is no memory report for the ThinkPad E490) + bar 6.8 + greeter 7.0 + desktop 6.0 + lock applet 1.6 + wallpaper 0.7 = about 93 MB. Services needed for every feature (dev VM PSS, `ram-report` of the same day): systemd 10.8, journald capped volatile about 8 (44.9 uncapped), wireplumber + pipewire + pipewire-pulse 16.5 (sound), udisksd 6.9 (mount/eject), udevd 4.0, dhcpcd 3.2 + wpa_supplicant 3.1 (network), polkitd 3.2, dbus 2.7, logind 2.4, user session 2.2, timesyncd 1.8, power-profiles 1.4 = about 66 MB, plus bluez about 3 (estimate). Kernel memory that cannot be given back: 75 MB on the Celeron laptop (67 slab + 8 page tables; 49 on the VM). **Idle desktop about 235 MB in use; each window opened adds 6-8 MB** (Settings 5.7, Task Manager 6.0, file manager 7.7). Roughly a fifth of that is clean library pages (Mesa in the compositor above all) that the kernel can drop under pressure. 512 MB is comfortable, 256 MB works with zram and a capped journal, 128 MB needs the changes in the list above (16-bit path, smaller font set, no polkit/udisks/avahi) and is not reached today.
+
+### Alpine Linux, musl (2026-10-26)
+Container `alpine:3.21`, headless compositor on pixman, 1280x720, 20 s idle, same start script on the Debian 13 host (glibc, jemalloc preloaded as in
+the session); PSS includes shared libraries and is not comparable across the two (the host shares libraries with every other program), so private memory
+(USS) is the fair column. USS, KB, Alpine vs Debian: bar 2412 vs 2732 (-12%), desktop 2292 vs 2512 (-9%), wallpaper 488 vs 736 (-34%); CPU ticks equal
+(0-5 in 20 s). So musl saves 0.2-0.25 MB per small program and nothing else. **The compositor is the exception: 52 MB private on Alpine against 11 MB on Debian**, because
+Alpine's `libgbm` and `libEGL` are linked to `libgallium`, which is linked to `libLLVM` (33 MB of file pages mapped, plus 6.6 MB of anonymous memory from musl's
+eager relocation of it). Debian's `libgbm` does not do that. A real GPU needs the Mesa driver anyway, but the LLVM part only serves llvmpipe and radeonsi. A
+pixman-only wlroots build (no EGL, no GBM, no Mesa) would not load any of it: on Alpine that is up to 41 MB, on the Celeron laptop it is the 48 MB of Mesa
+files in the 71 MB compositor, and the notes already measured GLES2 at 9x the compositor CPU of pixman on that machine. Not built or measured yet; this is the
+largest lever found for machines under 256 MB and for weak CPUs, at the cost of GPU-composited drawing.
+Found by this port and fixed: `transfer.hpp` used `dev_t` without `<sys/types.h>`, `renameat2` and `RENAME_NOREPLACE` are missing in musl 1.2.5, `mallopt` and
+`malloc_trim` do not exist there.
+

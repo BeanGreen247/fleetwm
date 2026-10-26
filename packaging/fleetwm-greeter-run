@@ -1,0 +1,8 @@
+#!/bin/sh
+# Starts the Fleetwm login screen on a console from /etc/inittab (Alpine, busybox init): the environment the systemd unit
+# packaging/fleetwm-greeter@.service sets, then fleetwm-greet. Argument: the console, for example tty1.
+tty="${1:-tty1}"
+export XDG_RUNTIME_DIR=/run/fleetwm-greeter HOME=/root LIBSEAT_BACKEND=seatd NO_AT_BRIDGE=1
+export WLR_RENDERER_ALLOW_SOFTWARE=1 WLR_RENDERER=pixman
+mkdir -p "$XDG_RUNTIME_DIR" && chmod 700 "$XDG_RUNTIME_DIR"
+exec /usr/local/bin/fleetwm-greet "$tty"

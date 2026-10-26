@@ -1,3 +1,4 @@
+#include <dlfcn.h>
 #include <malloc.h>
 #include <pwd.h>
 #include <security/pam_appl.h>
@@ -141,6 +142,17 @@ bool run_login_cycle(const std::string& tty_name) {
     // real fleetwm compositor below -- DRM master is exclusive, so the
     // handoff must not overlap with this process still holding it.
   }
+  // This process now only waits for the session to end: hand the freed
+  // compositor heap back before it sits resident for hours. The service
+  // preloads jemalloc (malloc_trim does nothing there), so ask it to purge
+  // every arena now instead of waiting for its decay timer; glibc gets the trim.
+#ifdef __GLIBC__
+  malloc_trim(0);
+#endif
+  using MallctlFn = int (*)(const char*, void*, size_t*, void*, size_t);
+  if (auto mallctl = reinterpret_cast<MallctlFn>(dlsym(RTLD_DEFAULT, "mallctl"))) {
+    mallctl("arena.4096.purge", nullptr, nullptr, nullptr, 0);  // 4096 = MALLCTL_ARENAS_ALL
+  }
 
   if (!authenticated) {
     if (auth_result.pamh) {
@@ -189,8 +201,10 @@ int main(int argc, char** argv) {
   // short-lived state" pattern that lets glibc's default dynamic
   // mmap/trim thresholds ratchet upward and stop returning freed
   // memory to the OS.
+#ifdef __GLIBC__
   mallopt(M_TRIM_THRESHOLD, 64 * 1024);
   mallopt(M_MMAP_THRESHOLD, 64 * 1024);
+#endif
 
   std::string tty_name = argc > 1 ? argv[1] : "";
   for (;;) {

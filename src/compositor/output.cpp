@@ -4,7 +4,7 @@
 #include "window_geometry.hpp"
 
 extern "C" {
-#include <wlr/render/gles2.h>
+#include "gles2_compat.hpp"
 #include <wlr/render/pixman.h>
 #include <wlr/types/wlr_layer_shell_v1.h>
 #include <wlr/types/wlr_tearing_control_v1.h>

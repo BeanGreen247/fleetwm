@@ -14,9 +14,16 @@ cd "$work"
 curl -fsSL -o wlroots.tar.bz2 "https://deb.debian.org/debian/pool/main/w/wlroots/wlroots_${version}.orig.tar.bz2"
 tar xf wlroots.tar.bz2
 cd "wlroots-${version}"
-meson setup build --prefix="$prefix" --buildtype=release \
-  -Dexamples=false -Dxwayland=enabled -Drenderers=gles2 -Dbackends=drm,libinput,x11 -Dallocators=gbm
+# FLEETWM_PIXMAN_ONLY=1: the low-memory build (docs/ALPINE.md): software renderer only, no EGL, GBM or Mesa, no XWayland. On Alpine this keeps
+# libLLVM out of the compositor (53.8 MB -> 12.3 MB), and it is faster than GLES2 on weak integrated GPUs; there is no GPU drawing.
+if [ "${FLEETWM_PIXMAN_ONLY:-0}" = "1" ]; then
+  meson setup build --prefix="$prefix" --buildtype=release \
+    -Dexamples=false -Dxwayland=disabled -Drenderers= -Dbackends=drm,libinput -Dallocators=
+else
+  meson setup build --prefix="$prefix" --buildtype=release \
+    -Dexamples=false -Dxwayland=enabled -Drenderers=gles2 -Dbackends=drm,libinput,x11 -Dallocators=gbm
+fi
 ninja -C build
 ninja -C build install
-ldconfig
+ldconfig 2>/dev/null || true  # no ldconfig on musl
 echo "wlroots ${version} installed in ${prefix}"

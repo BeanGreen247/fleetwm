@@ -13,7 +13,7 @@ You can use it in two ways and switch at any time in Settings:
 
 ## Install
 
-You need Debian 13 (Trixie) or Ubuntu/Kubuntu 26.04.
+You need Debian 13 (Trixie) or Ubuntu/Kubuntu 26.04. On Alpine Linux 3.21 or newer run `./install-alpine.sh` instead (see `docs/ALPINE.md`).
 
 ```sh
 git clone https://github.com/BeanGreen247/fleetwm.git
@@ -195,6 +195,10 @@ for your user in `~/.config/fleetwm/`. Settings that belong to the other layout 
 All shortcuts can be changed in `~/.config/fleetwm/keybinds.toml`. The full list and the file
 format are in [docs/SHORTCUTS.md](docs/SHORTCUTS.md). The shortcuts are also listed in the app
 that opens with Super+/.
+
+## Remote desktop
+
+Settings -> Remote Desktop switches on a built-in VNC server and an RDP server (`fleetwm-remote`); each switch makes a new random password, and each has quality, bandwidth-limit and encryption controls for slow links. Use any VNC viewer, FreeRDP, Remmina, Windows Remote Desktop (allow the certificate) or Apache Guacamole. Open the port in your firewall; do not expose it to the internet, tunnel over SSH or a VPN. Details in `docs/REMOTE_DESKTOP.md`.
 
 ## Dark and light mode for other apps
 

@@ -1,5 +1,13 @@
 # What is done, what is left
 
+## Hardware and memory (2026-10-26)
+
+Open: pixman-only wlroots on real KMS (dumb-buffer output) and on the Celeron laptop (RAM and CPU against GLES2); Alpine boot test (inittab login screen, seatd, pam_elogind); VirtIO-GPU and VirGL were never run (the dev VM has Standard VGA); switch the VM's display in Proxmox and follow `docs/HARDWARE.md` ("How to find out"); the glass read-back on virgl is the likely cost. A whole system under 200 MB needs a minimal OS image; the desktop itself is 43.5 MB (`docs/OPTIMIZATIONS.md`, memory budget). Lock applet duplication is fixed (`/proc/<pid>/exe` check); greeter `malloc_trim` is unmeasured.
+
+## Remote desktop (2026-10-26)
+
+Built: `fleetwm-remote` (VNC + RDP, Settings -> Remote Desktop, quality and bandwidth sliders, encryption switch, CopyRect, run-length coded RDP), see `docs/REMOTE_DESKTOP.md`. Open: Apache Guacamole itself was not run (FreeRDP, which it uses for RDP, was); no NLA, so a client that insists on NLA (default mstsc) must allow TLS; RDP has 16 bit run-length coding only (no RemoteFX/planar/scroll orders); one encode is not shared between viewers; the limit and link learning were tested on loopback, not a real slow link; no clipboard, audio or drive redirection; only the first monitor; no cursor shape (the pointer is drawn into the picture); a firewall must be opened by hand; not tried on real hardware or over the internet (use an SSH tunnel or VPN, not the open internet).
+
 ## Current state (2026-10-13)
 
 Pushed (2026-10-13; an 85 s headless session on the dev VM showed no CPU difference, see the section; details in `docs/OPTIMIZATIONS.md` "Round 2026-10-13"): titlebar/tray/launcher icon scaling cached (callgrind -35% per titlebar render), SDL clients no longer start Xwayland, text measure/draw cache, Debian 12/13/14 build support (`docs/DEBIAN_BACKPORT.md`). Open: end-to-end wall-time and GPU numbers on the Celeron laptop; an install and a session on Debian 12 and 14 (only built and unit-tested in Docker).

@@ -1,10 +1,12 @@
 #include "hasher.hpp"
 
+#include <dlfcn.h>
 #include <fcntl.h>
 #include <unistd.h>
 
 #include <algorithm>
 #include <cerrno>
+#include <cstdlib>
 #include <chrono>
 #include <strings.h>
 #include <vector>
@@ -12,13 +14,48 @@
 namespace fleetwm::fm {
 
 namespace {
+// libcrypto is opened on the first checksum instead of being linked: the desktop, which never hashes anything, otherwise maps it
+// (and pays its relocation pages) all session. The header is only used for the types.
+struct Crypto {
+  const EVP_MD* (*sha1)();
+  const EVP_MD* (*md5)();
+  const EVP_MD* (*sha256)();
+  const EVP_MD* (*sha512)();
+  const EVP_MD* (*blake2b512)();
+  EVP_MD_CTX* (*ctx_new)();
+  void (*ctx_free)(EVP_MD_CTX*);
+  int (*init)(EVP_MD_CTX*, const EVP_MD*, ENGINE*);
+  int (*update)(EVP_MD_CTX*, const void*, size_t);
+  int (*final)(EVP_MD_CTX*, unsigned char*, unsigned*);
+};
+
+const Crypto& crypto() {
+  static const Crypto c = [] {
+    Crypto r{};
+    void* h = dlopen("libcrypto.so.3", RTLD_NOW | RTLD_LOCAL);
+    if (!h) std::abort();  // hashing is impossible without it; it was a hard link dependency before
+    auto sym = [h](const char* n) { return dlsym(h, n); };
+    r.sha1 = reinterpret_cast<decltype(r.sha1)>(sym("EVP_sha1"));
+    r.md5 = reinterpret_cast<decltype(r.md5)>(sym("EVP_md5"));
+    r.sha256 = reinterpret_cast<decltype(r.sha256)>(sym("EVP_sha256"));
+    r.sha512 = reinterpret_cast<decltype(r.sha512)>(sym("EVP_sha512"));
+    r.blake2b512 = reinterpret_cast<decltype(r.blake2b512)>(sym("EVP_blake2b512"));
+    r.ctx_new = reinterpret_cast<decltype(r.ctx_new)>(sym("EVP_MD_CTX_new"));
+    r.ctx_free = reinterpret_cast<decltype(r.ctx_free)>(sym("EVP_MD_CTX_free"));
+    r.init = reinterpret_cast<decltype(r.init)>(sym("EVP_DigestInit_ex"));
+    r.update = reinterpret_cast<decltype(r.update)>(sym("EVP_DigestUpdate"));
+    r.final = reinterpret_cast<decltype(r.final)>(sym("EVP_DigestFinal_ex"));
+    return r;
+  }();
+  return c;
+}
 const EVP_MD* md_for(HashAlgo a) {
   switch (a) {
-    case HashAlgo::Sha1: return EVP_sha1();
-    case HashAlgo::Md5: return EVP_md5();
-    case HashAlgo::Sha512: return EVP_sha512();
-    case HashAlgo::Blake2b: return EVP_blake2b512();
-    default: return EVP_sha256();
+    case HashAlgo::Sha1: return crypto().sha1();
+    case HashAlgo::Md5: return crypto().md5();
+    case HashAlgo::Sha512: return crypto().sha512();
+    case HashAlgo::Blake2b: return crypto().blake2b512();
+    default: return crypto().sha256();
   }
 }
 
@@ -86,15 +123,15 @@ HashAlgo resolve_algo(HashAlgo a) {
   return chosen;
 }
 
-Hasher::Hasher(HashAlgo algo) : algo_(resolve_algo(algo)), ctx_(EVP_MD_CTX_new()) { EVP_DigestInit_ex(ctx_, md_for(algo_), nullptr); }
-Hasher::~Hasher() { EVP_MD_CTX_free(ctx_); }
-void Hasher::reset() { EVP_DigestInit_ex(ctx_, md_for(algo_), nullptr); }
-void Hasher::update(const void* data, size_t n) { EVP_DigestUpdate(ctx_, data, n); }
+Hasher::Hasher(HashAlgo algo) : algo_(resolve_algo(algo)), ctx_(crypto().ctx_new()) { crypto().init(ctx_, md_for(algo_), nullptr); }
+Hasher::~Hasher() { crypto().ctx_free(ctx_); }
+void Hasher::reset() { crypto().init(ctx_, md_for(algo_), nullptr); }
+void Hasher::update(const void* data, size_t n) { crypto().update(ctx_, data, n); }
 
 std::string Hasher::finish_hex() {
   unsigned char md[EVP_MAX_MD_SIZE];
   unsigned len = 0;
-  EVP_DigestFinal_ex(ctx_, md, &len);
+  crypto().final(ctx_, md, &len);
   static const char* hex = "0123456789abcdef";
   std::string out(len * 2, '0');
   for (unsigned i = 0; i < len; ++i) {

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <sys/types.h>  // dev_t (musl does not pull it in through the standard headers)
+
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>

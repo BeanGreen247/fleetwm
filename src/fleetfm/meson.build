@@ -1,7 +1,7 @@
 # fleetfm core: everything the file manager does that needs no window -- directory reading, sorting, checksums, the
 # verified copy engine, mounts and safe removal, network places, settings, view styles. Pure C++ on POSIX plus libcrypto
 # (checksums); no GTK, no GLib, no GVfs. The window (apps/fleetfm) and the unit tests link this.
-libcrypto_dep = dependency('libcrypto')
+libcrypto_dep = dependency('libcrypto').partial_dependency(includes: true, compile_args: true)  # types only: hasher.cpp dlopens the library
 
 libfleetfm_core = static_library(
   'fleetfm-core',
