@@ -4,6 +4,8 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
 
 ## Unreleased
 
+## 0.5.0 - 2026-10-26
+
 - `install.sh` installs ufw and allows VNC (5900 and 5901) and RDP (3389) on TCP and UDP, plus SSH (22/tcp) so enabling the firewall cannot lock you out. It does not switch the firewall on or off; `FLEETWM_NO_FIREWALL=1` skips the step. RDP and VNC connections that fail now log why (client address, offered security, TLS error, rejected user name) to the session log.
 - The login screen unlocks the login keyring (gnome-keyring) with the password you type, so ssh keys, Chromium, git credentials and anything else that keeps secrets in it find it open after login instead of asking: `pam_gnome_keyring.so` is in the greeter's PAM service (auth, session with `auto_start`, password), and `install.sh` installs `gnome-keyring` and `libpam-gnome-keyring`. `docs/GREETER.md`, "Keyring".
 - Settings redesigned as one place for everything, from Windows 11 Settings, macOS System Settings and the classic Control Panel: a grouped sidebar with icons and a profile card, **a scrollbar on the sidebar** (it was cut off after "File Manager" with no way to see the rest), a header with back/forward, a breadcrumb and a "Find a setting" search (settings by name and keyword), a Home page with recent pages and a Control-Panel style category view (View by Categories, Large icons or Small icons, with task links), an icon, name and description at the top of every page, and a new Account page for the name and picture. `fleetwm-settings --search TEXT`. New `scripts/headless-shot.sh` takes screenshots in a private headless compositor. `docs/SETTINGS.md`.
