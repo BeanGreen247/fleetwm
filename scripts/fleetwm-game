@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# Starts a program the way a game wants it: on the dedicated GPU when asked, under Feral GameMode, with a frame rate cap from libstrangle.
+#
+#   fleetwm-game [--gpu discrete|integrated] [--fps N] [--no-gamemode] [--dry-run] [--] COMMAND [ARGS...]
+#
+# Steam: set a game's launch options to   fleetwm-game --gpu discrete -- %command%
+# Defaults come from ~/.config/fleetwm/game.toml (gamemode, fps_limit); the desktop itself is drawn by the integrated GPU (desktop_gpu there).
+#
+#   --gpu discrete    PRIME render offload to the dedicated card: through switcherooctl when switcheroo-control is running (it knows each vendor's variables), else
+#                     DRI_PRIME=1 and, with the NVIDIA driver loaded, the NVIDIA offload variables. The picture reaches the desktop as a dmabuf.
+#   --gpu integrated  the card the desktop uses (DRI_PRIME=0)
+#   --fps N           libstrangle's cap (`strangle N`); 0 or no libstrangle: no cap
+#   --dry-run         print the command that would run
+set -uo pipefail
+CFG="${XDG_CONFIG_HOME:-$HOME/.config}/fleetwm/game.toml"
+cfg() { [[ -r ${CFG} ]] && sed -n "s/^$1[[:space:]]*=[[:space:]]*//p" "${CFG}" | head -1 | tr -d '"' | tr -d "'" ; return 0; }
+gpu=""; fps=$(cfg fps_limit); fps=${fps:-0}; gm=$(cfg gamemode); gm=${gm:-true}; dry=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --gpu) gpu="${2:-}"; shift 2 ;;
+    --fps) fps="${2:-0}"; shift 2 ;;
+    --no-gamemode) gm=false; shift ;;
+    --dry-run) dry=1; shift ;;
+    --) shift; break ;;
+    -h|--help) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) break ;;
+  esac
+done
+[[ $# -gt 0 ]] || { echo "usage: fleetwm-game [--gpu discrete|integrated] [--fps N] [--no-gamemode] [--] COMMAND..." >&2; exit 2; }
+
+pre=()
+case "${gpu}" in
+  discrete)
+    # switcherooctl lists "Device: N ... Default: yes/no"; the first non-default device is the dedicated card
+    idx=""
+    if command -v switcherooctl >/dev/null 2>&1; then
+      idx=$(switcherooctl list 2>/dev/null | awk '/^Device:/{d=$2} /Default:[[:space:]]*no/{print d; exit}')
+    fi
+    if [[ -n ${idx} ]]; then
+      pre+=(switcherooctl launch -g "${idx}")
+    else
+      pre+=(env DRI_PRIME=1)
+      if [[ -d /proc/driver/nvidia ]]; then pre+=(__NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia __VK_LAYER_NV_optimus=NVIDIA_only); fi
+    fi ;;
+  integrated)
+    idx=""
+    if command -v switcherooctl >/dev/null 2>&1; then
+      idx=$(switcherooctl list 2>/dev/null | awk '/^Device:/{d=$2} /Default:[[:space:]]*yes/{print d; exit}')
+    fi
+    if [[ -n ${idx} ]]; then pre+=(switcherooctl launch -g "${idx}"); else pre+=(env DRI_PRIME=0); fi ;;
+  "") ;;
+  *) echo "fleetwm-game: --gpu is discrete or integrated" >&2; exit 2 ;;
+esac
+[[ ${gm} == true ]] && command -v gamemoderun >/dev/null 2>&1 && pre+=(gamemoderun)
+if [[ ${fps} =~ ^[0-9]+$ && ${fps} -gt 0 ]]; then
+  if command -v strangle >/dev/null 2>&1; then pre+=(strangle "${fps}"); else echo "fleetwm-game: libstrangle (strangle) is not installed, no frame cap" >&2; fi
+fi
+if [[ ${dry} -eq 1 ]]; then printf '%q ' "${pre[@]}" "$@"; echo; exit 0; fi
+exec "${pre[@]}" "$@"
