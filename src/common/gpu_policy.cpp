@@ -23,6 +23,8 @@ std::string wlr_drm_devices_for(DesktopGpu policy, const std::vector<DrmCard>& c
   const bool any_other = std::any_of(cards.begin(), cards.end(), [&](const DrmCard& c) { return !discrete(c); });
   if (!any_discrete || !any_other) return "";  // two cards of one kind: nothing to prefer
   std::stable_partition(ordered.begin(), ordered.end(), [&](const DrmCard& c) { return discrete(c) == want_discrete; });
+  if (!want_discrete)  // the dedicated card stays closed (and can sleep) unless it drives a screen
+    ordered.erase(std::remove_if(ordered.begin(), ordered.end(), [&](const DrmCard& c) { return discrete(c) && !c.has_display; }), ordered.end());
   std::string out;
   for (const DrmCard& c : ordered) out += (out.empty() ? "" : ":") + c.path;
   return out;
@@ -42,6 +44,13 @@ std::vector<DrmCard> scan_drm_cards(const std::string& sys_class_drm) {
     std::ifstream bv(dev / "boot_vga");
     int v = 0;
     if (bv >> v) c.boot_vga = v == 1;
+    for (const fs::directory_entry& o : fs::directory_iterator(sys_class_drm, ec)) {  // its outputs: card1-eDP-1, card2-HDMI-A-1, ...
+      const std::string on = o.path().filename().string();
+      if (on.compare(0, name.size() + 1, name + "-") != 0) continue;
+      std::ifstream st(o.path() / "status");
+      std::string status;
+      if (st >> status && status == "connected") c.has_display = true;
+    }
     cards.push_back(c);
   }
   std::sort(cards.begin(), cards.end(), [](const DrmCard& a, const DrmCard& b) { return a.path < b.path; });

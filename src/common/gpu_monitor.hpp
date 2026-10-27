@@ -14,6 +14,13 @@
 
 namespace fleetwm {
 
+// An NVIDIA display card found on the PCI bus, listed before (and without) asking nvidia-smi, which would wake a sleeping card.
+struct NvidiaPci {
+  std::string address;  // "0000:01:00.0"
+  std::string model;    // "NVIDIA GeForce RTX 3050 Ti Laptop GPU", from /proc/driver/nvidia (readable while the card sleeps); "NVIDIA" when unknown
+  bool suspended = false;
+};
+
 struct GpuDevice {
   enum class Kind { AmdBusy, IntelIdle } kind = Kind::AmdBusy;
   std::string vendor, driver;  // "AMD", "amdgpu"
@@ -65,6 +72,9 @@ class GpuMonitor {
   std::string text() const;
   // The busiest GPU's percentage, -1 when none reports one.
   int busiest_percent() const;
+  // One entry per GPU, in the order the Task Manager lists them (the sysfs ones, then the NVIDIA cards): its percentage (-1 when unknown) and its name.
+  std::vector<int> percents() const;
+  std::vector<std::string> names() const;
 
   static long long read_number(const std::string& path);
   // True when every NVIDIA display card in `pci_root` (/sys/bus/pci/devices) is in runtime suspend (D3): asking nvidia-smi would wake it, so the caller
@@ -74,6 +84,9 @@ class GpuMonitor {
   static bool parse_pmu_config(const std::string& text, unsigned long long* config);
   // Clocks, power and memory of one card, from the files that card has (AMD: hwmon and pp_dpm; Intel: the actual and maximum GT frequency).
   GpuDetail detail(const GpuDevice& g) const;
+  // Finds the NVIDIA display cards (vendor 0x10de, class 0x03xxxx) in `pci_root` and fills the lists with one entry each: a card that sleeps is shown as asleep
+  // (detail.asleep) and not queried. discover() calls this for the real machine.
+  void discover_nvidia_pci(const std::string& pci_root = "/sys/bus/pci/devices", const std::string& proc_root = "/proc/driver/nvidia/gpus");
   bool any_engine_busy() const;  // some card reports real render-engine busy time
   bool any_awake_proxy() const;  // some card only reports the RC6-derived awake time
 
@@ -81,6 +94,8 @@ class GpuMonitor {
   std::vector<GpuDevice> devices_;
   std::vector<int> nvidia_percent_;
   std::vector<GpuDetail> nvidia_detail_;
+  std::vector<NvidiaPci> nvidia_pci_;
+  std::string pci_root_ = "/sys/bus/pci/devices";
   int nvidia_cards_ = 0, tick_ = 0;
   bool query_running_ = false, has_nvidia_smi_ = false;
 };

@@ -150,6 +150,7 @@ struct GpuDetail {
   int core_max_mhz = -1, mem_max_mhz = -1;
   int mem_busy_percent = -1;  // the memory controller's share of time busy (AMD mem_busy_percent, NVIDIA utilization.memory): the nearest thing to bandwidth use these drivers report
   long long vram_used = -1, vram_total = -1;  // bytes
+  bool asleep = false;  // the card is in runtime suspend and was left alone: nothing above is a reading
 };
 // AMD: gpu_busy_percent, hwmon power1_average/input, freq1_input (sclk), freq2_input (mclk), mem_info_vram_*.
 // `device_dir` is /sys/class/drm/cardN/device.

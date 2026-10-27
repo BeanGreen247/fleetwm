@@ -114,6 +114,7 @@ void GpuMonitor::discover(const std::string& drm_root, bool check_nvidia, bool u
     if (!g.path.empty()) devices_.push_back(std::move(g));
   }
   has_nvidia_smi_ = false;
+  if (check_nvidia && drm_root == "/sys/class/drm") discover_nvidia_pci();  // the cards are listed now, a sleeping one is never woken to be counted
   if (check_nvidia)
     if (const char* path = std::getenv("PATH")) {
       std::string p = path;
@@ -128,6 +129,44 @@ void GpuMonitor::discover(const std::string& drm_root, bool check_nvidia, bool u
         }
         pos = e + 1;
       }
+    }
+}
+
+void GpuMonitor::discover_nvidia_pci(const std::string& pci_root, const std::string& proc_root) {
+  namespace fs = std::filesystem;
+  nvidia_pci_.clear();
+  std::error_code ec;
+  std::vector<fs::path> dirs;
+  for (const fs::directory_entry& e : fs::directory_iterator(pci_root, ec)) dirs.push_back(e.path());
+  std::sort(dirs.begin(), dirs.end());
+  for (const fs::path& d : dirs) {
+    std::string vendor, cls, status;
+    std::ifstream(d / "vendor") >> vendor;
+    std::ifstream(d / "class") >> cls;
+    if (vendor != "0x10de" || cls.rfind("0x03", 0) != 0) continue;
+    NvidiaPci c;
+    c.address = d.filename().string();
+    std::ifstream(d / "power/runtime_status") >> status;
+    c.suspended = status == "suspended";
+    c.model = "NVIDIA";
+    std::ifstream info(fs::path(proc_root) / c.address / "information");  // readable while the card sleeps
+    std::string line;
+    while (std::getline(info, line))
+      if (line.rfind("Model:", 0) == 0) {
+        size_t b = line.find_first_not_of(" \t", 6);
+        if (b != std::string::npos) c.model = line.substr(b);
+        break;
+      }
+    nvidia_pci_.push_back(c);
+  }
+  nvidia_cards_ = static_cast<int>(nvidia_pci_.size());
+  nvidia_percent_.assign(nvidia_pci_.size(), -1);
+  nvidia_detail_.assign(nvidia_pci_.size(), GpuDetail{});
+  for (size_t i = 0; i < nvidia_pci_.size(); ++i)
+    if (nvidia_pci_[i].suspended) {
+      nvidia_percent_[i] = 0;
+      nvidia_detail_[i].percent = 0;
+      nvidia_detail_[i].asleep = true;
     }
 }
 
@@ -193,7 +232,7 @@ bool GpuMonitor::sample(const std::function<void(std::function<void()>)>& run_in
   // A dedicated NVIDIA card in runtime suspend stays asleep: nvidia-smi would wake it (and keep a hybrid laptop's battery and fans busy) just to report 0 %.
   if (has_nvidia_smi_ && run_in_background && post && ++tick_ >= 3 && !query_running_ && nvidia_all_suspended()) {
     tick_ = 0;
-    for (int& pct : nvidia_percent_) pct = 0;
+    discover_nvidia_pci(pci_root_);  // still asleep: keep the cards listed, as asleep
   } else if (has_nvidia_smi_ && run_in_background && post && tick_ >= 3 && !query_running_) {
     tick_ = 0;
     query_running_ = true;
@@ -215,7 +254,11 @@ bool GpuMonitor::sample(const std::function<void(std::function<void()>)>& run_in
         const std::string before = text();
         nvidia_percent_ = pcts;
         nvidia_detail_ = cards;
-        nvidia_cards_ = static_cast<int>(pcts.size());
+        for (GpuDetail& d : nvidia_detail_) d.asleep = false;
+        nvidia_cards_ = static_cast<int>(std::max(pcts.size(), nvidia_pci_.size()));
+        for (size_t i = 0; i < nvidia_pci_.size(); ++i) nvidia_pci_[i].suspended = false;
+        while (nvidia_percent_.size() < static_cast<size_t>(nvidia_cards_)) nvidia_percent_.push_back(-1);
+        while (nvidia_detail_.size() < static_cast<size_t>(nvidia_cards_)) nvidia_detail_.emplace_back();
         if (text() != before && on_nvidia_update) on_nvidia_update();
       });
     });
@@ -259,6 +302,24 @@ GpuDetail GpuMonitor::detail(const GpuDevice& g) const {
   }
   d.percent = g.percent;
   return d;
+}
+
+std::vector<int> GpuMonitor::percents() const {
+  std::vector<int> out;
+  for (const GpuDevice& g : devices_) out.push_back(g.percent);
+  for (int i = 0; i < nvidia_cards_; ++i) out.push_back(nvidia_percent_.size() > static_cast<size_t>(i) ? nvidia_percent_[static_cast<size_t>(i)] : -1);
+  return out;
+}
+
+std::vector<std::string> GpuMonitor::names() const {
+  std::vector<std::string> out;
+  for (const GpuDevice& g : devices_) out.push_back(g.vendor + " (" + g.driver + ")");
+  for (int i = 0; i < nvidia_cards_; ++i) {
+    std::string n = static_cast<size_t>(i) < nvidia_pci_.size() ? nvidia_pci_[static_cast<size_t>(i)].model : std::string("NVIDIA");
+    if (static_cast<size_t>(i) < nvidia_detail_.size() && nvidia_detail_[static_cast<size_t>(i)].asleep) n += " (asleep)";
+    out.push_back(n);
+  }
+  return out;
 }
 
 int GpuMonitor::busiest_percent() const {

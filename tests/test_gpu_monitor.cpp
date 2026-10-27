@@ -44,6 +44,43 @@ TEST_F(GpuMonitorTest, ASuspendedNvidiaCardIsNotWokenUp) {
   EXPECT_FALSE(GpuMonitor::nvidia_all_suspended(root));
 }
 
+TEST_F(GpuMonitorTest, ASleepingNvidiaCardIsListedAsAsleepWithItsModelAndNotQueried) {
+  auto pci = [&](const std::string& addr, const std::string& status) {
+    const fs::path d = dir_ / "pci" / addr;
+    fs::create_directories(d / "power");
+    std::ofstream(d / "vendor") << "0x10de\n";
+    std::ofstream(d / "class") << "0x030200\n";
+    std::ofstream(d / "power/runtime_status") << status << "\n";
+  };
+  pci("0000:01:00.0", "suspended");
+  fs::create_directories(dir_ / "proc" / "0000:01:00.0");
+  std::ofstream(dir_ / "proc" / "0000:01:00.0" / "information") << "Model: \t\t NVIDIA GeForce RTX 3050 Ti Laptop GPU\nIRQ: 107\n";
+  put("card0/device/vendor", "0x1002");
+  put("card0/device/gpu_busy_percent", "12");
+  GpuMonitor g;
+  g.discover(drm().string(), false);
+  g.discover_nvidia_pci((dir_ / "pci").string(), (dir_ / "proc").string());
+  ASSERT_EQ(g.nvidia_cards(), 1);
+  EXPECT_EQ(g.percents().size(), 2u) << "the AMD card and the sleeping NVIDIA one";
+  EXPECT_EQ(g.names()[1], "NVIDIA GeForce RTX 3050 Ti Laptop GPU (asleep)");
+  EXPECT_TRUE(g.nvidia_detail()[0].asleep);
+  EXPECT_EQ(g.percents()[1], 0);
+}
+
+TEST_F(GpuMonitorTest, EveryGpuIsListedWithItsOwnPercentage) {
+  put("card0/device/vendor", "0x1002");
+  put("card0/device/gpu_busy_percent", "37");
+  put("card1/device/vendor", "0x1002");
+  put("card1/device/gpu_busy_percent", "5");
+  GpuMonitor g;
+  g.discover(drm().string(), false);
+  g.sample();
+  ASSERT_EQ(g.devices().size(), 2u);
+  EXPECT_EQ(g.percents(), (std::vector<int>{37, 5}));
+  EXPECT_EQ(g.names().size(), 2u);
+  EXPECT_EQ(g.text(), "GPU1 37%  GPU2 5%");
+}
+
 TEST_F(GpuMonitorTest, NoCardsMeansNoGpuAndNaText) {
   fs::create_directories(drm());
   GpuMonitor g;
