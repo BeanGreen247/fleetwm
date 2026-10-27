@@ -120,6 +120,7 @@ void View::set_fullscreen(bool fullscreen_) {
     return;
   }
   fullscreen = fullscreen_;
+  if (!fullscreen_) auto_fullscreen = false;
   server->games().evaluate_game(this);
   if (!fullscreen_ && output) server->leave_game_mode(output, this);
   update_size_policy();
@@ -191,6 +192,25 @@ void View::set_fullscreen(bool fullscreen_) {
   }
   resize_border();  // thickness is 0 while fullscreen; zeroes the rects now
                      // rather than waiting on the client's resize commit
+}
+
+void View::update_auto_fullscreen() {
+#if FLEETWM_XWAYLAND
+  if (kind != Kind::XWayland || !xwayland_surface || !output || is_child_window() || minimized) return;
+  wlr_box ob{};
+  wlr_output_layout_get_box(server->output_layout(), output->wlr_output_ptr, &ob);
+  const wlr_box geo = content_geometry();
+  const bool covers = geo.width >= ob.width && geo.height >= ob.height && ob.width > 0;
+  const bool borderless = xwayland_surface->decorations != WLR_XWAYLAND_SURFACE_DECORATIONS_ALL;
+  const bool at_origin = container_tree->node.x <= ob.x && container_tree->node.y <= ob.y;
+  if (!fullscreen && covers && (borderless || at_origin)) {
+    auto_fullscreen = true;
+    set_fullscreen(true);
+  } else if (fullscreen && auto_fullscreen && !covers) {
+    auto_fullscreen = false;
+    set_fullscreen(false);
+  }
+#endif
 }
 
 void View::update_fullscreen_fit() {

@@ -185,6 +185,10 @@ class View {
   // Fullscreen only: when the client's picture is not the size of the screen (an old 4:3 game, an emulator), draws it aspect-correct on a black
   // backdrop per game.toml (fit, integer, stretch or off). fit_x/fit_y are the zoom, which pointer positions are divided by to get back to surface pixels.
   void update_fullscreen_fit();
+  // X11 games that make a borderless window as big as the screen instead of asking for fullscreen (Wine and Proton do) are treated as fullscreen: the taskbar and
+  // the bar must not show over them. Left again when the window shrinks. Called when such a window commits.
+  void update_auto_fullscreen();
+  bool auto_fullscreen = false;
   bool fit_applied = false;
   double fit_x = 1.0, fit_y = 1.0;
   wlr_scene_rect* fit_bg = nullptr;

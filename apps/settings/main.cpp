@@ -1333,7 +1333,7 @@ struct Settings {
     ui.row("Icon size");
     if (ui.spin(&bar.tray_icon_size, 16, 32, 2)) save_bar();
     ui.newline();
-    ui.paragraph("The size in pixels of the icons of programs in the tray (Steam, TuxThrottle, the lock). Programs that use the old X11 tray (many Wine programs) need an XEmbed-to-StatusNotifier proxy such as snixembed installed; the compositor starts it when it is there.", true);
+    ui.paragraph("The size in pixels of the icons of programs in the tray (Steam, TuxThrottle, the lock). Programs that use the old X11 tray (many Wine programs) do not show here yet.", true);
     ui.space(8);
     ui.section("Colours");
     ui.label("Colours of the bar's parts. A grey swatch with no colour set follows the theme; \"Theme\" puts a part back to that.", true);

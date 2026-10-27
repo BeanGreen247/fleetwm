@@ -69,6 +69,7 @@ void x11_unmap(wl_listener* l, void*) {
 void x11_commit(wl_listener* l, void*) {
   View* view = wl_container_of(l, view, surface_commit);
   view->resize_border();
+  view->update_auto_fullscreen();
   ++view->content_serial;
   view->server->refresh_glass_under(view);
 }

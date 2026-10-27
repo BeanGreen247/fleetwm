@@ -32,7 +32,7 @@ if [[ ${FLEETWM_SKIP_DEPS:-0} != 1 ]]; then
     # best effort, one at a time: a package that does not exist on this release must not stop the rest
     for pkg in xorg-x11-server-Xwayland foot grim slurp wl-clipboard wtype rsms-inter-fonts dejavu-sans-fonts \
                pipewire pipewire-pulseaudio wireplumber alsa-utils power-profiles-daemon polkit udisks2 gvfs xdg-utils xdg-desktop-portal-gtk \
-               gnome-keyring NetworkManager bluez mesa-dri-drivers mesa-vulkan-drivers gamemode snixembed; do
+               gnome-keyring NetworkManager bluez mesa-dri-drivers mesa-vulkan-drivers gamemode; do
       sudo dnf install -y --setopt=install_weak_deps=False "${pkg}" >/dev/null 2>&1 || echo "  (not installed: ${pkg})"
     done
   fi

@@ -44,6 +44,7 @@ extern "C" {
 #include "game_config.hpp"
 #include "mouse_config.hpp"
 #include "game_support.hpp"
+#include "kwin_input.hpp"
 #include "switcher.hpp"
 #include "power_config.hpp"
 #include <memory>
@@ -593,6 +594,7 @@ class Server {
   bool fast_games_ = false, fast_profile_ = false, fast_look_ = false;
   void update_fast_look();
   std::vector<wlr_input_device*> mouse_devices_;
+  std::unique_ptr<KwinInput> kwin_input_;  // org.kde.KWin.InputDevice on the session bus (touchpad switches of TuxThrottle and other KDE tools)
   int layout_index_ = 0;
 
   ThemeConfig theme_config_;

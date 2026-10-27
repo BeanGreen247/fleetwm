@@ -31,11 +31,16 @@ session() {  # session SCRIPT  -- runs SCRIPT inside a private headless composit
   [[ -n "${PRE:-}" ]] && eval "$PRE"
   cat > "$RT/inner.sh" <<IN
 export ${NOBOOST:+FLEETWM_UNUSED=1} ${NOBOOST:-FLEETWM_GAMEMODE_TEST=1} XDG_RUNTIME_DIR=$RT HOME=$RT/home WLR_BACKENDS=headless WLR_RENDERER=pixman LANG=C.UTF-8 NO_AT_BRIDGE=1 PATH=$T/fakebin:$B/src/bar:$B/src/wallpaper:\$PATH
+XBEFORE="\$(ls /tmp/.X11-unix 2>/dev/null | tr '\\n' ' ')"
 $B/src/compositor/fleetwm > $RT/comp.log 2>&1 &
 CP=\$!
 for i in \$(seq 1 100); do [ -S $RT/wayland-0 ] && break; sleep 0.1; done
 export WAYLAND_DISPLAY=wayland-0 T=$T OUT=$OUT RT=$RT
+# the compositor's own Xwayland socket is the one that appeared since it started (earlier ones belong to other sessions)
+D=\$(comm -13 <(printf '%s\\n' \$XBEFORE | sort) <(ls /tmp/.X11-unix 2>/dev/null | sort) | head -1 | sed 's/^X/:/')
+[ -n "\$D" ] && export DISPLAY=\$D
 $1
+pkill -TERM -P \$CP 2>/dev/null   # the compositor's own children (bar, Xwayland, the tray proxy), by parent pid only
 kill -TERM \$CP 2>/dev/null; sleep 0.5
 IN
   dbus-run-session -- bash "$RT/inner.sh" >/dev/null 2>&1
@@ -121,10 +126,10 @@ kill $FP
 if ! grep -q '^gamemode' "$OUT/tux.log"; then echo "PASS: nothing was switched on by a headless compositor"; else echo "FAIL: tuxthrottlectl was called: $(tr '\n' '|' < "$OUT/tux.log")"; fi
 echo "== an X11 window that unmaps but stays alive (Steam hiding to the tray) must leave no title bar behind"
 session '
-python3 '"$SRC"'/perflog/2026-10-27/game-clients/xhide.py 3 xtest > /dev/null 2>&1 & XP=$!
-sleep 2
+python3 '"$SRC"'/perflog/2026-10-27/game-clients/xhide.py 6 xtest > /dev/null 2>&1 & XP=$!
+sleep 4.5
 grim $OUT/xhide-before.png
-sleep 4
+sleep 5
 grim $OUT/xhide-after.png
 kill $XP
 '
@@ -156,6 +161,23 @@ w, h = a.size
 def taskbar_colours(im): return len(set(im.crop((300, h - 40, w - 400, h - 4)).getdata()))
 # a glass taskbar is a blurred, shaded gradient (many colours); a flat one has very few
 print("PASS: glass off during the game (%d colours), back after (%d)" % (taskbar_colours(d), taskbar_colours(a)) if taskbar_colours(d) < taskbar_colours(a) // 2 else "FAIL: taskbar colours during=%d after=%d" % (taskbar_colours(d), taskbar_colours(a)))
+PY
+
+echo "== an X11 window as big as the screen (a Wine borderless game) is treated as fullscreen: no taskbar over it"
+session '
+python3 '"$SRC"'/perflog/2026-10-27/game-clients/xhide.py -30 xgame 1280 720 0 0 > /dev/null 2>&1 & XP=$!
+sleep 6
+grim $OUT/xfull.png
+kill $XP
+'
+python3 - "$OUT/xfull.png" <<'PY'
+import sys
+from PIL import Image
+im = Image.open(sys.argv[1]).convert("RGB")
+w, h = im.size
+bar = {p for p in im.crop((0, h - 40, w, h - 4)).getdata()}
+game = im.getpixel((w // 2, h // 2))
+print("PASS: the game covers the taskbar (the whole bottom edge is the game's colour)" if bar == {game} else "FAIL: the taskbar is still drawn over the game (%d colours along the bottom edge)" % len(bar))
 PY
 
 rm -rf "$T"

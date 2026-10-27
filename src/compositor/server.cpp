@@ -1889,8 +1889,6 @@ bool Server::init() {
   spawn_autostart("fleetwm-remote", FLEETWM_BINDIR "/fleetwm-remote");  // exits at once unless Settings -> Remote Desktop has a server on
   // The programs picked in Settings -> Startup Apps (XDG autostart entries in ~/.config/autostart).
   for (const std::string& cmd : fleetwm::autostart_commands()) spawn_user_autostart(cmd);
-  // Old X11 tray icons (Wine programs, many games' launchers) reach the bar through an XEmbed-to-StatusNotifier proxy when one is installed.
-  if (access("/usr/bin/snixembed", X_OK) == 0 || access("/usr/local/bin/snixembed", X_OK) == 0) spawn_user_autostart("snixembed --fork");
 
   return true;
 }
@@ -2645,10 +2643,16 @@ void Server::apply_mouse_config(wlr_input_device* device) {
   if (!wlr_input_device_is_libinput(device)) return;  // nested, virtual and headless pointers have no acceleration to set
   libinput_device* li = wlr_libinput_get_device_handle(device);
   if (!li) return;
+  if (!kwin_input_) {
+    kwin_input_ = std::make_unique<KwinInput>(this);
+    if (!kwin_input_->start()) kwin_input_.reset();  // no session bus, or a real KWin owns the name
+  }
+  if (kwin_input_) kwin_input_->device_added(device);
   if (libinput_device_config_left_handed_is_available(li))
     libinput_device_config_left_handed_set(li, mouse_config_.swap_buttons ? 1 : 0);
   if (libinput_device_config_scroll_has_natural_scroll(li))
     libinput_device_config_scroll_set_natural_scroll_enabled(li, mouse_config_.natural_scroll ? 1 : 0);
+  if (kwin_input_) kwin_input_->reapply(device);  // what TuxThrottle or another KDE tool set stays set
   if (!libinput_device_config_accel_is_available(li)) return;
   libinput_device_config_accel_set_speed(li, libinput_speed_for_notch(mouse_config_.speed));
   const uint32_t profiles = libinput_device_config_accel_get_profiles(li);
@@ -2688,6 +2692,7 @@ void Server::reload_mouse_config() {
 }
 
 void Server::forget_mouse_device(wlr_input_device* device) {
+  if (kwin_input_) kwin_input_->device_removed(device);
   mouse_devices_.erase(std::remove(mouse_devices_.begin(), mouse_devices_.end(), device), mouse_devices_.end());
 }
 

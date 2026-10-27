@@ -164,6 +164,8 @@ struct TaskMgr {
   Res res = Res::Cpu;
   int hovered_tab = -1;
   int hovered_res = -1;
+  int gpu_sel = 0;     // which GPU's page is open when there are several (GPU 0, GPU 1, ...)
+  int res_count = 5;   // sidebar entries: CPU, Memory, Disk, Network and one per GPU
   // Hover explanations: each labelled figure registers its rectangle while it is drawn; the one under the pointer is shown in a small box.
   struct TipRect {
     Rect r;
@@ -182,7 +184,7 @@ struct TaskMgr {
   double scroll = 0;
   std::unordered_map<unsigned, std::string> users;
   std::string status;
-  Rect col_rect[6], end_btn, force_btn, tab_rect[kTabCount], res_rect[5];
+  Rect col_rect[6], end_btn, force_btn, tab_rect[kTabCount], res_rect[8];
 
   // ---- machine ----
   Reader stat_r, mem_r, disk_r, net_r, load_r, up_r;
@@ -844,7 +846,7 @@ struct TaskMgr {
     cairo_rectangle(cr, 0, kTabsH, kSideW, h - kTabsH);
     cairo_fill(cr);
     struct Item {
-      const char* name;
+      std::string name;
       std::string value;
       const History* hist;
       double ymax;
@@ -864,15 +866,26 @@ struct TaskMgr {
         });
     const double disk_max = std::max({1.0e6, disk_read_h.max(), disk_write_h.max()});
     const double net_max = std::max({1.0e5, net_rx_h.max(), net_tx_h.max()});
-    const Item items[5] = {{"CPU", b1, &cpu_h, 100, nullptr},
-                           {"Memory", b2, &mem_h, 100, nullptr},
-                           {"Disk", "R " + format_rate(disk_read_bps) + " W " + format_rate(disk_write_bps), &disk_read_h, disk_max, &disk_write_h},
-                           {"Network", "Rx " + format_rate(net_rx_bps) + " Tx " + format_rate(net_tx_bps), &net_rx_h, net_max, &net_tx_h},
-                           {"GPU", gpu.any() ? gpu_tile_text() : std::string("not found"), &gpu_h, 100, nullptr}};
+    std::vector<Item> items = {{"CPU", b1, &cpu_h, 100, nullptr},
+                               {"Memory", b2, &mem_h, 100, nullptr},
+                               {"Disk", "R " + format_rate(disk_read_bps) + " W " + format_rate(disk_write_bps), &disk_read_h, disk_max, &disk_write_h},
+                               {"Network", "Rx " + format_rate(net_rx_bps) + " Tx " + format_rate(net_tx_bps), &net_rx_h, net_max, &net_tx_h}};
+    const std::vector<int> gpu_pcts = gpu.percents();
+    const std::vector<std::string> gpu_names = gpu.names();
+    if (gpu_pcts.size() >= 2 && gpu_each.size() >= gpu_pcts.size()) {
+      // one sidebar entry per GPU, never a combined one: GPU 0, GPU 1, ...
+      for (size_t i = 0; i < gpu_pcts.size() && items.size() < 8; ++i)
+        items.push_back({"GPU " + std::to_string(i), (gpu_pcts[i] < 0 ? std::string("--") : std::to_string(gpu_pcts[i]) + "%") + (i < gpu_names.size() ? "  " + gpu_names[i].substr(0, gpu_names[i].find(' ')) : std::string()),
+                         &gpu_each[i], 100, nullptr});
+    } else {
+      items.push_back({"GPU", gpu.any() ? gpu_tile_text() : std::string("not found"), &gpu_h, 100, nullptr});
+    }
+    res_count = static_cast<int>(items.size());
+    if (gpu_sel >= static_cast<int>(gpu_pcts.size())) gpu_sel = 0;
     const Color c1 = pal.accent, c2{0.95, 0.55, 0.25, 1};
-    for (int i = 0; i < 5; ++i) {
+    for (int i = 0; i < res_count; ++i) {
       res_rect[i] = {0, kTabsH + 6.0 + i * 66, kSideW, 62};
-      const bool on = res == static_cast<Res>(i);
+      const bool on = i < 4 ? res == static_cast<Res>(i) : res == Res::Gpu && (res_count == 5 || gpu_sel == i - 4);
       const bool hot = hovered_res == i;
       if (on || hot) {
         rounded_rect(cr, 4, res_rect[i].y, kSideW - 8, res_rect[i].h, pal.rounded ? 5 : 0);
@@ -880,7 +893,7 @@ struct TaskMgr {
         cairo_fill(cr);
       }
       graph(cr, {12, res_rect[i].y + 8, 62, 46}, *items[i].hist, items[i].ymax, c1, true, items[i].hist2, &c2);
-      text_at(cr, items[i].name, 84, res_rect[i].y + 20, kFont, pal.fg_primary, true);
+      text_at(cr, items[i].name.c_str(), 84, res_rect[i].y + 20, kFont, pal.fg_primary, true);
       cairo_save(cr);
       cairo_rectangle(cr, 84, res_rect[i].y, kSideW - 88, res_rect[i].h);
       cairo_clip(cr);
@@ -1076,10 +1089,12 @@ struct TaskMgr {
         text_at(cr, "Blue: receive, orange: send. All interfaces except loopback.", dx, y + 8, kSmall, dim());
         break;
       case Res::Gpu: {
-        text_at(cr, "GPU", dx, y + 8, 18, pal.fg_primary, true);
+        text_at(cr, gpu.percents().size() >= 2 ? "GPU " + std::to_string(gpu_sel) : std::string("GPU"), dx, y + 8, 18, pal.fg_primary, true);
         {
+          const std::vector<std::string> names = gpu.names();
           std::string all;
-          for (const std::string& n : gpu.names()) all += (all.empty() ? "" : "  +  ") + n;
+          if (names.size() >= 2) all = static_cast<size_t>(gpu_sel) < names.size() ? names[static_cast<size_t>(gpu_sel)] : std::string();
+          else for (const std::string& n : names) all += (all.empty() ? "" : "  +  ") + n;
           if (all.empty() && gpu.nvidia_available()) all = "NVIDIA";
           if (!all.empty()) text_right(cr, all, dx + dw, y + 8, kFont, dim());
         }
@@ -1091,21 +1106,21 @@ struct TaskMgr {
         text_at(cr, gpu.any_engine_busy() ? "% Render/3D engine busy" : "% Utilization", dx, y + 6, kSmall, dim());
         text_right(cr, "100%", dx + dw, y + 6, kSmall, dim());
         y += 14;
-        if (gpu_each.size() > 1) {
-          // several GPUs: a graph each, so none is hidden behind the busiest one
-          const std::vector<std::string> names = gpu.names();
-          y += 6;
-          const double gh = std::clamp((h - y - 270.0) / static_cast<double>(gpu_each.size()), 46.0, 90.0);
-          for (size_t i = 0; i < gpu_each.size(); ++i) {
-            text_at(cr, "GPU " + std::to_string(i + 1) + (i < names.size() ? ": " + names[i] : std::string()), dx, y + 4, kSmall, dim());
-            y += 12;
-            graph(cr, {dx, y, dw, gh}, gpu_each[i], 100, i == 0 ? c1 : c2);
-            y += gh + 8;
-          }
-        } else {
-          graph(cr, {dx, y, dw, std::clamp(h - y - 270.0, 70.0, 150.0)}, gpu_h, 100, c1);
-          y += std::clamp(h - y - 270.0, 70.0, 150.0) + 10;
+        // The figures of every card, in the order of the sidebar: the sysfs ones, then the NVIDIA cards.
+        struct Block { std::string name; GpuDetail d; bool uma; const GpuDevice* dev; };
+        std::vector<Block> blocks;
+        for (const GpuDevice& g : gpu.devices()) blocks.push_back({g.vendor + " (" + g.driver + ")", gpu.detail(g), g.kind == GpuDevice::Kind::IntelIdle, &g});
+        for (int i = 0; i < gpu.nvidia_cards() && static_cast<size_t>(i) < gpu.nvidia_detail().size(); ++i)
+          blocks.push_back({gpu.names()[gpu.devices().size() + static_cast<size_t>(i)], gpu.nvidia_detail()[static_cast<size_t>(i)], false, nullptr});
+        const bool several = blocks.size() >= 2 && gpu_each.size() >= blocks.size();
+        const size_t sel = several ? static_cast<size_t>(std::clamp(gpu_sel, 0, static_cast<int>(blocks.size()) - 1)) : 0;
+        if (several) {  // this page is one GPU: its own graph and figures
+          text_at(cr, "GPU " + std::to_string(sel) + ": " + blocks[sel].name, dx, y + 4, kSmall, dim());
+          y += 12;
         }
+        const double gh = std::clamp(h - y - 270.0, 70.0, 150.0);
+        graph(cr, {dx, y, dw, gh}, several ? gpu_each[sel] : gpu_h, 100, c1);
+        y += gh + 10;
         // One block per card: the figures a driver exposes; what it does not expose is said so instead of drawn as zero.
         auto gpu_block = [&](const std::string& name, const GpuDetail& d, bool uma, const GpuDevice* dev) {
           section_label(cr, dx, y, dw, name.c_str());
@@ -1134,19 +1149,14 @@ struct TaskMgr {
           cell(0, 2, "PCIe link", dev && !dev->pcie_speed.empty() && dev->pcie_speed != "Unknown" ? dev->pcie_speed + (dev->pcie_width > 0 ? " x" + std::to_string(dev->pcie_width) : std::string()) : std::string("n/a"));
           y += 3 * 38 + 8;
         };
-        int idx = 0;
-        for (const GpuDevice& g : gpu.devices()) {
-          gpu_block((gpu.devices().size() + static_cast<size_t>(gpu.nvidia_cards()) > 1 ? "GPU " + std::to_string(++idx) + ": " : std::string()) + g.vendor + " (" + g.driver + ")",
-                    gpu.detail(g), g.kind == GpuDevice::Kind::IntelIdle, &g);
-        }
-        for (int i = 0; i < gpu.nvidia_cards() && static_cast<size_t>(i) < gpu.nvidia_detail().size(); ++i)
-          gpu_block((gpu.devices().size() + static_cast<size_t>(gpu.nvidia_cards()) > 1 ? "GPU " + std::to_string(++idx) + ": " : std::string()) + gpu.names()[gpu.devices().size() + static_cast<size_t>(i)], gpu.nvidia_detail()[static_cast<size_t>(i)], false, nullptr);
+        for (size_t i = 0; i < blocks.size(); ++i)
+          if (!several || i == sel) gpu_block(several ? "GPU " + std::to_string(i) + ": " + blocks[i].name : blocks[i].name, blocks[i].d, blocks[i].uma, blocks[i].dev);
         if (gpu.any_awake_proxy())
           text_at(cr, "This kernel does not let this user read the render-engine counter, so the figure is the GPU's awake time (RC6).", dx, y + 8, kSmall, dim());
         break;
       }
     }
-    if (hovered_res >= 0) draw_resource_hover(cr, hovered_res);
+    if (hovered_res >= 0) draw_resource_hover(cr, std::min(hovered_res, 4));
   }
 
   // The sidebar's GPU figure: one percentage for one GPU, "12% / 3%" for several (in the order of the GPU page).
@@ -1332,9 +1342,10 @@ struct TaskMgr {
         return;
       }
     if (tab == Tab::Performance) {
-      for (int i = 0; i < 5; ++i)
+      for (int i = 0; i < res_count; ++i)
         if (res_rect[i].hit(x, y)) {
-          res = static_cast<Res>(i);
+          res = i < 4 ? static_cast<Res>(i) : Res::Gpu;
+          if (i >= 4) gpu_sel = i - 4;
           surface->queue_draw();
         }
       return;
@@ -1381,7 +1392,7 @@ struct TaskMgr {
 
     int next_res = -1;
     if (tab == Tab::Performance)
-      for (int i = 0; i < 5; ++i)
+      for (int i = 0; i < res_count; ++i)
         if (res_rect[i].hit(x, y)) {
           next_res = i;
           break;
@@ -1462,7 +1473,8 @@ int main(int argc, char** argv) {
               std::strcmp(argv[i + 1], "cache") == 0 ? Tab::Cache : Tab::Processes;
     } else if (std::strcmp(argv[i], "--resource") == 0) {  // which Performance graph is open: cpu, memory, disk, network, gpu
       const char* r = argv[i + 1];
-      T.res = !std::strcmp(r, "memory") ? Res::Memory : !std::strcmp(r, "disk") ? Res::Disk : !std::strcmp(r, "network") ? Res::Network : !std::strcmp(r, "gpu") ? Res::Gpu : Res::Cpu;
+      T.res = !std::strcmp(r, "memory") ? Res::Memory : !std::strcmp(r, "disk") ? Res::Disk : !std::strcmp(r, "network") ? Res::Network : !std::strncmp(r, "gpu", 3) ? Res::Gpu : Res::Cpu;
+      if (!std::strncmp(r, "gpu", 3) && r[3] >= '0' && r[3] <= '3') T.gpu_sel = r[3] - '0';  // gpu0, gpu1, ...
     }
   }
   T.gpu.discover("/sys/class/drm", true, true);  // the Task Manager may open the i915 render-busy counter: it is only open while this window lives

@@ -34,6 +34,8 @@ executable(
     'xwayland.cpp',
     'switcher.cpp',
     'game_support.cpp',
+    'kwin_input.cpp',
+    'kwin_input_vtable.c',
     'debug_overlay.cpp',
     'glass_backdrop.cpp',
     'glass_ray.cpp',
