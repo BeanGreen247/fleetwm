@@ -19,6 +19,10 @@ add_project_arguments('-DFLEETWM_VERSION="' + meson.project_version() + '"', lan
 # without being used, and every loaded library costs its relocation pages and start-up time.
 add_project_link_arguments('-Wl,--as-needed', language: ['c', 'cpp'])
 
+# One section per function and per object, then let the linker drop the ones nothing calls: smaller text, fewer pages to fault in.
+add_project_arguments('-ffunction-sections', '-fdata-sections', language: ['c', 'cpp'])
+add_project_link_arguments('-Wl,--gc-sections', language: ['c', 'cpp'])
+
 cpp = meson.get_compiler('cpp')
 
 # ---------------------------------------------------------------------------

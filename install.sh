@@ -493,6 +493,16 @@ else
   echo "    perf_event_paranoid=${PERF_PARANOID:-unknown}; leaving the existing policy unchanged."
 fi
 
+echo "==> Capping the systemd journal (memory and disk)"
+# journald maps its journal files, so a large journal is a large resident process (46 MB on the dev VM). A drop-in with size caps keeps it
+# small; a log older than the cap is dropped. Remove /etc/systemd/journald.conf.d/50-fleetwm.conf to go back to the distro default.
+if [[ -d /run/systemd/system ]]; then
+  sudo install -d -m 755 /etc/systemd/journald.conf.d
+  printf '# Fleetwm: keep the journal small\n[Journal]\nSystemMaxUse=100M\nRuntimeMaxUse=16M\nSystemMaxFileSize=16M\n' |
+    sudo tee /etc/systemd/journald.conf.d/50-fleetwm.conf >/dev/null
+  sudo systemctl restart systemd-journald 2>/dev/null || true
+fi
+
 echo "==> Recording source checkout path for 'fleetwm update'"
 echo "${SCRIPT_DIR}" | sudo tee /etc/fleetwm-source-path >/dev/null
 
