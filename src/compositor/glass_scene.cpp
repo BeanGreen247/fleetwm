@@ -55,6 +55,11 @@ bool gs_rects(const View* v, GsRects* r) {
   return true;
 }
 
+std::vector<uint32_t>& gs_scratch() {
+  static thread_local std::vector<uint32_t> px;
+  return px;
+}
+
 // Reads the part `src` (surface pixels) of a client's texture and paints it, averaged down by kGlassScale, onto `cr` at layout position (dst_x, dst_y).
 bool gs_paint_content(cairo_t* cr, const View* v, const wlr_box& src, int dst_x, int dst_y) {
   wlr_surface* surface = v->surface();
@@ -62,8 +67,8 @@ bool gs_paint_content(cairo_t* cr, const View* v, const wlr_box& src, int dst_x,
   wlr_texture* tex = wlr_surface_get_texture(surface);
   if (!tex || surface->current.scale != 1 || static_cast<int64_t>(src.width) * src.height > 1500000) return false;
   if (src.x < 0 || src.y < 0 || src.x + src.width > static_cast<int>(tex->width) || src.y + src.height > static_cast<int>(tex->height)) return false;
-  // One buffer for all reads, grown when needed and never cleared: the read overwrites every pixel that is used.
-  static thread_local std::vector<uint32_t> px;
+  // One buffer for all reads, grown when needed and not cleared: the read overwrites every pixel that is used. glass_scratch_trim() gives it back.
+  std::vector<uint32_t>& px = gs_scratch();
   if (px.size() < static_cast<size_t>(src.width) * src.height) px.resize(static_cast<size_t>(src.width) * src.height);
   const wlr_texture_read_pixels_options opt{px.data(), DRM_FORMAT_ARGB8888, static_cast<uint32_t>(src.width) * 4, 0, 0, src};
   if (!wlr_texture_read_pixels(tex, &opt)) return false;
@@ -255,6 +260,13 @@ bool glass_build_pictures(Server* server, const View* w, const wlr_box rects[4],
   }
   if (wall) cairo_surface_destroy(wall);
   return any;
+}
+
+size_t glass_scratch_bytes() { return gs_scratch().capacity() * sizeof(uint32_t) + kit::box_blur_scratch_bytes(); }
+
+void glass_scratch_trim() {
+  std::vector<uint32_t>().swap(gs_scratch());
+  kit::box_blur_release_scratch();
 }
 
 }  // namespace fleetwm

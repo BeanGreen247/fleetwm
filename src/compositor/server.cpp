@@ -37,7 +37,9 @@ extern "C" {
 #include <vector>
 
 #include "app_appearance.hpp"
+#include "glass_scene.hpp"
 #include "input.hpp"
+#include "page_release.hpp"
 #include "ipc_server.hpp"
 #include "layer_surface.hpp"
 #include "popup_namespaces.hpp"
@@ -1768,6 +1770,15 @@ bool Server::init() {
 }
 
 void Server::run() {
+  // Ten seconds in, the first frames are drawn and the helpers are up: drop the code pages of Mesa, LLVM and wlroots that start-up ran once.
+  // What the compositor still executes comes back with a minor fault; the rest leaves its RSS and PSS.
+  wl_event_source* trim = wl_event_loop_add_timer(
+      wl_display_get_event_loop(display_), [](void*) -> int {
+        fleetwm::drop_code_mappings();
+        fleetwm::page_out_memfd("fleetwm-wallpaper");  // zram only: a flat or smooth picture compresses to a few KB
+        return 0;
+      }, nullptr);
+  if (trim) wl_event_source_timer_update(trim, 10000);
   wl_display_run(display_);
 }
 
@@ -2334,6 +2345,12 @@ void Server::flush_glass_dirty() {
       if (grabstats::enabled()) ++grabstats::c().glass_builds;
     }
   if (grabstats::enabled()) grabstats::c().glass_ms += (grabstats::now_s() - t0) * 1000.0;
+  // The pixel buffer behind the rebuilds is as big as the biggest window seen; hand it back once the glass has been quiet for 4 s.
+  if (glass_scratch_bytes() > 128 * 1024) {
+    static wl_event_source* trim = wl_event_loop_add_timer(
+        wl_display_get_event_loop(display_), [](void*) -> int { glass_scratch_trim(); return 0; }, nullptr);
+    if (trim) wl_event_source_timer_update(trim, 4000);
+  }
 }
 
 void Server::glass_forget(View* view) { glass_dirty_.erase(view); }

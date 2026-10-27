@@ -16,6 +16,7 @@
 #include "auth.hpp"
 #include "compositor.hpp"
 #include "login_ipc.hpp"
+#include "page_release.hpp"
 #include "session.hpp"
 #include "sessions.hpp"
 
@@ -198,6 +199,8 @@ bool run_login_cycle(const std::string& tty_name) {
     // Unreachable: exec_as_user never returns.
   }
 
+  // Idle for the whole session from here: let go of the login screen's libraries (wlroots, libinput, Mesa) and, with zram, its heap.
+  fleetwm::page_out_idle_process();
   int wstatus = 0;
   waitpid(child, &wstatus, 0);
   fleetwm::auth::close_session(auth_result.pamh, PAM_SUCCESS);

@@ -5,6 +5,7 @@
 // at a quarter of the size, the wallpaper, the frames of the windows below (as their glass colour) and their content (a few pixels read
 // back from the client's texture), then blurs that with a small radius. The compositor shows the result under the translucent frame.
 
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -45,6 +46,11 @@ void glass_backdrop_keys(Server* server, const View* w, const wlr_box rects[4], 
 // Builds the pictures of the frame parts in `mask` (bit i = part i; the others are left as they are). `area` is the output's box (the wallpaper is laid out by it).
 // A new picture that comes out byte for byte like the one it replaces is dropped and the old one kept, so the scene sees no change and nothing is redrawn.
 // Returns false when nothing could be built.
+// The buffer the glass code reads client pixels into grows to the largest window it has seen (up to 6 MB) and would stay that size for the
+// life of the compositor. The server gives it back a few seconds after the last glass rebuild.
+size_t glass_scratch_bytes();
+void glass_scratch_trim();
+
 bool glass_build_pictures(Server* server, const View* w, const wlr_box rects[4], const wlr_box& area, GlassPicture out[4], unsigned mask = 15);
 
 void glass_picture_release(GlassPicture* p);
