@@ -67,6 +67,9 @@ class GpuMonitor {
   int busiest_percent() const;
 
   static long long read_number(const std::string& path);
+  // True when every NVIDIA display card in `pci_root` (/sys/bus/pci/devices) is in runtime suspend (D3): asking nvidia-smi would wake it, so the caller
+  // leaves it alone. False when there is no NVIDIA card or any one is awake.
+  static bool nvidia_all_suspended(const std::string& pci_root = "/sys/bus/pci/devices");
   // "config=0x0000000000000001" (the content of an events/ file under /sys/bus/event_source/devices/i915): the config value; false when malformed.
   static bool parse_pmu_config(const std::string& text, unsigned long long* config);
   // Clocks, power and memory of one card, from the files that card has (AMD: hwmon and pp_dpm; Intel: the actual and maximum GT frequency).

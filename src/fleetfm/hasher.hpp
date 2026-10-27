@@ -17,7 +17,10 @@ const char* hash_name(HashAlgo a);
 // "sha256" / "sha512" / "blake2b" / "sha1" / "md5" / "auto" (any case); false when unknown.
 bool parse_hash_name(const std::string& s, HashAlgo* out);
 
-// A concrete algorithm for `a`: Auto is measured once per process (about 25 ms) and remembered.
+// True when a /proc/cpuinfo "flags" (x86) or "Features" (Arm) line lists the SHA-256 instructions (sha_ni, sha2).
+bool cpu_flags_have_sha(const std::string& line);
+
+// A concrete algorithm for `a`: Auto is SHA-256 straight away on a CPU with SHA instructions, else measured once per process (about 25 ms) and remembered.
 HashAlgo resolve_algo(HashAlgo a);
 const char* hash_label(HashAlgo a);  // "SHA-256", "BLAKE2b" ...
 

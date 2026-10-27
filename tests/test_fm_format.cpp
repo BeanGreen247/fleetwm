@@ -115,6 +115,10 @@ TEST(FmHasher, AutoPicksAConcreteStrongAlgorithmAndStaysWithIt) {
   EXPECT_TRUE(a == HashAlgo::Sha256 || a == HashAlgo::Sha512 || a == HashAlgo::Blake2b);
   EXPECT_EQ(resolve_algo(HashAlgo::Auto), a) << "measured once";
   EXPECT_EQ(resolve_algo(HashAlgo::Md5), HashAlgo::Md5) << "an explicit choice is never changed";
+  EXPECT_TRUE(cpu_flags_have_sha("flags\t\t: fpu vme sse4_2 sha_ni avx2"));
+  EXPECT_TRUE(cpu_flags_have_sha("Features\t: fp asimd sha1 sha2 crc32"));
+  EXPECT_FALSE(cpu_flags_have_sha("flags\t\t: fpu vme sse4_2 avx2 sha_nix"));
+  EXPECT_FALSE(cpu_flags_have_sha("flags\t\t: fpu vme sse4_2 avx2"));
   Hasher h(HashAlgo::Auto);
   h.update("abc", 3);
   Hasher g(a);

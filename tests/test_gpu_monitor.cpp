@@ -25,6 +25,25 @@ class GpuMonitorTest : public testutil::ScopedConfigHome {
 };
 }  // namespace
 
+TEST_F(GpuMonitorTest, ASuspendedNvidiaCardIsNotWokenUp) {
+  auto card = [&](const std::string& addr, const std::string& vendor, const std::string& cls, const std::string& status) {
+    const fs::path d = dir_ / "pci" / addr;
+    fs::create_directories(d / "power");
+    std::ofstream(d / "vendor") << vendor << "\n";
+    std::ofstream(d / "class") << cls << "\n";
+    std::ofstream(d / "power/runtime_status") << status << "\n";
+  };
+  const std::string root = (dir_ / "pci").string();
+  EXPECT_FALSE(GpuMonitor::nvidia_all_suspended(root)) << "no NVIDIA card at all";
+  card("0000:06:00.0", "0x1002", "0x030000", "active");  // the integrated AMD GPU does not count
+  EXPECT_FALSE(GpuMonitor::nvidia_all_suspended(root));
+  card("0000:01:00.0", "0x10de", "0x030200", "suspended");
+  card("0000:01:00.1", "0x10de", "0x040300", "active");  // its HDMI audio function is not a display card
+  EXPECT_TRUE(GpuMonitor::nvidia_all_suspended(root));
+  card("0000:01:00.0", "0x10de", "0x030200", "active");
+  EXPECT_FALSE(GpuMonitor::nvidia_all_suspended(root));
+}
+
 TEST_F(GpuMonitorTest, NoCardsMeansNoGpuAndNaText) {
   fs::create_directories(drm());
   GpuMonitor g;

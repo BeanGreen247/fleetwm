@@ -5,6 +5,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <fstream>
 #include <cerrno>
 #include <cstdlib>
 #include <chrono>
@@ -98,9 +99,26 @@ bool parse_hash_name(const std::string& s, HashAlgo* out) {
   return true;
 }
 
+bool cpu_flags_have_sha(const std::string& line) {
+  const size_t colon = line.find(':');
+  const std::string flags = " " + (colon == std::string::npos ? line : line.substr(colon + 1)) + " ";
+  return flags.find(" sha_ni ") != std::string::npos || flags.find(" sha2 ") != std::string::npos;
+}
+
+namespace {
+bool this_cpu_has_sha() {
+  std::ifstream f("/proc/cpuinfo");
+  std::string line;
+  while (std::getline(f, line))
+    if (line.rfind("flags", 0) == 0 || line.rfind("Features", 0) == 0) return cpu_flags_have_sha(line);
+  return false;
+}
+}  // namespace
+
 HashAlgo resolve_algo(HashAlgo a) {
   if (a != HashAlgo::Auto) return a;
   static const HashAlgo chosen = [] {
+    if (this_cpu_has_sha()) return HashAlgo::Sha256;  // the benchmark below always ends here on such a CPU; skip its 25 ms (it ran at every file manager start)
     std::vector<char> buf(1 << 20, 'x');
     HashAlgo best = HashAlgo::Sha256;
     double best_t = 1e9;

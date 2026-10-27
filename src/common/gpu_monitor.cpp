@@ -131,6 +131,22 @@ void GpuMonitor::discover(const std::string& drm_root, bool check_nvidia, bool u
     }
 }
 
+bool GpuMonitor::nvidia_all_suspended(const std::string& pci_root) {
+  namespace fs = std::filesystem;
+  bool any = false;
+  std::error_code ec;
+  for (const fs::directory_entry& e : fs::directory_iterator(pci_root, ec)) {
+    std::string vendor, cls, status;
+    std::ifstream(e.path() / "vendor") >> vendor;
+    std::ifstream(e.path() / "class") >> cls;
+    if (vendor != "0x10de" || cls.rfind("0x03", 0) != 0) continue;  // NVIDIA, display controller
+    std::ifstream(e.path() / "power/runtime_status") >> status;
+    if (status != "suspended") return false;
+    any = true;
+  }
+  return any;
+}
+
 bool GpuMonitor::sample(const std::function<void(std::function<void()>)>& run_in_background,
                         const std::function<void(std::function<void()>)>& post) {
   bool changed = false;
@@ -174,7 +190,11 @@ bool GpuMonitor::sample(const std::function<void(std::function<void()>)>& run_in
       changed = true;
     }
   }
-  if (has_nvidia_smi_ && run_in_background && post && ++tick_ >= 3 && !query_running_) {
+  // A dedicated NVIDIA card in runtime suspend stays asleep: nvidia-smi would wake it (and keep a hybrid laptop's battery and fans busy) just to report 0 %.
+  if (has_nvidia_smi_ && run_in_background && post && ++tick_ >= 3 && !query_running_ && nvidia_all_suspended()) {
+    tick_ = 0;
+    for (int& pct : nvidia_percent_) pct = 0;
+  } else if (has_nvidia_smi_ && run_in_background && post && tick_ >= 3 && !query_running_) {
     tick_ = 0;
     query_running_ = true;
     // nvidia-smi can take a while; keep it off the UI thread. It prints one line per card.
