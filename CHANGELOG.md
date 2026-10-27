@@ -4,6 +4,16 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
 
 ## Unreleased
 
+- Glass costs 27-31% less compositor time to rebuild: the box blur (glass backdrops, window shadows, caption glow, wallpaper blur) is 2.9x faster with byte-identical output (a 16-bit multiply-high instead of a 32-bit multiply per lane, and an SSE2 4x4 pixel transpose): 212 to 72 us for a 160x85 backdrop, 2055 to 697 us at 480x270; in the compositor with a glass window over three repainting terminals glass time went 3.4 to 2.4 ms/s idle, 4.9 to 3.6 while moving, 4.5 to 3.1 while resizing (dev VM, pixman).
+- The glass code gives back its read-back buffer (up to 6 MB for a large window) and the blur its working copies 4 s after the last glass rebuild instead of keeping them for ever.
+
+- Tried and rejected: CET off, `-fno-plt`, no semantic interposition, no async unwind tables, no math errno/trapping math, `noseparate-code`, `norelro` as one set: compositor frame cost, binary size and PSS identical within noise (`docs/OPTIMIZATIONS.md`, 2026-10-27).
+
+- Less resident memory in the compositor: ten seconds after start it drops the page-table entries of library code that start-up ran once (Mesa, LLVM, wlroots), 1.2 MB less PSS and 5 MB less RSS on the VM with pixman; the real-GPU effect is not measured yet. With a zram swap active it also sends the wallpaper buffer to zram (flat and smooth pictures compress to almost nothing). New `src/common/page_release.hpp`, tests in `tests/test_page_release.cpp`.
+- The login service pages itself out while a session runs (it has to stay for PAM): with zram a 16 MB heap went from 19.7 to 3.3 MB resident in a test program; the real greeter is unmeasured.
+- Binaries built with `-ffunction-sections -fdata-sections -Wl,--gc-sections`: compositor 15% smaller stripped (1211960 to 1027000 bytes); resident memory unchanged within noise.
+- `install.sh` caps the systemd journal (`SystemMaxUse=100M`, `RuntimeMaxUse=16M`) in `/etc/systemd/journald.conf.d/50-fleetwm.conf`; journald was 46.5 MB on the dev VM. Effect unmeasured.
+
 ## 0.5.0 - 2026-10-26
 
 - `install.sh` installs ufw and allows VNC (5900 and 5901) and RDP (3389) on TCP and UDP, plus SSH (22/tcp) so enabling the firewall cannot lock you out. It does not switch the firewall on or off; `FLEETWM_NO_FIREWALL=1` skips the step. RDP and VNC connections that fail now log why (client address, offered security, TLS error, rejected user name) to the session log.

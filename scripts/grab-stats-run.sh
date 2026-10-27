@@ -8,7 +8,7 @@
 #   window and is the one dragged, so the glass of its frame sits over N-1 windows that repaint (needs foot). The titlebar is aimed from the cascade rule
 #   (no screenshot tool needed); TB (taskbar height, default 40) and TITLE_DY adjust it.
 #   (environment WINDOW_SHADOWS=true|false sets theme.toml window_shadows, default true; COMP_WRAP="valgrind --tool=callgrind ..." starts the compositor under
-#   that command, then also set SOCK_WAIT=1200 (tenths of a second to wait for it) and ONLYIDLE=SECONDS or ONLYMOVE=SECONDS to run just one idle or window-move phase)
+#   that command, then also set COMP_GRACE=60 (wait for the tool to write its file when the run ends) and SOCK_WAIT=1200 (tenths of a second to wait for it) and ONLYIDLE=SECONDS or ONLYMOVE=SECONDS to run just one idle or window-move phase)
 #
 # BUILD_DIR holds src/compositor/fleetwm, src/bar/fleetwm-bar, src/wallpaper/fleetwm-wallpaper and apps/settings/fleetwm-settings.
 # Phases per round: idle 8 s, move 8 s (titlebar drags), resize 8 s (right-edge drags), idle 4 s. Results: OUT_DIR/summary.txt (median of each
@@ -39,8 +39,14 @@ cleanup() {
   # the compositor is a grandchild (dbus-run-session -> bash -> fleetwm): killing the wrapper alone left it, and its lock applet, running forever
   # on the machine (43 of them piled up on the laptop); its pid is in $RT/comp.pid
   if [[ -f $RT/comp.pid ]]; then
-    pkill -TERM -P "$(cat "$RT/comp.pid")" 2>/dev/null  # its autostarted programs (lock applet) by parent pid, not by name
-    kill -TERM "$(cat "$RT/comp.pid")" 2>/dev/null
+    local cp; cp=$(cat "$RT/comp.pid")
+    pkill -TERM -P "$cp" 2>/dev/null  # its autostarted programs (lock applet) by parent pid, not by name
+    if [[ -n ${COMP_GRACE:-} ]]; then
+      # COMP_GRACE=SECONDS: a wrapped compositor (heaptrack, massif, callgrind) gets only the compositor itself terminated, then time to write its
+      # result file; the wrapper is never signalled, so its output stage is not cut short
+      for ((t = 0; t < COMP_GRACE * 10; t++)); do kill -0 "$cp" 2>/dev/null || break; sleep 0.1; done
+    fi
+    kill -TERM "$cp" 2>/dev/null
   fi
   for ((i=${#PIDS[@]}-1; i>=0; i--)); do p=${PIDS[$i]}; kill -TERM "$p" 2>/dev/null; done
   sleep 0.5

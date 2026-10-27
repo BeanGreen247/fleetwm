@@ -1136,3 +1136,108 @@ largest lever found for machines under 256 MB and for weak CPUs, at the cost of 
 Found by this port and fixed: `transfer.hpp` used `dev_t` without `<sys/types.h>`, `renameat2` and `RENAME_NOREPLACE` are missing in musl 1.2.5, `mallopt` and
 `malloc_trim` do not exist there.
 
+
+
+## Leaner round (2026-10-27)
+
+Measured on the dev VM (Debian 13, 2 GB, pixman) with the compositor run nested in the live session (`WLR_BACKENDS=wayland`), PSS from
+`/proc/<pid>/smaps_rollup`. The Celeron and E490 laptops were not reachable (192.168.0.182: no route), so every real-GPU figure below is still open.
+
+| Change | Result | Evidence |
+|---|---|---|
+| Compositor drops its library code pages 10 s after start (`drop_code_mappings`, `src/common/page_release.hpp`) | Pss_File 2569 -> 1393 KB (-1.2 MB), RSS 28.6 -> 23.5 MB, still running 8 s later | nested run, `t=8` vs `t=13` |
+| Greeter pages itself out while it waits for the session (`page_out_idle_process`) | with zram: 19.7 -> 3.3 MB RSS for a 16 MB heap, data intact after touching it again | `po.cpp` test program on a host with zram; the real greeter on tty1 was not run |
+| Wallpaper buffer sent to zram after 10 s (`page_out_memfd`), only when a zram swap is active | not measured on the VM (its swap is a disk partition, so the code skips it); a solid colour is stored as a few bytes per page | static reasoning, zram same-page handling |
+| `-ffunction-sections -fdata-sections -Wl,--gc-sections` | stripped compositor 1211960 -> 1027000 bytes (-15%); bar -15% and desktop -36% but those two compared against older builds | `size`, `strip` |
+| Same flags, resident memory | no change beyond noise: compositor Pss 13578 vs 13667 KB at t=8 | nested run, b vs b2 |
+| journald capped (`install.sh`): `SystemMaxUse=100M`, `RuntimeMaxUse=16M` | not measured | journald was 46.5 MB on the VM |
+
+How it works and what it cannot do:
+- `MADV_DONTNEED` on r-x file mappings only. It throws away the page-table entries, not the page cache, so the saving shows in RSS and PSS and
+  the pages return with a minor fault when code runs again. `MemAvailable` does not rise until the kernel needs the RAM. Writable and read-only
+  data mappings are never touched: RELRO pages are relocated copies and `MADV_DONTNEED` would put the unrelocated file bytes back.
+- `MADV_PAGEOUT` on a library the user does not own is refused by the kernel, which is why the user's compositor uses `DONTNEED` and the root
+  greeter can use `PAGEOUT`. Anonymous memory goes to swap, so both anonymous and memfd paging are gated on a zram swap being active
+  (`has_zram_swap`); paging to a disk swap would cost a disk read per page.
+- The greeter cannot exit after login: its process holds the PAM handle, and `pam_close_session` has to run in it at logout. Making it
+  smaller while it waits is the part that works.
+- The Mesa part of item 1 (48 MB of the 71 MB compositor on the Celeron) is the expected big win and is **not measured**: the VM has no
+  GPU renderer (`Cannot create GLES2 renderer: no DRM FD available` when nested). Run the nested test on the laptop:
+  `Pss_File` at 8 s and 13 s from `/proc/<pid>/smaps_rollup`.
+
+Compositor anonymous memory, 8.9 -> 12.2 MB: **measured, not a malloc-heap problem.** The compositor run headless under jemalloc with
+`stats_print` (glass on, 3 printing `foot` terminals, pixman, 1280x720, 30 s idle phase of `scripts/grab-stats-run.sh`, command
+`COMP_WRAP="env LD_PRELOAD=libjemalloc.so.2 MALLOC_CONF=stats_print:true,stats_print_opts:gdaxe" SOCK_WAIT=1200 ONLYIDLE=30`): **2.16 MB live
+(0.84 small, 1.32 large), 5.0 MB resident including 1.55 MB allocator metadata**, 7.8 MB mapped. So the 12 MB seen on the live VM session is
+not allocations by our code: the unnamed 4 MB, 2 MB and 1.9 MB regions in its `smaps` are full-screen buffers (1280x800x4 = 3.9 MB: the pixman
+swap chain and the glass backdrop), plus relocated library data. Both are inherent to a software-rendered full-screen compositor, and the
+earlier "titlebar/glass caches add up to about 6 MB" guess was wrong for this workload (the caches are far from their caps). heaptrack on the
+harness produced an empty file (the harness's cleanup ends the recording), so there is no per-call-site split; jemalloc's totals were enough
+to close the question. The bar's heap is 0.96 MB and the desktop's anonymous memory 96 KB after pressure; their libraries are shared.
+
+Not done, with the reason: merging the desktop and wallpaper processes (the wallpaper process is 0.9 MB PSS, so the ceiling is under 1 MB
+per screen for a refactor of two programs); a startup function-order file (needs a profile build, and the compositor's file-backed share
+is already 1.4 MB after the drop).
+
+
+### Risky compiler and linker flags, and the memory helper (2026-10-27, later)
+
+**Flags tried and rejected as a set.** Candidate set, one build (`b3`) against the same tree with only `-ffunction-sections -fdata-sections --gc-sections` (`b2`),
+GCC 14.2, binutils 2.44, dev VM: compile `-fcf-protection=none` (Debian's GCC has it on by default: drops every `endbr64`), `-fno-plt`,
+`-fno-semantic-interposition`, `-fvisibility-inlines-hidden`, `-fno-asynchronous-unwind-tables`, `-fno-math-errno`, `-fno-trapping-math`;
+link `-Wl,-z,noseparate-code`, `-Wl,-z,norelro`, `-Wl,--build-id=none`. Stack protector, `_FORTIFY_SOURCE` and stack-clash protection are
+already off in this toolchain (nothing to remove).
+
+| Measure | b2 | b3 (all risky flags) |
+|---|---|---|
+| Compositor `commit_ms_avg`, idle / move / resize, 3 interleaved runs each (`scripts/grab-stats-run.sh ... --renderer pixman --size 1280x720 --terminals 3`) | 0.26-0.29 / 0.69-0.71 / 0.76-0.79 | 0.25-0.30 / 0.71-0.73 / 0.75-0.78 |
+| Stripped compositor / bar / desktop (bytes) | 1027000 / 1558680 / 586568 | 1026920 / 1566872 / 585256 |
+| Nested compositor PSS at t=13 s (file / total) | 1380 / 12304 KB | 1331 / 12503 KB |
+
+Nothing beyond noise in speed, size or memory, so none of it is kept: the security flags (CET, relro, separate code) are worth more than zero.
+`-ffast-math` was not built: the compositor's float work sits in cairo/pixman/wlroots, which this flag does not touch, and a NaN check in
+config parsing is the one place it could bite. The earlier verdicts stand (LTO on, `-march=native` and `-fno-plt` rejected). Not tested on the Celeron.
+
+**`fleetwm-memd` (built, measured, removed at the owner's request, 2026-10-27).** A 32 KB C helper that set up zram or zswap at boot and, on a kernel
+PSI memory-pressure event, paged idle background processes out to the compressed swap. It worked on the dev VM (idle 200 MB test process to 6.3 MB
+resident with zswap, 160 ms to touch it all back, 4.2 us a page; zram 173 ms; daemon 1.5-1.9 MB RSS, no CPU idle, about 0.23 s of CPU per
+436 MiB swept) but it adds a resident process, a capability-carrying binary, a boot service and sysctl changes, and duplicates the kernel's own
+reclaim, with a benefit only under real pressure. Not re-tried unless a measured case shows the kernel's reclaim thrashing.
+
+
+### CPU and heap pass (2026-10-27, code only)
+
+**Per-call-site heap split** (what the earlier note could not give). `scripts/grab-stats-run.sh` now takes `COMP_GRACE=SECONDS`: at the end it terminates only the
+compositor and waits for the wrapped tool to write its file (before, the wrapper was killed with it). With valgrind massif it works:
+`COMP_GRACE=120 COMP_WRAP="valgrind --tool=massif --massif-out-file=OUT --depth=30" SOCK_WAIT=2400 ONLYIDLE=40 scripts/grab-stats-run.sh build DIR --renderer pixman --size 1280x720 --terminals 3`,
+then `ms_print`. heaptrack still writes an empty file for the compositor under this harness (it works on `ls`; cause not found), so massif is the tool.
+Live heap at the end, 2.44 MB: `create_pixel_buffer` 810 KB (the screen-fixed glass ray 285 KB, title bar pictures 235 KB, the rest per-window frames),
+the glass content read-back vector 326 KB (`glass_scene.cpp` `gs_paint_content`), the pixman glyph cache cairo creates 262 KB (fixed size, one per font
+context), other pixman 211 KB, wayland-server 82 KB, libstdc++ 74 KB, fontconfig 57 KB. Nothing else is above 1.5%.
+
+**Box blur: 2.9x faster, same bytes** (`src/fleetkit/box_blur.cpp`, used by glass backdrops, window shadows, caption glow, wallpaper blur). Callgrind of a
+window drag over three repainting terminals (glass on, pixman, 1280x720) put 36.7% of all instructions in the blur's vertical pass and 3.9% in its
+transpose. Two causes, both found by reading the compiler's output: the divide-by-multiply used a 32-bit multiplier, so the vector code did a 32-bit
+multiply per lane (SSE2 has no cheap one) instead of the 16-bit multiply-high `pmulhuw`; with the multiplier typed `uint16_t` the compiler emits
+`pmulhuw`. Once that pass was cheaper the transpose was 43% of the blur, so the 4-channel transpose now moves 4x4 blocks of pixels through SSE2
+registers (scalar fallback for other CPUs and for the edges).
+
+| 4-channel blur, radius 3, 3 passes, best of 9x200 (i5-8500) | before | pmulhuw | + SSE2 transpose |
+|---|---|---|---|
+| 160x85 | 212 us | 87 us | **72 us** |
+| 320x180 | 905 us | 361 us | **300 us** |
+| 480x270 | 2055 us | 838 us | **697 us** |
+
+Output identical (same checksums at all three sizes; `tests/test_box_blur.cpp` compares against the original loops for every size, radius, pass count, padded rows
+and 1 and 4 channels, passes). AVX2 (`-mavx2`) would give only another 1.17x and the Celeron has no AVX, so no `target_clones`.
+
+In the compositor (dev VM, pixman, 3 terminals under a glass window, 3 interleaved runs each, `scripts/grab-stats-run.sh ... --rounds 1 --terminals 3`),
+the time spent rebuilding glass drops with the same number of rebuilds per second: **idle 3.4 -> 2.4 ms/s, move 4.9 -> 3.6, resize 4.5 -> 3.1** (-27 to -31%,
+every run). `commit_ms_avg` (the renderer, mostly pixman compositing of the terminals) is unchanged at 0.25-0.31 / 0.68-0.73 / 0.61-0.79, as expected.
+What is left in that profile is pixman compositing (`pixman_image_composite32`, 28% of instructions, the three terminals being redrawn), which belongs to
+wlroots' renderer and the scene; nothing in our code is above 7% any more (`glass_build_pictures` 6.4%, its 4x4 averaging).
+
+**Memory.** The scratch buffers kept for ever are now given back: the glass read-back vector (grows to the biggest window seen, capped at 1.5 million pixels = 6 MB)
+and the blur's working copies (two pictures plus a row of sums) are released 4 s after the last glass rebuild (`glass_scratch_trim`, `box_blur_release_scratch`).
+Not demonstrated end to end: jemalloc totals with one Settings window showed no change (2.33 MB allocated in both, resident 4.52 -> 4.38 MB), and a larger-window scene
+(`--win-scale`) did not run. The saving is expected only with big windows under glass; it costs one reallocation on the next rebuild after a quiet spell.

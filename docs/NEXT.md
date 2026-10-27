@@ -1,5 +1,12 @@
 # What is done, what is left
 
+## Open after the leaner round (2026-10-27)
+
+- Run the nested-compositor Pss test on the Celeron and the E490 to see what `drop_code_mappings` does to the 48 MB of Mesa; log in once on tty1 and read the greeter's PSS (`page_out_idle_process`); install on a zram machine and read the compositor's Shmem before/after (`page_out_memfd`).
+- Measure the blur speed-up and the scratch release on the Celeron and the E490 (CPU renderer and GLES2 paths both use the blur); the 12 MB anonymous figure of the live compositor is full-screen buffers, see the 2026-10-27 heap section. heaptrack still writes an empty file for the compositor (massif works).
+- Check journald RSS after `install.sh` on a VM with a large journal.
+- Why the VM shows more buff/cache than the laptop: the task manager reads the same `/proc/meminfo` fields on both, so run `scripts/ram-report.sh` on both after the same workload.
+
 ## Hardware and memory (2026-10-26)
 
 Open: pixman-only wlroots on real KMS (dumb-buffer output) and on the Celeron laptop (RAM and CPU against GLES2); Alpine boot test (inittab login screen, seatd, pam_elogind); VirtIO-GPU and VirGL were never run (the dev VM has Standard VGA); switch the VM's display in Proxmox and follow `docs/HARDWARE.md` ("How to find out"); the glass read-back on virgl is the likely cost. A whole system under 200 MB needs a minimal OS image; the desktop itself is 43.5 MB (`docs/OPTIMIZATIONS.md`, memory budget). Lock applet duplication is fixed (`/proc/<pid>/exe` check); greeter `malloc_trim` is unmeasured.
