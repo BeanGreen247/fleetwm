@@ -9,7 +9,7 @@
 #   FLEETWM_TESTS=1             also build and run the unit tests (scripts/run-tests.sh) before installing
 #   FLEETWM_GREETER=1           also install the Fleetwm login screen (PAM service with keyring unlock, systemd unit, seatd) but leave it disabled; prints how to switch to it
 #   FLEETWM_GREETER=enable      the same, then enable it on the console (FLEETWM_GREETER_TTY, default tty2) and disable the display manager for the next boot (never stops it)
-#   FLEETWM_PGO=1               profile-guided build like install.sh does on Debian (slow: three builds and a training run); needs the training tools below
+#   FLEETWM_PGO=0               skip the profile-guided build (the default, like install.sh on Debian: instrumented build, a training run on a virtual screen, optimized build; about 5 minutes on a fast CPU) and do one plain release build below
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -38,7 +38,7 @@ if [[ ${FLEETWM_SKIP_DEPS:-0} != 1 ]]; then
   fi
 fi
 
-if [[ ${FLEETWM_PGO:-0} == 1 ]]; then
+if [[ ${FLEETWM_PGO:-1} != 0 ]]; then
   echo "==> Profile-guided build (scripts/build-pgo-auto.sh): instrumented build, training run on a virtual screen, optimized build"
   for tool in wtype wlrctl foot grim wpctl pw-cli; do command -v "${tool}" >/dev/null 2>&1 || sudo dnf install -y --setopt=install_weak_deps=False "$([[ ${tool} == wpctl ]] && echo wireplumber || { [[ ${tool} == pw-cli ]] && echo pipewire-utils || echo ${tool}; })" >/dev/null 2>&1 || true; done
   BUILD_DIR="${BUILD_DIR}-pgo"
