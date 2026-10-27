@@ -185,6 +185,8 @@ void raise_always_on_top_views(Workspace* workspace) {
 }
 
 void view_mapped(View* view) {
+  wlr_scene_node_set_enabled(&view->container_tree->node, true);  // shown again after an unmap (see view_unmapped)
+  view->minimized = false;
   view->server->games().evaluate_game(view);
 
   view->update_size_policy();
@@ -329,6 +331,9 @@ static void xdg_toplevel_map(wl_listener* listener, void*) {
 
 void view_unmapped(View* view) {
   Server* server = view->server;
+  // A program that hides its window but keeps running (Steam going to the tray, an X11 program unmapping) must not leave the title bar and frame behind:
+  // they belong to the view, not to the surface that just went away.
+  wlr_scene_node_set_enabled(&view->container_tree->node, false);
   bool was_focused = server->seat()->keyboard_state.focused_surface == view->surface();
   Output* output = view->output;
   server->forget_view(view);

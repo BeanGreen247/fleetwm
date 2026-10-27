@@ -119,5 +119,25 @@ sleep 3
 kill $FP
 '
 if ! grep -q '^gamemode' "$OUT/tux.log"; then echo "PASS: nothing was switched on by a headless compositor"; else echo "FAIL: tuxthrottlectl was called: $(tr '\n' '|' < "$OUT/tux.log")"; fi
+echo "== an X11 window that unmaps but stays alive (Steam hiding to the tray) must leave no title bar behind"
+session '
+python3 '"$SRC"'/perflog/2026-10-27/game-clients/xhide.py 3 xtest > /dev/null 2>&1 & XP=$!
+sleep 2
+grim $OUT/xhide-before.png
+sleep 4
+grim $OUT/xhide-after.png
+kill $XP
+'
+python3 - "$OUT/xhide-before.png" "$OUT/xhide-after.png" <<'PY'
+import sys
+from PIL import Image
+b, a = Image.open(sys.argv[1]).convert("RGB"), Image.open(sys.argv[2]).convert("RGB")
+w, h = a.size
+box = (150, 0, w, h - 50)  # right of the desktop icons, above the taskbar
+bg = a.getpixel((w - 100, 300))
+shown = {p for p in b.crop(box).getdata()} != {bg}
+gone = set(a.crop(box).getdata()) == {bg}
+print("PASS: the hidden window and its title bar are gone" if shown and gone else "FAIL: window shown before=%s, empty after=%s" % (shown, gone))
+PY
 rm -rf "$T"
 echo "screenshots in $OUT"
