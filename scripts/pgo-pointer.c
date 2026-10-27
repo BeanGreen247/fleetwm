@@ -10,6 +10,7 @@
  *     click X Y        move, press, release   rclick X Y         the same with the right button
  *     dclick X Y       double click           drag X0 Y0 X1 Y1 N press at 0, move in N steps, release at 1
  *     scroll V         wheel (positive = down) wait MS           pause
+ *     rel DX DY        relative movement, like a real mouse (the game-support tests use it)
  */
 #define _GNU_SOURCE
 #include <stdint.h>
@@ -53,6 +54,11 @@ static void move(struct wl_display* d, int x, int y) {
   zwlr_virtual_pointer_v1_frame(ptr);
   settle(d, 6);
 }
+static void rel(struct wl_display* d, int dx, int dy) {
+  zwlr_virtual_pointer_v1_motion(ptr, now_ms(), wl_fixed_from_int(dx), wl_fixed_from_int(dy));
+  zwlr_virtual_pointer_v1_frame(ptr);
+  settle(d, 6);
+}
 static void button(struct wl_display* d, uint32_t code, int down) {
   zwlr_virtual_pointer_v1_button(ptr, now_ms(), code, down ? WL_POINTER_BUTTON_STATE_PRESSED : WL_POINTER_BUTTON_STATE_RELEASED);
   zwlr_virtual_pointer_v1_frame(ptr);
@@ -73,7 +79,8 @@ int main(int argc, char** argv) {
   const uint32_t BTN_LEFT = 0x110, BTN_RIGHT = 0x111;
   for (int i = 1; i < argc; ++i) {
     const char* c = argv[i];
-    if (!strcmp(c, "abs") && i + 2 < argc) { move(d, atoi(argv[i + 1]), atoi(argv[i + 2])); i += 2; }
+    if (!strcmp(c, "rel") && i + 2 < argc) { rel(d, atoi(argv[i + 1]), atoi(argv[i + 2])); i += 2; }
+    else if (!strcmp(c, "abs") && i + 2 < argc) { move(d, atoi(argv[i + 1]), atoi(argv[i + 2])); i += 2; }
     else if (!strcmp(c, "down")) button(d, BTN_LEFT, 1);
     else if (!strcmp(c, "up")) button(d, BTN_LEFT, 0);
     else if ((!strcmp(c, "click") || !strcmp(c, "rclick") || !strcmp(c, "dclick")) && i + 2 < argc) {

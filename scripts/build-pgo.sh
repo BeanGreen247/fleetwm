@@ -103,7 +103,7 @@ fail() {
 }
 echo "==> Configuring (${MODE}): checking the libraries and choosing the compiler flags"
 ui_live plain "Meson" "${LOG}.setup" \
-  meson setup "${BUILD_DIR}" "${SCRIPT_DIR}" --prefix=/usr/local --buildtype=release \
+  meson setup "${BUILD_DIR}" "${SCRIPT_DIR}" --prefix="${FLEETWM_PREFIX:-/usr/local}" --buildtype=release \
   -Db_ndebug=true -Db_lto=true -Db_pgo="${PGO_MESON_MODE}" -Dtests=true -Dunity=on -Dwarning_level=0 -Ddefault_library=static \
   -Dc_args="${COMMON_FLAGS}" -Dcpp_args="${COMMON_FLAGS}" \
   -Dc_link_args="${LINK_FLAGS}" -Dcpp_link_args="${LINK_FLAGS}" \

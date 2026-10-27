@@ -15,6 +15,7 @@ extern "C" {
 #include <wlr/types/wlr_compositor.h>
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_xdg_shell.h>
+#include <wlr/version.h>
 }
 
 #include "backdrop.hpp"
@@ -220,7 +221,11 @@ bool glass_build_pictures(Server* server, const View* w, const wlr_box rects[4],
       int gx = 0, gy = 0;
       if (v->kind == View::Kind::XdgToplevel && v->xdg_toplevel) {
         wlr_box geo{};
+#if WLR_VERSION_NUM >= 0x001300
+        geo = v->xdg_toplevel->base->geometry;  // 0.19 replaced the getter with this field
+#else
         wlr_xdg_surface_get_geometry(v->xdg_toplevel->base, &geo);
+#endif
         gx = geo.x;
         gy = geo.y;
       }

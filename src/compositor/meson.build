@@ -33,6 +33,7 @@ executable(
     'cursor.cpp',
     'xwayland.cpp',
     'switcher.cpp',
+    'game_support.cpp',
     'debug_overlay.cpp',
     'glass_backdrop.cpp',
     'glass_ray.cpp',
@@ -45,6 +46,7 @@ executable(
   dependencies: [
     wayland_server,
     wlroots_dep,
+    dependency('libsystemd'),
     libinput_dep,
     xkbcommon_dep,
     pixman_dep,

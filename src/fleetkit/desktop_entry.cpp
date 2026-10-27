@@ -144,6 +144,7 @@ bool parse_file(const std::string& file, const std::string& id, DesktopEntry* ou
   out->categories = kv["Categories"];
   out->path = kv["Path"];
   out->terminal = kv["Terminal"] == "true";
+  out->prefers_discrete_gpu = kv["PrefersNonDefaultGPU"] == "true" || kv["X-KDE-RunOnDiscreteGpu"] == "true";
   return !out->name.empty() && !out->exec.empty();
 }
 
@@ -265,6 +266,13 @@ std::vector<std::string> exec_argv(const DesktopEntry& e) {
     if (!out.empty() || t.find('%') == std::string::npos) argv.push_back(out);
   }
   return argv;
+}
+
+std::vector<std::string> gpu_wrapped(const DesktopEntry& e, std::vector<std::string> argv) {
+  if (!e.prefers_discrete_gpu || argv.empty() || !on_path("fleetwm-game")) return argv;
+  std::vector<std::string> out = {"fleetwm-game", "--gpu", "discrete", "--no-gamemode", "--fps", "0", "--"};
+  out.insert(out.end(), argv.begin(), argv.end());
+  return out;
 }
 
 std::string exec_basename(const DesktopEntry& e) {

@@ -712,6 +712,7 @@ TEST_F(FmWindowTest, TrashViewListsAndRestores) {
   win_->settings().confirm_delete = false;
   key(XKB_KEY_Delete);
   win_->wait_idle();
+  win_->set_volumes_for_test({});  // the host's real mounts may hold other trash (.Trash-UID) that this test did not create
   win_->open_address("trash:///");
   win_->wait_idle();
   frame();

@@ -71,6 +71,8 @@ View::View(Server* server_, Kind kind_) : server(server_), kind(kind_) { tag.vie
 // wlroots' own tinywl.c reference pattern: remove every listener first,
 // only then destroy the scene tree / free the object).
 View::~View() {
+  if (server) server->games().view_gone(this);
+  if (server && output) server->leave_game_mode(output, this);
   for (GlassPicture& p : dyn_) glass_picture_release(&p);
   if (server) server->glass_forget(this);
 }
@@ -118,6 +120,8 @@ void View::set_fullscreen(bool fullscreen_) {
     return;
   }
   fullscreen = fullscreen_;
+  server->games().evaluate_game(this);
+  if (!fullscreen_ && output) server->leave_game_mode(output, this);
   update_size_policy();
 
   if (output == nullptr) {
@@ -189,6 +193,58 @@ void View::set_fullscreen(bool fullscreen_) {
                      // rather than waiting on the client's resize commit
 }
 
+void View::update_fullscreen_fit() {
+  wlr_surface* surf = surface();
+  auto reset = [&] {
+    if (!fit_applied) return;
+    fit_applied = false;
+    fit_x = fit_y = 1.0;
+    if (fit_bg) {
+      wlr_scene_node_destroy(&fit_bg->node);
+      fit_bg = nullptr;
+    }
+    wlr_scene_node_for_each_buffer(
+        &scene_tree->node,
+        [](wlr_scene_buffer* buffer, int, int, void*) {
+          wlr_scene_buffer_set_dest_size(buffer, 0, 0);
+          wlr_scene_buffer_set_filter_mode(buffer, WLR_SCALE_FILTER_BILINEAR);
+        },
+        nullptr);
+  };
+  if (!fullscreen || !output || !surf || !is_window()) return reset();
+  const wlr_box geo = content_geometry();
+  wlr_box ob{};
+  wlr_output_layout_get_box(server->output_layout(), output->wlr_output_ptr, &ob);
+  const GameConfig& gc = server->game_config();
+  const FitRect r = fullscreen_fit(gc.scaling, geo.width, geo.height, ob.width, ob.height);
+  if (!r.scaled) return reset();
+  // The monitor has a mode of exactly this size: use it instead of scaling (game.toml mode_switch). The output's new size lays this window out again.
+  if (gc.mode_switch && !output->game_mode_active && server->enter_game_mode(output, this, geo.width, geo.height)) return;
+  fit_applied = true;
+  fit_x = static_cast<double>(r.w) / geo.width;
+  fit_y = static_cast<double>(r.h) / geo.height;
+  static const float kBlack[4] = {0, 0, 0, 1};
+  if (!fit_bg) {
+    fit_bg = wlr_scene_rect_create(container_tree, ob.width, ob.height, kBlack);
+    wlr_scene_node_lower_to_bottom(&fit_bg->node);
+  } else {
+    wlr_scene_rect_set_size(fit_bg, ob.width, ob.height);
+  }
+  wlr_scene_node_set_position(&scene_tree->node, r.x - geo.x * fit_x, r.y - geo.y * fit_y);
+  struct Apply { wlr_surface* surf; int w, h; wlr_scale_filter_mode filter; } apply{surf, r.w, r.h, WLR_SCALE_FILTER_BILINEAR};
+  if (gc.filter == FullscreenFilter::Nearest || (gc.filter == FullscreenFilter::Auto && r.integer)) apply.filter = WLR_SCALE_FILTER_NEAREST;
+  wlr_scene_node_for_each_buffer(
+      &scene_tree->node,
+      [](wlr_scene_buffer* buffer, int, int, void* data) {
+        auto* a = static_cast<Apply*>(data);
+        wlr_scene_surface* ss = wlr_scene_surface_try_from_buffer(buffer);
+        if (!ss || ss->surface != a->surf) return;
+        wlr_scene_buffer_set_dest_size(buffer, a->w, a->h);
+        wlr_scene_buffer_set_filter_mode(buffer, a->filter);
+      },
+      &apply);
+}
+
 void View::resize_border() {
   int thickness = border_thickness();
   const Server::BorderColors& colors = server->border_colors();
@@ -225,6 +281,7 @@ void View::resize_border() {
   const int th = titlebar_height();
   const int top = top_border();  // 0 in the Desktop layout: the titlebar is not framed, only the sides and the bottom are
   wlr_scene_node_set_position(&scene_tree->node, thickness, top + th);
+  if (fullscreen || fit_applied) update_fullscreen_fit();
 
   int top_h = top + grow_top;
   int bottom_h = thickness + grow_bottom;

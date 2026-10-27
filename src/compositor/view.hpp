@@ -7,6 +7,7 @@
 
 extern "C" {
 #include <wlr/types/wlr_scene.h>
+#include <wlr/types/wlr_xdg_decoration_v1.h>
 #include <wlr/types/wlr_xdg_shell.h>
 }
 
@@ -181,6 +182,12 @@ class View {
   // view can't be sized to an output it isn't mapped on yet).
   void set_fullscreen(bool fullscreen);
   void resize_border();
+  // Fullscreen only: when the client's picture is not the size of the screen (an old 4:3 game, an emulator), draws it aspect-correct on a black
+  // backdrop per game.toml (fit, integer, stretch or off). fit_x/fit_y are the zoom, which pointer positions are divided by to get back to surface pixels.
+  void update_fullscreen_fit();
+  bool fit_applied = false;
+  double fit_x = 1.0, fit_y = 1.0;
+  wlr_scene_rect* fit_bg = nullptr;
 
   // Current border thickness in px, per the same pinned/focused priority
   // resize_border() uses internally -- relayout() needs this to size the
@@ -197,6 +204,10 @@ class View {
   // True when the client asked for server-side decorations through
   // xdg-decoration (set from the decoration handler in server.cpp).
   bool has_decoration = false;
+  // The decoration object whose mode is still to be sent: wlroots 0.19+ only accepts set_mode once the toplevel has had its initial
+  // commit, so it is applied there (xdg_toplevel_surface_commit) and dropped when the decoration goes away first.
+  wlr_xdg_toplevel_decoration_v1* pending_decoration = nullptr;
+  wl_listener pending_decoration_destroy{};
   // Stable id shown to taskbar clients over IPC (0 = not assigned yet).
   uint32_t id = 0;
   // Hidden by the user (titlebar button or taskbar); restored from the taskbar.

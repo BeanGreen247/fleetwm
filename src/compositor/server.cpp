@@ -1,5 +1,7 @@
 #include "child_signals.hpp"
 #include "server.hpp"
+#include "autostart.hpp"
+#include "gpu_policy.hpp"
 
 #include <dirent.h>
 #include <fcntl.h>
@@ -183,6 +185,7 @@ void raise_always_on_top_views(Workspace* workspace) {
 }
 
 void view_mapped(View* view) {
+  view->server->games().evaluate_game(view);
 
   view->update_size_policy();
   // Border rects are sized off the surface's real geometry, only known
@@ -389,6 +392,10 @@ static void xdg_toplevel_destroy(wl_listener* listener, void*) {
   wl_list_remove(&view->request_fullscreen.link);
   wl_list_remove(&view->surface_commit.link);
   wl_list_remove(&view->new_popup.link);
+  if (view->pending_decoration) {
+    wl_list_remove(&view->pending_decoration_destroy.link);
+    view->pending_decoration = nullptr;
+  }
   // request_configure (and the other X11-only listeners) belong to X11 windows, which are torn
   // down in x11_destroy() (xwayland.cpp). They are never added for an xdg toplevel, and
   // wl_list_remove() on a never-added listener dereferences null pointers, so they must
@@ -420,6 +427,11 @@ static void xdg_toplevel_surface_commit(wl_listener* listener, void*) {
   // now" (same gate as the layer-shell path, see layer_surface.cpp).
   // Size (0, 0) tells the client to pick its own natural size.
   if (view->xdg_toplevel->base->initial_commit) {
+    if (view->pending_decoration) {
+      wl_list_remove(&view->pending_decoration_destroy.link);
+      wlr_xdg_toplevel_decoration_v1_set_mode(view->pending_decoration, WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+      view->pending_decoration = nullptr;
+    }
     wlr_xdg_toplevel_set_size(view->xdg_toplevel, 0, 0);
     return;
   }
@@ -582,6 +594,12 @@ void server_new_xdg_toplevel(wl_listener* listener, void* data) {
 
 // -- xdg-decoration -----------------------------------------------------
 
+static void pending_decoration_gone(wl_listener* listener, void*) {
+  View* view = wl_container_of(listener, view, pending_decoration_destroy);
+  wl_list_remove(&view->pending_decoration_destroy.link);
+  view->pending_decoration = nullptr;
+}
+
 void server_new_toplevel_decoration(wl_listener* listener, void* data) {
   Server* server = wl_container_of(listener, server, new_toplevel_decoration_);
   auto* decoration = static_cast<wlr_xdg_toplevel_decoration_v1*>(data);
@@ -591,16 +609,21 @@ void server_new_toplevel_decoration(wl_listener* listener, void* data) {
   // responsible for them. No request_mode listener needed: we always
   // force this regardless of what the client requests, so there's
   // nothing to react to.
-  wlr_xdg_toplevel_decoration_v1_set_mode(decoration,
-                                           WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
-  // Remember that this client expects the compositor to decorate it: the
-  // Desktop layout draws a titlebar for such windows.
+  // wlroots 0.19+ asserts when the mode is set before the toplevel's initial commit, so a decoration created earlier waits for it.
   for (const std::unique_ptr<View>& view : server->views) {
     if (view->xdg_toplevel == decoration->toplevel) {
       view->has_decoration = true;
-      break;
+      if (decoration->toplevel->base->initialized) {
+        wlr_xdg_toplevel_decoration_v1_set_mode(decoration, WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+      } else {
+        view->pending_decoration = decoration;
+        view->pending_decoration_destroy.notify = pending_decoration_gone;
+        wl_signal_add(&decoration->events.destroy, &view->pending_decoration_destroy);
+      }
+      return;
     }
   }
+  wlr_xdg_toplevel_decoration_v1_set_mode(decoration, WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
 }
 
 // -- layer-shell surfaces ---------------------------------------------------
@@ -751,6 +774,14 @@ static bool scene_node_at(Server* server, double lx, double ly, double* sx, doub
   } else {
     out->surface = static_cast<LayerSurface*>(tree->node.data)->surface();
   }
+  // A fullscreen picture drawn zoomed (aspect-correct scaling of an old game): the position inside it is in screen pixels, the client wants its own.
+  if (out->owner == SceneNodeOwner::View) {
+    const View* view = static_cast<const View*>(out->data);
+    if (view->fit_applied && out->surface == view->surface()) {
+      *sx /= view->fit_x;
+      *sy /= view->fit_y;
+    }
+  }
   return true;
 }
 
@@ -836,10 +867,13 @@ static void process_cursor_motion(Server* server, uint32_t time_msec) {
   }
 
   if (hit_something) {
+    server->games().note_pointer_surface(server->cursor()->x - sx, server->cursor()->y - sy);
     wlr_seat_pointer_notify_enter(server->seat(), hit.surface, sx, sy);
+    server->games().pointer_focus_changed(hit.surface);
     wlr_seat_pointer_notify_motion(server->seat(), time_msec, sx, sy);
   } else {
     wlr_seat_pointer_clear_focus(server->seat());
+    server->games().pointer_focus_changed(nullptr);
   }
 
   // Focus-follows-mouse (tiling layout only; the desktop layout focuses on
@@ -854,7 +888,10 @@ void server_cursor_motion(wl_listener* listener, void* data) {
   Server* server = wl_container_of(listener, server, cursor_motion_);
   server->note_activity();
   auto* event = static_cast<wlr_pointer_motion_event*>(data);
-  wlr_cursor_move(server->cursor_, &event->pointer->base, event->delta_x, event->delta_y);
+  server->games_.send_relative(event->time_msec, event->delta_x, event->delta_y, event->unaccel_dx, event->unaccel_dy);
+  double dx = event->delta_x, dy = event->delta_y;
+  if (server->games_.filter_motion(&dx, &dy)) return;  // a locked pointer stays put; the game reads the relative motion
+  wlr_cursor_move(server->cursor_, &event->pointer->base, dx, dy);
   process_cursor_motion(server, event->time_msec);
 }
 
@@ -862,6 +899,7 @@ void server_cursor_motion_absolute(wl_listener* listener, void* data) {
   Server* server = wl_container_of(listener, server, cursor_motion_absolute_);
   server->note_activity();
   auto* event = static_cast<wlr_pointer_motion_absolute_event*>(data);
+  if (server->games().pointer_locked()) return;  // a locked pointer ignores absolute positions too (tablets, remote input)
   wlr_cursor_warp_absolute(server->cursor_, &event->pointer->base, event->x, event->y);
   process_cursor_motion(server, event->time_msec);
 }
@@ -1012,6 +1050,15 @@ Server::~Server() {
   }
   if (display_) {
     wl_display_destroy_clients(display_);
+    games_.shutdown();
+    // wlroots 0.19+ asserts that no listener is left on a global's signals as the display goes (0.18 let it pass).
+    for (wl_listener* l : {&new_xdg_toplevel_, &new_toplevel_decoration_, &new_layer_surface_, &new_virtual_pointer_, &new_virtual_keyboard_, &request_set_shape_,
+                           &new_idle_inhibitor_, &new_output_, &new_input_, &request_cursor_, &request_set_selection_
+#if FLEETWM_XWAYLAND
+                           , &new_xwayland_surface_
+#endif
+                          })
+      if (l->link.next) wl_list_remove(&l->link);
     wl_display_destroy(display_);
   }
 }
@@ -1082,6 +1129,19 @@ void spawn_autostart(const char* name, const char* full_path) {
     execlp(name, name, nullptr);
     std::fprintf(stderr, "fleetwm: failed to exec autostart '%s': %s\n", name,
                  std::strerror(errno));
+    _exit(1);
+  }
+}
+
+void spawn_user_autostart(const std::string& cmd) {
+  pid_t pid = fork();
+  if (pid < 0) {
+    wlr_log(WLR_ERROR, "fleetwm: fork for startup app '%s' failed", cmd.c_str());
+    return;
+  }
+  if (pid == 0) {
+    fleetwm::reset_signals_for_exec();
+    execlp("/bin/sh", "/bin/sh", "-c", cmd.c_str(), nullptr);
     _exit(1);
   }
 }
@@ -1394,8 +1454,46 @@ void Server::revert_output_mode(Output* output) {
   }
 }
 
+bool Server::enter_game_mode(Output* output, void* owner, int width, int height) {
+  if (!game_config_.mode_switch || output->game_mode_active || width < 1 || height < 1 || !output->wlr_output_ptr->name) return false;
+  wlr_output* wo = output->wlr_output_ptr;
+  bool exists = false;
+  wlr_output_mode* mode;
+  wl_list_for_each(mode, &wo->modes, link) if (mode->width == width && mode->height == height) exists = true;
+  if (!exists) return false;  // only a mode the monitor itself lists, never a made-up one
+  const int pre_w = wo->width, pre_h = wo->height, pre_refresh = wo->refresh;
+  OutputSetting setting;
+  setting.width = width;
+  setting.height = height;
+  setting.refresh_mhz = pre_refresh;  // the closest refresh rate to the current one
+  std::string error;
+  if (!apply_output_setting(wo->name, setting, &error, false)) {
+    wlr_log(WLR_INFO, "fleetwm: game mode %dx%d on %s refused: %s", width, height, wo->name, error.c_str());
+    return false;
+  }
+  output->game_mode_active = true;
+  output->game_mode_owner = owner;
+  output->pre_game_width = pre_w;
+  output->pre_game_height = pre_h;
+  output->pre_game_refresh_mhz = pre_refresh;
+  wlr_log(WLR_INFO, "fleetwm: %s switched to %dx%d for a fullscreen game", wo->name, width, height);
+  return true;
+}
+
+void Server::leave_game_mode(Output* output, void* owner) {
+  if (!output->game_mode_active || (owner && output->game_mode_owner != owner) || !output->wlr_output_ptr->name) return;
+  output->game_mode_active = false;
+  output->game_mode_owner = nullptr;
+  OutputSetting setting;
+  setting.width = output->pre_game_width;
+  setting.height = output->pre_game_height;
+  setting.refresh_mhz = output->pre_game_refresh_mhz;
+  std::string error;
+  apply_output_setting(output->wlr_output_ptr->name, setting, &error, false);
+}
+
 bool Server::apply_output_setting(const std::string& name, const OutputSetting& setting,
-                                  std::string* error) {
+                                  std::string* error, bool persist) {
   Output* target = nullptr;
   for (const std::unique_ptr<Output>& output : outputs) {
     if (output->wlr_output_ptr->name && name == output->wlr_output_ptr->name) {
@@ -1458,6 +1556,10 @@ bool Server::apply_output_setting(const std::string& name, const OutputSetting& 
     output->update_usable_area();
   }
 
+  if (!persist) {
+    if (ipc_server) ipc_server->broadcast_outputs_changed();
+    return true;
+  }
   OutputSetting merged = output_settings_[name];
   if (setting.width > 0 && setting.height > 0) {
     merged.width = setting.width;
@@ -1527,7 +1629,19 @@ bool Server::init() {
 
   display_ = wl_display_create();
 
+  // Two graphics cards: the integrated one draws the desktop (game.toml desktop_gpu), the dedicated one is kept for programs that ask for it. wlroots takes the
+  // first card of WLR_DRM_DEVICES as its primary one; an explicit WLR_DRM_DEVICES in the environment always wins.
+  bool set_drm_devices = false;
+  if (!std::getenv("WLR_DRM_DEVICES")) {
+    const std::string devices = wlr_drm_devices_for(load_game_config().desktop_gpu, scan_drm_cards());
+    if (!devices.empty()) {
+      setenv("WLR_DRM_DEVICES", devices.c_str(), 1);
+      set_drm_devices = true;
+      wlr_log(WLR_INFO, "fleetwm: desktop GPU order %s", devices.c_str());
+    }
+  }
   backend_ = wlr_backend_autocreate(wl_display_get_event_loop(display_), nullptr);
+  if (set_drm_devices) unsetenv("WLR_DRM_DEVICES");  // not for the programs started from here
   if (!backend_) {
     return false;
   }
@@ -1676,6 +1790,7 @@ bool Server::init() {
 
   seat_ = wlr_seat_create(display_, "seat0");
   wlr_seat_set_capabilities(seat_, WL_SEAT_CAPABILITY_POINTER);  // the pointer is always offered (keyboards add theirs later); a headless session has no devices yet
+  games_.init();
   request_cursor_.notify = server_request_cursor;
   wl_signal_add(&seat_->events.request_set_cursor, &request_cursor_);
   request_set_selection_.notify = server_request_set_selection;
@@ -1731,6 +1846,7 @@ bool Server::init() {
   default_apps_config_ = load_default_apps_config();
   keyboard_config_ = load_keyboard_config();
   mouse_config_ = load_mouse_config();
+  game_config_ = load_game_config();
   reload_keybinds_config();
 
   // Settings' Performance tab "Show performance overlay on startup" --
@@ -1765,6 +1881,8 @@ bool Server::init() {
   for (const std::unique_ptr<Output>& o : outputs) start_output_helpers(o->wlr_output_ptr);
   spawn_autostart("fleetwm-lockapplet", FLEETWM_BINDIR "/fleetwm-lockapplet");
   spawn_autostart("fleetwm-remote", FLEETWM_BINDIR "/fleetwm-remote");  // exits at once unless Settings -> Remote Desktop has a server on
+  // The programs picked in Settings -> Startup Apps (XDG autostart entries in ~/.config/autostart).
+  for (const std::string& cmd : fleetwm::autostart_commands()) spawn_user_autostart(cmd);
 
   return true;
 }
@@ -1799,6 +1917,7 @@ void Server::focus_view(View* view) {
       }
     }
     wlr_seat_keyboard_clear_focus(seat_);
+    games_.keyboard_focus_changed(nullptr);
     // Losing focus un-grows this view (grow_at_outer_edges() in
     // output.cpp) -- must run after wlr_seat_keyboard_clear_focus()
     // above so relayout() sees no view as focused anymore.
@@ -1879,6 +1998,7 @@ void Server::focus_view(View* view) {
   wlr_seat_keyboard_notify_enter(seat_, surface, keyboard ? keyboard->keycodes : nullptr,
                                   keyboard ? keyboard->num_keycodes : 0,
                                   keyboard ? &keyboard->modifiers : nullptr);
+  games_.keyboard_focus_changed(surface);
 
   // Newly-focused view "steps forward" a few px (grow_at_outer_edges() in
   // output.cpp) -- relayout() recomputes every tiled view's box on this
@@ -2529,6 +2649,12 @@ void Server::apply_mouse_config(wlr_input_device* device) {
   if (profiles & want) libinput_device_config_accel_set_profile(li, want);
 }
 
+void Server::reload_game_config() {
+  game_config_ = load_game_config();
+  for (const std::unique_ptr<View>& view : views)
+    if (view->fullscreen || view->fit_applied) view->update_fullscreen_fit();
+}
+
 void Server::reload_mouse_config() {
   mouse_config_ = load_mouse_config();
   for (wlr_input_device* device : mouse_devices_) apply_mouse_config(device);
@@ -2750,6 +2876,7 @@ int server_theme_watch_readable(int fd, uint32_t, void* data) {
   bool got_power_event = false;
   bool got_keyboard_event = false;
   bool got_mouse_event = false;
+  bool got_game_event = false;
   ssize_t n;
   while ((n = read(fd, buf, sizeof(buf))) > 0) {
     ssize_t offset = 0;
@@ -2770,6 +2897,8 @@ int server_theme_watch_readable(int fd, uint32_t, void* data) {
         got_keyboard_event = true;
       } else if (event->len > 0 && std::strcmp(event->name, "mouse.toml") == 0) {
         got_mouse_event = true;
+      } else if (event->len > 0 && std::strcmp(event->name, "game.toml") == 0) {
+        got_game_event = true;
       }
       offset += static_cast<ssize_t>(sizeof(struct inotify_event)) + event->len;
     }
@@ -2791,6 +2920,9 @@ int server_theme_watch_readable(int fd, uint32_t, void* data) {
   }
   if (got_mouse_event) {
     server->reload_mouse_config();
+  }
+  if (got_game_event) {
+    server->reload_game_config();
   }
   return 0;
 }

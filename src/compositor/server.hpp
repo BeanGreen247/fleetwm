@@ -41,7 +41,9 @@ extern "C" {
 #include "cursor_draw.hpp"
 #include "output_config.hpp"
 #include "keyboard_config.hpp"
+#include "game_config.hpp"
 #include "mouse_config.hpp"
+#include "game_support.hpp"
 #include "switcher.hpp"
 #include "power_config.hpp"
 #include <memory>
@@ -100,6 +102,8 @@ class Server {
   wlr_scene* scene() const { return scene_; }
   wlr_output_layout* output_layout() const { return output_layout_; }
   wlr_seat* seat() const { return seat_; }
+  wlr_backend* backend() const { return backend_; }
+  GameSupport& games() { return games_; }
   wlr_cursor* cursor() const { return cursor_; }
   wlr_xcursor_manager* cursor_manager() const { return cursor_mgr_; }
   wlr_scene_tree* layer_toplevels() const { return layer_toplevels_; }
@@ -229,11 +233,9 @@ class Server {
   // Alt+Tab-style cycling in most-recently-used order. `hold_mask` is the modifier
   // bits whose release ends the cycle (the Alt in Alt+Tab).
   void cycle_windows(bool backward, unsigned hold_mask);
-  void end_window_cycle() {
-    cycle_order_.clear();
-    cycle_hold_mask_ = 0;
-    switcher_.hide();
-  }
+  // Settles the cycle: the chosen window goes to the front of the recent-windows order and the others keep the order they had when the
+  // cycle began (stepping through B and C to reach D must not leave C and B ahead of the window you came from).
+  void end_window_cycle();
   bool cycling() const { return !cycle_order_.empty(); }
   unsigned cycle_hold_mask() const { return cycle_hold_mask_; }
   // Windows-style whole-desktop actions on the workspace being looked at.
@@ -310,8 +312,12 @@ class Server {
   // unknown or the mode is rejected; nothing is changed or saved then.
   // Reverts an output to the mode it had before the last apply_output_setting().
   void revert_output_mode(Output* output);
+  // `persist` false: a temporary change (a game's mode) that is not written to outputs.toml.
   bool apply_output_setting(const std::string& name, const OutputSetting& setting,
-                            std::string* error);
+                            std::string* error, bool persist = true);
+  // Game mode switching (game.toml mode_switch): the monitor goes to the mode `owner`'s fullscreen picture is exactly the size of, and back when it leaves.
+  bool enter_game_mode(Output* output, void* owner, int width, int height);
+  void leave_game_mode(Output* output, void* owner);
   const DisplaySettings& display_settings() const { return display_settings_; }
   Output* primary_output() const;
   bool apply_display_settings(const DisplaySettings& settings, std::string* error);
@@ -406,6 +412,8 @@ class Server {
   // Mouse speed and pointer precision (mouse.toml) for every libinput pointer, now and as they are plugged in.
   void apply_mouse_config(wlr_input_device* device);
   void reload_mouse_config();
+  const GameConfig& game_config() const { return game_config_; }
+  void reload_game_config();
   void forget_mouse_device(wlr_input_device* device);
   void apply_keyboard_config(Keyboard* kb);  // keymap, repeat and current layout for one keyboard
   void set_layout(int index);               // switch every keyboard to layout `index` (wraps)
@@ -576,6 +584,7 @@ class Server {
   std::vector<uint32_t> show_desktop_ids_;  // ids of the windows toggle_show_desktop() minimized, to bring back
   KeyboardConfig keyboard_config_;
   MouseConfig mouse_config_;
+  GameConfig game_config_;
   std::vector<wlr_input_device*> mouse_devices_;
   int layout_index_ = 0;
 
@@ -609,8 +618,10 @@ class Server {
   friend int idle_timer_cb(void* data);
   uint32_t next_view_id_ = 1;
   std::vector<View*> hidden_by_show_desktop_;
+  GameSupport games_{this};        // pointer lock, shortcut inhibit and the frame-timing globals games use
   WindowSwitcher switcher_{this};  // the Alt+Tab preview panel
   std::vector<View*> cycle_order_;  // snapshot taken when an Alt+Tab cycle starts
+  std::vector<View*> cycle_origin_;  // the recent-windows order when the cycle began, restored (minus the chosen window) when it ends
   size_t cycle_index_ = 0;
   unsigned cycle_hold_mask_ = 0;
   wl_event_source* windows_idle_ = nullptr;

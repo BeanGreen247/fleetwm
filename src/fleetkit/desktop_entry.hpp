@@ -19,6 +19,7 @@ struct DesktopEntry {
   std::string categories;  // raw Categories= ("A;B;")
   std::string path;        // Path= working directory
   bool terminal = false;
+  bool prefers_discrete_gpu = false;  // PrefersNonDefaultGPU=true (or X-KDE-RunOnDiscreteGpu=true): start on the dedicated GPU
 };
 
 // All application entries that should be shown in a launcher: Type=Application,
@@ -35,6 +36,10 @@ std::vector<DesktopEntry> fleetwm_builtin_desktop_entries();
 // Expands the Exec= line into an argv (field codes removed/substituted per the
 // spec: %f %F %u %U ... dropped, %i -> --icon X, %c -> name, %k -> file, %% -> %).
 std::vector<std::string> exec_argv(const DesktopEntry& e);
+
+// `argv` run on the dedicated GPU when the entry asks for it (through `fleetwm-game --gpu discrete`, which knows switcheroo-control and the vendor variables),
+// else unchanged. GameMode and the frame cap are left out: this is for ordinary programs that want the big card (a renderer, a video editor).
+std::vector<std::string> gpu_wrapped(const DesktopEntry& e, std::vector<std::string> argv);
 
 // Basename of the program in Exec= (first argv element), or "".
 std::string exec_basename(const DesktopEntry& e);

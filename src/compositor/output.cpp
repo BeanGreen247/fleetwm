@@ -64,11 +64,42 @@ int fps_cap_timer_fire(void* data) {
   return 0;
 }
 
+void output_frame(wl_listener* listener, void*);
+
+int late_render_fire(void* data) {
+  auto* output = static_cast<Output*>(data);
+  output->late_pass = true;
+  output_frame(&output->frame, nullptr);
+  output->late_pass = false;
+  return 0;
+}
+
 void output_frame(wl_listener* listener, void*) {
   Output* output = wl_container_of(listener, output, frame);
   Server* server = output->server;
 
   View* fullscreen = fullscreen_view_on(output);
+
+  // Late render start: the frame event comes right after the previous refresh, so a fullscreen game's picture would be drawn about a whole refresh before it
+  // is shown. Wait until `max_render_time_ms` before the next refresh instead, so the render uses the newest input. Not with variable refresh (no fixed
+  // refresh to aim at) or tearing (shown at once), and only once a presentation time is known.
+  const int budget_ms = server->game_config().max_render_time_ms;
+  if (fullscreen != nullptr && budget_ms > 0 && !output->late_pass && !output->vrr_on && output->have_present && output->present_refresh_ns > 0 &&
+      wlr_tearing_control_manager_v1_surface_hint_from_surface(server->tearing_manager(), fullscreen->surface()) != WP_TEARING_CONTROL_V1_PRESENTATION_HINT_ASYNC) {
+    timespec now{};
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    const long long refresh = output->present_refresh_ns;
+    const long long last = static_cast<long long>(output->last_present.tv_sec) * 1000000000LL + output->last_present.tv_nsec;
+    const long long t = static_cast<long long>(now.tv_sec) * 1000000000LL + now.tv_nsec;
+    long long next = last + refresh;
+    if (next <= t) next += ((t - next) / refresh + 1) * refresh;  // the first refresh still ahead of us
+    const long long wait_ns = next - static_cast<long long>(budget_ms) * 1000000LL - t;
+    if (wait_ns > 1000000LL && wait_ns < refresh) {
+      if (!output->late_timer) output->late_timer = wl_event_loop_add_timer(wl_display_get_event_loop(server->display()), late_render_fire, output);
+      wl_event_source_timer_update(output->late_timer, static_cast<int>((wait_ns + 999999) / 1000000));
+      return;
+    }
+  }
   const bool stats = grabstats::enabled();
   if (stats) ++grabstats::c().frames;
 
@@ -130,6 +161,20 @@ void output_frame(wl_listener* listener, void*) {
   wlr_scene* scene = server->scene();
   wlr_scene_output* scene_output =
       wlr_scene_get_scene_output(scene, output->wlr_output_ptr);
+
+  // Variable refresh rate while a window is fullscreen (a game): the monitor follows the frame rate instead of the game waiting for a fixed refresh.
+  {
+    wlr_output* wo = output->wlr_output_ptr;
+    const bool want_vrr = fullscreen != nullptr && server->game_config().adaptive_sync && wo->adaptive_sync_supported;
+    if (want_vrr != output->vrr_on) {
+      output->vrr_on = want_vrr;  // set first: a monitor that refuses is not asked again every frame
+      wlr_output_state vrr_state;
+      wlr_output_state_init(&vrr_state);
+      wlr_output_state_set_adaptive_sync_enabled(&vrr_state, want_vrr);
+      wlr_output_commit_state(wo, &vrr_state);
+      wlr_output_state_finish(&vrr_state);
+    }
+  }
 
   // Real DRM tearing, automatic and unconditional for a fullscreen
   // surface that has actually hinted it wants async presentation (games/
@@ -228,10 +273,22 @@ void output_destroy(wl_listener* listener, void*) {
       outputs.end());
 }
 
-void output_present(wl_listener*, void* data) {
+void output_present(wl_listener* listener, void* data) {
+  Output* output = wl_container_of(listener, output, present);
   const auto* event = static_cast<const wlr_output_event_present*>(data);
-  ++grabstats::c().present;
-  if (!event->presented) ++grabstats::c().missed;
+  if (event->presented) {
+#if WLR_VERSION_NUM >= 0x001300
+    output->last_present = event->when;
+#else
+    if (event->when) output->last_present = *event->when;  // a pointer before wlroots 0.19
+#endif
+    output->present_refresh_ns = event->refresh;
+    output->have_present = true;
+  }
+  if (grabstats::enabled()) {
+    ++grabstats::c().present;
+    if (!event->presented) ++grabstats::c().missed;
+  }
 }
 
 }  // namespace
@@ -247,11 +304,9 @@ Output::Output(Server* server_, wlr_output* wlr_output_ptr_)
   destroy.notify = output_destroy;
   wl_signal_add(&wlr_output_ptr->events.destroy, &destroy);
 
-  if (grabstats::enabled()) {  // FLEETWM_GRAB_STATS: count presentation outcomes
-    present.notify = output_present;
-    wl_signal_add(&wlr_output_ptr->events.present, &present);
-    present_listening = true;
-  }
+  present.notify = output_present;  // presentation times feed the late render start; FLEETWM_GRAB_STATS also counts outcomes
+  wl_signal_add(&wlr_output_ptr->events.present, &present);
+  present_listening = true;
 }
 
 Output::~Output() {
@@ -262,6 +317,9 @@ Output::~Output() {
 
   if (fps_cap_timer != nullptr) {
     wl_event_source_remove(fps_cap_timer);
+  }
+  if (late_timer != nullptr) {
+    wl_event_source_remove(late_timer);
   }
 }
 

@@ -133,7 +133,7 @@ int run_default_app(const std::string& kind) {
     }
     for (const DesktopEntry& de : load_desktop_entries()) {
       if (de.id != id) continue;
-      std::vector<std::string> argv = exec_argv(de);
+      std::vector<std::string> argv = gpu_wrapped(de, exec_argv(de));
       if (argv.empty()) return 1;
       if (de.terminal) {
         std::vector<std::string> t = {"foot", "-e"};
@@ -717,7 +717,7 @@ struct Launcher {
     if (selected < 0 || static_cast<size_t>(selected) >= results.size()) return;
     const Entry* e = results[static_cast<size_t>(selected)];
     if (e) {
-      std::vector<std::string> argv = exec_argv(e->de);
+      std::vector<std::string> argv = gpu_wrapped(e->de, exec_argv(e->de));
       if (argv.empty()) return;
       if (e->de.terminal) {
         std::vector<std::string> t = terminal_argv();

@@ -43,6 +43,15 @@ struct WorkspaceColors {
   bool buttons_rounded = true;
 };
 
+// Colours of the other taskbar elements, in bar.toml's [taskbar_colors]. Empty = follow the theme; "#rrggbb" or "#rrggbbaa" overrides.
+struct TaskbarColors {
+  std::string bg;           // the taskbar / bar surface (the glass tint when glass is on)
+  std::string start;        // the start button (orb tint in the Windows 7 look)
+  std::string active;       // the active window button's fill and the running-program lines
+  std::string clock_fg;     // the time (the date line follows status_fg)
+  std::string status_fg;    // status icons (volume, network, Bluetooth, power mode, battery, tray) and the date
+};
+
 // Power profile the user has selected in Settings (only surfaced there
 // when a battery is detected -- see SettingsWindow). Mirrors
 // power-profiles-daemon's own three profiles 1:1 so applying a change is
@@ -102,6 +111,7 @@ constexpr int kIslandTopMargin = 5, kIslandSideInset = 8;
 struct BarConfig {
   ClockFormat clock;
   WorkspaceColors workspace_colors;
+  TaskbarColors taskbar_colors;
   PowerMode power_mode = PowerMode::Normal;
   BarLayout layout = BarLayout::Capsules;
   TaskbarPosition taskbar_position = TaskbarPosition::Bottom;

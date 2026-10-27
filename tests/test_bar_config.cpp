@@ -83,6 +83,24 @@ TEST_F(BarConfigTest, LoadWithNoConfigFileReturnsDefaults) {
   EXPECT_TRUE(config.workspace_colors.inactive_bg.empty());
   EXPECT_EQ(config.power_mode, PowerMode::Normal);
   EXPECT_EQ(config.layout, BarLayout::Capsules);
+  EXPECT_TRUE(config.taskbar_colors.bg.empty());
+  EXPECT_TRUE(config.taskbar_colors.status_fg.empty());
+}
+
+TEST_F(BarConfigTest, TaskbarColoursRoundTrip) {
+  BarConfig config;
+  config.taskbar_colors.bg = "#101820";
+  config.taskbar_colors.start = "#ff7800";
+  config.taskbar_colors.active = "#22cc88";
+  config.taskbar_colors.clock_fg = "#ffffff";
+  config.taskbar_colors.status_fg = "#aabbcc";
+  save_bar_config(config);
+  const BarConfig loaded = load_bar_config();
+  EXPECT_EQ(loaded.taskbar_colors.bg, "#101820");
+  EXPECT_EQ(loaded.taskbar_colors.start, "#ff7800");
+  EXPECT_EQ(loaded.taskbar_colors.active, "#22cc88");
+  EXPECT_EQ(loaded.taskbar_colors.clock_fg, "#ffffff");
+  EXPECT_EQ(loaded.taskbar_colors.status_fg, "#aabbcc");
 }
 
 TEST_F(BarConfigTest, SaveThenLoadRoundTripsNestedTables) {

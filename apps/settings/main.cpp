@@ -20,6 +20,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <map>
+#include <set>
 #include <sstream>
 #include <memory>
 #include <string>
@@ -47,6 +48,9 @@
 #include "cursor_draw.hpp"
 #include "keyboard_tab.hpp"
 #include "remote_tab.hpp"
+#include "autostart.hpp"
+#include "game_config.hpp"
+#include "tuxthrottle.hpp"
 #include "mouse_config.hpp"
 #include "user_profile.hpp"
 #include "bluetooth_tab.hpp"
@@ -230,6 +234,12 @@ struct Settings {
   BatteryReading battery;
   PowerConfig power;
   MouseConfig mouse;
+  GameConfig game;
+  std::set<std::string> startup_on;     // ids of the enabled autostart entries
+  std::vector<size_t> startup_order;    // `entries` sorted by name, built on first view
+  bool startup_loaded = false;
+  fleetwm::TuxThrottleStatus tux;       // TuxThrottle's readout, read when the Gaming page opens and on Refresh
+  bool tux_loaded = false;
   fleetwm::fm::FmSettings fm_cfg;       // fleetwm-fm: fleetfm.toml
   fleetwm::fm::DesktopConfig desktop_cfg;  // fleetwm-desktop: desktop.toml
   int fm_page = 0;
@@ -1319,6 +1329,28 @@ struct Settings {
     }
 
     ui.space(8);
+    ui.section("Colours");
+    ui.label("Colours of the bar's parts. A grey swatch with no colour set follows the theme; \"Theme\" puts a part back to that.", true);
+    ui.newline();
+    auto colour_row = [&](const char* label, std::string* hex) {
+      ui.row(label);
+      if (ui.color_button(hex)) save_bar();
+      if (!hex->empty() && ui.button("Theme")) {
+        hex->clear();
+        save_bar();
+      }
+      ui.newline();
+    };
+    colour_row("Taskbar background", &bar.taskbar_colors.bg);
+    colour_row("Start button", &bar.taskbar_colors.start);
+    colour_row("Active window button", &bar.taskbar_colors.active);
+    colour_row("Clock", &bar.taskbar_colors.clock_fg);
+    colour_row("Status icons", &bar.taskbar_colors.status_fg);
+    colour_row("Workspace button", &bar.workspace_colors.inactive_bg);
+    colour_row("Workspace text", &bar.workspace_colors.inactive_fg);
+    colour_row("Current workspace", &bar.workspace_colors.active_bg);
+    colour_row("Current workspace text", &bar.workspace_colors.active_fg);
+    ui.space(8);
     ui.section("Clock");
     ui.label("Used by the taskbar and by the top bar of the Tiling layout.", true);
     ui.newline();
@@ -1395,6 +1427,152 @@ struct Settings {
       }
     }
     ui.newline();
+  }
+
+  void save_game() {
+    try {
+      save_game_config(game);  // the compositor watches the file; the desktop GPU applies at the next login
+    } catch (const std::exception&) {
+    }
+  }
+
+  void tab_gaming(cairo_t*) {
+    ui.section("Fullscreen programs");
+    ui.row("Scaling");
+    int scaling = static_cast<int>(game.scaling);
+    if (ui.segmented({"Fit", "Integer", "Stretch", "Off"}, &scaling)) {
+      game.scaling = static_cast<fleetwm::FullscreenScaling>(scaling);
+      save_game();
+    }
+    ui.newline();
+    ui.paragraph("What happens when a fullscreen picture is not the size of the screen, like an old 4:3 game on a wide monitor. Fit keeps the shape and adds black bars, Integer zooms in whole steps so pixels stay square, Stretch fills the screen, Off leaves it as it is.", true);
+    ui.row("Smoothing");
+    int filter = static_cast<int>(game.filter);
+    if (ui.segmented({"Automatic", "Sharp", "Smooth"}, &filter)) {
+      game.filter = static_cast<fleetwm::FullscreenFilter>(filter);
+      save_game();
+    }
+    ui.newline();
+    ui.row("Switch the monitor's mode");
+    if (ui.toggle(&game.mode_switch)) save_game();
+    ui.newline();
+    ui.paragraph("When a fullscreen picture is exactly the size of one of the monitor's own modes (an old game at 800x600), switch the monitor to it while the game runs and back afterwards, instead of scaling.", true);
+    ui.row("Variable refresh rate");
+    if (ui.toggle(&game.adaptive_sync)) save_game();
+    ui.newline();
+    ui.paragraph("Lets a monitor that supports it follow the game's frame rate while a window is fullscreen.", true);
+    ui.space(6);
+    ui.section("Performance");
+    ui.row("GameMode");
+    if (ui.toggle(&game.gamemode)) save_game();
+    ui.newline();
+    ui.paragraph("Asks Feral GameMode to boost every game while it runs: Steam and Proton games, Wine programs, Lutris, anything fullscreen except video players and browsers. Needs the gamemode package.", true);
+    ui.row("Real-time priority");
+    if (ui.toggle(&game.realtime)) save_game();
+    ui.newline();
+    ui.paragraph("Gives the compositor a real-time scheduling class while a game runs, through rtkit, so nothing delays a frame. A runaway compositor is stopped by the kernel after 200 ms instead of freezing the machine.", true);
+    ui.row("Late render start");
+    if (ui.spin(&game.max_render_time_ms, 0, fleetwm::kRenderTimeMax, 1)) save_game();
+    ui.newline();
+    ui.paragraph("Milliseconds before the screen refreshes at which a fullscreen game's frame is drawn (0 is off). Later means the picture shows newer input; too late misses the refresh. Try 4 to 6.", true);
+    ui.row("Frame rate cap");
+    if (ui.spin(&game.fps_limit, 0, fleetwm::kFpsLimitMax, 10)) save_game();
+    ui.newline();
+    ui.paragraph("0 is no cap. Applied by starting the game with fleetwm-game (Steam launch options: fleetwm-game -- %command%) and needs libstrangle.", true);
+    if (fleetwm::tuxthrottle_installed()) {
+      ui.row("TuxThrottle Game Mode");
+      if (ui.toggle(&game.tuxthrottle)) save_game();
+      ui.newline();
+      ui.paragraph("Switches TuxThrottle's Game Mode on when the first game starts and off after the last one closes: its performance profile, fans and GPU clocks.", true);
+    }
+    ui.space(6);
+    ui.section("Graphics card");
+    ui.row("Desktop drawn by");
+    int gpu = static_cast<int>(game.desktop_gpu);
+    if (ui.segmented({"Integrated", "Dedicated", "Default"}, &gpu)) {
+      game.desktop_gpu = static_cast<fleetwm::DesktopGpu>(gpu);
+      save_game();
+    }
+    ui.newline();
+    ui.paragraph("On a computer with two graphics cards the integrated one draws the desktop, so the dedicated card stays cool and free for games. Takes effect at the next login. Screens plugged into either card keep working.", true);
+    ui.paragraph("To run one program on the dedicated card: Steam launch options  fleetwm-game --gpu discrete -- %command%  or, for any program, a PrefersNonDefaultGPU=true line in its desktop entry.", true);
+    if (fleetwm::tuxthrottle_installed()) {
+      ui.space(6);
+      ui.section("TuxThrottle");
+      if (!tux_loaded) {
+        tux_loaded = true;
+        tux = fleetwm::read_tuxthrottle_status();
+      }
+      if (!tux.ok) {
+        ui.paragraph("TuxThrottle is installed but its readout is not available (is tuxthrottled running?).", true);
+      } else {
+        char line[160];
+        ui.row("Computer");
+        ui.label(tux.model.empty() ? "unknown" : tux.model, true);
+        ui.newline();
+        ui.row("Power profile");
+        ui.label(tux.platform_profile.empty() ? "unknown" : tux.platform_profile, true);
+        ui.newline();
+        ui.row("Processor");
+        std::snprintf(line, sizeof line, "%.0f °C, %.1f W", tux.cpu_temp_c, tux.cpu_power_w);
+        ui.label(line, true);
+        ui.newline();
+        if (tux.dgpu_present) {
+          ui.row("Dedicated GPU");
+          if (tux.dgpu_awake) std::snprintf(line, sizeof line, "awake, %.0f °C, %.1f W", tux.dgpu_temp_c, tux.dgpu_power_w);
+          else std::snprintf(line, sizeof line, "asleep");
+          ui.label(line, true);
+          ui.newline();
+        }
+        ui.row("Game Mode");
+        ui.label(tux.game_mode ? "on" : "off", true);
+        ui.newline();
+        ui.paragraph(fleetwm::tuxthrottle_bridged_through_gamemode()
+                         ? "gamemoded also starts TuxThrottle's helper scripts (/etc/gamemode.ini), so every game registered with GameMode switches it on."
+                         : "Not wired through gamemoded (/etc/gamemode.ini has no TuxThrottle start hook); Fleetwm switches Game Mode itself while a game runs.", true);
+      }
+      if (ui.button("Refresh")) tux = fleetwm::read_tuxthrottle_status();
+      ui.newline();
+      if (ui.button(tux.game_mode ? "Turn Game Mode off now" : "Turn Game Mode on now")) {
+        fleetwm::tuxthrottle_game_mode(tux.game_mode ? "off" : "on");
+      }
+      ui.newline();
+    }
+  }
+
+  void tab_startup(cairo_t*) {
+    if (!startup_loaded) {
+      startup_loaded = true;
+      startup_on = fleetwm::autostart_enabled_ids();
+      for (size_t i = 0; i < entries.size(); ++i) startup_order.push_back(i);
+      std::sort(startup_order.begin(), startup_order.end(), [this](size_t a, size_t b) {
+        auto lower = [](std::string x) { std::transform(x.begin(), x.end(), x.begin(), [](unsigned char c) { return std::tolower(c); }); return x; };
+        return lower(entries[a].name) < lower(entries[b].name);
+      });
+    }
+    ui.section("Start with the session");
+    ui.paragraph(std::to_string(startup_on.size()) + " program" + (startup_on.size() == 1 ? "" : "s") + " start when you log in. Switch one on to add it, off to take it out. The list is the standard autostart folder (~/.config/autostart), so other desktops see it too.", true);
+    ui.space(4);
+    for (size_t i : startup_order) {
+      const kit::DesktopEntry& e = entries[i];
+      bool on = startup_on.count(e.id) > 0;
+      ui.row(e.name);
+      if (ui.toggle(&on)) {
+        fleetwm::AutostartApp app;
+        app.id = e.id;
+        app.name = e.name;
+        app.exec = e.exec;
+        app.icon = e.icon;
+        app.terminal = e.terminal;
+        try {
+          fleetwm::autostart_set(app, on);
+          if (on) startup_on.insert(e.id);
+          else startup_on.erase(e.id);
+        } catch (const std::exception&) {
+        }
+      }
+      ui.newline();
+    }
   }
 
   void save_mouse() {
@@ -2083,6 +2261,8 @@ struct Settings {
         case 15: tab_desktop_icons(cr); break;
         case 16: remote_tab->draw(ui, cr); break;
         case 17: tab_about(cr); break;
+        case fleetwm::kPageStartup: tab_startup(cr); break;
+        case fleetwm::kPageGaming: tab_gaming(cr); break;
         default: tab_account(cr); break;
       }
     }
@@ -2111,6 +2291,7 @@ int main(int argc, char** argv) {
   S.default_apps = load_default_apps_config();
   S.power = load_power_config();
   S.mouse = load_mouse_config();
+  S.game = load_game_config();
   S.profile = load_user_profile();
   S.profile_draft_name = S.profile.display_name;
   S.ui_state = fleetwm::load_settings_ui_state();

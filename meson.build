@@ -162,6 +162,12 @@ if get_option('tests')
 endif
 
 install_data(
+  'scripts/fleetwm-game',
+  install_dir: get_option('bindir'),
+  install_mode: 'rwxr-xr-x',
+)
+
+install_data(
   'packaging/fleetwm.desktop',
   install_dir: get_option('sysconfdir') / '..' / 'share' / 'wayland-sessions',
 )

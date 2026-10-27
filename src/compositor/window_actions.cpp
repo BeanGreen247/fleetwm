@@ -9,6 +9,7 @@
 #include "output.hpp"
 #include "server.hpp"
 #include "view.hpp"
+#include "window_cycle.hpp"
 #include "window_geometry.hpp"
 #include "workspace.hpp"
 
@@ -49,6 +50,7 @@ void Server::cycle_windows(bool backward, unsigned hold_mask) {
     }
     cycle_index_ = 0;
     cycle_hold_mask_ = hold_mask;
+    cycle_origin_ = cycle_order_;
   }
   // Windows may have closed (or been sent to another workspace) since the cycle began; drop
   // them so we never touch a stale pointer.
@@ -66,6 +68,40 @@ void Server::cycle_windows(bool backward, unsigned hold_mask) {
   cycle_index_ = (cycle_index_ + (backward ? n - 1 : 1)) % n;
   activate_view(cycle_order_[cycle_index_]);
   switcher_.show(cycle_order_, cycle_index_);
+}
+
+void Server::end_window_cycle() {
+  if (!cycle_origin_.empty() && cycle_index_ < cycle_order_.size()) {
+    View* chosen = cycle_order_[cycle_index_];
+    // Wanted order of the windows that took part: the chosen one first, then the rest as they were before the cycle.
+    const std::vector<View*> want = window_cycle_order<View*>(cycle_origin_, chosen);
+    // Every step of the cycle moved its window to the front of `views`; put the cycled windows back into their own slots in the wanted order.
+    std::vector<std::list<std::unique_ptr<View>>::iterator> slots;
+    for (auto it = views.begin(); it != views.end(); ++it)
+      if (std::find(want.begin(), want.end(), it->get()) != want.end()) slots.push_back(it);
+    std::vector<std::unique_ptr<View>> taken;
+    for (View* v : want)
+      for (auto it : slots)
+        if (it->get() == v) taken.push_back(std::move(*it));
+    // `want` may hold a window that closed during the cycle; only the ones still in `views` were taken, in `want` order.
+    size_t k = 0;
+    for (auto it : slots) {
+      if (k < taken.size()) *it = std::move(taken[k++]);
+    }
+    // Same order in the stacking: the chosen window on top, the others beneath it as before.
+    for (auto r = taken.size() ? want.rbegin() : want.rend(); r != want.rend(); ++r) {
+      if (std::any_of(views.begin(), views.end(), [r](const std::unique_ptr<View>& p) { return p.get() == *r; }))
+        wlr_scene_node_raise_to_top(&(*r)->container_tree->node);
+    }
+    if (chosen->workspace)
+      for (View* v : chosen->workspace->views())
+        if (v->always_on_top) wlr_scene_node_raise_to_top(&v->container_tree->node);
+    wlr_scene_node_raise_to_top(&chosen->container_tree->node);
+  }
+  cycle_origin_.clear();
+  cycle_order_.clear();
+  cycle_hold_mask_ = 0;
+  switcher_.hide();
 }
 
 // ---- Super+arrows (Windows-style snapping) -----------------------------------

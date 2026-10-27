@@ -124,6 +124,15 @@ BarConfig load_bar_config() {
     if (auto v = (*clock)["show_day"].value<bool>()) config.clock.show_day = *v;
   }
 
+  if (toml::table* tc = table["taskbar_colors"].as_table()) {
+    TaskbarColors& c = config.taskbar_colors;
+    if (auto v = (*tc)["bg"].value<std::string>()) c.bg = *v;
+    if (auto v = (*tc)["start"].value<std::string>()) c.start = *v;
+    if (auto v = (*tc)["active"].value<std::string>()) c.active = *v;
+    if (auto v = (*tc)["clock_fg"].value<std::string>()) c.clock_fg = *v;
+    if (auto v = (*tc)["status_fg"].value<std::string>()) c.status_fg = *v;
+  }
+
   toml::table* ws = table["workspace_colors"].as_table();
   if (ws) {
     if (auto v = (*ws)["inactive_bg"].value<std::string>()) config.workspace_colors.inactive_bg = *v;
@@ -197,8 +206,16 @@ void save_bar_config(const BarConfig& config) {
   workspace_colors.insert_or_assign("active_fg", config.workspace_colors.active_fg);
   workspace_colors.insert_or_assign("buttons_rounded", config.workspace_colors.buttons_rounded);
 
+  toml::table taskbar_colors;
+  taskbar_colors.insert_or_assign("bg", config.taskbar_colors.bg);
+  taskbar_colors.insert_or_assign("start", config.taskbar_colors.start);
+  taskbar_colors.insert_or_assign("active", config.taskbar_colors.active);
+  taskbar_colors.insert_or_assign("clock_fg", config.taskbar_colors.clock_fg);
+  taskbar_colors.insert_or_assign("status_fg", config.taskbar_colors.status_fg);
+
   toml::table table;
   table.insert_or_assign("clock", clock);
+  table.insert_or_assign("taskbar_colors", taskbar_colors);
   table.insert_or_assign("workspace_colors", workspace_colors);
   table.insert_or_assign("power_mode", power_mode_to_string(config.power_mode));
   table.insert_or_assign("layout", bar_layout_to_string(config.layout));

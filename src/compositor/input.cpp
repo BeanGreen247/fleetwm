@@ -293,6 +293,20 @@ void keyboard_key(wl_listener* listener, void* data) {
   const xkb_keysym_t* syms;
   int nsyms = xkb_state_key_get_syms(keyboard->wlr_keyboard_ptr->xkb_state, keycode, &syms);
 
+  // A window that asked for the keyboard shortcuts (a fullscreen game) gets every key, Alt+Tab and Super included. Super+Pause hands the shortcuts back.
+  if (keyboard->server->games().shortcuts_inhibited() && !keyboard->server->is_locked()) {
+    bool escape = false;
+    for (int i = 0; i < nsyms; ++i)
+      if (syms[i] == XKB_KEY_Pause && (wlr_keyboard_get_modifiers(keyboard->wlr_keyboard_ptr) & WLR_MODIFIER_LOGO)) escape = true;
+    if (escape) {
+      if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED) keyboard->server->games().release_shortcuts_inhibitor();
+      return;
+    }
+    wlr_seat_set_keyboard(keyboard->server->seat(), keyboard->wlr_keyboard_ptr);
+    wlr_seat_keyboard_notify_key(keyboard->server->seat(), event->time_msec, event->keycode, event->state);
+    return;
+  }
+
   // The Tiling layout's held modifier: Alt by default, Super when Settings -> Keyboard says so.
   bool alt_held = (wlr_keyboard_get_modifiers(keyboard->wlr_keyboard_ptr) & keyboard->server->keybinds().tiling_mod) != 0;
   bool handled = false;

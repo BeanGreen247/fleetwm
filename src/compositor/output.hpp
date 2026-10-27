@@ -47,7 +47,7 @@ class Output {
   wl_listener frame{};
   wl_listener request_state{};
   wl_listener destroy{};
-  wl_listener present{};  // only listened to under FLEETWM_GRAB_STATS
+  wl_listener present{};  // presentation times (late render start) and, under FLEETWM_GRAB_STATS, outcome counts
   bool present_listening = false;
 
   // Adaptive render throttling (RenderMode::Custom, theme.hpp) and the
@@ -75,6 +75,17 @@ class Output {
   // or driver cannot actually drive the new mode (commits fail repeatedly),
   // the compositor reverts on its own instead of leaving the screen dark.
   bool has_fallback = false;
+  // Late render start (game.toml max_render_time_ms): when the last frame reached the screen and how long a refresh is, so the next render can wait.
+  timespec last_present{};
+  long present_refresh_ns = 0;
+  bool have_present = false;
+  wl_event_source* late_timer = nullptr;
+  bool late_pass = false;  // the delayed render is running now: do not delay it again
+  // Game mode switching (game.toml mode_switch): the mode to go back to, and the window that asked for the switch.
+  bool game_mode_active = false;
+  int pre_game_width = 0, pre_game_height = 0, pre_game_refresh_mhz = 0;
+  void* game_mode_owner = nullptr;
+  bool vrr_on = false;  // variable refresh rate is on for this output (while a window is fullscreen, game.toml adaptive_sync)
   int fallback_width = 0, fallback_height = 0, fallback_refresh_mhz = 0;
   int commit_failures = 0, confirm_frames = 0;
 

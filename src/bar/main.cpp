@@ -7,10 +7,13 @@
 #include <signal.h>
 #include <spawn.h>
 #include <sys/signalfd.h>
+#include <systemd/sd-bus.h>
 #include <sys/statvfs.h>
 #include <unistd.h>
 
 #include <algorithm>
+#include <atomic>
+#include <mutex>
 #include <cmath>
 #include <chrono>
 #include <cstdio>
@@ -58,6 +61,7 @@
 #include "xkb_rules.hpp"
 #include "gpu_monitor.hpp"
 #include "hw_stats.hpp"
+#include "tuxthrottle.hpp"
 #include "spectrum_source.hpp"
 #include "volume_source.hpp"
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
@@ -100,10 +104,29 @@ void spawn(const char* prog) {
 // the last session) is in force again after a login; without the daemon installed the call fails and the mode stays cosmetic.
 void apply_power_mode(PowerMode mode) {
   const std::string name = power_mode_to_profiles_daemon_name(mode);
-  char* argv[] = {const_cast<char*>("powerprofilesctl"), const_cast<char*>("set"), const_cast<char*>(name.c_str()), nullptr};
-  pid_t pid;
-  if (posix_spawnp(&pid, "powerprofilesctl", nullptr, fleetwm::CleanSpawnAttr().get(), argv, environ) != 0)
-    std::fprintf(stderr, "fleetwm-bar: powerprofilesctl not found; install power-profiles-daemon to apply the power mode\n");
+  // A direct D-Bus property write on a short-lived thread: `powerprofilesctl` is a Python script, and starting it cost more CPU at login than
+  // the whole compositor and bar together (perf, docs/HOTSPOT_PROFILING.md). The thread keeps a slow or absent daemon off the bar's loop.
+  std::thread([name] {
+    sd_bus* bus = nullptr;
+    if (sd_bus_open_system(&bus) < 0) return;
+    static const char* const kNames[][2] = {{"org.freedesktop.UPower.PowerProfiles", "/org/freedesktop/UPower/PowerProfiles"},
+                                            {"net.hadess.PowerProfiles", "/net/hadess/PowerProfiles"}};
+    bool done = false;
+    for (const auto& n : kNames) {
+      sd_bus_error err = SD_BUS_ERROR_NULL;
+      char* active = nullptr;
+      if (sd_bus_get_property_string(bus, n[0], n[1], n[0], "ActiveProfile", &err, &active) >= 0) {
+        const bool same = active && name == active;
+        std::free(active);
+        sd_bus_error_free(&err);
+        if (same || sd_bus_set_property(bus, n[0], n[1], n[0], "ActiveProfile", &err, "s", name.c_str()) >= 0) done = true;
+      }
+      sd_bus_error_free(&err);
+      if (done) break;
+    }
+    if (!done) std::fprintf(stderr, "fleetwm-bar: power-profiles-daemon did not take the power mode; is it installed?\n");
+    sd_bus_unref(bus);
+  }).detach();
 }
 
 // Opens Settings on the named page (e.g. the Power page from the battery icon).
@@ -161,14 +184,14 @@ struct Bar {
   void bar_surface(cairo_t* cr, double x, double y, double w, double h, double radius, double sx, double sy, double flat_alpha) {
     if (glass) {
       GlassStyle st;
-      st.tint = pal.glass_surface;
+      st.tint = themed(config.taskbar_colors.bg, pal.glass_surface);
       st.tint_alpha = pal.glass_surface_alpha;  // 0.60 by default: measured on the Windows 7 taskbar (backdrop weight 0.39-0.4)
       st.radius = radius;
       st.ray = w >= 160 && h >= 24 ? 0.75 : 0.0;  // the light ray of the Windows 7 taskbar, on the wide surfaces only
       paint_glass(cr, backdrop, monitor_width(), monitor_height(), sx, sy, x, y, w, h, st);
       return;
     }
-    Color bg = pal.bg_primary;
+    Color bg = themed(config.taskbar_colors.bg, pal.bg_primary);
     bg.a = flat_alpha;
     rounded_rect(cr, x, y, w, h, radius);
     set_source(cr, bg);
@@ -176,7 +199,13 @@ struct Bar {
   }
   // Higher contrast than the theme's secondary text: glyphs and labels lean most of the way to the
   // primary colour so they stay readable on translucent and busy backgrounds too.
+  // A colour from bar.toml's [taskbar_colors], or the theme's own when the entry is empty.
+  static Color themed(const std::string& hex, const Color& fallback) { return hex.empty() ? fallback : parse_color(hex, fallback); }
+  Color accent_start() const { return themed(config.taskbar_colors.start, pal.accent); }
+  Color accent_active() const { return themed(config.taskbar_colors.active, pal.accent); }
+  Color clock_fg() const { return themed(config.taskbar_colors.clock_fg, pal.accent); }
   Color icon_fg() const {
+    if (!config.taskbar_colors.status_fg.empty()) return themed(config.taskbar_colors.status_fg, pal.fg_primary);
     return {pal.fg_secondary.r + (pal.fg_primary.r - pal.fg_secondary.r) * 0.85,
             pal.fg_secondary.g + (pal.fg_primary.g - pal.fg_secondary.g) * 0.85,
             pal.fg_secondary.b + (pal.fg_primary.b - pal.fg_secondary.b) * 0.85, 1.0};
@@ -930,7 +959,7 @@ struct Bar {
     // ---- clock ----
     clock_rect = {clock_x - kClockPad, 0, clock_w + 2 * kClockPad, static_cast<double>(H)};
     clock_w_drawn = clock_w;
-    draw_text(cr, clock_text, clock_x, base, kFont, pal.accent, true);
+    draw_text(cr, clock_text, clock_x, base, kFont, clock_fg(), true);
 
     draw_status_group(cr, m, right_x, H, base, btn_r);
   }
@@ -1240,19 +1269,19 @@ struct Bar {
 
   void draw_start_button(cairo_t* cr, const Rect& r) {
     if (win7() && !vertical()) {  // the round start orb, a little taller than the buttons beside it
-      kit::draw_start_orb(cr, r.x + r.w / 2, r.y + r.h / 2, std::min(18.0, r.h / 2 + 1), pal.accent, hover_start, false);
+      kit::draw_start_orb(cr, r.x + r.w / 2, r.y + r.h / 2, std::min(18.0, r.h / 2 + 1), accent_start(), hover_start, false);
       return;
     }
     if (hover_start) {
       rounded_rect(cr, r.x, r.y, r.w, r.h, pal.rounded ? 8 : 2);
-      set_source(cr, with_alpha(pal.accent, 0.18));
+      set_source(cr, with_alpha(accent_start(), 0.18));
       cairo_fill(cr);
     }
     // Four rounded squares: a small "apps" glyph in the accent colour.
     const double sq = 7, gap = 3, ox = r.x + (r.w - (2 * sq + gap)) / 2, oy = r.y + (r.h - (2 * sq + gap)) / 2;
     for (int i = 0; i < 4; ++i) {
       rounded_rect(cr, ox + (i % 2) * (sq + gap), oy + (i / 2) * (sq + gap), sq, sq, 2);
-      set_source(cr, pal.accent);
+      set_source(cr, accent_start());
       cairo_fill(cr);
     }
   }
@@ -1302,7 +1331,7 @@ struct Bar {
       kit::draw_taskbar_tile(cr, r.x, r.y, r.w, r.h, t, hover_glow_x);
     } else if (active || hover) {
       rounded_rect(cr, r.x, r.y, r.w, r.h, radius);
-      set_source(cr, with_alpha(pal.accent, active ? 0.22 : 0.12));
+      set_source(cr, with_alpha(accent_active(), active ? 0.22 : 0.12));
       cairo_fill(cr);
       if (glass) draw_button_glass(cr, r, radius, active, hover);
     }
@@ -1319,7 +1348,7 @@ struct Bar {
     }
     // Indicator on the edge facing the desktop-side of the button (not with glass: the Windows 7 look has none).
     if (!show_indicator()) return;
-    set_source(cr, active ? pal.accent : with_alpha(icon_fg(), w.minimized ? 0.4 : 0.7));
+    set_source(cr, active ? accent_active() : with_alpha(icon_fg(), w.minimized ? 0.4 : 0.7));
     if (!vertical() && active) {
       // The active button's line runs the full width of the bottom edge and follows the corner
       // curve, instead of stopping short of it or poking out past it.
@@ -1639,7 +1668,7 @@ struct Bar {
         const double time_w = measure_text(cr, time_line, kFont, true).width;
         if (v) {
           const TextExtents te = measure_text(cr, time_line, kFont, true);
-          draw_text(cr, time_line, (cross - te.width) / 2, box.y + 8 + te.ascent, kFont, pal.accent, true);
+          draw_text(cr, time_line, (cross - te.width) / 2, box.y + 8 + te.ascent, kFont, clock_fg(), true);
           if (!date_line.empty()) {
             const double dw = measure_text(cr, date_line, 10.5).width;
             draw_text(cr, date_line, (cross - dw) / 2, box.y + 10 + te.height + 8, 10.5, with_alpha(ic, 0.95));
@@ -1654,11 +1683,11 @@ struct Bar {
         clock_rect = {clock_x - kClockPad, 0, clock_w + 2 * kClockPad, box.h};
         clock_w_drawn = box.w;
         if (date_line.empty()) {
-          draw_text(cr, time_line, clock_x + (clock_w - time_w) / 2, base, kFont, win7() ? Color{1, 1, 1, 0.97} : pal.accent, !win7());
+          draw_text(cr, time_line, clock_x + (clock_w - time_w) / 2, base, kFont, win7() ? themed(config.taskbar_colors.clock_fg, Color{1, 1, 1, 0.97}) : clock_fg(), !win7());
         } else {
           const TextExtents te = measure_text(cr, time_line, kFont, true), de = measure_text(cr, date_line, kSmallFont);
           const double block = te.height + 1 + de.height, top = (box.h - block) / 2.0;
-          draw_text(cr, time_line, clock_x + (clock_w - time_w) / 2, top + te.ascent, kFont, win7() ? Color{1, 1, 1, 0.97} : pal.accent, !win7());
+          draw_text(cr, time_line, clock_x + (clock_w - time_w) / 2, top + te.ascent, kFont, win7() ? themed(config.taskbar_colors.clock_fg, Color{1, 1, 1, 0.97}) : clock_fg(), !win7());
           draw_text(cr, date_line, clock_x + (clock_w - date_w) / 2, top + te.height + 1 + de.ascent, kSmallFont, with_alpha(ic, 0.95));
         }
         break;
@@ -1704,7 +1733,7 @@ struct Bar {
                 active ? pal.fg_primary : soft_fg(), active);
     }
     if (pa.running && show_indicator()) {  // the same indicator the window buttons have
-      set_source(cr, active ? pal.accent : with_alpha(icon_fg(), 0.7));
+      set_source(cr, active ? accent_active() : with_alpha(icon_fg(), 0.7));
       if (!vertical()) {
         rounded_rect(cr, r.x + (r.w - 14) / 2, r.y + r.h - 3, 14, 2, 1);
       } else {
@@ -2090,6 +2119,7 @@ struct Bar {
       }
     }
     if (t.empty()) t = "Per-core load unavailable";
+    t += tuxthrottle_lines(false);
     std::snprintf(b, sizeof b, "\nScheduler latency: %.0f us (200 us sleep, best of 5)", fleetwm::timer_latency_us());
     t += b;
     double watts = fleetwm::battery_power_watts(fleetwm::kPowerSupplyDir);
@@ -2165,7 +2195,7 @@ struct Bar {
            (d.percent < 0 ? std::string("--") : std::to_string(d.percent)) + "%" + gpu_detail_lines(d, false);
     }
     if (t.empty()) return "No GPU utilisation source found\n(software rendering or unsupported driver)";
-    return t;
+    return t + tuxthrottle_lines(true);
   }
 
   std::string disk_tooltip_text() {
@@ -2360,8 +2390,48 @@ struct Bar {
     }
   }
 
+  // TuxThrottle's readout for the CPU and GPU tooltips, refreshed on a short-lived thread (`tuxthrottlectl status` takes about 0.3 s) every few ticks.
+  struct TtCache {
+    std::mutex mutex;
+    fleetwm::TuxThrottleStatus status;
+    std::atomic<bool> busy{false};
+  };
+  std::shared_ptr<TtCache> tt = std::make_shared<TtCache>();
+  int tt_ticks = 0;
+  void refresh_tuxthrottle() {
+    static const bool installed = fleetwm::tuxthrottle_installed();
+    if (!installed || tt->busy.exchange(true)) return;
+    std::thread([cache = tt] {
+      fleetwm::TuxThrottleStatus st = fleetwm::read_tuxthrottle_status();
+      {
+        std::lock_guard<std::mutex> lock(cache->mutex);
+        cache->status = st;
+      }
+      cache->busy = false;
+    }).detach();
+  }
+  std::string tuxthrottle_lines(bool gpu) {
+    refresh_tuxthrottle();
+    fleetwm::TuxThrottleStatus st;
+    {
+      std::lock_guard<std::mutex> lock(tt->mutex);
+      st = tt->status;
+    }
+    if (!st.ok) return "";
+    char b[160];
+    if (gpu) {
+      if (!st.dgpu_present) return "";
+      if (st.dgpu_awake) std::snprintf(b, sizeof b, "\nTuxThrottle: dedicated GPU awake, %.0f C, %.1f W", st.dgpu_temp_c, st.dgpu_power_w);
+      else std::snprintf(b, sizeof b, "\nTuxThrottle: dedicated GPU asleep");
+    } else {
+      std::snprintf(b, sizeof b, "\nTuxThrottle: profile %s, Game Mode %s, CPU %.0f C", st.platform_profile.c_str(), st.game_mode ? "on" : "off", st.cpu_temp_c);
+    }
+    return b;
+  }
+
   void stats_tick() {
     if (!stats_shown()) return;
+    if (tt_ticks++ % 5 == 0) refresh_tuxthrottle();
     bool ch = update_cpu();
     ch |= update_ram();
     ch |= update_gpu();

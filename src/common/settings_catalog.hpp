@@ -13,7 +13,7 @@ namespace fleetwm {
 enum SettingsPage {
   kPageHome = 0, kPageTheme, kPageTaskbar, kPageWallpaper, kPageDisplay, kPageNetwork, kPageBluetooth, kPageKeyboard, kPageMouse,
   kPagePower, kPageDateTime, kPageDefaultApps, kPageAudio, kPagePerformance, kPageFileManager, kPageDesktopIcons, kPageRemote,
-  kPageAbout, kPageAccount, kPageCount
+  kPageAbout, kPageAccount, kPageStartup, kPageGaming, kPageCount
 };
 
 struct SettingsPageInfo {

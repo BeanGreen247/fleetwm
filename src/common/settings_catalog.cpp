@@ -84,6 +84,11 @@ const IndexEntry kIndex[] = {
     {"Remote desktop frame rate", kPageRemote, "fps quality bandwidth limit lag"},
     {"Version", kPageAbout, "about fleetwm build release"},
     {"Back up settings", kPageAbout, "export import restore backup"},
+    {"Startup programs", kPageStartup, "autostart login start with session apps"},
+    {"Fullscreen scaling", kPageGaming, "game aspect ratio integer stretch fit old games"},
+    {"GameMode", kPageGaming, "gamemode governor performance games"},
+    {"Frame rate cap", kPageGaming, "fps limit libstrangle"},
+    {"Desktop GPU", kPageGaming, "graphics card integrated dedicated discrete nvidia amd prime"},
     {"Display name", kPageAccount, "user profile account name"},
     {"Profile picture", kPageAccount, "avatar icon image"},
 };
@@ -111,6 +116,8 @@ const std::vector<SettingsPageInfo>& settings_pages() {
       {"Remote Desktop", "Reach this desktop from another computer over VNC or RDP.", "preferences-desktop-remote-desktop", 1},
       {"About", "Version, licence and backup of all your settings.", "help-about", 0},
       {"Account", "Your name and picture.", "avatar-default", 5},
+      {"Startup Apps", "Pick the programs that start when you log in.", "system-run", 4},
+      {"Gaming", "Fullscreen scaling, GameMode, frame rate cap and which graphics card draws what.", "applications-games", 3},
   };
   return kPages;
 }
@@ -124,9 +131,9 @@ const std::vector<SettingsCategory>& settings_categories() {
       {"Personalization", "Theme, wallpaper, taskbar and desktop icons.", "preferences-desktop-theme", 0xA855F7,
        {kPageTheme, kPageWallpaper, kPageTaskbar, kPageDesktopIcons}},
       {"Hardware & Sound", "Keyboard, mouse and audio.", "preferences-desktop-peripherals", 0xF59E0B,
-       {kPageKeyboard, kPageMouse, kPageAudio}},
+       {kPageKeyboard, kPageMouse, kPageAudio, kPageGaming}},
       {"Programs & Files", "Default applications and the file manager.", "applications-other", 0x14B8A6,
-       {kPageDefaultApps, kPageFileManager}},
+       {kPageDefaultApps, kPageStartup, kPageFileManager}},
       {"User Account", "Your name and picture.", "system-users", 0x64748B, {kPageAccount}},
   };
   return kCategories;
