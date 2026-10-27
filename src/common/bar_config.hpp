@@ -50,6 +50,8 @@ struct TaskbarColors {
   std::string active;       // the active window button's fill and the running-program lines
   std::string clock_fg;     // the time (the date line follows status_fg)
   std::string status_fg;    // status icons (volume, network, Bluetooth, power mode, battery, tray) and the date
+  std::string remote;       // the remote desktop pill
+  std::string layout;       // the keyboard layout pill (US, CZ)
 };
 
 // Power profile the user has selected in Settings (only surfaced there
@@ -129,6 +131,7 @@ struct BarConfig {
   // CPU, RAM, GPU and disk are off by default: the Task Manager (Ctrl+Shift+Esc, or right-click the taskbar) shows them, and the bar costs less.
   // A file that lists `taskbar_hidden = []` shows them again.
   std::vector<std::string> taskbar_hidden = {"metrics"};
+  int tray_icon_size = 22;         // the system tray's icons in px (16 to 32)
   bool taskbar_autohide = false;   // slides away until the pointer touches its screen edge
   bool start_centered = false;     // Windows 11 style: start button, pinned apps and window buttons centred
   bool taskbar_labels = false;     // window buttons show the title beside the icon; off (the Windows 7 way): icon only

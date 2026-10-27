@@ -222,8 +222,15 @@ void IpcServer::handle_line(Client& client, const std::string& line) {
     return;
   }
 
+  if (line.rfind("FAST_PROFILE ", 0) == 0) {  // the bar reports whether the power profile is Performance
+    server_->set_fast_profile(line.size() > 13 && line[13] == '1');
+    return;
+  }
+
   if (line == "SUBSCRIBE_WINDOWS") {
     client.windows_subscribed = true;
+    const std::string fast = std::string("FAST_LOOK ") + (server_->fast_look() ? "1" : "0") + "\n";
+    send(client.fd, fast.data(), fast.size(), MSG_NOSIGNAL);
     std::string reply = format_window_list(server_->window_snapshot()) + "\n";
     send(client.fd, reply.data(), reply.size(), MSG_NOSIGNAL);
     return;

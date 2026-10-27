@@ -125,6 +125,7 @@ void GameSupport::view_gone(View* view) {
   gamemode_pids_.erase(it);
   // The last game is gone: TuxThrottle goes back to its everyday profile.
   if (gamemode_pids_.empty()) set_realtime(false);
+  if (gamemode_pids_.empty()) server_->set_fast_games(false);
   if (gamemode_pids_.empty() && tuxthrottle_on_) {
     tuxthrottle_on_ = false;
     tuxthrottle_game_mode("off");
@@ -156,6 +157,7 @@ void GameSupport::evaluate_game(View* view) {
     gamemode_pids_[view] = pid;
     gamemode_call("RegisterGameByPID", pid);
     if (gamemode_pids_.size() == 1 && gc.realtime) set_realtime(true);
+    if (gamemode_pids_.size() == 1) server_->set_fast_games(true);
     // The first game: TuxThrottle's Game Mode (performance profile, fans, GPU clocks) on a gaming laptop that has it.
     if (!tuxthrottle_on_ && gc.tuxthrottle && tuxthrottle_installed()) {
       tuxthrottle_on_ = true;

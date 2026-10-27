@@ -1845,6 +1845,7 @@ bool Server::init() {
   start_signal_handlers();
 
   theme_config_ = load_theme_config();
+  if (fast_look_) theme_config_.glass = false;  // the desktop's fast look: see set_fast_games()
   refresh_border_colors();
   titlebar_reload_palette(theme_config_);
   update_app_appearance();
@@ -1888,6 +1889,8 @@ bool Server::init() {
   spawn_autostart("fleetwm-remote", FLEETWM_BINDIR "/fleetwm-remote");  // exits at once unless Settings -> Remote Desktop has a server on
   // The programs picked in Settings -> Startup Apps (XDG autostart entries in ~/.config/autostart).
   for (const std::string& cmd : fleetwm::autostart_commands()) spawn_user_autostart(cmd);
+  // Old X11 tray icons (Wine programs, many games' launchers) reach the bar through an XEmbed-to-StatusNotifier proxy when one is installed.
+  if (access("/usr/bin/snixembed", X_OK) == 0 || access("/usr/local/bin/snixembed", X_OK) == 0) spawn_user_autostart("snixembed --fork");
 
   return true;
 }
@@ -2654,8 +2657,27 @@ void Server::apply_mouse_config(wlr_input_device* device) {
   if (profiles & want) libinput_device_config_accel_set_profile(li, want);
 }
 
+void Server::set_fast_games(bool on) {
+  fast_games_ = on;
+  update_fast_look();
+}
+
+void Server::set_fast_profile(bool on) {
+  fast_profile_ = on;
+  update_fast_look();
+}
+
+void Server::update_fast_look() {
+  const bool want = game_config_.fast_desktop && (fast_games_ || fast_profile_);
+  if (want == fast_look_) return;
+  fast_look_ = want;
+  reload_theme_config();  // re-reads theme.toml and applies the override below
+  if (ipc_server) ipc_server->broadcast_line(std::string("FAST_LOOK ") + (fast_look_ ? "1" : "0"));
+}
+
 void Server::reload_game_config() {
   game_config_ = load_game_config();
+  update_fast_look();
   for (const std::unique_ptr<View>& view : views)
     if (view->fullscreen || view->fit_applied) view->update_fullscreen_fit();
 }

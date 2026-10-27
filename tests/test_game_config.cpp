@@ -16,6 +16,7 @@ TEST_F(GameConfigTest, DefaultsWithoutAFile) {
   EXPECT_TRUE(c.adaptive_sync);
   EXPECT_TRUE(c.gamemode);
   EXPECT_TRUE(c.tuxthrottle);
+  EXPECT_FALSE(c.fast_desktop);
   EXPECT_EQ(c.max_render_time_ms, 0);
   EXPECT_FALSE(c.realtime);
   EXPECT_FALSE(c.mode_switch);
@@ -30,6 +31,7 @@ TEST_F(GameConfigTest, RoundTrips) {
   c.adaptive_sync = false;
   c.gamemode = false;
   c.tuxthrottle = false;
+  c.fast_desktop = true;
   c.max_render_time_ms = 5;
   c.realtime = true;
   c.mode_switch = true;

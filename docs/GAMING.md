@@ -109,6 +109,14 @@ The real `tuxthrottlectl gamemode on` and `off` were run once on the gaming PC: 
 session and prints PASS/FAIL for the pointer lock, plus a screenshot per scaling mode. `fit-fit.png` (960x720 with bars, square checks), `fit-integer.png` (640x480, 1x), `fit-stretch.png`, `fit-off.png`.
 A locked pointer also ignores absolute positions (tablets, remote-desktop input), so a game under a locked pointer gets no input from those.
 
+## Taskbar and desktop while gaming
+
+* **Power mode gauge:** follows power-profiles-daemon's `ActiveProfile` live (a system-bus signal), not the mode saved in `bar.toml`; TuxThrottle's Game Mode and GameMode hooks change that profile behind the bar's back.
+* **Separate GPUs:** the taskbar's metrics grid shows each GPU apart when there are two or more ("AMD 3%", "NVIDIA 0%"; "GPU1/GPU2" when the vendors match); the Task Manager already has a graph and block per GPU.
+* **Tray:** icons are 22 px (`tray_icon_size`, 16 to 32). The tray speaks StatusNotifierItem only; Wine and other old X11 programs use the XEmbed tray, which needs a proxy such as `snixembed`. Fedora's repositories do not carry it (the installer tries `dnf install snixembed` and skips it when missing); the compositor starts it when it is installed. Without it Wine tray icons do not appear. Not done: an XEmbed tray built into the bar.
+* **Colours:** Settings -> Taskbar has Colours (background, start button, active window button, clock, status icons, remote desktop pill, keyboard layout pill, workspace buttons).
+* **Glass stays on** while gaming by default. `fast_desktop = true` (Settings -> Gaming, "Drop glass while gaming") drops the glass for the compositor and the bar while a game runs or the profile is Performance; checked in the rig (taskbar 27 colours during, 148 after).
+
 ## Install on Fedora / Nobara
 
 `./install-fedora.sh` (env: `FLEETWM_PREFIX`, `FLEETWM_SKIP_DEPS`, `FLEETWM_RUNTIME`, `FLEETWM_TESTS`, `FLEETWM_PGO=0` to skip the profile-guided build, which runs by default like on Debian): dnf build dependencies, optional run-time programs, release build, `ninja install`, the "Fleetwm" login session entry, video/render groups. It does not touch the display manager or install the greeter.

@@ -76,6 +76,7 @@ GameConfig load_game_config() {
     if (auto v = root["desktop_gpu"].value<std::string>()) config.desktop_gpu = desktop_gpu_from_string(*v, config.desktop_gpu);
     if (auto v = root["gamemode"].value<bool>()) config.gamemode = *v;
     if (auto v = root["tuxthrottle"].value<bool>()) config.tuxthrottle = *v;
+    if (auto v = root["fast_desktop"].value<bool>()) config.fast_desktop = *v;
     if (auto v = root["max_render_time_ms"].value<int64_t>()) config.max_render_time_ms = std::clamp(static_cast<int>(*v), 0, kRenderTimeMax);
     if (auto v = root["realtime"].value<bool>()) config.realtime = *v;
     if (auto v = root["mode_switch"].value<bool>()) config.mode_switch = *v;
@@ -99,6 +100,7 @@ void save_game_config(const GameConfig& config) {
   root.insert_or_assign("desktop_gpu", desktop_gpu_to_string(config.desktop_gpu));
   root.insert_or_assign("gamemode", config.gamemode);
   root.insert_or_assign("tuxthrottle", config.tuxthrottle);
+  root.insert_or_assign("fast_desktop", config.fast_desktop);
   root.insert_or_assign("max_render_time_ms", static_cast<int64_t>(std::clamp(config.max_render_time_ms, 0, kRenderTimeMax)));
   root.insert_or_assign("realtime", config.realtime);
   root.insert_or_assign("mode_switch", config.mode_switch);

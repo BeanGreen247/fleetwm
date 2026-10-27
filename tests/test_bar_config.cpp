@@ -85,6 +85,7 @@ TEST_F(BarConfigTest, LoadWithNoConfigFileReturnsDefaults) {
   EXPECT_EQ(config.layout, BarLayout::Capsules);
   EXPECT_TRUE(config.taskbar_colors.bg.empty());
   EXPECT_TRUE(config.taskbar_colors.status_fg.empty());
+  EXPECT_EQ(config.tray_icon_size, 22);
 }
 
 TEST_F(BarConfigTest, TaskbarColoursRoundTrip) {
@@ -94,6 +95,9 @@ TEST_F(BarConfigTest, TaskbarColoursRoundTrip) {
   config.taskbar_colors.active = "#22cc88";
   config.taskbar_colors.clock_fg = "#ffffff";
   config.taskbar_colors.status_fg = "#aabbcc";
+  config.taskbar_colors.remote = "#ff00aa";
+  config.taskbar_colors.layout = "#00aaff";
+  config.tray_icon_size = 26;
   save_bar_config(config);
   const BarConfig loaded = load_bar_config();
   EXPECT_EQ(loaded.taskbar_colors.bg, "#101820");
@@ -101,6 +105,9 @@ TEST_F(BarConfigTest, TaskbarColoursRoundTrip) {
   EXPECT_EQ(loaded.taskbar_colors.active, "#22cc88");
   EXPECT_EQ(loaded.taskbar_colors.clock_fg, "#ffffff");
   EXPECT_EQ(loaded.taskbar_colors.status_fg, "#aabbcc");
+  EXPECT_EQ(loaded.taskbar_colors.remote, "#ff00aa");
+  EXPECT_EQ(loaded.taskbar_colors.layout, "#00aaff");
+  EXPECT_EQ(loaded.tray_icon_size, 26);
 }
 
 TEST_F(BarConfigTest, SaveThenLoadRoundTripsNestedTables) {

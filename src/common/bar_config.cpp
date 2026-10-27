@@ -131,6 +131,8 @@ BarConfig load_bar_config() {
     if (auto v = (*tc)["active"].value<std::string>()) c.active = *v;
     if (auto v = (*tc)["clock_fg"].value<std::string>()) c.clock_fg = *v;
     if (auto v = (*tc)["status_fg"].value<std::string>()) c.status_fg = *v;
+    if (auto v = (*tc)["remote"].value<std::string>()) c.remote = *v;
+    if (auto v = (*tc)["layout"].value<std::string>()) c.layout = *v;
   }
 
   toml::table* ws = table["workspace_colors"].as_table();
@@ -172,6 +174,7 @@ BarConfig load_bar_config() {
   read_names("taskbar_hidden", &config.taskbar_hidden);
   read_names("pinned", &config.pinned_apps);
   if (auto v = table["taskbar_autohide"].value<bool>()) config.taskbar_autohide = *v;
+  if (auto v = table["tray_icon_size"].value<int64_t>()) config.tray_icon_size = std::clamp(static_cast<int>(*v), 16, 32);
   if (auto v = table["start_centered"].value<bool>()) config.start_centered = *v;
   if (auto v = table["taskbar_labels"].value<bool>()) config.taskbar_labels = *v;
   if (auto v = table["media_player"].value<std::string>()) config.media_player = *v;
@@ -212,6 +215,8 @@ void save_bar_config(const BarConfig& config) {
   taskbar_colors.insert_or_assign("active", config.taskbar_colors.active);
   taskbar_colors.insert_or_assign("clock_fg", config.taskbar_colors.clock_fg);
   taskbar_colors.insert_or_assign("status_fg", config.taskbar_colors.status_fg);
+  taskbar_colors.insert_or_assign("remote", config.taskbar_colors.remote);
+  taskbar_colors.insert_or_assign("layout", config.taskbar_colors.layout);
 
   toml::table table;
   table.insert_or_assign("clock", clock);
@@ -232,6 +237,7 @@ void save_bar_config(const BarConfig& config) {
   write_names("taskbar_hidden", config.taskbar_hidden);
   write_names("pinned", config.pinned_apps);
   table.insert_or_assign("taskbar_autohide", config.taskbar_autohide);
+  table.insert_or_assign("tray_icon_size", static_cast<int64_t>(std::clamp(config.tray_icon_size, 16, 32)));
   table.insert_or_assign("start_centered", config.start_centered);
   table.insert_or_assign("taskbar_labels", config.taskbar_labels);
   table.insert_or_assign("media_player", config.media_player);

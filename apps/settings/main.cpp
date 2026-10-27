@@ -1329,6 +1329,12 @@ struct Settings {
     }
 
     ui.space(8);
+    ui.section("System tray");
+    ui.row("Icon size");
+    if (ui.spin(&bar.tray_icon_size, 16, 32, 2)) save_bar();
+    ui.newline();
+    ui.paragraph("The size in pixels of the icons of programs in the tray (Steam, TuxThrottle, the lock). Programs that use the old X11 tray (many Wine programs) need an XEmbed-to-StatusNotifier proxy such as snixembed installed; the compositor starts it when it is there.", true);
+    ui.space(8);
     ui.section("Colours");
     ui.label("Colours of the bar's parts. A grey swatch with no colour set follows the theme; \"Theme\" puts a part back to that.", true);
     ui.newline();
@@ -1346,6 +1352,8 @@ struct Settings {
     colour_row("Active window button", &bar.taskbar_colors.active);
     colour_row("Clock", &bar.taskbar_colors.clock_fg);
     colour_row("Status icons", &bar.taskbar_colors.status_fg);
+    colour_row("Remote desktop pill", &bar.taskbar_colors.remote);
+    colour_row("Keyboard layout pill", &bar.taskbar_colors.layout);
     colour_row("Workspace button", &bar.workspace_colors.inactive_bg);
     colour_row("Workspace text", &bar.workspace_colors.inactive_fg);
     colour_row("Current workspace", &bar.workspace_colors.active_bg);
@@ -1467,6 +1475,10 @@ struct Settings {
     if (ui.toggle(&game.gamemode)) save_game();
     ui.newline();
     ui.paragraph("Asks Feral GameMode to boost every game while it runs: Steam and Proton games, Wine programs, Lutris, anything fullscreen except video players and browsers. Needs the gamemode package.", true);
+    ui.row("Drop glass while gaming");
+    if (ui.toggle(&game.fast_desktop)) save_game();
+    ui.newline();
+    ui.paragraph("Off by default: glass and blur stay on while you play. Switch it on to have the compositor and the bar drop them while a game runs or the power profile is Performance, and bring them back afterwards. theme.toml is not changed.", true);
     ui.row("Real-time priority");
     if (ui.toggle(&game.realtime)) save_game();
     ui.newline();

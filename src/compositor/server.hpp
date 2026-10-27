@@ -414,6 +414,11 @@ class Server {
   void reload_mouse_config();
   const GameConfig& game_config() const { return game_config_; }
   void reload_game_config();
+  // The desktop's fast look (game.toml fast_desktop): glass off while a game runs or the power profile is Performance. The compositor owns the state; it is sent to the
+  // bar as `FAST_LOOK 0|1`, and the bar reports the power profile back as `FAST_PROFILE 0|1`.
+  void set_fast_games(bool on);
+  void set_fast_profile(bool on);
+  bool fast_look() const { return fast_look_; }
   void forget_mouse_device(wlr_input_device* device);
   void apply_keyboard_config(Keyboard* kb);  // keymap, repeat and current layout for one keyboard
   void set_layout(int index);               // switch every keyboard to layout `index` (wraps)
@@ -585,6 +590,8 @@ class Server {
   KeyboardConfig keyboard_config_;
   MouseConfig mouse_config_;
   GameConfig game_config_;
+  bool fast_games_ = false, fast_profile_ = false, fast_look_ = false;
+  void update_fast_look();
   std::vector<wlr_input_device*> mouse_devices_;
   int layout_index_ = 0;
 

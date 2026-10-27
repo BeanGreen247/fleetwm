@@ -139,5 +139,24 @@ shown = {p for p in b.crop(box).getdata()} != {bg}
 gone = set(a.crop(box).getdata()) == {bg}
 print("PASS: the hidden window and its title bar are gone" if shown and gone else "FAIL: window shown before=%s, empty after=%s" % (shown, gone))
 PY
+echo "== fast desktop (opt-in): the bar drops its glass while a game runs and gets it back afterwards"
+CFG='fast_desktop = true' session '
+FIT_APP_ID=steam_app_999 $T/fit & FP=$!
+sleep 3
+grim $OUT/fast-during.png
+kill $FP
+sleep 3
+grim $OUT/fast-after.png
+'
+python3 - "$OUT/fast-during.png" "$OUT/fast-after.png" <<'PY'
+import sys
+from PIL import Image
+d, a = Image.open(sys.argv[1]).convert("RGB"), Image.open(sys.argv[2]).convert("RGB")
+w, h = a.size
+def taskbar_colours(im): return len(set(im.crop((300, h - 40, w - 400, h - 4)).getdata()))
+# a glass taskbar is a blurred, shaded gradient (many colours); a flat one has very few
+print("PASS: glass off during the game (%d colours), back after (%d)" % (taskbar_colours(d), taskbar_colours(a)) if taskbar_colours(d) < taskbar_colours(a) // 2 else "FAIL: taskbar colours during=%d after=%d" % (taskbar_colours(d), taskbar_colours(a)))
+PY
+
 rm -rf "$T"
 echo "screenshots in $OUT"

@@ -20,6 +20,8 @@
 //   * mode_switch: when a fullscreen window's picture is exactly the size of one of the monitor's own modes (an old game at 800x600), switch the monitor to that
 //     mode while it runs and back afterwards, instead of scaling. Off by default.
 //   * tuxthrottle: while a game runs, switch TuxThrottle's Game Mode on (and off after the last one), when `tuxthrottlectl` is installed (src/common/tuxthrottle.hpp).
+//   * fast_desktop (off by default): while a game runs, or the power profile is Performance, the desktop switches to its fast look: glass effects (blur, translucent frames, glass pointers) are
+//     off for the compositor and the bar until it ends, without touching theme.toml.
 //   * fps_limit: the frame rate cap `fleetwm-game` gives a game through libstrangle (0 = no cap); lower fps for a quieter, cooler machine.
 
 namespace fleetwm {
@@ -36,6 +38,7 @@ struct GameConfig {
   DesktopGpu desktop_gpu = DesktopGpu::Integrated;
   bool gamemode = true;
   bool tuxthrottle = true;
+  bool fast_desktop = false;  // off: glass and blur stay on while gaming (they are cheap enough); opt in to drop them
   int max_render_time_ms = 0;
   bool realtime = false;
   bool mode_switch = false;

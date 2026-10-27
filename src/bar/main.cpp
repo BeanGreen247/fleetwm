@@ -174,8 +174,9 @@ struct Bar {
   // Glass look (theme.toml glass_effects): the blurred wallpaper behind translucent surfaces.
   bool glass = false;
   cairo_surface_t* backdrop = nullptr;
+  bool fast_look = false;  // the compositor says a game runs or the profile is Performance: no glass until it ends
   void refresh_glass() {
-    glass = theme.glass;
+    glass = theme.glass && !fast_look;
     if (backdrop) cairo_surface_destroy(backdrop);
     backdrop = glass ? load_backdrop(true) : nullptr;  // called when the config or the wallpaper changed
   }
@@ -261,6 +262,8 @@ struct Bar {
   int kb_current = 0;
   net::Device net_dev;  // the card the network icon stands for
   bool net_have = false;
+  std::vector<std::string> gpu_texts;  // one text per GPU when there are several (the taskbar grid shows them apart), else empty
+  Rect gpu2_rect;
   Rect ws_rect[10], vol_rect, power_rect, battery_rect, ram_rect, cpu_rect, gpu_rect, disk_rect, bt_rect, media_rect;
   int tooltip_for = 0;  // 1 battery, 2 RAM, 3 CPU, 4 GPU, 5 disk, 6 volume, 1000+id window
   std::vector<Rect> tray_rects;
@@ -428,7 +431,8 @@ struct Bar {
   static constexpr double kRightGap = 12;    // right box child spacing
   static constexpr double kBoxGap = 8;       // bar_box child spacing
   static constexpr double kMargin = 8;
-  static constexpr double kTrayIcon = 16, kTraySpacing = 6;
+  static constexpr double kTraySpacing = 8;
+  double tray_px() const { return std::clamp(config.tray_icon_size, 16, 32); }  // the tray's icon size (bar.toml tray_icon_size, 22 by default)
   static constexpr double kPlugW = 11, kBatteryW = 26 + kStatPad + kPlugW, kModeW = 16 + kStatPad, kPowerW = 30, kNetW = 18 + kStatPad;
 
   // The workspace buttons shown right now (see visible_workspaces()).
@@ -460,14 +464,22 @@ struct Bar {
   }
   double tray_total() {
     const size_t n = tray->items().size();
-    return n ? n * kTrayIcon + (n - 1) * kTraySpacing : 0;
+    return n ? n * tray_px() + (n - 1) * kTraySpacing : 0;
   }
   // Desktop taskbar: CPU/RAM/GPU/Disk collapse into a 2x2 grid in a smaller font.
   static constexpr double kSmallFont = 11.5, kGridGap = 6;
   double small_w(Metrics& m, const std::string& s) { return measure_text(m.cr, s, kSmallFont).width; }
-  void grid_columns(Metrics& m, double* col_a, double* col_b) {
+  void grid_columns(Metrics& m, double* col_a, double* col_b, double* col_c = nullptr) {
+    if (gpu_texts.size() >= 2) {
+      // several GPUs, each in a cell of its own: CPU over GPU 1, RAM over GPU 2, and the disk alone in the last column
+      *col_a = std::max({small_w(m, cpu_text), small_w(m, gpu_texts[0]), small_w(m, "CPU 100%"), small_w(m, "NVIDIA 100%")});
+      *col_b = std::max({small_w(m, ram_text), small_w(m, gpu_texts[1]), small_w(m, "RAM 100%"), small_w(m, "NVIDIA 100%")});
+      if (col_c) *col_c = std::max(small_w(m, disk_text), small_w(m, "Disk 100%"));
+      return;
+    }
     *col_a = std::max({small_w(m, cpu_text), small_w(m, gpu_text), small_w(m, "CPU 100%"), small_w(m, "GPU 100%")});
     *col_b = std::max({small_w(m, ram_text), small_w(m, disk_text), small_w(m, "RAM 100%"), small_w(m, "Disk 100%")});
+    if (col_c) *col_c = 0;
   }
 
   // The battery widget is the icon plus, when there is a battery, its percentage as text.
@@ -631,10 +643,65 @@ struct Bar {
     cairo_restore(cr);
   }
 
+  // The power profile the system is really in (power-profiles-daemon's ActiveProfile), followed live: TuxThrottle, GameMode hooks or `powerprofilesctl` change it
+  // behind the bar's back, and the gauge must show that, not the mode saved in bar.toml. Empty until the daemon answers.
+  std::string ppd_active;
+  sd_bus* ppd_bus = nullptr;
+  bool ppd_dirty = false;
+  PowerMode shown_power_mode() const {
+    if (ppd_active.empty()) return config.power_mode;
+    return power_mode_from_string(ppd_active == "power-saver" ? "battery_saver" : ppd_active == "performance" ? "performance" : "normal");
+  }
+  bool read_ppd_active() {
+    static const char* const kNames[][2] = {{"org.freedesktop.UPower.PowerProfiles", "/org/freedesktop/UPower/PowerProfiles"},
+                                            {"net.hadess.PowerProfiles", "/net/hadess/PowerProfiles"}};
+    if (!ppd_bus) return false;
+    for (const auto& n : kNames) {
+      sd_bus_error err = SD_BUS_ERROR_NULL;
+      char* active = nullptr;
+      const int r = sd_bus_get_property_string(ppd_bus, n[0], n[1], n[0], "ActiveProfile", &err, &active);
+      sd_bus_error_free(&err);
+      if (r >= 0 && active) {
+        const std::string now = active;
+        std::free(active);
+        const bool changed = now != ppd_active;
+        ppd_active = now;
+        return changed;
+      }
+    }
+    return false;
+  }
+  void start_ppd_watch() {
+    if (sd_bus_open_system(&ppd_bus) < 0) {
+      ppd_bus = nullptr;
+      return;
+    }
+    auto cb = [](sd_bus_message*, void* self, sd_bus_error*) -> int {
+      static_cast<Bar*>(self)->ppd_dirty = true;
+      return 0;
+    };
+    for (const char* sender : {"org.freedesktop.UPower.PowerProfiles", "net.hadess.PowerProfiles"}) {
+      const std::string rule = std::string("type='signal',sender='") + sender + "',interface='org.freedesktop.DBus.Properties',member='PropertiesChanged'";
+      sd_bus_add_match(ppd_bus, nullptr, rule.c_str(), cb, this);
+    }
+    read_ppd_active();
+    app.watch_fd(sd_bus_get_fd(ppd_bus), [this] {
+      while (sd_bus_process(ppd_bus, nullptr) > 0) {
+      }
+      if (ppd_dirty) {
+        ppd_dirty = false;
+        if (read_ppd_active()) {
+          ipc.send_command(std::string("FAST_PROFILE ") + (ppd_active == "performance" ? "1" : "0"));  // the compositor follows the profile too
+          redraw();
+        }
+      }
+    });
+  }
+
   // Power mode as a tachometer: needle low for power saver, in the middle for balanced, pegged in the
   // red zone for performance.
   void draw_mode_glyph(cairo_t* cr, double cx, double cy, const Color& c) {
-    const double f = power_mode_gauge(config.power_mode);
+    const double f = power_mode_gauge(shown_power_mode());
     draw_cached_glyph(cr, cx - 12, cy - 12, {1, static_cast<int>(f * 100), glyph_rgb(c.r, c.g, c.b), 24, 24},
                       [&](cairo_t* g, double x, double y) { draw_gauge_glyph(g, x, y, 16, f, c.r, c.g, c.b); });
   }
@@ -990,12 +1057,12 @@ struct Bar {
     const auto& items = tray->items();
     tray_rects.assign(items.size(), Rect{});
     for (size_t i = 0; i < items.size(); ++i) {
-      const double iy = (H - kTrayIcon) / 2.0;
-      tray_rects[i] = {rx, iy, kTrayIcon, kTrayIcon};
+      const double iy = (H - tray_px()) / 2.0;
+      tray_rects[i] = {rx, iy, tray_px(), tray_px()};
       if (items[i].icon) {
-        draw_app_icon(cr, items[i].icon, rx, iy, kTrayIcon);  // scaled once per icon, see app_icon.hpp
+        draw_app_icon(cr, items[i].icon, rx, iy, tray_px());  // scaled once per icon, see app_icon.hpp
       }
-      rx += kTrayIcon + (i + 1 < items.size() ? kTraySpacing : 0);
+      rx += tray_px() + (i + 1 < items.size() ? kTraySpacing : 0);
     }
     rx += kRightGap;
 
@@ -1076,7 +1143,7 @@ struct Bar {
   void draw_layout_pill(cairo_t* cr, Metrics& m, double x, double cy, double w) {
     const double h = 20;
     rounded_rect(cr, x, cy - h / 2, w, h, pal.rounded ? h / 2 : 3);
-    set_source(cr, with_alpha(pal.accent, 0.22));
+    set_source(cr, with_alpha(themed(config.taskbar_colors.layout, pal.accent), 0.22));
     cairo_fill(cr);
     const std::string t = layout_text();
     const TextExtents te = measure_text(cr, t, 11.5, true);
@@ -1193,7 +1260,7 @@ struct Bar {
   void draw_remote_pill(cairo_t* cr, double x, double cy, double w) {
     const double h = 20;
     rounded_rect(cr, x, cy - h / 2, w, h, pal.rounded ? h / 2 : 3);
-    set_source(cr, with_alpha(pal.accent, 0.35));
+    set_source(cr, with_alpha(themed(config.taskbar_colors.remote, pal.accent), 0.35));
     cairo_fill(cr);
     const TextExtents te = measure_text(cr, remote_label, 11.5, true);
     draw_text(cr, remote_label, x + (w - te.width) / 2, cy - te.height / 2 + te.ascent, 11.5, pal.fg_primary, true);
@@ -1456,9 +1523,9 @@ struct Bar {
       }
       case TbElement::Metrics: {
         if (v) return 2 * kStat;
-        double a, b;
-        grid_columns(m, &a, &b);
-        return a + b + kGridGap + kStatPad;
+        double a, b, c;
+        grid_columns(m, &a, &b, &c);
+        return a + b + kGridGap + kStatPad + (c > 0 ? c + kGridGap : 0);
       }
       case TbElement::Tray: {
         const size_t n = tray->items().size();
@@ -1478,6 +1545,7 @@ struct Bar {
   }
 
   void clear_tb_rects() {
+    gpu2_rect = Rect{};
     start_rect = power_rect = vol_rect = battery_rect = ram_rect = cpu_rect = gpu_rect = disk_rect = net_rect = layout_rect = bt_rect = media_rect = remote_rect = Rect{};
     clock_rect = Rect{};
     show_desktop_rect = Rect{};
@@ -1583,8 +1651,8 @@ struct Bar {
           draw_stat_vertical(cr, m, gpu_text, gpu_rect);
           draw_stat_vertical(cr, m, disk_text, disk_rect);
         } else {
-          double col_a, col_b;
-          grid_columns(m, &col_a, &col_b);
+          double col_a, col_b, col_c;
+          grid_columns(m, &col_a, &col_b, &col_c);
           const double cell_h = box.h / 2.0;
           const TextExtents se = measure_text(cr, "Ag", kSmallFont);
           const double r0 = (cell_h - se.height) / 2.0 + se.ascent, r1 = cell_h + r0;
@@ -1593,21 +1661,34 @@ struct Bar {
           gpu_rect = {box.x, cell_h, col_a + kGridGap, cell_h};
           ram_rect = {x1 - kGridGap / 2, 0, col_b + kStatPad, cell_h};
           disk_rect = {x1 - kGridGap / 2, cell_h, col_b + kStatPad, cell_h};
+          if (col_c > 0) {  // several GPUs: CPU / GPU 1, RAM / GPU 2, Disk
+            const double x2 = x1 + col_b + kGridGap;
+            gpu_rect = {box.x, cell_h, col_a + kGridGap, cell_h};
+            gpu2_rect = {x1 - kGridGap / 2, cell_h, col_b + kGridGap, cell_h};
+            ram_rect = {x1 - kGridGap / 2, 0, col_b + kGridGap, cell_h};
+            disk_rect = {x2 - kGridGap / 2, 0, col_c + kStatPad, box.h};
+            draw_stat(cr, m, cpu_text, x0, r0, kSmallFont);
+            draw_stat(cr, m, gpu_texts[0], x0, r1, kSmallFont);
+            draw_stat(cr, m, ram_text, x1, r0, kSmallFont);
+            draw_stat(cr, m, gpu_texts[1], x1, r1, kSmallFont);
+            draw_stat(cr, m, disk_text, x2, (box.h - se.height) / 2.0 + se.ascent, kSmallFont);
+          } else {
           draw_stat(cr, m, cpu_text, x0, r0, kSmallFont);
           draw_stat(cr, m, gpu_text, x0, r1, kSmallFont);
           draw_stat(cr, m, ram_text, x1, r0, kSmallFont);
           draw_stat(cr, m, disk_text, x1, r1, kSmallFont);
+          }
         }
         break;
       case TbElement::Tray: {
         const auto& items = tray->items();
         tray_rects.assign(items.size(), Rect{});
         for (size_t i = 0; i < items.size(); ++i) {
-          const double ix = v ? (cross - kTrayIcon) / 2.0 : box.x + static_cast<double>(i) * (kTrayIcon + kTraySpacing);
-          const double iy = v ? box.y + static_cast<double>(i) * kRow + (kRow - kTrayIcon) / 2 : (box.h - kTrayIcon) / 2.0;
-          tray_rects[i] = {ix, iy, kTrayIcon, kTrayIcon};
+          const double ix = v ? (cross - tray_px()) / 2.0 : box.x + static_cast<double>(i) * (tray_px() + kTraySpacing);
+          const double iy = v ? box.y + static_cast<double>(i) * kRow + (kRow - tray_px()) / 2 : (box.h - tray_px()) / 2.0;
+          tray_rects[i] = {ix, iy, tray_px(), tray_px()};
           if (!items[i].icon) continue;
-          draw_app_icon(cr, items[i].icon, ix, iy, kTrayIcon);
+          draw_app_icon(cr, items[i].icon, ix, iy, tray_px());
         }
         break;
       }
@@ -2002,14 +2083,40 @@ struct Bar {
   bool update_gpu() {
     bool changed = gpu.sample([](std::function<void()> fn) { std::thread(std::move(fn)).detach(); },
                               [this](std::function<void()> fn) { app.post(std::move(fn)); });
-    return changed && set_if_changed(gpu_text, gpu.text());
+    return changed && refresh_gpu_text();
+  }
+
+  // gpu_text is the combined text ("GPU1 12%  GPU2 40%") for places with one cell; gpu_texts keeps each GPU apart for the taskbar grid, labelled by vendor
+  // ("AMD 3%", "NVIDIA 0%") or by number when two have the same one.
+  bool refresh_gpu_text() {
+    bool changed = set_if_changed(gpu_text, gpu.text());
+    std::vector<std::string> texts;
+    const std::vector<int> pcts = gpu.percents();
+    if (pcts.size() >= 2) {
+      const std::vector<std::string> names = gpu.names();
+      std::vector<std::string> labels;
+      bool unique = true;
+      for (const std::string& n : names) {
+        std::string w = n.substr(0, n.find_first_of(" ("));
+        for (const std::string& o : labels) unique = unique && o != w;
+        labels.push_back(w.empty() ? "GPU" : w);
+      }
+      for (size_t i = 0; i < pcts.size(); ++i)
+        texts.push_back((unique && i < labels.size() ? labels[i] : "GPU" + std::to_string(i + 1)) + " " + (pcts[i] < 0 ? std::string("--") : std::to_string(pcts[i])) + "%");
+    }
+    if (texts != gpu_texts) {
+      gpu_texts = std::move(texts);
+      changed = true;
+    }
+    return changed;
   }
 
   void init_gpu() {
     gpu.on_nvidia_update = [this] {
-      if (set_if_changed(gpu_text, gpu.text()) && stats_shown()) redraw();
+      if (refresh_gpu_text() && stats_shown()) redraw();
     };
     gpu.discover();
+    refresh_gpu_text();
     if (!gpu.any()) gpu_text = "GPU N/A";
   }
 
@@ -2449,6 +2556,16 @@ struct Bar {
 
   // ------------------------------------------------------------------ ipc --
   void handle_ipc_line(const std::string& line) {
+    if (line.rfind("FAST_LOOK ", 0) == 0) {
+      const bool want = line.size() > 10 && line[10] == '1';
+      if (want != fast_look) {
+        fast_look = want;
+        refresh_glass();
+        apply_layout();
+        redraw();
+      }
+      return;
+    }
     if (line.rfind("LAYOUTS ", 0) == 0) {
       if (parse_layouts_line(line)) {
         if (island) apply_layout();
@@ -2493,6 +2610,7 @@ struct Bar {
       ipc.send_command("WORKSPACE?");
       ipc.send_command("LAYOUTS?");
       ipc.send_command("SUBSCRIBE_WINDOWS");
+      if (!ppd_active.empty()) ipc.send_command(std::string("FAST_PROFILE ") + (ppd_active == "performance" ? "1" : "0"));
       return;
     }
     if (!reconnect_timer) {
@@ -2638,6 +2756,10 @@ struct Bar {
         want = i + 1;
         r = *rects[i];
       }
+    if (gpu_texts.size() >= 2 && gpu2_rect.hit(x, y)) {
+      want = 4;  // the GPU tooltip lists every GPU
+      r = gpu2_rect;
+    }
     if (media && media->state().available && media_rect.hit(x, y)) {
       want = 10;
       r = media_rect;
@@ -2825,6 +2947,7 @@ int main(int argc, char** argv) {
     }
   });
 
+  B.start_ppd_watch();
   B.init_gpu();
   B.update_disk();
   B.update_ram();
