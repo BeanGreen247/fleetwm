@@ -2984,11 +2984,22 @@ int main(int argc, char** argv) {
     // the program's own menu, shown in the taskbar's menu: a click runs busctl to tell it which entry was chosen
     std::vector<MenuItem> items;
     for (const Tray::MenuEntry& e : rq.entries) {
-      if (e.separator) items.push_back(MenuItem{MenuItem::Kind::Separator, "", ""});
-      else
-        items.push_back(MenuItem{MenuItem::Kind::Exec, e.label,
-                                 "busctl --user call " + rq.bus_name + " " + rq.menu_path + " com.canonical.dbusmenu Event isvu " + std::to_string(e.id) +
-                                     " clicked i 0 0"});
+      MenuItem item;
+      if (e.separator) {
+        items.push_back(item);
+        continue;
+      }
+      item.label = e.label;
+      item.checked = e.checked;
+      item.disabled = !e.enabled;
+      if (e.children > 0) {  // a submenu: opens inside the same menu
+        item.kind = MenuItem::Kind::Submenu;
+        item.arg = std::to_string(e.children);
+      } else {
+        item.kind = MenuItem::Kind::Exec;
+        item.arg = "busctl --user call " + rq.bus_name + " " + rq.menu_path + " com.canonical.dbusmenu Event isvu " + std::to_string(e.id) + " clicked i 0 0";
+      }
+      items.push_back(item);
     }
     B.open_ctx_menu(items, rq.x, rq.y);
   });

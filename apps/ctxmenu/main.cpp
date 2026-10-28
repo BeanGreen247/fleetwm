@@ -3,6 +3,8 @@
 //
 //   fleetwm-ctxmenu --edge bottom|top|left|right --at N --item 'Label|exec|prog args' --item '-' --item 'Label|ipc|COMMAND'
 //                   --item 'Label|pin|app.desktop' --item 'Label|unpin|app.desktop'
+// A submenu is 'Label|sub|N' followed by its N items; the flags ',checked' and ',disabled' follow the kind ('Label|exec,checked|prog'). A submenu opens in place with
+// a Back row (Right / Left and Backspace work from the keyboard).
 // `--at` is where the click was along the taskbar (x for a horizontal one, y for a vertical one), in output pixels.
 
 #include <signal.h>
@@ -43,10 +45,52 @@ struct Menu {
   Palette pal;
   MenuTheme theme;
   std::unique_ptr<Surface> surface;
-  std::vector<MenuItem> items;
+  std::vector<MenuItem> flat;                           // every item, a Submenu followed by its own
+  std::vector<std::pair<size_t, size_t>> levels;       // the ranges of `flat` being shown, the last one is on screen
+  std::vector<MenuItem> items;                          // the rows of the level on screen (a Back row first below the top level)
+  std::vector<size_t> row_source;                       // for each row: its index in `flat`, or npos for the Back row
   std::vector<double> top;  // y of each row inside the card
   int hover = -1;
+  bool align_bottom = false;  // a menu above the taskbar keeps its bottom edge in place when a submenu is shorter
+  int surf_h = 0;
   int margin = 12;  // room around the card for its shadow
+
+  static constexpr size_t kBack = static_cast<size_t>(-1);
+
+  // Rebuilds the rows from the level on screen.
+  void show_level() {
+    items.clear();
+    row_source.clear();
+    const auto [begin, end] = levels.back();
+    if (levels.size() > 1) {
+      items.push_back(MenuItem{MenuItem::Kind::Exec, "\xE2\x80\xB9  Back", "-"});
+      row_source.push_back(kBack);
+      items.push_back(MenuItem{});  // separator
+      row_source.push_back(kBack);
+    }
+    for (const MenuLevelEntry& e : menu_level(flat, begin, end)) {
+      items.push_back(e.item);
+      row_source.push_back(e.index);
+    }
+    hover = -1;
+    layout();
+    if (!top.empty()) {  // the card is as tall as this level; the surface was sized for the tallest
+      double h = 2 * menu::kOuterPadding;
+      for (const MenuItem& i : items) h += i.kind == MenuItem::Kind::Separator ? menu::kSeparatorHeight : menu::kRowHeight;
+      card_h = static_cast<int>(h);
+    }
+    if (surface) surface->queue_draw();
+  }
+
+  void enter(size_t index) {
+    levels.push_back(submenu_range(flat, index));
+    show_level();
+  }
+  void go_back() {
+    if (levels.size() <= 1) return;
+    levels.pop_back();
+    show_level();
+  }
 
   void layout() {
     top.clear();
@@ -58,14 +102,15 @@ struct Menu {
   }
 
   int item_at(double x, double y) const {
-    const double cx = x - margin, cy = y - margin;
+    const double cx = x - margin, cy = y - card_y();
     for (size_t i = 0; i < items.size(); ++i) {
-      if (items[i].kind == MenuItem::Kind::Separator) continue;
+      if (items[i].kind == MenuItem::Kind::Separator || items[i].disabled) continue;
       if (cy >= top[i] && cy < top[i] + menu::kRowHeight && cx >= 0 && cx < surface_w() - 2.0 * margin) return static_cast<int>(i);
     }
     return -1;
   }
   int surface_w() const { return card_w + 2 * margin; }
+  double card_y() const { return align_bottom && surf_h > 0 ? surf_h - margin - card_h : margin; }
   int card_w = 160, card_h = 0;
 
   void draw(cairo_t* cr, int, int) {
@@ -73,7 +118,7 @@ struct Menu {
     cairo_set_source_rgba(cr, 0, 0, 0, 0);
     cairo_paint(cr);
     cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
-    const double x0 = margin, y0 = margin, r = theme.radius;
+    const double x0 = margin, y0 = card_y(), r = theme.radius;
     // A soft shadow, then the card with a thin rim.
     for (int i = 4; i >= 1; --i) {
       rounded_rect(cr, x0 - i + 0.5, y0 - i + menu::kShadowOffset - i * 0.25, card_w + 2 * i - 1, card_h + 2 * i - 1, r + i);
@@ -101,16 +146,57 @@ struct Menu {
         set_source(cr, theme.hover);
         cairo_fill(cr);
       }
+      const Color fg = items[i].disabled ? Color{theme.text.r, theme.text.g, theme.text.b, 0.4} : (on ? theme.hover_text : theme.text);
       const TextExtents te = measure_text(cr, items[i].label, menu::kFontPx);
-      draw_text(cr, items[i].label, x0 + menu::kTextPadding, y + (menu::kRowHeight - te.height) / 2 + te.ascent, menu::kFontPx,
-                on ? theme.hover_text : theme.text);
+      const double text_x = x0 + menu::kTextPadding + (level_has_checks() ? 16 : 0);
+      const double text_y = y + (menu::kRowHeight - te.height) / 2 + te.ascent;
+      if (items[i].checked) {  // a tick, drawn rather than typed so it looks the same in every font
+        set_source(cr, fg);
+        cairo_set_line_width(cr, 1.8);
+        cairo_move_to(cr, x0 + menu::kTextPadding, y + menu::kRowHeight / 2 + 1);
+        cairo_line_to(cr, x0 + menu::kTextPadding + 4, y + menu::kRowHeight / 2 + 5);
+        cairo_line_to(cr, x0 + menu::kTextPadding + 11, y + menu::kRowHeight / 2 - 5);
+        cairo_stroke(cr);
+      }
+      draw_text(cr, items[i].label, text_x, text_y, menu::kFontPx, fg);
+      if (items[i].kind == MenuItem::Kind::Submenu) {  // a chevron: the entries of this one open in place
+        set_source(cr, fg);
+        cairo_set_line_width(cr, 1.6);
+        const double cx = x0 + card_w - menu::kTextPadding - 3, cy = y + menu::kRowHeight / 2;
+        cairo_move_to(cr, cx - 3, cy - 5);
+        cairo_line_to(cr, cx + 2, cy);
+        cairo_line_to(cr, cx - 3, cy + 5);
+        cairo_stroke(cr);
+      }
     }
+  }
+
+  bool level_has_checks() const {
+    for (const MenuItem& i : items)
+      if (i.checked) return true;
+    return false;
   }
 
   void set_hover(int i) {
     if (i == hover) return;
     hover = i;
     surface->queue_draw();
+  }
+
+  // A row was chosen: a submenu opens in place, Back goes up, anything else runs and closes the menu.
+  void activate(int row) {
+    if (row < 0 || static_cast<size_t>(row) >= items.size()) return;
+    const MenuItem& it = items[static_cast<size_t>(row)];
+    if (it.disabled) return;
+    if (row_source[static_cast<size_t>(row)] == kBack) {
+      if (it.kind != MenuItem::Kind::Separator) go_back();
+      return;
+    }
+    if (it.kind == MenuItem::Kind::Submenu) {
+      enter(row_source[static_cast<size_t>(row)]);
+      return;
+    }
+    run(it);
   }
 
   void run(const MenuItem& it) {
@@ -137,6 +223,7 @@ struct Menu {
         }
         break;
       }
+      case MenuItem::Kind::Submenu:
       case MenuItem::Kind::Separator: break;
     }
     app.quit();
@@ -148,7 +235,7 @@ struct Menu {
       int i = hover;
       for (size_t n = 0; n < items.size(); ++n) {
         i = (i + d + static_cast<int>(items.size())) % static_cast<int>(items.size());
-        if (items[static_cast<size_t>(i)].kind != MenuItem::Kind::Separator) break;
+        if (items[static_cast<size_t>(i)].kind != MenuItem::Kind::Separator && !items[static_cast<size_t>(i)].disabled) break;
       }
       set_hover(i);
     };
@@ -161,8 +248,13 @@ struct Menu {
       case XKB_KEY_Return:
       case XKB_KEY_KP_Enter:
       case XKB_KEY_space:
-        if (hover >= 0) run(items[static_cast<size_t>(hover)]);
+        activate(hover);
         break;
+      case XKB_KEY_Right:
+        if (hover >= 0 && items[static_cast<size_t>(hover)].kind == MenuItem::Kind::Submenu) activate(hover);
+        break;
+      case XKB_KEY_Left:
+      case XKB_KEY_BackSpace: go_back(); break;
     }
   }
 };
@@ -187,26 +279,33 @@ int main(int argc, char** argv) {
     if (a == "--edge" && i + 1 < argc) edge = taskbar_position_from_string(argv[++i]);
     else if (a == "--at" && i + 1 < argc) at = std::atoi(argv[++i]);
     else if (a == "--item" && i + 1 < argc) {
-      if (auto it = parse_menu_item(argv[++i])) M.items.push_back(*it);
+      if (auto it = parse_menu_item(argv[++i])) M.flat.push_back(*it);
     }
   }
-  if (M.items.empty()) return 2;
+  if (M.flat.empty()) return 2;
+  M.levels.push_back({0, M.flat.size()});
+  M.show_level();
   M.pal = load_palette(load_theme_config());
   M.theme = menu_theme(M.pal);
-  M.layout();
   if (!M.app.connect()) return 1;
 
   // Size from the longest label.
   cairo_surface_t* scratch = cairo_image_surface_create(CAIRO_FORMAT_A8, 1, 1);
   cairo_t* sc = cairo_create(scratch);
   int widest = 0;
-  for (const MenuItem& i : M.items) widest = std::max(widest, static_cast<int>(measure_text(sc, i.label, menu::kFontPx).width));
+  // wide enough for every level (a submenu opens in the same card), with room for a tick before the label and a chevron after it
+  for (const MenuItem& i : M.flat)
+    widest = std::max(widest, static_cast<int>(measure_text(sc, i.label, menu::kFontPx).width) + (i.kind == MenuItem::Kind::Submenu ? 20 : 0) + (i.checked ? 16 : 0));
+  widest = std::max(widest, static_cast<int>(measure_text(sc, "\xE2\x80\xB9  Back", menu::kFontPx).width));
   cairo_destroy(sc);
   cairo_surface_destroy(scratch);
   const MenuSize size = ctx_menu_size(M.items, widest);
   M.card_w = size.w;
-  M.card_h = size.h;
+  M.card_h = std::max(size.h, menu_max_height(M.flat));  // the tallest level, so opening a submenu never needs a bigger surface
   const int sw = M.card_w + 2 * M.margin, sh = M.card_h + 2 * M.margin;
+  M.surf_h = sh;
+  M.align_bottom = edge == TaskbarPosition::Bottom;
+  M.show_level();  // the top level again, now that the card is sized for the tallest
 
   int screen_w = 1920, screen_h = 1080;
   if (const OutputInfo* o = M.app.preferred_output()) {
@@ -237,7 +336,7 @@ int main(int argc, char** argv) {
   M.surface->on_button = [&M](double x, double y, uint32_t b, bool pressed) {
     if (pressed || b != kBtnLeft) return;  // act on release, like a button
     const int i = M.item_at(x, y);
-    if (i >= 0) M.run(M.items[static_cast<size_t>(i)]);
+    if (i >= 0) M.activate(i);
   };
   M.surface->on_leave = [&M] { M.set_hover(-1); };
   M.surface->on_closed = [&M] { M.app.quit(); };

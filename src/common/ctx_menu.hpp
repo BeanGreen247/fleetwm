@@ -5,6 +5,7 @@
 
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "bar_config.hpp"
@@ -18,15 +19,31 @@ struct MenuItem {
     Ipc,    // arg: a compositor command ("WINDOW_CLOSE 12")
     Pin,    // arg: a desktop entry id: add it to the taskbar's pinned apps
     Unpin,  // arg: a desktop entry id: remove it
+    Submenu,  // arg: how many of the items that follow belong to it (and to its own submenus): the menu of a program's tray icon
   };
   Kind kind = Kind::Separator;
   std::string label, arg;
+  bool checked = false;   // a ticked check or radio entry
+  bool disabled = false;  // shown greyed, does nothing
   bool operator==(const MenuItem&) const = default;
 };
 
-// "Label|exec|prog arg", "Label|ipc|COMMAND", "Label|pin|id.desktop", "Label|unpin|id.desktop" or "-" (separator). nullopt when malformed.
+// "Label|exec|prog arg", "Label|ipc|COMMAND", "Label|pin|id.desktop", "Label|unpin|id.desktop", "Label|sub|N" (a submenu of the next N items) or "-" (separator).
+// The kind may carry flags after a comma: "Label|exec,checked,disabled|prog". nullopt when malformed.
 std::optional<MenuItem> parse_menu_item(const std::string& text);
 std::string format_menu_item(const MenuItem& item);
+
+// One level of a menu given as a flat list where a Submenu item is followed by its items: the entries of [begin, end) with the submenus' contents skipped, each with its
+// index in the flat list. `end` of a submenu's own level is index + 1 + count (clamped to the list).
+struct MenuLevelEntry {
+  size_t index;
+  MenuItem item;
+};
+std::vector<MenuLevelEntry> menu_level(const std::vector<MenuItem>& flat, size_t begin, size_t end);
+// The range of the items inside the Submenu at `index`.
+std::pair<size_t, size_t> submenu_range(const std::vector<MenuItem>& flat, size_t index);
+// The most rows any one level shows, with a Back row on the levels below the first (for sizing the card once for every level).
+int menu_max_height(const std::vector<MenuItem>& flat);
 
 // Splits an exec argument into program and arguments at spaces (no quoting: the bar only builds simple commands).
 std::vector<std::string> split_exec_arg(const std::string& arg);

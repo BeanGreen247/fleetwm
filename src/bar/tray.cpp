@@ -110,22 +110,34 @@ std::string clean_menu_label(const std::string& in) {
   return out;
 }
 
-// The clickable entries of a node's children in order; submenus are flattened ("Friends > Online").
-void flatten_menu(const MenuNode& node, const std::string& prefix, std::vector<Tray::MenuEntry>* out) {
+// The entries of a node's children in order, a submenu as a header followed by its own entries (depth first). A disabled entry stays, greyed.
+void flatten_menu(const MenuNode& node, std::vector<Tray::MenuEntry>* out) {
   for (const MenuNode& k : node.kids) {
     if (!k.visible) continue;
     if (k.type == "separator") {
       if (!out->empty() && !out->back().separator) out->push_back({k.id, "", true});
       continue;
     }
-    std::string label = clean_menu_label(k.label);
+    const std::string label = clean_menu_label(k.label);
+    if (label.empty()) continue;
     if (!k.kids.empty()) {
-      flatten_menu(k, prefix + label + " > ", out);
+      const size_t at = out->size();
+      Tray::MenuEntry header{k.id, label, false};
+      header.enabled = k.enabled;
+      out->push_back(header);
+      flatten_menu(k, out);
+      while (out->size() > at + 1 && out->back().separator) out->pop_back();
+      if (out->size() == at + 1) {  // nothing visible inside: not a submenu
+        out->pop_back();
+        continue;
+      }
+      (*out)[at].children = static_cast<int>(out->size() - at - 1);
       continue;
     }
-    if (!k.enabled || label.empty()) continue;
-    if (k.toggle_type == "checkmark" || k.toggle_type == "radio") label = (k.toggle_state == 1 ? "[x] " : "[ ] ") + label;
-    out->push_back({k.id, prefix + label, false});
+    Tray::MenuEntry e{k.id, label, false};
+    e.enabled = k.enabled;
+    e.checked = (k.toggle_type == "checkmark" || k.toggle_type == "radio") && k.toggle_state == 1;
+    out->push_back(e);
   }
   while (!out->empty() && out->back().separator) out->pop_back();
 }
@@ -514,7 +526,7 @@ struct Tray::Impl {
                 rq.menu_path = q->menu_path;
                 rq.x = q->x;
                 rq.y = q->y;
-                flatten_menu(root, "", &rq.entries);
+                flatten_menu(root, &rq.entries);
                 if (!rq.entries.empty() && q->owner->menu_handler) q->owner->menu_handler(rq);
                 return 0;
               },

@@ -80,3 +80,47 @@ TEST(CtxMenu, SizeGrowsWithRowsAndText) {
 }
 
 TEST(CtxMenu, ClosesOnAPressOutside) { EXPECT_TRUE(dismisses_on_outside_click(kCtxMenuNamespace)); }
+
+namespace fleetwm {
+namespace {
+
+TEST(CtxMenuTree, FlagsAndSubmenusRoundTrip) {
+  const auto item = parse_menu_item("Online|exec,checked,disabled|true");
+  ASSERT_TRUE(item.has_value());
+  EXPECT_TRUE(item->checked);
+  EXPECT_TRUE(item->disabled);
+  EXPECT_EQ(item->kind, MenuItem::Kind::Exec);
+  EXPECT_EQ(format_menu_item(*item), "Online|exec,checked,disabled|true");
+  const auto sub = parse_menu_item("Friends|sub|3");
+  ASSERT_TRUE(sub.has_value());
+  EXPECT_EQ(sub->kind, MenuItem::Kind::Submenu);
+  EXPECT_FALSE(parse_menu_item("Friends|sub|three").has_value());
+  EXPECT_FALSE(parse_menu_item("X|exec,bogus|true").has_value());
+}
+
+TEST(CtxMenuTree, LevelsSkipTheContentsOfSubmenus) {
+  // Open, Friends > {Online, Away, More > {A}}, -, Quit
+  std::vector<MenuItem> flat;
+  for (const char* t : {"Open|exec|a", "Friends|sub|4", "Online|exec|b", "Away|exec|c", "More|sub|1", "A|exec|d", "-", "Quit|exec|e"}) flat.push_back(*parse_menu_item(t));
+  const auto top = menu_level(flat, 0, flat.size());
+  ASSERT_EQ(top.size(), 4u);  // Open, Friends, separator, Quit
+  EXPECT_EQ(top[1].item.label, "Friends");
+  EXPECT_EQ(top[3].item.label, "Quit");
+  const auto range = submenu_range(flat, top[1].index);
+  const auto inner = menu_level(flat, range.first, range.second);
+  ASSERT_EQ(inner.size(), 3u);  // Online, Away, More
+  EXPECT_EQ(inner[2].item.label, "More");
+  const auto deeper = submenu_range(flat, inner[2].index);
+  EXPECT_EQ(menu_level(flat, deeper.first, deeper.second).size(), 1u);
+  EXPECT_EQ(submenu_range(flat, 0), (std::pair<size_t, size_t>{0, 0}));  // not a submenu
+}
+
+TEST(CtxMenuTree, TheCardFitsTheTallestLevel) {
+  std::vector<MenuItem> flat;
+  for (const char* t : {"Friends|sub|3", "A|exec|a", "B|exec|b", "C|exec|c"}) flat.push_back(*parse_menu_item(t));
+  // the submenu has a Back row and a rule above its three rows: taller than the top level's single row
+  EXPECT_GT(menu_max_height(flat), ctx_menu_size({flat[0]}, 100).h);
+}
+
+}  // namespace
+}  // namespace fleetwm

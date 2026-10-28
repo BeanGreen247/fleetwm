@@ -28,8 +28,11 @@ class Tray {
   // libappindicator) is clicked by showing that menu: the tray reads its layout and hands the entries to this callback.
   struct MenuEntry {
     int id = 0;            // dbusmenu item id (what Event "clicked" takes)
-    std::string label;     // submenu items carry their parents' names ("Friends > Online")
+    std::string label;
     bool separator = false;
+    int children = 0;       // >0: a submenu header followed by that many entries (its own and its submenus')
+    bool checked = false;   // a ticked check or radio entry
+    bool enabled = true;    // shown greyed when not
   };
   struct MenuRequest {
     std::string bus_name, menu_path;
