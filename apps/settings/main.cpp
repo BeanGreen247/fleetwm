@@ -1781,12 +1781,7 @@ struct Settings {
     set_source(cr, c);
     cairo_fill(cr);
     cairo_restore(cr);
-    std::string initials;
-    for (const char ch : profile.display_name) {
-      if (std::isalpha(static_cast<unsigned char>(ch))) initials += static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
-      if (initials.size() == 2) break;
-    }
-    if (initials.empty()) initials = "F";
+    const std::string initials = profile_initials(profile.display_name);
     const TextExtents te = measure_text(cr, initials, r * 0.72, true);
     draw_text(cr, initials, cx - te.width / 2, cy + (te.ascent - (te.height - te.ascent)) / 2, r * 0.72, p.bg_primary, true);
   }
@@ -1988,12 +1983,7 @@ struct Settings {
       avatar_color.a = 0.85;
       set_source(cr, avatar_color);
       cairo_fill(cr);
-      std::string initials;
-      for (const char ch : profile.display_name) {
-        if (std::isalpha(static_cast<unsigned char>(ch))) initials += static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
-        if (initials.size() == 2) break;
-      }
-      if (initials.empty()) initials = "F";
+      const std::string initials = profile_initials(profile.display_name);
       const TextExtents te = measure_text(cr, initials, 22, true);
       draw_text(cr, initials, avatar.x + 38 - te.width / 2, avatar.y + 38 + (te.height - te.ascent) / 2, 22, p.bg_primary, true);
     }

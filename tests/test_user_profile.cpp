@@ -15,3 +15,14 @@ TEST_F(ProfileTest, RoundTripsDisplayNameAndIconWithoutChangingUsername) {
   save_user_profile(input);
   EXPECT_EQ(load_user_profile(), input);
 }
+
+TEST(UserProfileInitials, OneLetterForOneNameTwoForNameAndSurname) {
+  EXPECT_EQ(fleetwm::profile_initials("thomas"), "T");
+  EXPECT_EQ(fleetwm::profile_initials("Thomas Mozdren"), "TM");
+  EXPECT_EQ(fleetwm::profile_initials("thomas mozdren"), "TM");
+  EXPECT_EQ(fleetwm::profile_initials("  Anna  Maria  Novak "), "AN");  // first and last word
+  EXPECT_EQ(fleetwm::profile_initials(""), "F");
+  EXPECT_EQ(fleetwm::profile_initials("123 !!"), "F");
+  EXPECT_EQ(fleetwm::profile_initials("_bean"), "B");
+  EXPECT_EQ(fleetwm::profile_initials("Šárka Nováková"), "ŠN");
+}

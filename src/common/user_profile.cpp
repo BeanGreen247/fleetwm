@@ -3,15 +3,54 @@
 #include <pwd.h>
 #include "fleettoml.hpp"
 
+#include <cctype>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
+#include <vector>
 
 #include "config_paths.hpp"
 
 namespace fleetwm {
 namespace fs = std::filesystem;
+
+namespace {
+// The first letter of `word` as a UTF-8 string, skipping leading punctuation and digits; "" when it has none.
+std::string first_letter(const std::string& word) {
+  for (size_t i = 0; i < word.size();) {
+    const unsigned char c = static_cast<unsigned char>(word[i]);
+    size_t len = c < 0x80 ? 1 : (c >> 5) == 0x6 ? 2 : (c >> 4) == 0xE ? 3 : (c >> 3) == 0x1E ? 4 : 1;
+    if (i + len > word.size()) len = 1;
+    if (c < 0x80) {
+      if (std::isalpha(c)) return std::string(1, static_cast<char>(std::toupper(c)));
+    } else {
+      return word.substr(i, len);  // a letter of another alphabet (the profile name is typed by a person, so it is not punctuation)
+    }
+    i += len;
+  }
+  return "";
+}
+}  // namespace
+
+std::string profile_initials(const std::string& display_name) {
+  std::vector<std::string> letters;
+  std::string word;
+  auto flush = [&] {
+    if (word.empty()) return;
+    const std::string l = first_letter(word);
+    if (!l.empty()) letters.push_back(l);
+    word.clear();
+  };
+  for (const char ch : display_name) {
+    if (ch == ' ' || ch == '\t' || ch == '\n') flush();
+    else word += ch;
+  }
+  flush();
+  if (letters.empty()) return "F";
+  if (letters.size() == 1) return letters.front();
+  return letters.front() + letters.back();
+}
 
 std::string user_profile_path() { return (config_internal::config_home() / "fleetwm" / "profile.toml").string(); }
 
