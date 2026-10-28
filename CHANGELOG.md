@@ -4,6 +4,8 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
 
 ## Unreleased
 
+- Alt + left drag moves and Alt + right drag resizes any window (the corner nearest the pointer moves), for programs that draw no frame of their own such as Wine launchers.
+- Fixed a crash at logout: the compositor asserted in wlroots (`manager_handle_display_destroy`) because the xdg-toplevel-icon listener was left attached; it dumped core on every logout since the window-icon change.
 - Launchers are not games: Battle.net, Epic, GOG, Heroic, Lutris, a game's own launcher or configuration window (by title or the program's command line, `src/common/launcher_match.hpp`) no longer start GameMode, TuxThrottle or the fast desktop even though Wine and Lutris give them a Steam-style class, and a launcher maximized by its own button no longer turns into a fullscreen window that hides the taskbar.
 - Alt+Tab and the other shortcuts are only withheld from a fullscreen window: a Wine launcher or Electron app that grabbed the keyboard used to make Alt+Tab do nothing.
 - The installers (`install.sh`, `install-fedora.sh`, `install-alpine.sh`) set the GTK 3 and GTK 4 cursor theme to Fleetwm's own (`scripts/set-cursor-theme.sh`: `gtk-cursor-theme-name=fleetwm-aero`, size 32; the original `settings.ini` is kept once as `settings.ini.fleetwm-bak`), so the pointer is the same in every window out of the box.

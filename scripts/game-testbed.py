@@ -431,7 +431,7 @@ def main():
     ap.add_argument("--window-match", help="substring of the app id or title that identifies the game's window (default: any new window)")
     ap.add_argument("--kind", choices=["native", "proton"], default="proton", help="native Linux games are only checked that they start and stay up (1 minute); Proton and Wine games get 2 minutes")
     ap.add_argument("--minutes", type=float, default=None)
-    ap.add_argument("--start-timeout", type=int, default=150)
+    ap.add_argument("--start-timeout", type=int, default=240)  # Heroic and Lutris games need over a minute before their first window
     ap.add_argument("--out", default=None)
     ap.add_argument("--pid-match", help="substring of the command line that identifies the game's processes (Steam games are found by their SteamAppId)")
     ap.add_argument("--skip-done", action="store_true", help="do nothing when a report for this game already exists today")
