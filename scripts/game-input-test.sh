@@ -211,6 +211,35 @@ game = im.getpixel((w // 2, h // 2))
 print("PASS: the taskbar is still drawn under the launcher window" if len(bar) > 3 and bar != {game} else "FAIL: the launcher window hid the taskbar (%d colours along the bottom edge)" % len(bar))
 PY
 
+echo "== Alt + left drag moves any window, Alt + right drag resizes it (a window with no frame of its own to grab)"
+session '
+python3 '"$SRC"'/perflog/2026-10-27/game-clients/xhide.py -30 "Frameless" 600 400 300 200 > /dev/null 2>&1 & XP=$!
+sleep 5
+grim $OUT/altdrag-before.png
+(wtype -M alt -s 3500 -m alt &) ; sleep 0.8
+$T/pointer drag 500 400 700 500 12
+sleep 0.4
+grim $OUT/altdrag-moved.png
+(wtype -M alt -s 3500 -m alt &) ; sleep 0.8
+$T/pointer rdrag 1000 540 1200 580 12
+sleep 0.6
+grim $OUT/altdrag-resized.png
+kill $XP
+'
+python3 - "$OUT/altdrag-before.png" "$OUT/altdrag-moved.png" "$OUT/altdrag-resized.png" <<'PY'
+import sys
+from PIL import Image
+def box(path):
+    im = Image.open(path).convert("RGB"); w, h = im.size
+    blue = [(x, y) for y in range(0, h - 60, 2) for x in range(150, w, 2) if im.getpixel((x, y)) == (0x2a, 0x6f, 0xdb)]
+    return (min(p[0] for p in blue), min(p[1] for p in blue), max(p[0] for p in blue), max(p[1] for p in blue)) if blue else None
+b, m, r = (box(p) for p in sys.argv[1:4])
+moved = b and m and m[0] - b[0] > 100 and m[1] - b[1] > 50
+resized = m and r and (r[2] - r[0]) > (m[2] - m[0]) + 100
+print("PASS: Alt + left drag moved the window by %s" % ((m[0] - b[0], m[1] - b[1]),) if moved else "FAIL: not moved (%s -> %s)" % (b, m))
+print("PASS: Alt + right drag made it wider" if resized else "FAIL: not resized (%s -> %s)" % (m, r))
+PY
+
 echo "== a Wine-style X11 tray icon (XEmbed) shows in the bar and gets clicks"
 LOG=$OUT/xtray.log; : > "$LOG"
 session '

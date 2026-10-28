@@ -993,6 +993,30 @@ void server_cursor_button(wl_listener* listener, void* data) {
     return;
   }
 
+  // Alt + left drag moves and Alt + right drag resizes any window, whatever it looks like: a program that draws its own frame or asks for none (Wine launchers such as
+  // Battle.net, Electron apps) has no titlebar or border to grab. The corner nearest the pointer is the one that moves when resizing.
+  if (hit_something && hit.owner == SceneNodeOwner::View && server->desktop_layout()) {
+    wlr_keyboard* kb = wlr_seat_get_keyboard(server->seat());
+    if (kb && (wlr_keyboard_get_modifiers(kb) & WLR_MODIFIER_ALT) && (event->button == 0x110 || event->button == 0x111)) {
+      View* v = static_cast<View*>(hit.data);
+      if (v && v->is_window() && !v->fullscreen && v->output) {
+        server->focus_view(v);
+        server->swallow_release = true;
+        if (event->button == 0x110) {
+          server->begin_move(v);
+        } else {
+          int cx = 0, cy = 0;
+          wlr_scene_node_coords(&v->container_tree->node, &cx, &cy);
+          const wlr_box geo = v->content_geometry();
+          const double lx = server->cursor()->x - cx, ly = server->cursor()->y - cy;
+          uint32_t edges = (lx >= v->content_w / 2.0 ? WLR_EDGE_RIGHT : WLR_EDGE_LEFT) | (ly >= geo.height / 2.0 ? WLR_EDGE_BOTTOM : WLR_EDGE_TOP);
+          server->begin_resize(v, edges);
+        }
+        return;
+      }
+    }
+  }
+
   wlr_seat_pointer_notify_button(server->seat(), event->time_msec, event->button, event->state);
 
   if (hit_something && hit.owner == SceneNodeOwner::View) {

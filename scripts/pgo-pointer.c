@@ -9,6 +9,7 @@
  *     abs X Y          move to X Y            down | up          press / release the left button
  *     click X Y        move, press, release   rclick X Y         the same with the right button
  *     dclick X Y       double click           drag X0 Y0 X1 Y1 N press at 0, move in N steps, release at 1
+ *     rdrag X0 Y0 X1 Y1 N  the same with the right button
  *     scroll V         wheel (positive = down) wait MS           pause
  *     rel DX DY        relative movement, like a real mouse (the game-support tests use it)
  */
@@ -90,14 +91,15 @@ int main(int argc, char** argv) {
       button(d, b, 0);
       if (c[0] == 'd') { button(d, b, 1); button(d, b, 0); }
       i += 2;
-    } else if (!strcmp(c, "drag") && i + 5 < argc) {
+    } else if ((!strcmp(c, "drag") || !strcmp(c, "rdrag")) && i + 5 < argc) {
+      const uint32_t db = c[0] == 'r' ? BTN_RIGHT : BTN_LEFT;
       const int x0 = atoi(argv[i + 1]), y0 = atoi(argv[i + 2]), x1 = atoi(argv[i + 3]), y1 = atoi(argv[i + 4]);
       int n = atoi(argv[i + 5]);
       if (n < 1) n = 1;
       move(d, x0, y0);
-      button(d, BTN_LEFT, 1);
+      button(d, db, 1);
       for (int s = 1; s <= n; ++s) move(d, x0 + (x1 - x0) * s / n, y0 + (y1 - y0) * s / n);
-      button(d, BTN_LEFT, 0);
+      button(d, db, 0);
       i += 5;
     } else if (!strcmp(c, "scroll") && i + 1 < argc) {
       zwlr_virtual_pointer_v1_axis_source(ptr, WL_POINTER_AXIS_SOURCE_WHEEL);
