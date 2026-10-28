@@ -71,7 +71,7 @@ def shot(path):
         im = Image.open(path).convert("RGB").resize((160, 90))
         st = ImageStat.Stat(im)
         mean = sum(st.mean) / 3
-        colours = len(set(im.getdata()))
+        colours = len(set(im.get_flattened_data() if hasattr(im, "get_flattened_data") else im.getdata()))
         return mean, colours
     except Exception:  # noqa: BLE001
         return None, None
@@ -107,6 +107,7 @@ def main():
     ap.add_argument("--minutes", type=float, default=5)
     ap.add_argument("--start-timeout", type=int, default=150)
     ap.add_argument("--out", default=None)
+    ap.add_argument("--attach", action="store_true", help="the game is already running: do not launch it, watch the windows that match --window-match")
     a = ap.parse_args()
 
     outdir = a.out or os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "perflog", "testbed", datetime.date.today().isoformat())
@@ -128,22 +129,30 @@ def main():
     elif a.heroic: cmd = ["heroic", f"heroic://launch/{a.heroic}"]
     elif a.lutris: cmd = ["lutris", f"lutris:rungame/{a.lutris}" if not a.lutris.isdigit() else f"lutris:rungameid/{a.lutris}"]
     elif a.cmd: cmd = shlex.split(a.cmd)
+    elif a.attach: cmd = []
     else: sys.exit("give --steam, --heroic, --lutris or --cmd")
-    say("launch: " + " ".join(cmd))
+    if a.attach: before_windows.clear()
+    say("launch: " + (" ".join(cmd) if cmd else "(attached to the running game)"))
     frame_stats(True)
     t0 = time.time()
-    subprocess.Popen(cmd, env=ENV, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    if cmd and not a.attach:
+        subprocess.Popen(cmd, env=ENV, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+
+    def mine(w):
+        if w["id"] in before_windows: return False
+        if a.window_match: return a.window_match.lower() in (w["app"] + " " + w["title"]).lower()
+        return w["app"].lower() not in ("steamwebhelper", "steam")
+
+    def alive():
+        return [w for w in windows() if mine(w)]
 
     game = None
     while time.time() - t0 < a.start_timeout:
         time.sleep(2)
-        for w in windows():
-            if w["id"] in before_windows: continue
-            if a.window_match and a.window_match.lower() not in (w["app"] + " " + w["title"]).lower(): continue
-            if not a.window_match and (w["app"] in ("steamwebhelper",) or "steam" == w["app"].lower()): continue
-            game = w
+        cur = alive()
+        if cur:
+            game = cur[0]
             break
-        if game: break
     if not game:
         say(f"RESULT: FAIL no game window within {a.start_timeout}s")
     else:
@@ -157,11 +166,22 @@ def main():
     while game and time.time() < end:
         time.sleep(10)
         n += 1
-        ids = {w["id"]: w for w in windows()}
-        if game["id"] not in ids:
-            crashed_at = time.time() - t0
-            say(f"RESULT: the game window disappeared after {crashed_at:.0f}s (crash or exit)")
-            break
+        cur = alive()
+        if not cur:
+            # a launcher closing as the game opens is normal: wait up to 30 s for the next window of the same program
+            gone_at = time.time()
+            while time.time() - gone_at < 30 and not cur:
+                time.sleep(2)
+                cur = alive()
+            if not cur:
+                crashed_at = time.time() - t0
+                say(f"RESULT: no window of the game for 30 s after {crashed_at - 30:.0f}s (crash or exit)")
+                break
+        new_game = max(cur, key=lambda w: int(w["id"]))
+        if new_game["id"] != game["id"] or new_game["title"] != game["title"]:
+            say(f"t={time.time() - t0:5.0f}s window now: id={new_game['id']} app={new_game['app']!r} title={new_game['title']!r}")
+        game = new_game
+        ids = {w["id"]: w for w in cur}
         fs = frame_stats(True)
         mean, colours = shot(os.path.join(outdir, f"{slug}-{n:03d}.png")) if n % 3 == 1 else (None, None)
         if mean is not None and (mean < 4 or colours < 6): black += 1
@@ -178,11 +198,11 @@ def main():
     if game and crashed_at is None:
         frame_stats(True)
         say("closing the game window...")
-        ctl("close", game["id"])
+        for w in alive(): ctl("close", w["id"])
         t1 = time.time()
         while time.time() - t1 < 25:
             time.sleep(1)
-            if game["id"] not in {w["id"] for w in windows()}: break
+            if not alive(): break
         exit_stats = frame_stats(True)
         say(f"exit: window gone after {time.time() - t1:.0f}s; frame pacing during exit: fps={exit_stats.get('fps', 0):.1f} p99={exit_stats.get('p99', 0):.2f} max={exit_stats.get('max', 0):.2f} "
             f"late={int(exit_stats.get('late', 0))} hitch={int(exit_stats.get('hitch', 0))} work_max={exit_stats.get('work_max', 0):.2f}")
