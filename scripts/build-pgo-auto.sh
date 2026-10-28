@@ -76,4 +76,4 @@ echo "stage3 $(( SECONDS - T ))" >> "${TIMES}"
 
 echo
 echo "==> Done. Install the final optimized build with:"
-echo "    sudo ninja -C ${BUILD_DIR} install"
+echo "    sudo meson install -C ${BUILD_DIR} --no-rebuild"

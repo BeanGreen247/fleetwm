@@ -38,6 +38,15 @@ if [[ ${FLEETWM_SKIP_DEPS:-0} != 1 ]]; then
   fi
 fi
 
+# A build folder left with root-owned files (an earlier `sudo ninja install` rewrites .ninja_deps) stops ninja with "Error writing to deps log:
+# Permission denied": hand the folders back to the user before building.
+for dir in "${BUILD_DIR}" "${BUILD_DIR}-pgo"; do
+  if [[ -d ${dir} ]] && [[ -n $(find "${dir}" -user root -print -quit 2>/dev/null) ]]; then
+    echo "==> Giving ${dir} back to $(id -un) (root-owned files from an earlier install)"
+    sudo chown -R "$(id -u):$(id -g)" "${dir}"
+  fi
+done
+
 if [[ ${FLEETWM_PGO:-1} != 0 ]]; then
   echo "==> Profile-guided build (scripts/build-pgo-auto.sh): instrumented build, training run on a virtual screen, optimized build"
   for tool in wtype wlrctl foot grim wpctl pw-cli; do command -v "${tool}" >/dev/null 2>&1 || sudo dnf install -y --setopt=install_weak_deps=False "$([[ ${tool} == wpctl ]] && echo wireplumber || { [[ ${tool} == pw-cli ]] && echo pipewire-utils || echo ${tool}; })" >/dev/null 2>&1 || true; done
@@ -56,7 +65,9 @@ if [[ ${FLEETWM_TESTS:-0} == 1 ]]; then
 fi
 
 echo "==> Installing to ${PREFIX}"
-${SUDO} ninja -C "${BUILD_DIR}" install
+# meson install --no-rebuild: root must not run ninja inside the build folder (it rewrites .ninja_deps as root and the next build fails)
+${SUDO} meson install -C "${BUILD_DIR}" --no-rebuild >/dev/null
+if [[ ${SUDO} == sudo ]]; then sudo chown -R "$(id -u):$(id -g)" "${BUILD_DIR}"; fi
 
 echo "==> Login session entry"
 SESSION_DIR="${PREFIX}/share/wayland-sessions"
