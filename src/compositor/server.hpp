@@ -608,6 +608,7 @@ class Server {
   ResolvedKeybinds resolved_keybinds_;
   bool locked_ = false;
   int scanout_override_ = -1;
+  wl_listener toplevel_icon_{};  // xdg-toplevel-icon set_icon; removed before the display goes (wlroots asserts on a left-over listener)
   wlr_cursor_shape_manager_v1* cursor_shape_manager_ = nullptr;
   wl_listener request_set_shape_{};
   wlr_buffer* fallback_cursor_ = nullptr;  // built-in arrow, used when no cursor theme is installed

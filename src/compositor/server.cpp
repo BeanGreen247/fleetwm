@@ -1088,7 +1088,7 @@ Server::~Server() {
     games_.shutdown();
     // wlroots 0.19+ asserts that no listener is left on a global's signals as the display goes (0.18 let it pass).
     for (wl_listener* l : {&new_xdg_toplevel_, &new_toplevel_decoration_, &new_layer_surface_, &new_virtual_pointer_, &new_virtual_keyboard_, &request_set_shape_,
-                           &new_idle_inhibitor_, &new_output_, &new_input_, &request_cursor_, &request_set_selection_
+                           &new_idle_inhibitor_, &new_output_, &new_input_, &request_cursor_, &request_set_selection_, &toplevel_icon_
 #if FLEETWM_XWAYLAND
                            , &new_xwayland_surface_
 #endif
@@ -1780,15 +1780,10 @@ bool Server::init() {
     wlr_xdg_toplevel_icon_manager_v1* icons = wlr_xdg_toplevel_icon_manager_v1_create(display_, 1);
     static int sizes[] = {48, 64, 128};
     if (icons) wlr_xdg_toplevel_icon_manager_v1_set_sizes(icons, sizes, 3);
-    struct IconListener {
-      wl_listener listener;
-      Server* server;
-    };
-    auto* il = new IconListener{{}, this};
-    il->listener.notify = [](wl_listener* l, void* data) {
-      IconListener* self = wl_container_of(l, self, listener);
+    toplevel_icon_.notify = [](wl_listener* l, void* data) {
+      Server* self = wl_container_of(l, self, toplevel_icon_);
       auto* event = static_cast<wlr_xdg_toplevel_icon_manager_v1_set_icon_event*>(data);
-      for (const std::unique_ptr<View>& v : self->server->views) {
+      for (const std::unique_ptr<View>& v : self->views) {
         if (v->xdg_toplevel != event->toplevel) continue;
         remove_window_icon(v->id);
         if (!event->icon) return;
@@ -1813,7 +1808,7 @@ bool Server::init() {
         return;
       }
     };
-    if (icons) wl_signal_add(&icons->events.set_icon, &il->listener);
+    if (icons) wl_signal_add(&icons->events.set_icon, &toplevel_icon_);
   }
 #endif
   new_xdg_toplevel_.notify = server_new_xdg_toplevel;
