@@ -589,7 +589,7 @@ def main():
         if mean is not None and (mean < 4 or colours < 6): black += 1
         samples.append((fs, m))
         say(f"t={time.time() - t0:5.0f}s procs={m['procs']:2d} cpu={m['cpu']:5.0f}% ram={m['rss']:5.0f}MB nvidia={'yes sm=%d%% vram=%dMB' % (m['nv_sm'], m['nv_mem']) if m['nv'] else 'no'} amd_gfx={m['amd_pct']:3.0f}% "
-            f"card={gpu()}" + (f" fps={fs['fps']:.0f} p99={fs.get('p99', 0):.1f}ms hitch={int(fs.get('hitch', 0))}" if fs.get("n") else "") +
+            f"card={gpu()}" + (f" fps={fs['fps']:.0f} p99={fs.get('p99', 0):.1f}ms hitch={int(fs.get('hitch', 0))} commit_avg={fs.get('work_avg', 0):.2f}ms commit_max={fs.get('work_max', 0):.1f}ms" if fs.get("n") else "") +
             (f" shot_mean={mean:.0f} colours={colours}" if mean is not None else ""))
         if mean is not None and n > 1 and mean >= 4 and colours >= 6 and n % 6 != 1:
             try: os.remove(os.path.join(outdir, f"{slug}-{n:03d}.png"))
