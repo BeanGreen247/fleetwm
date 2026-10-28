@@ -2258,9 +2258,11 @@ void Server::begin_resize(View* view, uint32_t edges) {
   }
   const wlr_box geo = view->content_geometry();
   view->snap_zone = geom::SnapZone::None;  // a resized window is no longer a half/quarter
+  view->update_size_policy();               // and no longer tiled: Chromium stops painting new sizes of a window that claims to be tiled
   view->has_placed = false;
   if (grabstats::enabled()) grabstats::set_mode("resize", stats_out_w(), stats_out_h());
   grab_mode_ = GrabMode::Resize;
+  if (view->kind == View::Kind::XdgToplevel && view->xdg_toplevel) wlr_xdg_toplevel_set_resizing(view->xdg_toplevel, true);  // the client knows the size is in flux
   resize_has_last_request_ = false;
   resize_pending_ = false;
   grab_view_ = view;
@@ -2336,6 +2338,13 @@ bool resize_coalescing() {
   }();
   return on;
 }
+// True while a window has been sent a size it has not yet answered (acknowledged and committed). Chromium and Electron apply only the first size of a
+// burst of configures and then stay at it, so an interactive resize sends the next size when the client has caught up, as other compositors do.
+bool configure_in_flight(const View* view) {
+  if (view->kind != View::Kind::XdgToplevel || !view->xdg_toplevel || !view->xdg_toplevel->base->initialized) return false;
+  const wlr_xdg_surface* base = view->xdg_toplevel->base;
+  return base->scheduled_serial != base->current.configure_serial;
+}
 }  // namespace
 
 void Server::request_grab_size(View* view, int w, int h) {
@@ -2344,7 +2353,7 @@ void Server::request_grab_size(View* view, int w, int h) {
   const double since_ms = resize_has_last_request_ ? (now.tv_sec - resize_last_request_.tv_sec) * 1000.0 +
                                                          (now.tv_nsec - resize_last_request_.tv_nsec) / 1e6
                                                    : 1e9;
-  if (!resize_coalescing() || since_ms >= (1000 / drag_fps())) {
+  if (!resize_coalescing() || (since_ms >= (1000 / drag_fps()) && !configure_in_flight(view))) {
     resize_pending_ = false;
     if (grabstats::enabled()) ++grabstats::c().resize_req;
     view->request_size(w, h);
@@ -2369,10 +2378,14 @@ void Server::request_grab_size(View* view, int w, int h) {
   wl_event_source_timer_update(resize_flush_timer_, std::max(1, static_cast<int>((1000 / drag_fps()) - since_ms)));
 }
 
-void Server::flush_grab_size() {
+void Server::flush_grab_size(bool final) {
   if (!resize_pending_) return;
-  resize_pending_ = false;
   View* view = grab_view_;
+  if (!final && view && grab_mode_ == GrabMode::Resize && configure_in_flight(view) && resize_flush_timer_) {
+    wl_event_source_timer_update(resize_flush_timer_, 6);  // the client has not answered the last size yet: ask again shortly
+    return;
+  }
+  resize_pending_ = false;
   if (!view || grab_mode_ != GrabMode::Resize) return;
   if (resize_pending_w_ == view->last_requested_content_w && resize_pending_h_ == view->last_requested_content_h) return;
   if (grabstats::enabled()) ++grabstats::c().resize_req;
@@ -2421,7 +2434,7 @@ void Server::hide_snap_preview() {
 
 void Server::end_grab() {
   flush_grab_motion();  // the window ends where the pointer ended
-  flush_grab_size();
+  flush_grab_size(true);
   if (resize_flush_timer_) wl_event_source_timer_update(resize_flush_timer_, 0);
   if (grab_mode_ == GrabMode::Move && grab_view_ && snap_pending_ != geom::SnapZone::None) {
     const geom::SnapZone zone = snap_pending_;
@@ -2433,6 +2446,8 @@ void Server::end_grab() {
   if (grab_mode_ == GrabMode::Move && grab_view_) adopt_output_under(grab_view_);  // dragged across the edge: it is on the other screen now
   snap_pending_ = geom::SnapZone::None;
   hide_snap_preview();
+  if (grab_mode_ == GrabMode::Resize && grab_view_ && grab_view_->kind == View::Kind::XdgToplevel && grab_view_->xdg_toplevel)
+    wlr_xdg_toplevel_set_resizing(grab_view_->xdg_toplevel, false);
   if (grabstats::enabled()) grabstats::set_mode("idle", stats_out_w(), stats_out_h());
   grab_mode_ = GrabMode::None;
   grab_view_ = nullptr;

@@ -672,7 +672,7 @@ class Server {
   // Resize requests to the client are paced to the drag frame rate (kResizeRequestMs); the newest size waits for the timer, and for the
   // end of the grab, so the window always ends at the size the pointer left it.
   void request_grab_size(View* view, int w, int h);
-  void flush_grab_size();
+  void flush_grab_size(bool final = false);
   wl_event_source* resize_flush_timer_ = nullptr;
   bool resize_pending_ = false;
   int resize_pending_w_ = 0, resize_pending_h_ = 0;

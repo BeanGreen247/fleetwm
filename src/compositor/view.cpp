@@ -91,7 +91,8 @@ void View::update_size_policy() {
   if (kind != Kind::XdgToplevel || !xdg_toplevel || !xdg_toplevel->base->initialized) {
     return;
   }
-  const bool client_sized = floating || always_on_top || xdg_toplevel->parent != nullptr || fullscreen;
+  const bool client_sized = floating || always_on_top || xdg_toplevel->parent != nullptr || fullscreen ||
+                           (desktop_mode() && !maximized && snap_zone == geom::SnapZone::None);  // a free desktop window is not tiled on any edge
   wlr_xdg_toplevel_set_tiled(xdg_toplevel, client_sized ? WLR_EDGE_NONE : WLR_EDGE_LEFT | WLR_EDGE_RIGHT |
                                                                              WLR_EDGE_TOP | WLR_EDGE_BOTTOM);
 }
@@ -720,6 +721,7 @@ void View::snap_to(geom::SnapZone zone) {
     restore_box = {container_tree->node.x, container_tree->node.y, geo.width, geo.height};
   }
   snap_zone = zone;
+  update_size_policy();
   refit_snapped();
 }
 
@@ -776,6 +778,7 @@ void View::restore_from_snap() {
     return;
   }
   snap_zone = geom::SnapZone::None;
+  update_size_policy();
   wlr_scene_node_set_position(&container_tree->node, restore_box.x, restore_box.y);
   const int w = std::max(1, restore_box.width), h = std::max(1, restore_box.height);
   request_size(w, h);
@@ -840,6 +843,7 @@ void View::set_maximized(bool want) {
   }
   if (kind == Kind::XdgToplevel) {
     wlr_xdg_toplevel_set_maximized(xdg_toplevel, maximized);
+    update_size_policy();
   }
 #if FLEETWM_XWAYLAND
   if (kind == Kind::XWayland) {

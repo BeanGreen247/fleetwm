@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# In a Wayland session Heroic Games Launcher (Electron) starts as a native Wayland client; Fleetwm starts it on X11 (Xwayland), where resizing and
-# repainting were verified, and keeps a log of every run in ~/.local/state/fleetwm/heroic.log (the previous run in heroic.log.old) with Chromium's own
+# Heroic Games Launcher (Electron) runs as a native Wayland client in a Wayland session. Fleetwm starts it through a wrapper that keeps a log of every run in ~/.local/state/fleetwm/heroic.log (the previous run in heroic.log.old) with Chromium's own
 # logging on and how the run ended (exit code or the signal that killed it), so a crash can be read afterwards.
 # Installs ~/.local/bin/fleetwm-heroic and a user copy of Heroic's desktop entry that starts it. A system entry is never edited. Run again to refresh.
 set -u
@@ -8,7 +7,7 @@ bin="${XDG_BIN_HOME:-$HOME/.local/bin}"
 mkdir -p "$bin"
 cat > "$bin/fleetwm-heroic" <<'WRAP'
 #!/usr/bin/env bash
-# Started by Heroic's desktop entry (see scripts/heroic-x11.sh in the fleetwm sources).
+# Started by Heroic's desktop entry (see scripts/heroic-wrapper.sh in the fleetwm sources).
 exe=""
 for c in /usr/lib64/heroic/heroic /usr/lib/heroic/heroic /opt/Heroic/heroic /opt/heroic/heroic; do [[ -x $c ]] && { exe=$c; break; }; done
 [[ -n $exe ]] || exe=$(command -v heroic || true)
@@ -23,10 +22,12 @@ log="$dir/heroic.log"
 } > "$log"
 # Chromium's own logging, with its GPU, X11/ozone and display code verbose, and (when strace is installed) the GPU and display related system calls of Heroic and its helpers (ioctl, openat, sockets, process start and exit, signals;
 # all calls under strace made Heroic's window stay blank), written to heroic.log.strace.NNNN in pieces of 200 MB of which the last 6 are kept. FLEETWM_HEROIC_STRACE=0 turns the strace off.
-flags=(--ozone-platform=x11 --enable-logging=stderr --log-level=0 --v=0
+# Heroic runs as a native Wayland client (as on KDE) now that the compositor answers its resizes; FLEETWM_HEROIC_X11=1 starts it on X11 instead.
+flags=(--enable-logging=stderr --log-level=0 --v=0
        "--vmodule=*/gpu/*=2,*/ui/gl/*=2,*/ui/ozone/*=2,*/ui/base/x/*=2,*/ui/gfx/x/*=1,*gpu_*=2,*viz*=1,*window_tree_host*=1" --enable-gpu-service-logging)
 rm -f "$log".strace.* 2>/dev/null
 started=$(date '+%F %T')
+[[ ${FLEETWM_HEROIC_X11:-0} == 1 ]] && flags+=(--ozone-platform=x11)
 run=("$exe" "${flags[@]}" "$@")
 if [[ ${FLEETWM_HEROIC_STRACE:-1} != 0 ]] && command -v strace >/dev/null 2>&1; then
   (while sleep 20; do ls -1 "$log".strace.* 2>/dev/null | head -n -6 | xargs -r rm -f; done) &
