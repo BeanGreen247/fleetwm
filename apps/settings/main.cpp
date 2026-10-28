@@ -2183,7 +2183,7 @@ struct Settings {
     ui.label("License: MIT", true);
     ui.newline();
     ui.space(6);
-    if (ui.button("Version details")) spawn_detached({"fleetwm-about"});
+    if (ui.button("Version details")) spawn_detached({"fleetver"});
     ui.newline();
     ui.space(10);
     ui.section("Backup");

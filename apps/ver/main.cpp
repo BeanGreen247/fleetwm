@@ -1,4 +1,4 @@
-// fleetwm-about: what Windows' winver is for this desktop -- the exact version and git revision, when it was built, the
+// fleetver: what Windows' winver is for this desktop -- the exact version and git revision, when it was built, the
 // compositor and library versions it runs on, the project and license links. Esc closes it; a second launch closes the first.
 
 #include <signal.h>
@@ -35,7 +35,7 @@ const char* const kChangelogUrl = "https://github.com/BeanGreen247/fleetwm/blob/
 
 std::string pid_path() {
   const char* rt = std::getenv("XDG_RUNTIME_DIR");
-  return std::string(rt && *rt ? rt : "/tmp") + "/fleetwm-about.pid";
+  return std::string(rt && *rt ? rt : "/tmp") + "/fleetver.pid";
 }
 
 bool toggle_existing() {
@@ -44,7 +44,7 @@ bool toggle_existing() {
   if (!(in >> pid) || pid <= 0 || pid == getpid()) return false;
   std::ifstream comm("/proc/" + std::to_string(pid) + "/comm");
   std::string name;
-  if (!(comm >> name) || name != "fleetwm-about") return false;
+  if (!(comm >> name) || name != "fleetver") return false;
   kill(static_cast<pid_t>(pid), SIGTERM);
   return true;
 }
@@ -134,9 +134,9 @@ struct About {
 
 int main(int argc, char** argv) {
   fleetwm::block_quit_signals();
-  if (fleetwm::handle_info_flags(argc, argv, "fleetwm-about", "")) return 0;
+  if (fleetwm::handle_info_flags(argc, argv, "fleetver", "")) return 0;
   fleetwm::tune_malloc_for_low_rss();
-  fleetwm::prewarm::start("fleetwm-about");
+  fleetwm::prewarm::start("fleetver");
   signal(SIGCHLD, SIG_IGN);
   if (toggle_existing()) return 0;
   { std::ofstream(pid_path()) << getpid() << "\n"; }
@@ -147,7 +147,7 @@ int main(int argc, char** argv) {
 
   Surface::Config cfg;
   cfg.toplevel = true;
-  cfg.app_id = "dev.fleetwm.About";
+  cfg.app_id = "dev.fleetwm.Ver";
   cfg.title = "About Fleetwm";
   cfg.width = kWindowW;
   cfg.height = kWindowH;
