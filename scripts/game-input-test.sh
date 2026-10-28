@@ -240,6 +240,21 @@ print("PASS: Alt + left drag moved the window by %s" % ((m[0] - b[0], m[1] - b[1
 print("PASS: Alt + right drag made it wider" if resized else "FAIL: not resized (%s -> %s)" % (m, r))
 PY
 
+echo "== the taskbar's Kill app (WINDOW_KILL) ends the program that owns a window"
+KL=$OUT/kill.log; : > "$KL"
+session '
+$T/lock > /dev/null 2>&1 & LP=$!
+sleep 2
+ID=$('"$B"'/apps/ctl/fleetwm-ctl windows | tr "\t" "\n" | awk "NR>1" | paste -d"|" - - - - - | tail -1 | cut -d"|" -f1)
+echo "window $ID, pid $LP, alive before: $(kill -0 $LP 2>/dev/null && echo yes || echo no)" >> '"$KL"'
+'"$B"'/apps/ctl/fleetwm-ctl raw "WINDOW_KILL $ID" > /dev/null
+sleep 1.5
+echo "alive after: $(kill -0 $LP 2>/dev/null && echo yes || echo no)" >> '"$KL"'
+kill $LP 2>/dev/null
+'
+cat "$KL"
+if grep -q "alive before: yes" "$KL" && grep -q "alive after: no" "$KL"; then echo "PASS: the window's program was killed"; else echo "FAIL: see the log above"; fi
+
 echo "== a Wine-style X11 tray icon (XEmbed) shows in the bar and gets clicks"
 LOG=$OUT/xtray.log; : > "$LOG"
 session '

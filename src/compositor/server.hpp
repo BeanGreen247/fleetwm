@@ -301,6 +301,8 @@ class Server {
   pid_t xwayland_server_pid() const;
   // The X display name (":0") of the running Xwayland, or nullptr: used to read a window's own icon.
   const char* xwayland_display() const;
+  // Ends the program that owns a window, and everything it started, with SIGKILL (the taskbar's "Kill app"): for a program that does not answer a close request.
+  void kill_view_process(View* view);
 
   // ---- display management (resolution + position of each monitor) ----
   struct ModeInfo {

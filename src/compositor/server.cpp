@@ -37,6 +37,8 @@ extern "C" {
 #include <climits>
 #include <cmath>
 #include <cstdio>
+#include <csignal>
+#include <fstream>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -3109,6 +3111,37 @@ pid_t Server::xwayland_server_pid() const {
   if (xwayland_ && xwayland_->server) return xwayland_->server->pid;
 #endif
   return 0;
+}
+
+void Server::kill_view_process(View* view) {
+  if (!view) return;
+  pid_t pid = 0;
+#if FLEETWM_XWAYLAND
+  if (view->kind == View::Kind::XWayland && view->xwayland_surface) pid = view->xwayland_surface->pid;
+#endif
+  if (pid <= 0 && view->kind == View::Kind::XdgToplevel && view->xdg_toplevel && view->xdg_toplevel->base && view->xdg_toplevel->base->resource)
+    wl_client_get_credentials(wl_resource_get_client(view->xdg_toplevel->base->resource), &pid, nullptr, nullptr);
+  if (pid <= 1 || pid == getpid() || pid == xwayland_server_pid()) return;
+  // the program and everything below it (an Electron app's helpers, a Wine program's other processes), found through /proc
+  std::vector<pid_t> victims = {pid};
+  for (size_t i = 0; i < victims.size() && victims.size() < 512; ++i) {
+    std::error_code ec;
+    for (const auto& e : std::filesystem::directory_iterator("/proc", ec)) {
+      const std::string name = e.path().filename().string();
+      if (name.empty() || name.find_first_not_of("0123456789") != std::string::npos) continue;
+      std::ifstream stat(e.path() / "stat");
+      std::string line;
+      std::getline(stat, line);
+      const size_t close = line.rfind(')');
+      long ppid = 0;
+      if (close != std::string::npos && std::sscanf(line.c_str() + close + 1, " %*c %ld", &ppid) == 1 && ppid == victims[i]) {
+        const pid_t child = static_cast<pid_t>(std::stol(name));
+        if (child != getpid() && std::find(victims.begin(), victims.end(), child) == victims.end()) victims.push_back(child);
+      }
+    }
+  }
+  for (auto it = victims.rbegin(); it != victims.rend(); ++it) kill(*it, SIGKILL);  // the leaves first
+  wlr_log(WLR_INFO, "fleetwm: killed %zu process(es) of window %u (pid %d)", victims.size(), view->id, static_cast<int>(pid));
 }
 
 const char* Server::xwayland_display() const {

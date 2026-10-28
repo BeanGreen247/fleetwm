@@ -2021,6 +2021,7 @@ struct Bar {
       for (const std::string& a : kit::exec_argv(pa.entry)) cmd += (cmd.empty() ? "" : " ") + a;
       if (!cmd.empty()) m.push_back(item(MenuItem::Kind::Exec, pa.running ? "New window" : "Open", cmd));
       if (pa.running) m.push_back(item(MenuItem::Kind::Ipc, "Close window", "WINDOW_CLOSE " + std::to_string(pa.win_id)));
+      if (pa.running) m.push_back(item(MenuItem::Kind::Ipc, "Kill app", "WINDOW_KILL " + std::to_string(pa.win_id)));
       m.push_back(item(MenuItem::Kind::Unpin, "Unpin from taskbar", pa.id));
       tail_items(&m);
       return open_ctx_menu(m, x, y);
@@ -2029,6 +2030,7 @@ struct Bar {
       if (!win_rects[i].hit(x, y)) continue;
       const WindowEntry& w = shown_unpinned[i];
       m.push_back(item(MenuItem::Kind::Ipc, "Close window", "WINDOW_CLOSE " + std::to_string(w.id)));
+      m.push_back(item(MenuItem::Kind::Ipc, "Kill app", "WINDOW_KILL " + std::to_string(w.id)));
       if (const kit::DesktopEntry* de = entry_for_window(w)) m.push_back(item(MenuItem::Kind::Pin, "Pin to taskbar", de->id));
       tail_items(&m);
       return open_ctx_menu(m, x, y);

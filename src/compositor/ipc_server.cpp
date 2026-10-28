@@ -292,6 +292,7 @@ void IpcServer::handle_line(Client& client, const std::string& line) {
     else if (verb == "WINDOW_TOGGLE") server_->toggle_view_from_taskbar(view);
     else if (verb == "WINDOW_MINIMIZE") view->set_minimized(true);
     else if (verb == "WINDOW_CLOSE") view->close();
+    else if (verb == "WINDOW_KILL") server_->kill_view_process(view);
     return;
   }
 
