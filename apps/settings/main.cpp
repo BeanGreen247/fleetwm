@@ -10,6 +10,9 @@
 #include <sys/signalfd.h>
 #include <unistd.h>
 
+#include <atomic>
+#include <thread>
+
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -238,8 +241,25 @@ struct Settings {
   std::set<std::string> startup_on;     // ids of the enabled autostart entries
   std::vector<size_t> startup_order;    // `entries` sorted by name, built on first view
   bool startup_loaded = false;
-  fleetwm::TuxThrottleStatus tux;       // TuxThrottle's readout, read when the Gaming page opens and on Refresh
+  fleetwm::TuxThrottleStatus tux;       // TuxThrottle's readout, read when the Gaming page opens and again every two seconds while it is open
   bool tux_loaded = false;
+  std::atomic<bool> tux_reading{false};  // a background read of the readout is running
+  std::thread tux_thread;
+  // Called every two seconds: while the Gaming page is open the TuxThrottle readout (profile, temperatures, Game Mode on/off) is read again on a
+  // worker thread (the command takes about 0.3 s) and the page is redrawn, so a change made elsewhere shows up without pressing anything.
+  void refresh_tux() {
+    if (tab != fleetwm::kPageGaming || !tux_loaded || tux_reading.load()) return;
+    if (tux_thread.joinable()) tux_thread.join();
+    tux_reading = true;
+    tux_thread = std::thread([this] {
+      fleetwm::TuxThrottleStatus st = fleetwm::read_tuxthrottle_status();
+      app.post([this, st = std::move(st)] {
+        if (st.ok) tux = st;
+        tux_reading = false;
+        if (tab == fleetwm::kPageGaming) redraw();
+      });
+    });
+  }
   fleetwm::fm::FmSettings fm_cfg;       // fleetwm-fm: fleetfm.toml
   fleetwm::fm::DesktopConfig desktop_cfg;  // fleetwm-desktop: desktop.toml
   int fm_page = 0;
@@ -1543,8 +1563,6 @@ struct Settings {
                          ? "gamemoded also starts TuxThrottle's helper scripts (/etc/gamemode.ini), so every game registered with GameMode switches it on."
                          : "Not wired through gamemoded (/etc/gamemode.ini has no TuxThrottle start hook); Fleetwm switches Game Mode itself while a game runs.", true);
       }
-      if (ui.button("Refresh")) tux = fleetwm::read_tuxthrottle_status();
-      ui.newline();
       if (ui.button(tux.game_mode ? "Turn Game Mode off now" : "Turn Game Mode on now")) {
         fleetwm::tuxthrottle_game_mode(tux.game_mode ? "off" : "on");
       }
@@ -2403,6 +2421,8 @@ int main(int argc, char** argv) {
   const int sfd = signalfd(-1, &mask, SFD_CLOEXEC | SFD_NONBLOCK);
   S.app.watch_fd(sfd, [&S] { S.app.quit(); });
 
+  S.app.add_timer(2000, [&S] { S.refresh_tux(); });
   S.app.run();
+  if (S.tux_thread.joinable()) S.tux_thread.join();
   return 0;
 }
