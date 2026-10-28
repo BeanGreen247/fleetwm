@@ -14,6 +14,8 @@ fleetwm_test_sources = files(
   'test_info_flags.cpp',
   'test_xembed_tray.cpp',
   'test_open_item.cpp',
+  'test_xcursor_theme.cpp',
+  '../src/compositor/xcursor_theme.cpp',
   'test_frame_stats.cpp',
   'test_steam_games.cpp',
   '../src/bar/xembed_tray.cpp',

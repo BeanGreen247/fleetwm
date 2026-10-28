@@ -35,6 +35,13 @@ inline constexpr int kCursorGrid = 32;
 // a name it does not draw, so the caller can fall back to the installed cursor theme.
 bool cursor_shape_for_name(const char* name, CursorShape* out);
 
+// Every name cursor_shape_for_name knows, with its shape (used to write an xcursor theme made of these pictures).
+struct CursorAliasName {
+  const char* name;
+  CursorShape shape;
+};
+const CursorAliasName* cursor_alias_table(int* count);
+
 // Where the pointer's tip is, in the 32 x 32 grid.
 struct CursorHotspot {
   int x, y;

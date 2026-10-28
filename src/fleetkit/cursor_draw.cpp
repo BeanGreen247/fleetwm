@@ -341,6 +341,12 @@ void up_arrow_path(cairo_t* cr) {
 
 }  // namespace
 
+const CursorAliasName* cursor_alias_table(int* count) {
+  static_assert(sizeof(Alias) == sizeof(CursorAliasName));
+  *count = static_cast<int>(sizeof(kAliases) / sizeof(kAliases[0]));
+  return reinterpret_cast<const CursorAliasName*>(kAliases);
+}
+
 bool cursor_shape_for_name(const char* name, CursorShape* out) {
   if (!name) return false;
   for (const Alias& a : kAliases)

@@ -1,5 +1,6 @@
 #include "child_signals.hpp"
 #include "server.hpp"
+#include "xcursor_theme.hpp"
 #include "autostart.hpp"
 #include "gpu_policy.hpp"
 
@@ -1749,7 +1750,18 @@ bool Server::init() {
   wlr_cursor_attach_output_layout(cursor_, output_layout_);
   // Pick a cursor theme, and export it so every app we launch finds the same one.
   // With none installed at all, draw our own arrow instead of an invisible pointer.
-  const std::string cursor_theme = pick_cursor_theme();
+  std::string cursor_theme = pick_cursor_theme();
+  // The compositor's own pointer, also as an xcursor theme: programs that load their own cursor (GTK 3, Chromium, Steam, Wine, Xwayland) then show the same
+  // pointer as the ones that ask for a named shape. A theme chosen by the user (XCURSOR_THEME at login) stays the fallback for names we do not draw.
+  {
+    theme_config_ = load_theme_config();
+    const std::string own = install_xcursor_theme(theme_config_.glass, cursor_theme);
+    if (!own.empty()) {
+      cursor_theme = own;
+      setenv("XCURSOR_THEME", own.c_str(), 1);
+      setenv("XCURSOR_SIZE", "32", 1);
+    }
+  }
   if (!cursor_theme.empty()) setenv("XCURSOR_THEME", cursor_theme.c_str(), 0);
   setenv("XCURSOR_SIZE", "24", 0);
   cursor_mgr_ = wlr_xcursor_manager_create(cursor_theme.empty() ? nullptr : cursor_theme.c_str(), 24);

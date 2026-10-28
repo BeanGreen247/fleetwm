@@ -31,6 +31,7 @@ executable(
     'idle.cpp',
     'window_actions.cpp',
     'cursor.cpp',
+    'xcursor_theme.cpp',
     'xwayland.cpp',
     'switcher.cpp',
     'game_support.cpp',
