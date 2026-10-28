@@ -4,6 +4,7 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
 
 ## Unreleased
 
+- The installers give Heroic Games Launcher's user desktop entry `--ozone-platform=wayland` (`scripts/electron-wayland.sh`): on X11 its window stopped redrawing after a resize and then froze.
 - `fleetwm-about` (also `winver`, and a Version details button in Settings -> About) shows the exact version, git revision, build time, system, license and project links.
 - Right-click Kill app on a running taskbar entry ends the program and its children.
 - Alt + left drag moves and Alt + right drag resizes any window (the corner nearest the pointer moves), for programs that draw no frame of their own such as Wine launchers.
