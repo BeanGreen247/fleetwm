@@ -1616,6 +1616,21 @@ bool Server::apply_display_settings(const DisplaySettings& settings, std::string
   return true;
 }
 
+// True when an NVIDIA GPU (PCI vendor 0x10de) has a render node: found through sysfs, not through the DRM devices wlroots opened (a screenless card is not one).
+static bool has_nvidia_render_node() {
+  for (int i = 128; i < 192; ++i) {
+    char path[96];
+    std::snprintf(path, sizeof path, "/sys/class/drm/renderD%d/device/vendor", i);
+    std::FILE* f = std::fopen(path, "r");
+    if (!f) continue;
+    unsigned vendor = 0;
+    const int n = std::fscanf(f, "%x", &vendor);
+    std::fclose(f);
+    if (n == 1 && vendor == 0x10de) return true;
+  }
+  return false;
+}
+
 bool Server::init() {
   output_settings_ = load_output_settings();
   display_settings_ = load_display_settings();
@@ -1833,7 +1848,10 @@ bool Server::init() {
   // SDL2 opens X11 first when DISPLAY is set, which starts XWayland and keeps it running for as long
   // as the program lives (measured on the dev VM: ~12 MB anon + 6 MB shm for XWayland, two X
   // connections from an SDL2 terminal). Ask it for Wayland and keep X11 as the fallback.
-  setenv("SDL_VIDEODRIVER", "wayland,x11", false);
+  // Not on a computer with a dedicated NVIDIA card: its Wayland EGL and Vulkan platforms do not work while the desktop runs on the integrated GPU (a game on the card
+  // never maps a window, eglInitialize fails: tested on a Ryzen + RTX 3050 Ti laptop, where the same launch options work under KDE because SDL 2 defaults to X11 there),
+  // while the X11 path through Xwayland does. There SDL is asked for X11 first.
+  setenv("SDL_VIDEODRIVER", has_nvidia_render_node() ? "x11,wayland" : "wayland,x11", false);
   // Portals and other D-Bus-activated services start outside this process; hand them the
   // session variables they need (best effort, it is fine if the tool is missing).
   setenv("XDG_CURRENT_DESKTOP", "fleetwm", false);
