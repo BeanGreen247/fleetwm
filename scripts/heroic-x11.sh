@@ -21,8 +21,8 @@ log="$dir/heroic.log"
   echo "=== $(date '+%F %T') fleetwm-heroic: $exe $*"
   echo "session=${XDG_SESSION_TYPE:-?} wayland=${WAYLAND_DISPLAY:-?} display=${DISPLAY:-?} gpu_env: DRI_PRIME=${DRI_PRIME:-} NV_PRIME=${__NV_PRIME_RENDER_OFFLOAD:-}"
 } > "$log"
-# Chromium's own logging, with its GPU, X11/ozone and display code verbose, and (when strace is installed) every system call of Heroic and its helpers, GPU
-# ioctls included, written to heroic.log.strace.NNNN in pieces of 200 MB of which the last 6 are kept. FLEETWM_HEROIC_STRACE=0 turns the strace off.
+# Chromium's own logging, with its GPU, X11/ozone and display code verbose, and (when strace is installed) the GPU and display related system calls of Heroic and its helpers (ioctl, openat, sockets, process start and exit, signals;
+# all calls under strace made Heroic's window stay blank), written to heroic.log.strace.NNNN in pieces of 200 MB of which the last 6 are kept. FLEETWM_HEROIC_STRACE=0 turns the strace off.
 flags=(--ozone-platform=x11 --enable-logging=stderr --log-level=0 --v=0
        "--vmodule=*/gpu/*=2,*/ui/gl/*=2,*/ui/ozone/*=2,*/ui/base/x/*=2,*/ui/gfx/x/*=1,*gpu_*=2,*viz*=1,*window_tree_host*=1" --enable-gpu-service-logging)
 rm -f "$log".strace.* 2>/dev/null
@@ -31,7 +31,7 @@ run=("$exe" "${flags[@]}" "$@")
 if [[ ${FLEETWM_HEROIC_STRACE:-1} != 0 ]] && command -v strace >/dev/null 2>&1; then
   (while sleep 20; do ls -1 "$log".strace.* 2>/dev/null | head -n -6 | xargs -r rm -f; done) &
   keeper=$!
-  ELECTRON_ENABLE_LOGGING=1 ELECTRON_ENABLE_STACK_DUMPING=1 strace -f -tt -T -s 200 -o "|split -b 200M -d -a 4 - $log.strace." "${run[@]}" >> "$log" 2>&1
+  ELECTRON_ENABLE_LOGGING=1 ELECTRON_ENABLE_STACK_DUMPING=1 strace -f --seccomp-bpf -e trace=ioctl,openat,connect,sendmsg,recvmsg,execve,clone,clone3,exit_group,kill,tgkill,memfd_create,socket -e signal=all -tt -T -s 200 -o "|split -b 200M -d -a 4 - $log.strace." "${run[@]}" >> "$log" 2>&1
   rc=$?
   kill "$keeper" 2>/dev/null
 else
