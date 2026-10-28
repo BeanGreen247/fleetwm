@@ -2932,6 +2932,18 @@ int main(int argc, char** argv) {
     if (B.island) B.apply_layout();
     B.redraw();
   });
+  B.tray->set_menu_handler([&B](const Tray::MenuRequest& rq) {
+    // the program's own menu, shown in the taskbar's menu: a click runs busctl to tell it which entry was chosen
+    std::vector<MenuItem> items;
+    for (const Tray::MenuEntry& e : rq.entries) {
+      if (e.separator) items.push_back(MenuItem{MenuItem::Kind::Separator, "", ""});
+      else
+        items.push_back(MenuItem{MenuItem::Kind::Exec, e.label,
+                                 "busctl --user call " + rq.bus_name + " " + rq.menu_path + " com.canonical.dbusmenu Event isvu " + std::to_string(e.id) +
+                                     " clicked i 0 0"});
+    }
+    B.open_ctx_menu(items, rq.x, rq.y);
+  });
   B.tray->set_icon_px(static_cast<int>(B.tray_px()));
   B.tray->start();
 

@@ -214,5 +214,26 @@ print("PASS: the transparent half of the icon shows the taskbar %s" % (right,) i
 PY
 if grep -q CLICKED "$LOG"; then echo "PASS: a click on the icon reached the program"; else echo "FAIL: the click did not reach the program"; fi
 
+echo "== a libappindicator tray item without Activate (Steam): a click shows its dbusmenu, choosing an entry reaches the program"
+LOG=$OUT/sni.log; : > "$LOG"
+session '
+python3 '"$SRC"'/perflog/2026-10-27/game-clients/sni_menu.py > '"$LOG"' 2>&1 & SP=$!
+sleep 4
+grim $OUT/sni-before.png
+XY=$(python3 -c "
+from PIL import Image
+im = Image.open(\"$OUT/sni-before.png\").convert(\"RGB\"); w, h = im.size
+hits = [(x, y) for y in range(h - 60, h) for x in range(w // 2, w) if im.getpixel((x, y))[0] > 200 and im.getpixel((x, y))[1] < 60 and im.getpixel((x, y))[2] > 200]
+print(\"%d %d\" % (sum(p[0] for p in hits) // len(hits), sum(p[1] for p in hits) // len(hits)) if hits else \"0 0\")
+")
+$T/pointer click $XY wait 800
+sleep 1
+grim $OUT/sni-menu.png
+$T/pointer click 870 550 wait 500
+sleep 1.5
+kill $SP
+'
+if grep -q "EVENT 2 clicked" "$LOG"; then echo "PASS: the tray item's menu was shown and its Library entry reached the program"; else echo "FAIL: no menu event: $(cat "$LOG")"; fi
+
 rm -rf "$T"
 echo "screenshots in $OUT"

@@ -24,6 +24,20 @@ class Tray {
     bool xembed = false;  // an X11 (Wine) tray icon, not a StatusNotifierItem
   };
 
+  // A StatusNotifierItem that has no Activate / ContextMenu method but a `Menu` (com.canonical.dbusmenu: Steam, anything built on
+  // libappindicator) is clicked by showing that menu: the tray reads its layout and hands the entries to this callback.
+  struct MenuEntry {
+    int id = 0;            // dbusmenu item id (what Event "clicked" takes)
+    std::string label;     // submenu items carry their parents' names ("Friends > Online")
+    bool separator = false;
+  };
+  struct MenuRequest {
+    std::string bus_name, menu_path;
+    std::vector<MenuEntry> entries;
+    int x = 0, y = 0;  // where the click was, in bar coordinates
+  };
+  void set_menu_handler(std::function<void(const MenuRequest&)> handler);
+
   Tray(kit::App& app, std::function<void()> on_change);
   ~Tray();
   Tray(const Tray&) = delete;

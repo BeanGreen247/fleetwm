@@ -32,8 +32,105 @@ cairo_surface_t* make_placeholder() {
 }
 }  // namespace
 
+namespace {
+// One node of a com.canonical.dbusmenu layout: (ia{sv}av).
+struct MenuNode {
+  int id = 0;
+  std::string label, type, toggle_type;
+  int toggle_state = -1;
+  bool enabled = true, visible = true;
+  std::vector<MenuNode> kids;
+};
+
+int read_menu_node(sd_bus_message* m, MenuNode* n, int depth) {
+  if (depth > 6) return -1;
+  int r = sd_bus_message_enter_container(m, 'r', "ia{sv}av");
+  if (r < 0) return r;
+  r = sd_bus_message_read(m, "i", &n->id);
+  if (r < 0) return r;
+  r = sd_bus_message_enter_container(m, 'a', "{sv}");
+  if (r < 0) return r;
+  while ((r = sd_bus_message_enter_container(m, 'e', "sv")) > 0) {
+    const char* key = nullptr;
+    if (sd_bus_message_read(m, "s", &key) < 0 || !key) return -1;
+    char vt = 0;
+    const char* contents = nullptr;
+    if (sd_bus_message_peek_type(m, &vt, &contents) < 0 || vt != 'v' || !contents) return -1;
+    const std::string sig = contents;
+    if (sd_bus_message_enter_container(m, 'v', sig.c_str()) < 0) return -1;
+    auto str = [&](std::string& dst) {
+      const char* v = nullptr;
+      if (sig == "s" && sd_bus_message_read(m, "s", &v) >= 0 && v) dst = v;
+      else sd_bus_message_skip(m, sig.c_str());
+    };
+    if (!std::strcmp(key, "label")) str(n->label);
+    else if (!std::strcmp(key, "type")) str(n->type);
+    else if (!std::strcmp(key, "toggle-type")) str(n->toggle_type);
+    else if (!std::strcmp(key, "enabled") || !std::strcmp(key, "visible")) {
+      int b = 1;
+      if (sig == "b" && sd_bus_message_read(m, "b", &b) >= 0) (key[0] == 'e' ? n->enabled : n->visible) = b != 0;
+      else sd_bus_message_skip(m, sig.c_str());
+    } else if (!std::strcmp(key, "toggle-state")) {
+      int v = -1;
+      if (sig == "i" && sd_bus_message_read(m, "i", &v) >= 0) n->toggle_state = v;
+      else sd_bus_message_skip(m, sig.c_str());
+    } else sd_bus_message_skip(m, sig.c_str());
+    sd_bus_message_exit_container(m);  // v
+    sd_bus_message_exit_container(m);  // e
+  }
+  if (r < 0) return r;
+  sd_bus_message_exit_container(m);  // a{sv}
+  r = sd_bus_message_enter_container(m, 'a', "v");
+  if (r < 0) return r;
+  while ((r = sd_bus_message_enter_container(m, 'v', "(ia{sv}av)")) > 0) {
+    MenuNode kid;
+    if (read_menu_node(m, &kid, depth + 1) < 0) return -1;
+    n->kids.push_back(std::move(kid));
+    sd_bus_message_exit_container(m);  // v
+  }
+  if (r < 0) return r;
+  sd_bus_message_exit_container(m);  // a v
+  sd_bus_message_exit_container(m);  // struct
+  return 0;
+}
+
+// dbusmenu labels mark the accelerator with an underscore ("_Store"); "__" is a literal one.
+std::string clean_menu_label(const std::string& in) {
+  std::string out;
+  for (size_t i = 0; i < in.size(); ++i) {
+    if (in[i] == '_') {
+      if (i + 1 < in.size() && in[i + 1] == '_') out += '_', ++i;
+      continue;
+    }
+    out += in[i] == '|' ? '/' : in[i];  // '|' separates the fields of a ctxmenu item
+  }
+  return out;
+}
+
+// The clickable entries of a node's children in order; submenus are flattened ("Friends > Online").
+void flatten_menu(const MenuNode& node, const std::string& prefix, std::vector<Tray::MenuEntry>* out) {
+  for (const MenuNode& k : node.kids) {
+    if (!k.visible) continue;
+    if (k.type == "separator") {
+      if (!out->empty() && !out->back().separator) out->push_back({k.id, "", true});
+      continue;
+    }
+    std::string label = clean_menu_label(k.label);
+    if (!k.kids.empty()) {
+      flatten_menu(k, prefix + label + " > ", out);
+      continue;
+    }
+    if (!k.enabled || label.empty()) continue;
+    if (k.toggle_type == "checkmark" || k.toggle_type == "radio") label = (k.toggle_state == 1 ? "[x] " : "[ ] ") + label;
+    out->push_back({k.id, prefix + label, false});
+  }
+  while (!out->empty() && out->back().separator) out->pop_back();
+}
+}  // namespace
+
 struct Tray::Impl {
   struct Entry {
+    std::string menu_path;  // the item's dbusmenu object, "" when it has none
     Item pub;
     std::vector<std::string> theme_dirs;
     sd_bus_slot* sig_slot = nullptr;
@@ -261,6 +358,14 @@ struct Tray::Impl {
       if (!std::strcmp(key, "IconName")) handled = read_string(icon_name);
       else if (!std::strcmp(key, "IconThemePath")) handled = read_string(theme_path);
       else if (!std::strcmp(key, "Title")) handled = read_string(title);
+      else if (!std::strcmp(key, "Menu")) {
+        if (sd_bus_message_enter_container(m, 'v', "o") >= 0) {
+          const char* path = nullptr;
+          if (sd_bus_message_read(m, "o", &path) >= 0 && path) e.menu_path = path;
+          sd_bus_message_exit_container(m);
+          handled = true;
+        }
+      }
       else if (!std::strcmp(key, "IconPixmap")) {
         if (sd_bus_message_enter_container(m, 'v', "a(iiay)") >= 0) {
           if (sd_bus_message_enter_container(m, 'a', "(iiay)") >= 0) {
@@ -314,8 +419,63 @@ struct Tray::Impl {
     if (!bus) return;
     const Entry& e = *entries[index];
     const char* method = button == 0x111 ? "ContextMenu" : "Activate";
-    sd_bus_call_method_async(bus, nullptr, e.pub.bus_name.c_str(), e.pub.object_path.c_str(),
-                             kItemIface, method, nullptr, nullptr, "ii", x, y);
+    struct Req {
+      Impl* owner;
+      std::string bus_name, menu_path;
+      int x, y;
+    };
+    auto* req = new Req{this, e.pub.bus_name, e.menu_path, x, y};
+    sd_bus_call_method_async(
+        bus, nullptr, e.pub.bus_name.c_str(), e.pub.object_path.c_str(), kItemIface, method,
+        [](sd_bus_message* m, void* ud, sd_bus_error*) -> int {
+          std::unique_ptr<Req> r(static_cast<Req*>(ud));
+          // no such method (Steam and other libappindicator items): their menu is what a click should show
+          if (sd_bus_message_is_method_error(m, nullptr) && !r->menu_path.empty()) r->owner->show_menu(r->bus_name, r->menu_path, r->x, r->y);
+          return 0;
+        },
+        req, "ii", x, y);
+    sd_bus_flush(bus);
+  }
+
+  std::function<void(const MenuRequest&)> menu_handler;
+
+  // com.canonical.dbusmenu: AboutToShow(0) lets the program fill the menu, then GetLayout reads it.
+  void show_menu(const std::string& bus_name, const std::string& menu_path, int x, int y) {
+    if (!bus || !menu_handler) return;
+    struct Req {
+      Impl* owner;
+      std::string bus_name, menu_path;
+      int x, y;
+    };
+    auto* req = new Req{this, bus_name, menu_path, x, y};
+    sd_bus_call_method_async(
+        bus, nullptr, bus_name.c_str(), menu_path.c_str(), "com.canonical.dbusmenu", "AboutToShow",
+        [](sd_bus_message*, void* ud, sd_bus_error*) -> int {  // an error here (not implemented) does not matter
+          std::unique_ptr<Req> r(static_cast<Req*>(ud));
+          auto* next = new Req(*r);
+          Impl* owner = r->owner;
+          sd_bus_call_method_async(
+              owner->bus, nullptr, next->bus_name.c_str(), next->menu_path.c_str(), "com.canonical.dbusmenu", "GetLayout",
+              [](sd_bus_message* m, void* ud2, sd_bus_error*) -> int {
+                std::unique_ptr<Req> q(static_cast<Req*>(ud2));
+                if (sd_bus_message_is_method_error(m, nullptr)) return 0;
+                unsigned revision = 0;
+                MenuNode root;
+                if (sd_bus_message_read(m, "u", &revision) < 0 || read_menu_node(m, &root, 0) < 0) return 0;
+                MenuRequest rq;
+                rq.bus_name = q->bus_name;
+                rq.menu_path = q->menu_path;
+                rq.x = q->x;
+                rq.y = q->y;
+                flatten_menu(root, "", &rq.entries);
+                if (!rq.entries.empty() && q->owner->menu_handler) q->owner->menu_handler(rq);
+                return 0;
+              },
+              next, "iias", 0, -1, 0);
+          sd_bus_flush(owner->bus);
+          return 0;
+        },
+        req, "i", 0);
     sd_bus_flush(bus);
   }
 
@@ -418,6 +578,7 @@ int fleetwm_tray_prop_version(sd_bus*, const char*, const char*, const char*, sd
 Tray::Tray(kit::App& app, std::function<void()> on_change)
     : impl_(new Impl(app, std::move(on_change))) {}
 Tray::~Tray() = default;
+void Tray::set_menu_handler(std::function<void(const MenuRequest&)> handler) { impl_->menu_handler = std::move(handler); }
 void Tray::start() { impl_->start(); }
 void Tray::set_icon_px(int px) {
   impl_->icon_px = px;
