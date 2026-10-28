@@ -45,6 +45,18 @@ bool spawn_detached(const std::vector<std::string>& argv);
 // xdg-open on a path or address.
 bool open_default(const std::string& path_or_uri);
 
+// What opening (double clicking) a file does.
+enum class OpenKind {
+  Default,       // the default application (xdg-open)
+  DesktopEntry,  // a .desktop shortcut (an application, a Lutris or Steam shortcut): run its Exec line
+  Program,       // an executable binary (ELF, an AppImage, a Wine launcher built as one): run it
+  Script,        // an executable script (#!): run it in a terminal so its output and questions are seen
+  WinShortcut,   // a Windows .lnk shortcut: wine start /unix
+};
+OpenKind classify_open(const std::string& path);  // follows symbolic links
+// Opens `path` the way classify_open says: runs shortcuts and programs, hands everything else to xdg-open. false when nothing could be started.
+bool open_item(const std::string& path);
+
 // The mime type of a file by its extension ("photo.jpg" -> image/jpeg, a folder -> inode/directory); application/octet-stream when unknown.
 std::string mime_type_for(std::string_view name, bool is_dir);
 // True when `program` is found in $PATH.

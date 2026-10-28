@@ -576,7 +576,7 @@ struct Desktop {
   }
   void open(const DesktopIcon& i) {
     if (i.special || i.is_dir) fm::spawn_detached({"fleetwm-fm", i.target});
-    else fm::open_default(i.target);
+    else fm::open_item(i.target);
   }
   void create_new(bool text) {
     std::string name;

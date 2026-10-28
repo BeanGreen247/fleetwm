@@ -28,6 +28,10 @@ struct DesktopEntry {
 // ones with the same id. Unsorted.
 std::vector<DesktopEntry> load_desktop_entries();
 
+// Reads one .desktop file by path (a shortcut the user opened from the file manager or the desktop): Type=Application with a Name and an Exec.
+// The menu filters (NoDisplay, Hidden, OnlyShowIn, TryExec) do not apply. false when the file is not a launchable application entry.
+bool load_desktop_file(const std::string& path, DesktopEntry* out);
+
 // Built-in Fleetwm applications remain discoverable when an older install is
 // missing one of their desktop files. The loader only adds entries whose
 // executable is available on PATH.

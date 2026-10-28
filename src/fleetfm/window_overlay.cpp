@@ -288,7 +288,7 @@ void FmWindow::paint_dialog() {
   int dw = 440, dh = 220;
   switch (dlg_) {
     case Dlg::About: dw = 460; dh = 360; break;
-    case Dlg::Properties: dw = 420; dh = 500; break;
+    case Dlg::Properties: dw = 480; dh = 520; break;
     case Dlg::Connect: dw = 520; dh = 420; break;
     case Dlg::Nextcloud: dw = 500; dh = 340; break;
     case Dlg::Conflict: dw = 520; dh = 250; break;

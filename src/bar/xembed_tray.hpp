@@ -49,6 +49,8 @@ class XembedTray {
 bool is_xwayland_comm(const std::string& comm);
 // Converts a 32-bit BGRX (little-endian) X image to premultiplied ARGB32 with alpha 255, `stride` bytes per row.
 void bgrx_to_argb(const unsigned char* src, int src_stride, unsigned char* dst, int dst_stride, int w, int h);
+// Converts a 32-bit BGRA (little-endian, premultiplied) X image to cairo's ARGB32, clamping colour values above alpha.
+void bgra_to_argb(const unsigned char* src, int src_stride, unsigned char* dst, int dst_stride, int w, int h);
 // X button number for an evdev button code (0 for buttons the tray does not forward).
 int x_button_for(uint32_t evdev);
 

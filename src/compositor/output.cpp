@@ -162,17 +162,15 @@ void output_frame(wl_listener* listener, void*) {
   wlr_scene_output* scene_output =
       wlr_scene_get_scene_output(scene, output->wlr_output_ptr);
 
+  bool vrr_change = false;
   // Variable refresh rate while a window is fullscreen (a game): the monitor follows the frame rate instead of the game waiting for a fixed refresh.
   {
     wlr_output* wo = output->wlr_output_ptr;
     const bool want_vrr = fullscreen != nullptr && server->game_config().adaptive_sync && wo->adaptive_sync_supported;
     if (want_vrr != output->vrr_on) {
       output->vrr_on = want_vrr;  // set first: a monitor that refuses is not asked again every frame
-      wlr_output_state vrr_state;
-      wlr_output_state_init(&vrr_state);
-      wlr_output_state_set_adaptive_sync_enabled(&vrr_state, want_vrr);
-      wlr_output_commit_state(wo, &vrr_state);
-      wlr_output_state_finish(&vrr_state);
+      vrr_change = true;          // sent together with this frame's picture below: a separate commit left a page flip pending and made the
+                                  // frame's own commit fail ("a page-flip is already pending") right when a game went fullscreen
     }
   }
 
@@ -204,6 +202,7 @@ void output_frame(wl_listener* listener, void*) {
       wlr_output_state_init(&state);
       if (wlr_scene_output_build_state(scene_output, &state, nullptr)) {
         state.tearing_page_flip = true;
+        if (vrr_change) wlr_output_state_set_adaptive_sync_enabled(&state, output->vrr_on);
         wlr_output_commit_state(output->wlr_output_ptr, &state);
       }
       wlr_output_state_finish(&state);
@@ -222,7 +221,19 @@ void output_frame(wl_listener* listener, void*) {
       }
       clock_gettime(CLOCK_MONOTONIC, &c0);
     }
-    const bool committed = wlr_scene_output_commit(scene_output, nullptr);
+    bool committed = false;
+    {
+      wlr_output_state state;
+      wlr_output_state_init(&state);
+      if (wlr_scene_output_build_state(scene_output, &state, nullptr)) {
+        if (vrr_change) wlr_output_state_set_adaptive_sync_enabled(&state, output->vrr_on);
+        committed = wlr_output_commit_state(output->wlr_output_ptr, &state);
+      } else if (vrr_change) {  // nothing to draw this frame: the mode change goes alone
+        wlr_output_state_set_adaptive_sync_enabled(&state, output->vrr_on);
+        wlr_output_commit_state(output->wlr_output_ptr, &state);
+      }
+      wlr_output_state_finish(&state);
+    }
     if (stats && damage_px > 0) {
       timespec c1{};
       clock_gettime(CLOCK_MONOTONIC, &c1);

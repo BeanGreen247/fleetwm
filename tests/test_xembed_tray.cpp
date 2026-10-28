@@ -34,5 +34,17 @@ TEST(XembedTray, ConvertsBgrxToOpaqueArgb) {
   EXPECT_EQ(dst[8], 0xee);  // padding is left alone
 }
 
+TEST(XembedTray, KeepsTransparencyOfArgbIcons) {
+  // a clear corner, a half transparent pixel, and one with a colour above its alpha (broken program) that gets clamped
+  const unsigned char src[12] = {0, 0, 0, 0, 40, 20, 10, 128, 255, 90, 90, 100};
+  std::vector<unsigned char> dst(12, 0xee);
+  bgra_to_argb(src, 12, dst.data(), 12, 3, 1);
+  EXPECT_EQ(dst[3], 0);    // fully transparent stays so
+  EXPECT_EQ(dst[7], 128);  // alpha is kept, not forced to 255
+  EXPECT_EQ(dst[4], 40);
+  EXPECT_EQ(dst[8], 100);  // 255 > alpha 100: clamped
+  EXPECT_EQ(dst[9], 90);
+}
+
 }  // namespace
 }  // namespace fleetwm::bar

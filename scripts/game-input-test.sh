@@ -202,6 +202,16 @@ kill $XP
 '
 if grep -q DOCKED "$LOG"; then echo "PASS: the program found the bar's X11 tray and docked"; else echo "FAIL: no X11 tray: $(cat "$LOG")"; fi
 if [[ "$(cat $OUT/xtray-xy.txt 2>/dev/null)" != "0 0" ]]; then echo "PASS: the icon is drawn in the bar at $(cat $OUT/xtray-xy.txt)"; else echo "FAIL: no red icon in the bar"; fi
+python3 - "$OUT/xtray-before.png" "$OUT/xtray-xy.txt" <<'PY'
+import sys
+from PIL import Image
+im = Image.open(sys.argv[1]).convert("RGB"); w, h = im.size
+cx, cy = (int(v) for v in open(sys.argv[2]).read().split())
+# the icon is red on its left half and clear on the right: the clear half must show the taskbar, not black
+reds = [x for x in range(cx - 20, cx + 20) if im.getpixel((x, cy))[0] > 200 and im.getpixel((x, cy))[1] < 60]
+right = im.getpixel((max(reds) + 6, cy)) if reds else (0, 0, 0)
+print("PASS: the transparent half of the icon shows the taskbar %s" % (right,) if sum(right) > 120 else "FAIL: the transparent half is dark %s" % (right,))
+PY
 if grep -q CLICKED "$LOG"; then echo "PASS: a click on the icon reached the program"; else echo "FAIL: the click did not reach the program"; fi
 
 rm -rf "$T"

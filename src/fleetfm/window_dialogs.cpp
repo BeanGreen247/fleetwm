@@ -122,9 +122,12 @@ void FmWindow::dialog_properties(Ui& ui, double w, double h) {
         ui.newline();
       } else {
         for (const auto& r : props_hashes_) {
-          ui.row(r.first.empty() ? "" : r.first.c_str());
-          ui.label(fit(r.second, w - 190, 11));
-          ui.newline();
+          // a SHA-256 is 64 characters: broken into lines of 32 so the whole value is readable and can be compared by eye
+          for (size_t at = 0; at < std::max<size_t>(r.second.size(), 1); at += 32) {
+            ui.row(at == 0 && !r.first.empty() ? r.first.c_str() : "");
+            ui.label(fit(r.second.substr(at, 32), w - 190, 11));
+            ui.newline();
+          }
         }
       }
     }

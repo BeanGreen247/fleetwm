@@ -15,6 +15,8 @@
 #include <sstream>
 
 #include "child_signals.hpp"
+#include "default_apps.hpp"
+#include "desktop_entry.hpp"
 #include "dir_listing.hpp"
 #include "icons.hpp"
 #include "locations.hpp"
@@ -222,6 +224,76 @@ bool spawn_detached(const std::vector<std::string>& argv) {
 }
 
 bool open_default(const std::string& target) { return spawn_detached({"xdg-open", target}); }
+
+namespace {
+std::string lower_ext(const std::string& path) {
+  const size_t slash = path.rfind('/');
+  const size_t dot = path.rfind('.');
+  if (dot == std::string::npos || (slash != std::string::npos && dot < slash)) return "";
+  std::string e = path.substr(dot);
+  for (char& c : e) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  return e;
+}
+
+std::vector<std::string> terminal_words() {
+  std::vector<std::string> out;
+  std::istringstream in(load_default_apps_config().terminal_command);
+  for (std::string w; in >> w;) out.push_back(w);
+  if (out.empty()) out.push_back("foot");
+  return out;
+}
+}  // namespace
+
+OpenKind classify_open(const std::string& path) {
+  struct stat st;
+  if (::stat(path.c_str(), &st) != 0 || !S_ISREG(st.st_mode)) return OpenKind::Default;
+  const std::string ext = lower_ext(path);
+  if (ext == ".desktop") return OpenKind::DesktopEntry;
+  if (ext == ".lnk") return OpenKind::WinShortcut;
+  if (::access(path.c_str(), X_OK) != 0) return OpenKind::Default;
+  if (path.find(".so") != std::string::npos && (ext == ".so" || path.rfind(".so.") != std::string::npos)) return OpenKind::Default;  // a library, not a program
+  const int fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
+  if (fd < 0) return OpenKind::Default;
+  unsigned char head[4] = {0, 0, 0, 0};
+  const ssize_t n = ::read(fd, head, sizeof head);
+  ::close(fd);
+  if (n >= 4 && head[0] == 0x7f && head[1] == 'E' && head[2] == 'L' && head[3] == 'F') return OpenKind::Program;
+  if (n >= 2 && head[0] == '#' && head[1] == '!') return OpenKind::Script;
+  return OpenKind::Default;
+}
+
+bool open_item(const std::string& path) {
+  const std::string dir = path.substr(0, path.rfind('/') == std::string::npos ? 0 : path.rfind('/'));
+  switch (classify_open(path)) {
+    case OpenKind::DesktopEntry: {
+      kit::DesktopEntry e;
+      if (!kit::load_desktop_file(path, &e)) return open_default(path);
+      std::vector<std::string> argv = kit::gpu_wrapped(e, kit::exec_argv(e));
+      if (argv.empty()) return open_default(path);
+      if (e.terminal) {
+        std::vector<std::string> t = terminal_words();
+        t.push_back("-e");
+        t.insert(t.end(), argv.begin(), argv.end());
+        argv = std::move(t);
+      }
+      return kit::spawn_detached(argv, e.path.empty() ? dir : e.path);
+    }
+    case OpenKind::Program:
+      return kit::spawn_detached({path}, dir);
+    case OpenKind::Script: {
+      std::vector<std::string> t = terminal_words();
+      t.push_back("-e");
+      t.push_back(path);
+      return kit::spawn_detached(t, dir);
+    }
+    case OpenKind::WinShortcut:
+      if (!have_program("wine")) return open_default(path);
+      return kit::spawn_detached({"wine", "start", "/unix", path}, dir);
+    case OpenKind::Default:
+      break;
+  }
+  return open_default(path);
+}
 
 std::vector<std::string> parse_path_list(const std::string& text) {
   std::vector<std::string> out;

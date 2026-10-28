@@ -41,12 +41,12 @@ libfleetfm_icons = static_library(
   'fleetfm-icons',
   files('icons.cpp', 'file_ops.cpp', 'nav_tree.cpp', 'desktop.cpp'),
   include_directories: include_directories('.'),
-  dependencies: [cairo_for_fm, libfleetfm_core_dep],
+  dependencies: [cairo_for_fm, libfleetfm_core_dep, libfleetkit_dep],
 )
 libfleetfm_icons_dep = declare_dependency(
   link_with: libfleetfm_icons,
   include_directories: include_directories('.'),
-  dependencies: [cairo_for_fm, libfleetfm_core_dep],
+  dependencies: [cairo_for_fm, libfleetfm_core_dep, libfleetkit_dep],
 )
 
 # The settings widgets (file manager and desktop), used by the Settings app and by the file manager's fallback Folder Options window.

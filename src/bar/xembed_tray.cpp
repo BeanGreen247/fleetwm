@@ -37,6 +37,20 @@ void bgrx_to_argb(const unsigned char* src, int src_stride, unsigned char* dst, 
   }
 }
 
+void bgra_to_argb(const unsigned char* src, int src_stride, unsigned char* dst, int dst_stride, int w, int h) {
+  for (int y = 0; y < h; ++y) {
+    const unsigned char* s = src + static_cast<size_t>(y) * src_stride;
+    unsigned char* d = dst + static_cast<size_t>(y) * dst_stride;
+    for (int x = 0; x < w; ++x, s += 4, d += 4) {
+      const unsigned char a = s[3];
+      d[0] = s[0] > a ? a : s[0];  // premultiplied already (that is what a composited ARGB window holds); a stray larger value is clamped
+      d[1] = s[1] > a ? a : s[1];
+      d[2] = s[2] > a ? a : s[2];
+      d[3] = a;
+    }
+  }
+}
+
 int x_button_for(uint32_t evdev) {
   switch (evdev) {
     case 0x110: return 1;
@@ -93,6 +107,7 @@ struct XembedTray::Impl {
   struct Entry {
     xcb_window_t win = 0;
     xcb_window_t box = 0;
+    bool argb = false;  // the icon window has a 32-bit ARGB visual (Wine asks for one through _NET_SYSTEM_TRAY_VISUAL)
     uint64_t hash = 0;
     Icon pub;
   };
@@ -108,6 +123,8 @@ struct XembedTray::Impl {
   std::vector<std::unique_ptr<Entry>> entries;
   std::vector<Icon> view;
   bool use_composite = false;
+  xcb_visualid_t argb_visual = 0;
+  xcb_colormap_t argb_cmap = 0;
 
   Impl(kit::App& a, std::function<void()> cb) : app(a), on_change(std::move(cb)) {}
   ~Impl() {
@@ -191,12 +208,30 @@ struct XembedTray::Impl {
     const xcb_query_extension_reply_t* ext = xcb_get_extension_data(c, &xcb_composite_id);
     use_composite = ext && ext->present;
 
+    // a 32-bit ARGB visual for the icon containers, so icons with transparent corners keep them (published as _NET_SYSTEM_TRAY_VISUAL)
+    for (xcb_depth_iterator_t di = xcb_screen_allowed_depths_iterator(screen); di.rem && !argb_visual; xcb_depth_next(&di)) {
+      if (di.data->depth != 32) continue;
+      for (xcb_visualtype_iterator_t vi = xcb_depth_visuals_iterator(di.data); vi.rem; xcb_visualtype_next(&vi))
+        if (vi.data->_class == XCB_VISUAL_CLASS_TRUE_COLOR && vi.data->red_mask == 0xff0000 && vi.data->green_mask == 0xff00 && vi.data->blue_mask == 0xff) {
+          argb_visual = vi.data->visual_id;
+          break;
+        }
+    }
+    if (argb_visual) {
+      argb_cmap = xcb_generate_id(c);
+      xcb_create_colormap(c, XCB_COLORMAP_ALLOC_NONE, argb_cmap, screen->root, argb_visual);
+    }
+
     owner = xcb_generate_id(c);
     const uint32_t mask = XCB_EVENT_MASK_PROPERTY_CHANGE;
     xcb_create_window(c, XCB_COPY_FROM_PARENT, owner, screen->root, kParkCoord, kParkCoord, 1, 1, 0, XCB_WINDOW_CLASS_INPUT_OUTPUT,
                       screen->root_visual, XCB_CW_EVENT_MASK, &mask);
     const uint32_t horizontal = 0;
     xcb_change_property(c, XCB_PROP_MODE_REPLACE, owner, a_orient, XCB_ATOM_CARDINAL, 32, 1, &horizontal);
+    if (argb_visual) {
+      const xcb_atom_t a_visual = intern(c, "_NET_SYSTEM_TRAY_VISUAL");
+      xcb_change_property(c, XCB_PROP_MODE_REPLACE, owner, a_visual, XCB_ATOM_VISUALID, 32, 1, &argb_visual);
+    }
     xcb_set_selection_owner(c, owner, sel, XCB_CURRENT_TIME);
     xcb_client_message_event_t ev{};
     ev.response_type = XCB_CLIENT_MESSAGE;
@@ -237,14 +272,23 @@ struct XembedTray::Impl {
       if (e->win == win) return;
     xcb_get_geometry_reply_t* g = xcb_get_geometry_reply(c, xcb_get_geometry(c, win), nullptr);
     if (!g) return;  // gone already
-    std::free(g);
     auto e = std::make_unique<Entry>();
+    e->argb = g->depth == 32 && argb_visual;
+    std::free(g);
     e->win = win;
     e->box = xcb_generate_id(c);
-    const uint32_t vals[] = {1u, XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY};
-    xcb_create_window(c, XCB_COPY_FROM_PARENT, e->box, screen->root, kParkCoord, kParkCoord, static_cast<uint16_t>(px),
-                      static_cast<uint16_t>(px), 0, XCB_WINDOW_CLASS_INPUT_OUTPUT, screen->root_visual,
-                      XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK, vals);
+    if (argb_visual) {
+      // transparent 32-bit container: what the icon leaves clear stays clear
+      const uint32_t vals[] = {0u, 0u, 1u, XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY, argb_cmap};
+      xcb_create_window(c, 32, e->box, screen->root, kParkCoord, kParkCoord, static_cast<uint16_t>(px), static_cast<uint16_t>(px), 0,
+                        XCB_WINDOW_CLASS_INPUT_OUTPUT, argb_visual,
+                        XCB_CW_BACK_PIXEL | XCB_CW_BORDER_PIXEL | XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK | XCB_CW_COLORMAP, vals);
+    } else {
+      const uint32_t vals[] = {1u, XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY};
+      xcb_create_window(c, XCB_COPY_FROM_PARENT, e->box, screen->root, kParkCoord, kParkCoord, static_cast<uint16_t>(px),
+                        static_cast<uint16_t>(px), 0, XCB_WINDOW_CLASS_INPUT_OUTPUT, screen->root_visual,
+                        XCB_CW_OVERRIDE_REDIRECT | XCB_CW_EVENT_MASK, vals);
+    }
     const uint32_t wattr = XCB_EVENT_MASK_STRUCTURE_NOTIFY | XCB_EVENT_MASK_PROPERTY_CHANGE;
     xcb_change_window_attributes(c, win, XCB_CW_EVENT_MASK, &wattr);
     xcb_reparent_window(c, win, e->box, 0, 0);
@@ -298,7 +342,8 @@ struct XembedTray::Impl {
         e.hash = h;
         cairo_surface_t* s = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, px, px);
         cairo_surface_flush(s);
-        bgrx_to_argb(data, px * 4, cairo_image_surface_get_data(s), cairo_image_surface_get_stride(s), px, px);
+        if (e.argb) bgra_to_argb(data, px * 4, cairo_image_surface_get_data(s), cairo_image_surface_get_stride(s), px, px);
+        else bgrx_to_argb(data, px * 4, cairo_image_surface_get_data(s), cairo_image_surface_get_stride(s), px, px);
         cairo_surface_mark_dirty(s);
         if (e.pub.surface) cairo_surface_destroy(e.pub.surface);
         e.pub.surface = s;

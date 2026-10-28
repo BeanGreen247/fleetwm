@@ -13,6 +13,7 @@ fleetwm_test_sources = files(
   'test_damaged_config.cpp',
   'test_info_flags.cpp',
   'test_xembed_tray.cpp',
+  'test_open_item.cpp',
   '../src/bar/xembed_tray.cpp',
   'test_child_signals.cpp',
   'test_default_apps.cpp',

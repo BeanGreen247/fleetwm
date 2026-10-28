@@ -317,7 +317,7 @@ void FmWindow::open_address(const std::string& address, bool new_tab, bool remem
         return;
       }
       if (!S_ISDIR(st.st_mode)) {
-        open_default(loc.path);
+        open_item(loc.path);
         return;
       }
       open_local(loc.path, remember);

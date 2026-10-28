@@ -72,7 +72,7 @@ bool on_path(const std::string& prog) {
 
 // One read of the whole file, then the lines are walked in place. The keys that are kept: everything without a [locale], and
 // Name[...] / Comment[...] for the user's own locales; the dozens of other translations are skipped without a copy.
-bool parse_file(const std::string& file, const std::string& id, DesktopEntry* out, const std::vector<std::string>& locales) {
+bool parse_file(const std::string& file, const std::string& id, DesktopEntry* out, const std::vector<std::string>& locales, bool launcher_filters = true) {
   const int fd = open(file.c_str(), O_RDONLY | O_CLOEXEC);
   if (fd < 0) return false;
   std::string text;
@@ -113,7 +113,7 @@ bool parse_file(const std::string& file, const std::string& id, DesktopEntry* ou
     kv[std::string(key)] = std::string(val);
   }
   if (kv["Type"] != "Application") return false;
-  if (kv["NoDisplay"] == "true" || kv["Hidden"] == "true") return false;
+  if (launcher_filters && (kv["NoDisplay"] == "true" || kv["Hidden"] == "true")) return false;
 
   const char* cd = std::getenv("XDG_CURRENT_DESKTOP");
   const auto desktops = split(cd ? cd : "", ':');
@@ -122,9 +122,11 @@ bool parse_file(const std::string& file, const std::string& id, DesktopEntry* ou
       if (std::find(desktops.begin(), desktops.end(), d) != desktops.end()) return true;
     return false;
   };
-  if (kv.count("OnlyShowIn") && !matches(kv["OnlyShowIn"])) return false;
-  if (kv.count("NotShowIn") && matches(kv["NotShowIn"])) return false;
-  if (kv.count("TryExec") && !on_path(kv["TryExec"])) return false;
+  if (launcher_filters) {  // these decide what a menu lists; a file the user opened by hand is run regardless
+    if (kv.count("OnlyShowIn") && !matches(kv["OnlyShowIn"])) return false;
+    if (kv.count("NotShowIn") && matches(kv["NotShowIn"])) return false;
+    if (kv.count("TryExec") && !on_path(kv["TryExec"])) return false;
+  }
 
   auto localized = [&](const std::string& key) {
     for (const auto& l : locales) {
@@ -177,6 +179,10 @@ void scan_dir(const std::string& base, const std::string& rel, std::set<std::str
 }
 
 }  // namespace
+
+bool load_desktop_file(const std::string& path, DesktopEntry* out) {
+  return parse_file(path, path.substr(path.rfind('/') == std::string::npos ? 0 : path.rfind('/') + 1), out, locale_keys(), false);
+}
 
 std::vector<DesktopEntry> fleetwm_builtin_desktop_entries() {
   return {

@@ -581,8 +581,8 @@ void FmWindow::item_activate(int i) {
     else open_address(path, new_tab);
     return;
   }
-  // a file: the default application. Executables are not run from here.
-  open_default(path);
+  // a file: shortcuts and executables are run, everything else opens in its default application
+  open_item(path);
   toast("Opening " + b.label_at(i) + "...");
 }
 
