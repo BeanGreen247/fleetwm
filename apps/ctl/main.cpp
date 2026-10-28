@@ -1,5 +1,6 @@
 // fleetwm-ctl: asks the running compositor a question or gives it a command over its IPC socket, and prints the answer. For scripts and the game test bed.
 //   fleetwm-ctl frame-stats [reset]   how evenly frames reach each screen (interval percentiles, late and hitched frames, the compositor's commit cost)
+//   fleetwm-ctl scanout on|off|auto   direct scanout for fullscreen windows, for comparing (auto follows game.toml)
 //   fleetwm-ctl windows               the window list: id, flags, workspace@output, app id, title (tab separated)
 //   fleetwm-ctl close ID              asks a window to close
 //   fleetwm-ctl raw "COMMAND"         any IPC line
@@ -43,9 +44,10 @@ int ask(const std::string& command, const char* stop_prefix, int idle_ms, bool a
 }  // namespace
 
 int main(int argc, char** argv) {
-  if (fleetwm::handle_info_flags(argc, argv, "fleetwm-ctl", "frame-stats [reset] | windows | close ID | raw COMMAND")) return 0;
+  if (fleetwm::handle_info_flags(argc, argv, "fleetwm-ctl", "frame-stats [reset] | scanout on|off|auto | windows | close ID | raw COMMAND")) return 0;
   const std::string verb = argc > 1 ? argv[1] : "";
   if (verb == "frame-stats") return ask(argc > 2 && std::string(argv[2]) == "reset" ? "FRAME_STATS RESET" : "FRAME_STATS", nullptr, 1000, true);
+  if (verb == "scanout" && argc > 2) return ask(std::string("SCANOUT ") + argv[2], nullptr, 500, true);
   if (verb == "windows") return ask("SUBSCRIBE_WINDOWS", "WINDOWS", 1000, false);
   if (verb == "close" && argc > 2) return ask(std::string("WINDOW_CLOSE ") + argv[2], nullptr, 100, true);
   if (verb == "raw" && argc > 2) return ask(argv[2], nullptr, 500, true);

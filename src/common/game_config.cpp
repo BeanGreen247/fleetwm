@@ -48,6 +48,21 @@ FullscreenFilter fullscreen_filter_from_string(const std::string& s, FullscreenF
   return fallback;
 }
 
+std::string direct_scanout_to_string(DirectScanout d) {
+  switch (d) {
+    case DirectScanout::Auto: return "auto";
+    case DirectScanout::Off: return "off";
+    default: return "on";
+  }
+}
+
+DirectScanout direct_scanout_from_string(const std::string& s, DirectScanout fallback) {
+  if (s == "on") return DirectScanout::On;
+  if (s == "auto") return DirectScanout::Auto;
+  if (s == "off") return DirectScanout::Off;
+  return fallback;
+}
+
 std::string desktop_gpu_to_string(DesktopGpu g) {
   switch (g) {
     case DesktopGpu::Discrete: return "discrete";
@@ -73,6 +88,7 @@ GameConfig load_game_config() {
     if (auto v = root["fullscreen_scaling"].value<std::string>()) config.scaling = fullscreen_scaling_from_string(*v, config.scaling);
     if (auto v = root["fullscreen_filter"].value<std::string>()) config.filter = fullscreen_filter_from_string(*v, config.filter);
     if (auto v = root["adaptive_sync"].value<bool>()) config.adaptive_sync = *v;
+    if (auto v = root["direct_scanout"].value<std::string>()) config.direct_scanout = direct_scanout_from_string(*v, config.direct_scanout);
     if (auto v = root["desktop_gpu"].value<std::string>()) config.desktop_gpu = desktop_gpu_from_string(*v, config.desktop_gpu);
     if (auto v = root["gamemode"].value<bool>()) config.gamemode = *v;
     if (auto v = root["tuxthrottle"].value<bool>()) config.tuxthrottle = *v;
@@ -97,6 +113,7 @@ void save_game_config(const GameConfig& config) {
   root.insert_or_assign("fullscreen_scaling", fullscreen_scaling_to_string(config.scaling));
   root.insert_or_assign("fullscreen_filter", fullscreen_filter_to_string(config.filter));
   root.insert_or_assign("adaptive_sync", config.adaptive_sync);
+  root.insert_or_assign("direct_scanout", direct_scanout_to_string(config.direct_scanout));
   root.insert_or_assign("desktop_gpu", desktop_gpu_to_string(config.desktop_gpu));
   root.insert_or_assign("gamemode", config.gamemode);
   root.insert_or_assign("tuxthrottle", config.tuxthrottle);

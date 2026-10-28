@@ -101,6 +101,9 @@ class Server {
   wl_display* display() const { return display_; }
   wlr_renderer* renderer() const { return renderer_; }
   wlr_scene* scene() const { return scene_; }
+  // Direct scanout for a test from `fleetwm-ctl scanout on|off|auto` (-1: follow game.toml).
+  int scanout_override() const { return scanout_override_; }
+  void set_scanout_override(int v) { scanout_override_ = v; }
   wlr_output_layout* output_layout() const { return output_layout_; }
   wlr_seat* seat() const { return seat_; }
   wlr_backend* backend() const { return backend_; }
@@ -604,6 +607,7 @@ class Server {
   KeybindsConfig keybinds_config_;
   ResolvedKeybinds resolved_keybinds_;
   bool locked_ = false;
+  int scanout_override_ = -1;
   wlr_cursor_shape_manager_v1* cursor_shape_manager_ = nullptr;
   wl_listener request_set_shape_{};
   wlr_buffer* fallback_cursor_ = nullptr;  // built-in arrow, used when no cursor theme is installed

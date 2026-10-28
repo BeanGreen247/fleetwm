@@ -31,10 +31,16 @@ enum class FullscreenFilter { Auto, Nearest, Linear };
 // Which graphics card draws the desktop on a computer with two (a laptop or gaming PC with an integrated and a dedicated GPU).
 enum class DesktopGpu { Integrated, Discrete, Default };
 
+// Direct scanout: the fullscreen window's own buffer is shown by the display hardware without being composited (the least work and latency). With a game drawn on the dedicated
+// card it can make the display flip wait for that card's queue (an unlimited game then shows 2 frames a second); Auto switches it off only for such windows (started with
+// NVIDIA PRIME offload), Off always, On never touches it.
+enum class DirectScanout { On, Auto, Off };
+
 struct GameConfig {
   FullscreenScaling scaling = FullscreenScaling::Fit;
   FullscreenFilter filter = FullscreenFilter::Auto;
   bool adaptive_sync = true;
+  DirectScanout direct_scanout = DirectScanout::On;
   DesktopGpu desktop_gpu = DesktopGpu::Integrated;
   bool gamemode = true;
   bool tuxthrottle = true;
@@ -58,6 +64,8 @@ void save_game_config(const GameConfig& config);
 
 std::string fullscreen_scaling_to_string(FullscreenScaling s);
 FullscreenScaling fullscreen_scaling_from_string(const std::string& s, FullscreenScaling fallback);
+std::string direct_scanout_to_string(DirectScanout d);
+DirectScanout direct_scanout_from_string(const std::string& s, DirectScanout fallback);
 std::string desktop_gpu_to_string(DesktopGpu g);
 DesktopGpu desktop_gpu_from_string(const std::string& s, DesktopGpu fallback);
 std::string fullscreen_filter_to_string(FullscreenFilter f);

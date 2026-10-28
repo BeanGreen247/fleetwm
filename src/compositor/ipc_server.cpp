@@ -157,6 +157,14 @@ void IpcServer::handle_line(Client& client, const std::string& line) {
     return;
   }
 
+  if (line.rfind("SCANOUT ", 0) == 0) {  // SCANOUT on|off|auto: direct scanout, for comparing (auto = follow game.toml)
+    const std::string v = line.substr(8);
+    server_->set_scanout_override(v == "on" ? 1 : v == "off" ? 0 : -1);
+    const std::string reply = std::string("OK scanout ") + (v == "on" || v == "off" ? v : "auto") + "\n";
+    send(client.fd, reply.data(), reply.size(), MSG_NOSIGNAL);
+    return;
+  }
+
   if (line == "FRAME_STATS" || line == "FRAME_STATS RESET") {
     // One line per monitor, then END: how evenly frames reach the screen over the last ~1200 frames (frame_stats.hpp).
     std::string reply;

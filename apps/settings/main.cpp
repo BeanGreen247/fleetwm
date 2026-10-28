@@ -1500,6 +1500,14 @@ struct Settings {
     if (ui.toggle(&game.mode_switch)) save_game();
     ui.newline();
     ui.paragraph("When a fullscreen picture is exactly the size of one of the monitor's own modes (an old game at 800x600), switch the monitor to it while the game runs and back afterwards, instead of scaling.", true);
+    ui.row("Direct scanout");
+    int scanout = static_cast<int>(game.direct_scanout);
+    if (ui.segmented({"On", "Auto", "Off"}, &scanout)) {
+      game.direct_scanout = static_cast<fleetwm::DirectScanout>(scanout);
+      save_game();
+    }
+    ui.newline();
+    ui.paragraph("On shows a fullscreen game's own picture without composing it (least latency). A game running on the dedicated card with no frame limit can make the screen flip wait for that card and show only a few frames a second: Auto turns direct scanout off for those games only, Off always.", true);
     ui.row("Variable refresh rate");
     if (ui.toggle(&game.adaptive_sync)) save_game();
     ui.newline();

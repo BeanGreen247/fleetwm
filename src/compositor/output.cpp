@@ -190,6 +190,20 @@ void output_frame(wl_listener* listener, void*) {
                                                                  fullscreen_surface) ==
           WP_TEARING_CONTROL_V1_PRESENTATION_HINT_ASYNC;
 
+  // Direct scanout policy (game.toml direct_scanout, or the override set with fleetwm-ctl): off for a fullscreen window drawn on the dedicated card when Auto.
+  {
+    bool allow = true;
+    const int forced = server->scanout_override();
+    if (forced >= 0) allow = forced != 0;
+    else if (server->game_config().direct_scanout == DirectScanout::Off) allow = false;
+    else if (server->game_config().direct_scanout == DirectScanout::Auto && fullscreen && server->games().uses_prime_offload(fullscreen)) allow = false;
+#if WLR_VERSION_NUM >= 0x001300
+    server->scene()->WLR_PRIVATE.direct_scanout = allow;  // a private field in 0.19+, still the switch wlroots reads each frame
+#else
+    server->scene()->direct_scanout = allow;
+#endif
+  }
+
   // The overlay repaints inside this frame's own commit, so it never causes a frame by itself.
   timespec commit_start{};
   clock_gettime(CLOCK_MONOTONIC, &commit_start);

@@ -217,6 +217,24 @@ void GameSupport::end_boost() {
   }).detach();
 }
 
+bool GameSupport::uses_prime_offload(View* view) {
+  const pid_t pid = client_pid(view);
+  if (pid <= 0) return false;
+  static std::map<pid_t, bool> cache;
+  const auto it = cache.find(pid);
+  if (it != cache.end()) return it->second;
+  bool offload = false;
+  std::ifstream env("/proc/" + std::to_string(pid) + "/environ", std::ios::binary);
+  std::string all((std::istreambuf_iterator<char>(env)), std::istreambuf_iterator<char>());
+  for (const char* want : {"__NV_PRIME_RENDER_OFFLOAD=1", "DRI_PRIME=1"}) {
+    size_t at = all.find(want);
+    if (at != std::string::npos && (at == 0 || all[at - 1] == '\0')) offload = true;
+  }
+  if (cache.size() > 256) cache.clear();
+  cache[pid] = offload;
+  return offload;
+}
+
 void GameSupport::view_gone(View* view) {
   auto it = gamemode_pids_.find(view);
   if (it == gamemode_pids_.end()) return;
