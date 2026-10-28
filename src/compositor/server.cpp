@@ -1,5 +1,6 @@
 #include "child_signals.hpp"
 #include "server.hpp"
+#include "window_icon.hpp"
 #include "xcursor_theme.hpp"
 #include "autostart.hpp"
 #include "gpu_policy.hpp"
@@ -22,6 +23,10 @@ extern "C" {
 #include <wlr/render/pixman.h>
 #include <wlr/types/wlr_drm.h>
 #include <wlr/types/wlr_linux_dmabuf_v1.h>
+#if __has_include(<wlr/types/wlr_xdg_toplevel_icon_v1.h>)
+#include <wlr/types/wlr_xdg_toplevel_icon_v1.h>
+#endif
+#include <drm_fourcc.h>
 #include <wlr/types/wlr_single_pixel_buffer_v1.h>
 #include <wlr/types/wlr_viewporter.h>
 #include <wlr/util/log.h>
@@ -1745,6 +1750,48 @@ bool Server::init() {
   wl_signal_add(&backend_->events.new_output, &new_output_);
 
   xdg_shell_ = wlr_xdg_shell_create(display_, 3);
+#if __has_include(<wlr/types/wlr_xdg_toplevel_icon_v1.h>)
+  // xdg-toplevel-icon: GTK 4, Qt 6 and Electron programs hand their window icon over; the taskbar shows it when no desktop entry names one.
+  {
+    wlr_xdg_toplevel_icon_manager_v1* icons = wlr_xdg_toplevel_icon_manager_v1_create(display_, 1);
+    static int sizes[] = {48, 64, 128};
+    if (icons) wlr_xdg_toplevel_icon_manager_v1_set_sizes(icons, sizes, 3);
+    struct IconListener {
+      wl_listener listener;
+      Server* server;
+    };
+    auto* il = new IconListener{{}, this};
+    il->listener.notify = [](wl_listener* l, void* data) {
+      IconListener* self = wl_container_of(l, self, listener);
+      auto* event = static_cast<wlr_xdg_toplevel_icon_manager_v1_set_icon_event*>(data);
+      for (const std::unique_ptr<View>& v : self->server->views) {
+        if (v->xdg_toplevel != event->toplevel) continue;
+        remove_window_icon(v->id);
+        if (!event->icon) return;
+        const wlr_xdg_toplevel_icon_v1_buffer* best = nullptr;
+        wlr_xdg_toplevel_icon_v1_buffer* b;
+        wl_list_for_each(b, &event->icon->buffers, link) {
+          wlr_buffer* buf = b->buffer;
+          if (!best || buf->width > best->buffer->width) best = b;
+        }
+        if (best) {
+          void* data_ptr = nullptr;
+          uint32_t format = 0;
+          size_t stride = 0;
+          if (wlr_buffer_begin_data_ptr_access(best->buffer, WLR_BUFFER_DATA_PTR_ACCESS_READ, &data_ptr, &format, &stride)) {
+            if (format == DRM_FORMAT_ARGB8888 || format == DRM_FORMAT_XRGB8888)
+              write_window_icon_argb(v->id, best->buffer->width, best->buffer->height, static_cast<int>(stride), static_cast<const unsigned char*>(data_ptr));
+            wlr_buffer_end_data_ptr_access(best->buffer);
+          }
+        } else if (event->icon->name) {
+          write_window_icon_name(v->id, event->icon->name);
+        }
+        return;
+      }
+    };
+    if (icons) wl_signal_add(&icons->events.set_icon, &il->listener);
+  }
+#endif
   new_xdg_toplevel_.notify = server_new_xdg_toplevel;
   wl_signal_add(&xdg_shell_->events.new_toplevel, &new_xdg_toplevel_);
 
@@ -3045,6 +3092,13 @@ pid_t Server::xwayland_server_pid() const {
   if (xwayland_ && xwayland_->server) return xwayland_->server->pid;
 #endif
   return 0;
+}
+
+const char* Server::xwayland_display() const {
+#if FLEETWM_XWAYLAND
+  if (xwayland_ && xwayland_->display_name) return xwayland_->display_name;
+#endif
+  return nullptr;
 }
 
 void Server::start_signal_handlers() {

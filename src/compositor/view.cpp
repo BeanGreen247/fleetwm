@@ -200,9 +200,10 @@ void View::update_auto_fullscreen() {
   wlr_box ob{};
   wlr_output_layout_get_box(server->output_layout(), output->wlr_output_ptr, &ob);
   const wlr_box geo = content_geometry();
-  const bool covers = geo.width >= ob.width && geo.height >= ob.height && ob.width > 0;
+  // 97 % of the screen counts: Wine games open at a size a few pixels short of the output, and the taskbar stayed over them
+  const bool covers = ob.width > 0 && geo.width >= ob.width * 97 / 100 && geo.height >= ob.height * 97 / 100;
   const bool borderless = xwayland_surface->decorations != WLR_XWAYLAND_SURFACE_DECORATIONS_ALL;
-  const bool at_origin = container_tree->node.x <= ob.x && container_tree->node.y <= ob.y;
+  const bool at_origin = container_tree->node.x <= ob.x + 8 && container_tree->node.y <= ob.y + 8;
   if (!fullscreen && covers && (borderless || at_origin)) {
     auto_fullscreen = true;
     set_fullscreen(true);

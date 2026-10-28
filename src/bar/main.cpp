@@ -1306,9 +1306,58 @@ struct Bar {
   // Icon for a window (kit::app_icon: desktop entries, then the app id as an icon name). nullptr = none found.
   cairo_surface_t* window_icon(const std::string& app_id) { return app_icon(app_id, 48); }
 
+  // The picture the program gave its own window (_NET_WM_ICON: what Wine sets from a game's executable), exported by the compositor as window-icons/<window id>.png.
+  // Looked for again every few seconds while there is none, since a game sets it a moment after its window appears.
+  struct OwnIcon {
+    cairo_surface_t* surface = nullptr;
+    std::chrono::steady_clock::time_point checked{};
+  };
+  std::map<int, OwnIcon> own_icons;
+  cairo_surface_t* own_window_icon(int window_id) {
+    OwnIcon& e = own_icons[window_id];
+    const auto now = std::chrono::steady_clock::now();
+    if (e.surface || (e.checked.time_since_epoch().count() != 0 && now - e.checked < std::chrono::seconds(3))) return e.surface;
+    e.checked = now;
+    const char* xdg = std::getenv("XDG_CACHE_HOME");
+    const char* home = std::getenv("HOME");
+    const std::string base = xdg && *xdg ? std::string(xdg) : (home ? std::string(home) + "/.cache" : std::string());
+    if (base.empty()) return nullptr;
+    const std::string stem = base + "/fleetwm/window-icons/" + std::to_string(window_id);
+    cairo_surface_t* s = cairo_image_surface_create_from_png((stem + ".png").c_str());
+    if (cairo_surface_status(s) != CAIRO_STATUS_SUCCESS) {
+      cairo_surface_destroy(s);
+      // a program that named its icon (xdg-toplevel-icon with a name) instead of drawing it
+      std::ifstream named(stem + ".name");
+      std::string icon_name;
+      if (named && std::getline(named, icon_name) && !icon_name.empty()) {
+        if (cairo_surface_t* themed = app_icon(icon_name, 48)) {
+          e.surface = nullptr;  // owned by app_icon's cache, never freed here
+          return themed;
+        }
+      }
+      return nullptr;
+    }
+    e.surface = s;
+    return s;
+  }
+  void prune_own_icons(const std::vector<WindowEntry>& windows) {
+    for (auto it = own_icons.begin(); it != own_icons.end();) {
+      bool open = false;
+      for (const WindowEntry& w : windows) open = open || w.id == it->first;
+      if (open) {
+        ++it;
+      } else {
+        if (it->second.surface) cairo_surface_destroy(it->second.surface);
+        it = own_icons.erase(it);
+      }
+    }
+  }
+
   void draw_window_icon(cairo_t* cr, const WindowEntry& w, double x, double y, double size) {
     const double alpha = w.minimized ? 0.5 : 1.0;
-    if (cairo_surface_t* icon = window_icon(w.app_id)) {
+    cairo_surface_t* icon = window_icon(w.app_id);
+    if (!icon) icon = own_window_icon(w.id);
+    if (icon) {
       draw_app_icon(cr, icon, x, y, size, alpha);
       return;
     }
@@ -2581,6 +2630,7 @@ struct Bar {
       std::vector<WindowEntry> parsed;
       if (parse_window_list(line, &parsed) && parsed != windows) {
         windows = std::move(parsed);
+        prune_own_icons(windows);
         hover_win = -1;
         ws_list_changed();
         redraw();

@@ -296,6 +296,8 @@ class Server {
   // pid of the Xwayland process wlroots manages (0 if none), so the SIGCHLD
   // reaper leaves its exit status for wlroots.
   pid_t xwayland_server_pid() const;
+  // The X display name (":0") of the running Xwayland, or nullptr: used to read a window's own icon.
+  const char* xwayland_display() const;
 
   // ---- display management (resolution + position of each monitor) ----
   struct ModeInfo {

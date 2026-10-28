@@ -32,6 +32,7 @@ executable(
     'window_actions.cpp',
     'cursor.cpp',
     'xcursor_theme.cpp',
+    'window_icon.cpp',
     'xwayland.cpp',
     'switcher.cpp',
     'game_support.cpp',

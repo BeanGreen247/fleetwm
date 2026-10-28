@@ -13,6 +13,7 @@
 #include "scene_node_owner.hpp"
 #include "server.hpp"
 #include "view.hpp"
+#include "window_icon.hpp"
 #include "workspace.hpp"
 
 #if FLEETWM_XWAYLAND
@@ -47,6 +48,32 @@ void x11_scene_destroyed(wl_listener* l, void*) {
   view->x_scene = nullptr;  // the surface went away first
 }
 
+// The program's own icon (_NET_WM_ICON) for the taskbar. Wine and many games set it a moment after the window maps, so it is read now and again after 1.5 s and 6 s.
+void schedule_icon_export(View* view) {
+  struct Job {
+    std::string display;
+    uint32_t window, view_id;
+  };
+  Server* server = view->server;
+  const char* display = server->xwayland_display();
+  if (!display || !view->xwayland_surface) return;
+  const Job base{display, view->xwayland_surface->window_id, view->id};
+  export_x11_window_icon(base.display.c_str(), base.window, base.view_id);
+  for (int delay : {1500, 6000}) {
+    auto* job = new Job(base);
+    wl_event_source* timer = wl_event_loop_add_timer(
+        wl_display_get_event_loop(server->display()),
+        [](void* data) -> int {
+          std::unique_ptr<Job> j(static_cast<Job*>(data));
+          export_x11_window_icon(j->display.c_str(), j->window, j->view_id);
+          return 0;
+        },
+        job);
+    if (timer) wl_event_source_timer_update(timer, delay);   // the source is released with the loop; the job runs once
+    else delete job;
+  }
+}
+
 void x11_map(wl_listener* l, void*) {
   View* view = wl_container_of(l, view, map);
   wlr_xwayland_surface* xs = view->xwayland_surface;
@@ -58,6 +85,7 @@ void x11_map(wl_listener* l, void*) {
     wl_signal_add(&view->x_scene->buffer->node.events.destroy, &view->x_scene_destroy);
   }
   view_mapped(view);
+  schedule_icon_export(view);
 }
 
 void x11_unmap(wl_listener* l, void*) {
@@ -110,6 +138,7 @@ void x11_destroy(wl_listener* l, void*) {
         &view->x_dissociate}) {
     unlink(listener);
   }
+  remove_window_icon(view->id);
   server->forget_view(view);
   wlr_scene_node_destroy(&view->container_tree->node);
   server->views.remove_if([view](const std::unique_ptr<View>& v) { return v.get() == view; });
@@ -281,10 +310,21 @@ void new_unmanaged(Server* server, wlr_xwayland_surface* xs) {
 
 }  // namespace
 
+// An override-redirect window that is as big as a screen is a game's fullscreen window (old games, Wine), not a menu or a tooltip: it is managed like any other so
+// it gets a taskbar button and keyboard focus, and is treated as fullscreen (taskbar hidden). Everything smaller stays unmanaged.
+static bool override_redirect_is_a_game_window(Server* server, wlr_xwayland_surface* xs) {
+  for (const std::unique_ptr<Output>& o : server->outputs) {
+    wlr_box ob{};
+    wlr_output_layout_get_box(server->output_layout(), o->wlr_output_ptr, &ob);
+    if (ob.width > 0 && xs->width >= ob.width * 9 / 10 && xs->height >= ob.height * 9 / 10) return true;
+  }
+  return false;
+}
+
 void server_new_xwayland_surface(wl_listener* listener, void* data) {
   Server* server = wl_container_of(listener, server, new_xwayland_surface_);
   auto* xs = static_cast<wlr_xwayland_surface*>(data);
-  if (xs->override_redirect) {
+  if (xs->override_redirect && !override_redirect_is_a_game_window(server, xs)) {
     new_unmanaged(server, xs);
     return;
   }

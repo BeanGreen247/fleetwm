@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdlib>
+#include <filesystem>
 #include <utility>
 #include <vector>
 
@@ -59,6 +61,25 @@ std::string lower_ascii(std::string v) {
   return v;
 }
 
+// A Steam game's window has the app id steam_app_<id> and no desktop entry. Steam keeps the game's icon in its library cache (a small hash-named jpg beside the header and
+// library pictures) and, for games with a shortcut, as steam_icon_<id> in the icon theme.
+static cairo_surface_t* steam_game_icon(const std::string& app_id, int size) {
+  if (app_id.rfind("steam_app_", 0) != 0) return nullptr;
+  const std::string id = app_id.substr(10);
+  if (id.empty() || id.find_first_not_of("0123456789") != std::string::npos || id == "0") return nullptr;
+  if (cairo_surface_t* themed = load_icon("steam_icon_" + id, size)) return themed;
+  const char* home = std::getenv("HOME");
+  if (!home) return nullptr;
+  const std::string dir = std::string(home) + "/.local/share/Steam/appcache/librarycache/" + id;
+  std::error_code ec;
+  for (const auto& e : std::filesystem::directory_iterator(dir, ec)) {
+    const std::string name = e.path().filename().string();
+    if (name.size() == 44 && name.compare(40, 4, ".jpg") == 0)  // <40 hex digits>.jpg
+      if (cairo_surface_t* icon = load_icon(e.path().string(), size)) return icon;
+  }
+  return nullptr;
+}
+
 cairo_surface_t* app_icon(const std::string& app_id, int size) {
   static std::map<std::string, cairo_surface_t*> icons;
   static std::map<std::string, std::string> names;  // lower-case app id / exec / name -> icon
@@ -93,6 +114,7 @@ cairo_surface_t* app_icon(const std::string& app_id, int size) {
       icon = load_icon("fleetwm-fm", size);
   }
   if (!icon && !app_id.empty()) icon = load_icon(app_id, size);
+  if (!icon) icon = steam_game_icon(app_id, size);
   icons[app_id] = icon;
   return icon;
 }
