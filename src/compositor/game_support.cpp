@@ -34,6 +34,7 @@ extern "C" {
 #include <thread>
 
 #include "bar_config.hpp"
+#include "presentation_hints.hpp"
 #include "server.hpp"
 #include "tuxthrottle.hpp"
 #include "view.hpp"
@@ -330,6 +331,7 @@ void GameSupport::init() {
   wlr_presentation_create(server_->display(), server_->backend());
 #endif
   wlr_fractional_scale_manager_v1_create(server_->display(), 1);
+  presentation_hints_init(server_->display());  // fifo and commit timing, which NVIDIA's Wayland stack looks for
 #if WLR_VERSION_NUM >= 0x001300
   // Explicit sync needs the renderer and the backend to take timelines (a DRM device with syncobj support); otherwise the global is not offered.
   const int drm_fd = wlr_renderer_get_drm_fd(server_->renderer());

@@ -28,6 +28,8 @@ protocols = [
   ['ext-session-lock-v1', wl_protocol_dir / 'staging/ext-session-lock/ext-session-lock-v1.xml'],
   ['tearing-control-v1', wl_protocol_dir / 'staging/tearing-control/tearing-control-v1.xml'],
   ['cursor-shape-v1', wl_protocol_dir / 'staging/cursor-shape/cursor-shape-v1.xml'],
+  ['fifo-v1', wl_protocol_dir / 'staging/fifo/fifo-v1.xml'],
+  ['commit-timing-v1', wl_protocol_dir / 'staging/commit-timing/commit-timing-v1.xml'],
 ]
 
 protocol_headers = []
