@@ -66,8 +66,8 @@ if [[ ${SUDO} == sudo ]]; then sudo chown -R "$(id -u):$(id -g)" "${BUILD_DIR}";
 echo "==> Pointer: GTK programs use Fleetwm's own cursor theme, so the cursor is the same in every window"
 if [[ ${EUID} -eq 0 && -n ${SUDO_USER:-} ]]; then sudo -u "${SUDO_USER}" -H bash "${SCRIPT_DIR}/scripts/set-cursor-theme.sh" || true
 else bash "${SCRIPT_DIR}/scripts/set-cursor-theme.sh" || true; fi
-if [[ ${EUID} -eq 0 && -n ${SUDO_USER:-} ]]; then sudo -u "${SUDO_USER}" -H bash "${SCRIPT_DIR}/scripts/electron-wayland.sh" || true
-else bash "${SCRIPT_DIR}/scripts/electron-wayland.sh" || true; fi
+if [[ ${EUID} -eq 0 && -n ${SUDO_USER:-} ]]; then sudo -u "${SUDO_USER}" -H bash "${SCRIPT_DIR}/scripts/heroic-x11.sh" || true
+else bash "${SCRIPT_DIR}/scripts/heroic-x11.sh" || true; fi
 
 echo "==> Login session entry"
 SESSION_DIR="${PREFIX}/share/wayland-sessions"

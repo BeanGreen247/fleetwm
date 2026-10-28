@@ -49,8 +49,8 @@ $SUDO meson install -C "${BUILD_DIR}" --no-rebuild >/dev/null
 echo "==> Pointer: GTK programs use Fleetwm's own cursor theme"
 if [ "$(id -u)" -eq 0 ] && [ -n "${SUDO_USER:-}" ]; then sudo -u "${SUDO_USER}" -H bash "${SCRIPT_DIR}/scripts/set-cursor-theme.sh" || true
 else bash "${SCRIPT_DIR}/scripts/set-cursor-theme.sh" || true; fi
-if [ "$(id -u)" -eq 0 ] && [ -n "${SUDO_USER:-}" ]; then sudo -u "${SUDO_USER}" -H bash "${SCRIPT_DIR}/scripts/electron-wayland.sh" || true
-else bash "${SCRIPT_DIR}/scripts/electron-wayland.sh" || true; fi
+if [ "$(id -u)" -eq 0 ] && [ -n "${SUDO_USER:-}" ]; then sudo -u "${SUDO_USER}" -H bash "${SCRIPT_DIR}/scripts/heroic-x11.sh" || true
+else bash "${SCRIPT_DIR}/scripts/heroic-x11.sh" || true; fi
 
 echo "==> Services: dbus, elogind and seatd at boot"
 for svc in dbus elogind seatd udev polkit; do

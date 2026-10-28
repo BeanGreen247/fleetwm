@@ -6,7 +6,7 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
 
 - Fixed the taskbar showing no icon for Wine programs and games that set their own (`_NET_WM_ICON`): the property name was looked up with a wrong length, so no program icon was ever read. An icon kept on another top-level window of the same program (Wine does this) is found too.
 - The Task Manager's hover details open beside the hovered row instead of over the list below it, and show that GPU's details.
-- The installers give Heroic Games Launcher's user desktop entry `--ozone-platform=wayland` (`scripts/electron-wayland.sh`): on X11 its window stopped redrawing after a resize and then froze.
+- The installers give Heroic Games Launcher's user desktop entry `--ozone-platform=x11` (`scripts/heroic-x11.sh`): started from a Wayland session it runs as a native Wayland client, where its game library stays blank and the window stops repainting after a resize.
 - `fleetver` (also `winver`, and a Version details button in Settings -> About) shows the exact version, git revision, build time, system, license and project links.
 - Right-click Kill app on a running taskbar entry ends the program and its children.
 - Alt + left drag moves and Alt + right drag resizes any window (the corner nearest the pointer moves), for programs that draw no frame of their own such as Wine launchers.
