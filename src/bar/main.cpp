@@ -854,18 +854,27 @@ struct Bar {
       draw_app_icon(cr, icon, x, y, size);
       return;
     }
+    // No icon for the player: a plain filled eighth note (head, stem, flag) in the bar's colour, no backing disc.
     const Color fg = icon_fg();
     cairo_save(cr);
-    set_source(cr, with_alpha(fg, 0.2));
-    cairo_arc(cr, x + size / 2, y + size / 2, size / 2, 0, 2 * M_PI);
+    set_source(cr, with_alpha(fg, 0.9));
+    const double hx = x + size * 0.38, hy = y + size * 0.76, hr = size * 0.17;
+    cairo_save(cr);
+    cairo_translate(cr, hx, hy);
+    cairo_rotate(cr, -0.35);
+    cairo_scale(cr, 1.0, 0.78);
+    cairo_arc(cr, 0, 0, hr, 0, 2 * M_PI);
+    cairo_restore(cr);
     cairo_fill(cr);
-    set_source(cr, fg);
-    cairo_set_line_width(cr, 1.4);
-    cairo_move_to(cr, x + size * 0.58, y + size * 0.24);
-    cairo_line_to(cr, x + size * 0.58, y + size * 0.68);
-    cairo_line_to(cr, x + size * 0.28, y + size * 0.76);
+    const double sx = hx + hr * 0.92, top = y + size * 0.2;
+    cairo_set_line_width(cr, std::max(1.4, size * 0.085));
+    cairo_move_to(cr, sx, hy - 1);
+    cairo_line_to(cr, sx, top);
     cairo_stroke(cr);
-    cairo_arc(cr, x + size * 0.25, y + size * 0.78, size * 0.12, 0, 2 * M_PI);
+    cairo_move_to(cr, sx, top);
+    cairo_curve_to(cr, sx + size * 0.02, top + size * 0.2, sx + size * 0.3, top + size * 0.18, sx + size * 0.28, top + size * 0.42);
+    cairo_curve_to(cr, sx + size * 0.22, top + size * 0.28, sx + size * 0.12, top + size * 0.28, sx, top + size * 0.3);
+    cairo_close_path(cr);
     cairo_fill(cr);
     cairo_restore(cr);
   }
