@@ -153,6 +153,7 @@ struct Tray::Impl {
     sd_bus_slot* sig_slot = nullptr;
     sd_bus_slot* props_slot = nullptr;
     sd_bus_slot* call_slot = nullptr;
+    int fetch_retries = 0;
     Impl* owner = nullptr;
   };
 
@@ -352,6 +353,19 @@ struct Tray::Impl {
     changed();
   }
 
+  // Asks again after a moment (up to four times, 1.5 s apart) when an item did not answer.
+  void retry_fetch(Entry& e) {
+    if (e.fetch_retries >= 4) return;
+    ++e.fetch_retries;
+    const std::string name = e.pub.bus_name;
+    auto timer = std::make_shared<int>(0);
+    *timer = app.add_timer(1500, [this, name, timer] {
+      app.unwatch(*timer);
+      for (auto& en : entries)
+        if (en->pub.bus_name == name) fetch(*en);
+    });
+  }
+
   void fetch(Entry& e) {
     if (e.call_slot) {  // a previous fetch is still in flight; replace it
       sd_bus_slot_unref(e.call_slot);
@@ -393,7 +407,11 @@ struct Tray::Impl {
 
   void on_properties(Entry& e, sd_bus_message* m) {
     e.call_slot = nullptr;  // the slot is released once the reply is delivered
-    if (sd_bus_message_is_method_error(m, nullptr)) return;
+    if (sd_bus_message_is_method_error(m, nullptr)) {
+      retry_fetch(e);  // the item was busy or not ready: without this its icon could stay missing until something else made it send a signal
+      return;
+    }
+    e.fetch_retries = 0;
     std::string icon_name, theme_path, title;
     int best_w = 0, best_h = 0;
     std::vector<unsigned char> best;
