@@ -30,6 +30,15 @@ every installer builds PGO only, installer root-owned build files fix.
 ## Results log
 * 2026-10-28 09:36 GTA III DE (attached to a running game): renders normally (no black screen in 9 screenshots, in-game 60 fps counter, NVIDIA 60-80 % busy, 83-88 C), stayed up 4.7 minutes until it was closed. NOTE: the owner was playing it at the time (the screenshots show their save), so the run was an observation of their session, not a controlled test; the earlier black screen did not reappear with the build that has the VRR commit fix.
 
+## Native Steam games, first pass (2026-10-28, installed build a721aab but the compositor process was from before: no frame stats)
+Harness now reports per game: GPU used (nvidia-smi pmon + amdgpu fdinfo), CPU/RAM/NVIDIA sm and VRAM per 10 s, install/error/Steam dialogs (screenshots, error dialogs closed), leftover processes stopped.
+* PASS: Counter-Strike: Source, Half-Life 2: Deathmatch, Half-Life Deathmatch: Source (64-bit, Source "Vulkan - 64 Bit" windows).
+* Brutal Legend: "Unsupported GL Extension" dialog, then `Buddha.bin.x86` segfault (32-bit, core dump in coredumpctl). CS:GO legacy: "Error!" then `csgo_linux64` segfault in libtier0_client.so. Garry's Mod: "Error!" dialog.
+* Half-Life 2 / Episode 1 / Episode 2 / Lost Coast / Half-Life: Source: the game process RUNS (hl2_linux, SteamGameId set) but no window ever reaches the compositor; the Steam log says "SDL video target is 'wayland'". A 32-bit SDL-Wayland + NVIDIA GL window that never maps: a real bug to chase (candidates: the forced PRIME offload launch options, 32-bit wl_egl/NVIDIA EGL, our dmabuf feedback for a client on the dGPU).
+* LESSON: Steam runs one game at a time. The stuck HL2 stayed alive and made every later launch (OpenTTD, Portal, POSTAL 2, TF2, Witcher 2) do nothing, so those five results are INVALID, not game failures. Fixed in the harness (`kill_steam_games()` before and after each test).
+* Steam shows a "Select launch option" dialog for games with several options (TF2: Play / Legacy OpenGL; POSTAL 2): it needs a click on Play; `wtype -k Return` did not answer it. Open: click via the virtual pointer, or set "Always use this option" once per game.
+* OpenTTD: "Install library folder not found" in the Steam log: its manifest points at a library folder Steam cannot find (not a Fleetwm issue).
+
 ## Findings so far
 * TuxThrottle gates MangoHud: `/usr/local/bin/mangohud` (script, "tuxthrottle-mangohud-gate") only lets a Steam game show the overlay when
   `~/.config/tuxthrottle/mangohud-games/<appid>.on` exists; `<appid>.dgpu` forces the NVIDIA card. Settings -> Gaming has both switches.

@@ -11,23 +11,23 @@ steam_group() {  # steam_group native|proton
   python3 scripts/game-testbed.py --list-steam | while IFS='|' read -r kind appid name; do
     [[ $kind == "$1" ]] || continue
     # online-only or server entries cannot be judged by a launch check
-    case "$name" in *"Dedicated Server"*|*Beta*) continue ;; esac
+    case "$name" in *"Dedicated Server"*|*Beta*|*"Bonus Content"*|*Soundtrack*) continue ;; esac
     # a native game's window class is its own (hl2_linux, ...): any new window that is not Steam's counts; a Proton game's is steam_app_<id>
-    if [[ $kind == native ]]; then python3 scripts/game-testbed.py --kind native --name "$name" --steam "$appid" > /dev/null 2>&1
-    else python3 scripts/game-testbed.py --kind proton --name "$name" --steam "$appid" --window-match "steam_app_$appid" > /dev/null 2>&1; fi
+    if [[ $kind == native ]]; then python3 scripts/game-testbed.py --skip-done --kind native --name "$name" --steam "$appid" > /dev/null 2>&1
+    else python3 scripts/game-testbed.py --skip-done --kind proton --name "$name" --steam "$appid" --window-match "steam_app_$appid" > /dev/null 2>&1; fi
     done_one
   done
 }
 [[ $WHAT == native || $WHAT == all ]] && steam_group native
 if [[ $WHAT == launchers || $WHAT == all ]]; then
-  python3 scripts/game-testbed.py --kind native --name "osu!lazer" --cmd "osu-lazer-launcher run" --window-match osu --minutes 2 > /dev/null 2>&1; done_one
+  python3 scripts/game-testbed.py --kind native --skip-done --name "osu!lazer" --cmd "osu-lazer-launcher run" --window-match osu --pid-match osu.appimage --minutes 2 > /dev/null 2>&1; done_one
   # Heroic and Lutris entries are listed in scripts/game-testbed-launchers.txt as: name|heroic:<runner>/<appname>  or  name|lutris:<slug>  (filled in as the games are identified)
   if [[ -f scripts/game-testbed-launchers.txt ]]; then
     while IFS='|' read -r name spec; do
       [[ -z $name || $name == \#* ]] && continue
       case "$spec" in
-        heroic:*) python3 scripts/game-testbed.py --name "$name" --heroic "${spec#heroic:}" > /dev/null 2>&1 ;;
-        lutris:*) python3 scripts/game-testbed.py --name "$name" --lutris "${spec#lutris:}" > /dev/null 2>&1 ;;
+        heroic:*) python3 scripts/game-testbed.py --skip-done --name "$name" --heroic "${spec#heroic:}" --pid-match "${name% (*}" > /dev/null 2>&1 ;;
+        lutris:*) python3 scripts/game-testbed.py --skip-done --name "$name" --lutris "${spec#lutris:}" --pid-match "world-of-warcraft" > /dev/null 2>&1 ;;
       esac
       done_one
     done < scripts/game-testbed-launchers.txt
