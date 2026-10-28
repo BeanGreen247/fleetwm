@@ -139,7 +139,9 @@ def game_pids(steam_id=None, match=None):
                 env = open(f"/proc/{d}/environ", "rb").read()
                 ok = (f"SteamAppId={steam_id}\0".encode() in env) or (f"SteamGameId={steam_id}\0".encode() in env)
             if not ok and match:
-                ok = match.lower() in open(f"/proc/{d}/cmdline", "rb").read().decode("utf-8", "replace").lower()
+                cmdline = open(f"/proc/{d}/cmdline", "rb").read().decode("utf-8", "replace").lower()
+                # never the test runner itself or the shell/ssh that started it: its own command line carries the same words (it once killed itself at the end of every run)
+                ok = match.lower() in cmdline and "game-testbed" not in cmdline and int(d) != os.getpid()
             if ok: out.append(int(d))
         except OSError:
             continue
