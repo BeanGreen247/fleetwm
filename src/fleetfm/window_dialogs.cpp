@@ -71,7 +71,7 @@ void FmWindow::dialog_about(Ui& ui, double w, double h) {
 
 void FmWindow::dialog_properties(Ui& ui, double w, double h) {
   const kit::Palette& p = ui.palette();
-  std::lock_guard<std::mutex> lk(props_mu_);
+  std::unique_lock<std::mutex> lk(props_mu_);
   const bool multi = props_.type == "Multiple selection";
   cairo_save(cr_);
   cairo_translate(cr_, 20, 18);
@@ -132,7 +132,26 @@ void FmWindow::dialog_properties(Ui& ui, double w, double h) {
       }
     }
   }
-  if (footer(ui, w, h, {"Close"}) == 0) close_dialog();
+  // Like Windows: Open runs or opens the item straight away (a shortcut, a program, a document, or the folder itself), Open file location shows its folder.
+  if (multi) {
+    if (footer(ui, w, h, {"Close"}) == 0) close_dialog();
+    return;
+  }
+  const std::string item_path = props_.path;
+  const bool item_is_dir = props_.is_dir;
+  const int hit = footer(ui, w, h, {"Open", "Open file location", "Close"});
+  lk.unlock();
+  if (hit == 0) {
+    close_dialog();
+    if (item_is_dir) open_address(item_path);
+    else if (open_item(item_path)) toast("Opening " + fs::path(item_path).filename().string() + "...");
+    else show_message("Open", "It could not be opened.", true);
+  } else if (hit == 1) {
+    close_dialog();
+    open_address(fs::path(item_path).parent_path().string());
+  } else if (hit == 2) {
+    close_dialog();
+  }
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
