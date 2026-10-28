@@ -290,6 +290,109 @@ def answer_steam_dialog(title, outdir, slug, say):
     say(f"  dialog {title!r}: no button text found (read: {text[:80]!r}); pressed Return")
     return True
 
+BUTTONS = (("accept", "agree", "iagree"), ("install",), ("play", "launch", "start", "run"), ("next", "continue", "ok", "yes", "close", "okay"))
+
+def changed_region(baseline, now, size):
+    """The box that differs between two screenshots (a dialog opened over a still window), or the middle of the screen when nothing useful differs."""
+    try:
+        from PIL import Image, ImageChops
+        a, b = Image.open(baseline).convert("RGB"), Image.open(now).convert("RGB")
+        diff = ImageChops.difference(a, b).convert("L").point(lambda v: 255 if v > 40 else 0)
+        box = diff.getbbox()
+        w, h = size
+        if box and (box[2] - box[0]) * (box[3] - box[1]) > 120 * 60 and (box[2] - box[0]) * (box[3] - box[1]) < 0.8 * w * h:
+            return box
+    except Exception:  # noqa: BLE001
+        pass
+    w, h = size
+    return (w // 5, h // 5, w * 4 // 5, h * 4 // 5)
+
+def blue_buttons(picture):
+    """Centres of the large blue rectangles in the picture, lowest first (Steam's primary buttons are 80-200 px wide, 30-45 px high)."""
+    if picture is None: return []
+    w, h = picture.size
+    step = 2
+    gw, gh = w // step, h // step
+    px = picture.load()
+    grid = [[(lambda c: c[2] > 190 and c[0] < 90 and 90 < c[1] < 200)(px[x * step, y * step]) for x in range(gw)] for y in range(gh)]
+    seen = [[False] * gw for _ in range(gh)]
+    out = []
+    for gy in range(gh):
+        for gx in range(gw):
+            if not grid[gy][gx] or seen[gy][gx]: continue
+            stack, x0, y0, x1, y1, n = [(gx, gy)], gx, gy, gx, gy, 0
+            seen[gy][gx] = True
+            while stack:
+                cx, cy = stack.pop()
+                n += 1
+                x0, y0, x1, y1 = min(x0, cx), min(y0, cy), max(x1, cx), max(y1, cy)
+                for nx, ny in ((cx + 1, cy), (cx - 1, cy), (cx, cy + 1), (cx, cy - 1)):
+                    if 0 <= nx < gw and 0 <= ny < gh and grid[ny][nx] and not seen[ny][nx]:
+                        seen[ny][nx] = True
+                        stack.append((nx, ny))
+            bw, bh = (x1 - x0 + 1) * step, (y1 - y0 + 1) * step
+            if 60 <= bw <= 260 and 22 <= bh <= 60 and n * step * step > 0.5 * bw * bh:   # a filled rectangle, not a blue icon or a progress bar
+                out.append(((x0 + x1) // 2 * step, (y0 + y1) // 2 * step))
+    return sorted(out, key=lambda c: -c[1])
+
+def answer_by_screenshot(outdir, slug, say, baseline, tag):
+    """Looks at the screen, finds the dialog by what changed since `baseline`, reads its text and clicks the right button. Returns the button clicked or None."""
+    now = os.path.join(outdir, f"{slug}-{tag}-now.png")
+    run(["grim", now], 10)
+    w, h = screen_size()
+    box = changed_region(baseline, now, (w, h)) if baseline and os.path.exists(baseline) else (w // 5, h // 5, w * 4 // 5, h * 4 // 5)
+    x0, y0, x1, y1 = max(0, box[0] - 6), max(0, box[1] - 6), min(w, box[2] + 6), min(h, box[3] + 6)
+    crop = os.path.join(outdir, f"{slug}-{tag}-crop.png")
+    run(["grim", "-g", f"{x0},{y0} {x1 - x0}x{y1 - y0}", crop], 10)
+    words = ocr_words(crop)
+    text = " ".join(t for t, _, _ in words).lower()
+    say(f"  dialog text: {text[:160]!r}")
+    try:
+        from PIL import Image
+        picture = Image.open(crop).convert("RGB")
+    except Exception:  # noqa: BLE001
+        picture = None
+
+    def on_blue_button(cx, cy):
+        """True when the word sits on a blue button (Steam's Play, Install, Accept): blue just left and right of the word."""
+        if picture is None: return False
+        hits = 0
+        for dx in (-22, 22, -30, 30):
+            x, y = min(max(cx + dx, 0), picture.width - 1), min(max(cy, 0), picture.height - 1)
+            r, g, b = picture.getpixel((x, y))
+            hits += b > 190 and r < 90 and 90 < g < 200
+        return hits >= 2
+
+    def find(names):
+        """The word that is the button: of all words matching, one on a blue button first, else the lowest one (buttons are at the bottom, option labels above them)."""
+        found = [(t, cx, cy) for t, cx, cy in words if t.lower().strip(".,:!?") in names]
+        blue = [f for f in found if on_blue_button(f[1], f[2])]
+        if blue: return blue[0]
+        return max(found, key=lambda f: f[2]) if found else None
+    if "install" in text and ("location" in text or "disk" in text) and "voidstride" not in text:
+        loc = find(("location", "library", "drive"))
+        if loc:
+            xclick(x0 + (x1 - x0) - 60, y0 + loc[2] + 4); time.sleep(1.0)
+            run(["grim", "-g", f"{x0},{y0} {x1 - x0 + 200}x{y1 - y0 + 200}", crop], 10)
+            for t, cx, cy in ocr_words(crop):
+                if "voidstride" in t.lower() or t.lower() == "void":
+                    xclick(x0 + cx, y0 + cy); time.sleep(0.8); say("  install: chose the Voidstride library"); break
+            run(["grim", "-g", f"{x0},{y0} {x1 - x0}x{y1 - y0}", crop], 10)
+            words = ocr_words(crop)
+    # Steam's primary button (Play, Install, Accept, OK) is a blue rectangle with white text that OCR often misses: find the rectangle itself, the lowest large one
+    blue = blue_buttons(picture)
+    if blue:
+        bx, by = blue[0]
+        xclick(x0 + bx, y0 + by); say(f"  clicked the blue button at {x0 + bx},{y0 + by}")
+        return "blue button"
+    for names in BUTTONS:
+        hit = find(names)
+        if hit:
+            xclick(x0 + hit[1], y0 + hit[2]); say(f"  clicked {hit[0]!r} at {x0 + hit[1]},{y0 + hit[2]}")
+            return hit[0]
+    say("  no button word found in the dialog")
+    return None
+
 def kill_steam_games():
     """Steam runs one game at a time: a game left over from an earlier test (even one with no window) makes every later launch do nothing. Stops every
     process of this user that carries SteamGameId (the games and their reapers, not the Steam client)."""
@@ -371,6 +474,9 @@ def main():
     INSTALL = re.compile(r"install|setup|redistributable|prerequisite|vcredist|directx|\.net|runtime|dependenc|updating|downloading|extracting|unpack|first[- ]time", re.I)
     PLAUNCHER = ("steamwebhelper", "steam", "heroic", "lutris", "net.lutris.lutris")
     seen_dialogs = {}
+    attempts, last_try = {}, {}
+    baseline_path = os.path.join(outdir, f"{slug}-baseline.png")
+    run(["grim", baseline_path], 10)
     error_titles, install_titles, steam_dialogs = [], [], []
 
     def kind_of(w):
@@ -401,8 +507,16 @@ def main():
                 install_titles.append(w["title"])
             elif k == "steam-dialog":
                 steam_dialogs.append(w["title"])
-                if w["title"].strip() != "Launching...":   # "Launching..." is only a progress window
-                    answer_steam_dialog(w["title"], outdir, slug, say)
+        # every dialog still open is answered again every few seconds until it is gone (a click can miss, a licence can be followed by an install dialog)
+        for w in windows():
+            k = kind_of(w)
+            if k not in ("steam-dialog", "install") or w["title"].strip() in ("Launching...",): continue
+            n = attempts.get(w["id"], 0)
+            if n >= 5 or time.time() - last_try.get(w["id"], 0) < 4: continue
+            attempts[w["id"]] = n + 1
+            last_try[w["id"]] = time.time()
+            say(f"  answering {w['title']!r} (try {n + 1})")
+            answer_by_screenshot(outdir, slug, say, baseline_path, f"dlg{w['id']}")
         return any(kind_of(w) == "install" for w in windows())
 
     def alive():
@@ -412,6 +526,7 @@ def main():
     game = None
     deadline = t0 + a.start_timeout
     extended = False
+    launcher_tries = 0
     while time.time() < deadline:
         time.sleep(2)
         installing = handle_dialogs(time.time() - t0)
@@ -421,6 +536,18 @@ def main():
             say("an installer is running: waiting up to 5 more minutes for it")
         cur = alive()
         if cur:
+            # a small window with a Play / Launch / OK button is the game's own launcher or options dialog: answer it (a few times), then wait for the real game window
+            if launcher_tries < 3:
+                shot_now = os.path.join(outdir, f"{slug}-probe.png")
+                run(["grim", shot_now], 10)
+                sw, sh = screen_size()
+                box = changed_region(baseline_path, shot_now, (sw, sh))
+                if (box[2] - box[0]) * (box[3] - box[1]) < 0.55 * sw * sh:
+                    launcher_tries += 1
+                    say(f"t={time.time() - t0:5.0f}s small window {cur[0]['app']!r}/{cur[0]['title']!r}: looks like a launcher or options dialog (try {launcher_tries})")
+                    if answer_by_screenshot(outdir, slug, say, baseline_path, f"launcher{launcher_tries}"):
+                        time.sleep(6)
+                        continue
             game = cur[0]
             break
     if not game:
