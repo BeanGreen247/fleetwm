@@ -44,6 +44,18 @@ TEST_F(GameConfigTest, RoundTrips) {
   EXPECT_EQ(load_game_config(), c);
 }
 
+TEST_F(GameConfigTest, AllGamesGpuRoundTrips) {
+  EXPECT_EQ(load_game_config().all_games_gpu, AllGamesGpu::None);
+  GameConfig c;
+  c.all_games_gpu = AllGamesGpu::Dedicated;
+  c.all_games_gpu_stamp = 1793200000;
+  save_game_config(c);
+  const GameConfig back = load_game_config();
+  EXPECT_EQ(back.all_games_gpu, AllGamesGpu::Dedicated);
+  EXPECT_EQ(back.all_games_gpu_stamp, 1793200000);
+  EXPECT_EQ(all_games_gpu_from_string("bogus", AllGamesGpu::Integrated), AllGamesGpu::Integrated);
+}
+
 TEST_F(GameConfigTest, FpsLimitIsClamped) {
   GameConfig c;
   c.fps_limit = 3;

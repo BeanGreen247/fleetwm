@@ -4,6 +4,9 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
 
 ## Unreleased
 
+- Settings -> Gaming: "Graphics card for all games" has two toggles, Integrated GPU and Dedicated GPU, for every game at once. With TuxThrottle installed the choice is written to every Steam game's TuxThrottle switch and read back from them: whichever side changed last wins. `fleetwm-game` follows it too.
+- The round profile picture shows one letter for a single name and the first letters of the name and surname otherwise.
+- The media applet's fallback icon (a player with no icon of its own) is a clean eighth note.
 - The taskbar could take long to appear after login: reading program icons from Xwayland ran on the compositor's own thread and stalled it while Steam mapped its many windows. The reads now run on a worker thread.
 - A program that has both a StatusNotifierItem and an XEmbed tray icon (Steam) shows one tray icon instead of two.
 - Fixed the taskbar showing no icon for Wine programs and games that set their own (`_NET_WM_ICON`): the property name was looked up with a wrong length, so no program icon was ever read. An icon kept on another top-level window of the same program (Wine does this) is found too.

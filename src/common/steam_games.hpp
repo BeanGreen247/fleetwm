@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 
+#include "game_config.hpp"
+
 namespace fleetwm {
 
 struct SteamGame {
@@ -29,5 +31,15 @@ enum class GameSwitch { MangoHud, DedicatedGpu };
 bool tuxthrottle_mangohud_gate_installed();  // the gate script ahead of mangohud on PATH exists
 bool game_switch_get(const std::string& appid, GameSwitch which, const std::string& dir = "");
 bool game_switch_set(const std::string& appid, GameSwitch which, bool on, const std::string& dir = "");
+
+// "All games on one GPU", kept in step with TuxThrottle in both directions. TuxThrottle's switch is the per-game <appid>.dgpu file (present: the dedicated GPU, absent:
+// the integrated one), so the overall choice is read from those files: all present is Dedicated, none present is Integrated, a mix is None.
+AllGamesGpu all_games_gpu_from_switches(const std::vector<bool>& dedicated_flags);
+// Writes the choice to every game's .dgpu switch (None changes nothing). Returns false when a file could not be written.
+bool apply_all_games_gpu(const std::vector<SteamGame>& games, AllGamesGpu mode, const std::string& dir = "");
+// Reconciles `config` with TuxThrottle's switches at `now` (unix seconds). The newer side wins: a TuxThrottle switch changed after the last change made here
+// (file times, with 2 s of slack) is read into the config; otherwise the config is written to TuxThrottle again, which also covers games installed since.
+// Returns true when `config` changed and has to be saved. Does nothing without games or without the gate directory's TuxThrottle.
+bool sync_all_games_gpu(GameConfig* config, const std::vector<SteamGame>& games, long long now, const std::string& dir = "");
 
 }  // namespace fleetwm

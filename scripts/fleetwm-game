@@ -4,7 +4,7 @@
 #   fleetwm-game [--gpu discrete|integrated] [--fps N] [--no-gamemode] [--dry-run] [--] COMMAND [ARGS...]
 #
 # Steam: set a game's launch options to   fleetwm-game --gpu discrete -- %command%
-# Defaults come from ~/.config/fleetwm/game.toml (gamemode, fps_limit); the desktop itself is drawn by the integrated GPU (desktop_gpu there).
+# Defaults come from ~/.config/fleetwm/game.toml (gamemode, fps_limit, all_games_gpu); the desktop itself is drawn by the integrated GPU (desktop_gpu there).
 #
 #   --gpu discrete    PRIME render offload to the dedicated card: through switcherooctl when switcheroo-control is running (it knows each vendor's variables), else
 #                     DRI_PRIME=1 and, with the NVIDIA driver loaded, the NVIDIA offload variables. The picture reaches the desktop as a dmabuf.
@@ -14,7 +14,8 @@
 set -uo pipefail
 CFG="${XDG_CONFIG_HOME:-$HOME/.config}/fleetwm/game.toml"
 cfg() { [[ -r ${CFG} ]] && sed -n "s/^$1[[:space:]]*=[[:space:]]*//p" "${CFG}" | head -1 | tr -d '"' | tr -d "'" ; return 0; }
-gpu=""; fps=$(cfg fps_limit); fps=${fps:-0}; gm=$(cfg gamemode); gm=${gm:-true}; dry=0
+gpu=""; case "$(cfg all_games_gpu)" in dedicated) gpu=discrete ;; integrated) gpu=integrated ;; esac  # Settings -> Gaming, "Graphics card for all games"
+fps=$(cfg fps_limit); fps=${fps:-0}; gm=$(cfg gamemode); gm=${gm:-true}; dry=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --gpu) gpu="${2:-}"; shift 2 ;;

@@ -36,6 +36,10 @@ enum class DesktopGpu { Integrated, Discrete, Default };
 // NVIDIA PRIME offload), Off always, On never touches it.
 enum class DirectScanout { On, Auto, Off };
 
+// "All games" graphics card choice (Settings -> Gaming): every Steam game runs on the integrated or on the dedicated GPU, or None when the per-game switches are
+// mixed. It is kept in step with TuxThrottle's per-game .dgpu switches in both directions (see steam_games.hpp, sync_all_games_gpu).
+enum class AllGamesGpu { None, Integrated, Dedicated };
+
 struct GameConfig {
   FullscreenScaling scaling = FullscreenScaling::Fit;
   FullscreenFilter filter = FullscreenFilter::Auto;
@@ -50,6 +54,8 @@ struct GameConfig {
   bool mode_switch = false;
   int fps_limit = 0;  // 0 = off, else 10..1000
   std::vector<std::string> gamemode_apps;  // extra app ids (or X11 classes, any part of the name) that count as games
+  AllGamesGpu all_games_gpu = AllGamesGpu::None;
+  long long all_games_gpu_stamp = 0;  // unix seconds of the last change made here (TuxThrottle's own changes are told by file times)
   bool operator==(const GameConfig&) const = default;
 };
 
@@ -66,6 +72,8 @@ std::string fullscreen_scaling_to_string(FullscreenScaling s);
 FullscreenScaling fullscreen_scaling_from_string(const std::string& s, FullscreenScaling fallback);
 std::string direct_scanout_to_string(DirectScanout d);
 DirectScanout direct_scanout_from_string(const std::string& s, DirectScanout fallback);
+std::string all_games_gpu_to_string(AllGamesGpu g);
+AllGamesGpu all_games_gpu_from_string(const std::string& s, AllGamesGpu fallback);
 std::string desktop_gpu_to_string(DesktopGpu g);
 DesktopGpu desktop_gpu_from_string(const std::string& s, DesktopGpu fallback);
 std::string fullscreen_filter_to_string(FullscreenFilter f);

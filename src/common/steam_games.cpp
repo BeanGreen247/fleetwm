@@ -137,4 +137,50 @@ bool game_switch_set(const std::string& appid, GameSwitch which, bool on, const 
   return static_cast<bool>(out);
 }
 
+AllGamesGpu all_games_gpu_from_switches(const std::vector<bool>& flags) {
+  if (flags.empty()) return AllGamesGpu::None;
+  const size_t on = static_cast<size_t>(std::count(flags.begin(), flags.end(), true));
+  if (on == flags.size()) return AllGamesGpu::Dedicated;
+  if (on == 0) return AllGamesGpu::Integrated;
+  return AllGamesGpu::None;
+}
+
+bool apply_all_games_gpu(const std::vector<SteamGame>& games, AllGamesGpu mode, const std::string& dir) {
+  if (mode == AllGamesGpu::None) return true;
+  bool ok = true;
+  for (const SteamGame& g : games) ok = game_switch_set(g.appid, GameSwitch::DedicatedGpu, mode == AllGamesGpu::Dedicated, dir) && ok;
+  return ok;
+}
+
+namespace {
+// The newest change time of the .dgpu switches and of their folder (a deleted switch only shows in the folder's time), 0 when there is none.
+long long switches_changed_at(const std::vector<SteamGame>& games, const std::string& dir) {
+  long long newest = 0;
+  struct stat st{};
+  const std::string folder = dir.empty() ? default_gate_dir() : dir;
+  if (::stat(folder.c_str(), &st) == 0) newest = st.st_mtime;
+  for (const SteamGame& g : games)
+    if (::stat(switch_path(g.appid, GameSwitch::DedicatedGpu, dir).c_str(), &st) == 0) newest = std::max<long long>(newest, st.st_mtime);
+  return newest;
+}
+}  // namespace
+
+bool sync_all_games_gpu(GameConfig* config, const std::vector<SteamGame>& games, long long now, const std::string& dir) {
+  if (!config || games.empty()) return false;
+  std::vector<bool> flags;
+  for (const SteamGame& g : games) flags.push_back(game_switch_get(g.appid, GameSwitch::DedicatedGpu, dir));
+  const AllGamesGpu theirs = all_games_gpu_from_switches(flags);
+  const long long changed = switches_changed_at(games, dir);
+  const bool tuxthrottle_newer = changed > config->all_games_gpu_stamp + 2;
+  if (config->all_games_gpu != AllGamesGpu::None && !tuxthrottle_newer) {
+    if (theirs != config->all_games_gpu) apply_all_games_gpu(games, config->all_games_gpu, dir);  // games added since, or a file lost
+    return false;
+  }
+  // TuxThrottle changed after we did (or nothing was chosen here yet): take its state
+  if (theirs == config->all_games_gpu && config->all_games_gpu_stamp >= changed) return false;
+  config->all_games_gpu = theirs;
+  config->all_games_gpu_stamp = std::max(now, changed);
+  return true;
+}
+
 }  // namespace fleetwm

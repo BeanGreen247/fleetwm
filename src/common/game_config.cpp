@@ -63,6 +63,21 @@ DirectScanout direct_scanout_from_string(const std::string& s, DirectScanout fal
   return fallback;
 }
 
+std::string all_games_gpu_to_string(AllGamesGpu g) {
+  switch (g) {
+    case AllGamesGpu::Integrated: return "integrated";
+    case AllGamesGpu::Dedicated: return "dedicated";
+    default: return "none";
+  }
+}
+
+AllGamesGpu all_games_gpu_from_string(const std::string& s, AllGamesGpu fallback) {
+  if (s == "integrated") return AllGamesGpu::Integrated;
+  if (s == "dedicated") return AllGamesGpu::Dedicated;
+  if (s == "none") return AllGamesGpu::None;
+  return fallback;
+}
+
 std::string desktop_gpu_to_string(DesktopGpu g) {
   switch (g) {
     case DesktopGpu::Discrete: return "discrete";
@@ -89,6 +104,8 @@ GameConfig load_game_config() {
     if (auto v = root["fullscreen_filter"].value<std::string>()) config.filter = fullscreen_filter_from_string(*v, config.filter);
     if (auto v = root["adaptive_sync"].value<bool>()) config.adaptive_sync = *v;
     if (auto v = root["direct_scanout"].value<std::string>()) config.direct_scanout = direct_scanout_from_string(*v, config.direct_scanout);
+    if (auto v = root["all_games_gpu"].value<std::string>()) config.all_games_gpu = all_games_gpu_from_string(*v, config.all_games_gpu);
+    if (auto v = root["all_games_gpu_stamp"].value<int64_t>()) config.all_games_gpu_stamp = *v;
     if (auto v = root["desktop_gpu"].value<std::string>()) config.desktop_gpu = desktop_gpu_from_string(*v, config.desktop_gpu);
     if (auto v = root["gamemode"].value<bool>()) config.gamemode = *v;
     if (auto v = root["tuxthrottle"].value<bool>()) config.tuxthrottle = *v;
@@ -115,6 +132,8 @@ void save_game_config(const GameConfig& config) {
   root.insert_or_assign("adaptive_sync", config.adaptive_sync);
   root.insert_or_assign("direct_scanout", direct_scanout_to_string(config.direct_scanout));
   root.insert_or_assign("desktop_gpu", desktop_gpu_to_string(config.desktop_gpu));
+  root.insert_or_assign("all_games_gpu", all_games_gpu_to_string(config.all_games_gpu));
+  root.insert_or_assign("all_games_gpu_stamp", static_cast<int64_t>(config.all_games_gpu_stamp));
   root.insert_or_assign("gamemode", config.gamemode);
   root.insert_or_assign("tuxthrottle", config.tuxthrottle);
   root.insert_or_assign("fast_desktop", config.fast_desktop);

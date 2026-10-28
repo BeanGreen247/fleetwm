@@ -58,3 +58,75 @@ TEST(SteamGames, SwitchesAreFilesNamedAfterTheAppId) {
 
 }  // namespace
 }  // namespace fleetwm
+
+namespace fleetwm {
+namespace {
+std::string temp_gate_dir() {
+  char tmpl[] = "/tmp/fleetwm-gate-XXXXXX";
+  return std::string(mkdtemp(tmpl));
+}
+const std::vector<SteamGame> kGames = {{"10", "A"}, {"20", "B"}, {"30", "C"}};
+
+TEST(AllGamesGpu, ReadFromTheSwitches) {
+  EXPECT_EQ(all_games_gpu_from_switches({true, true}), AllGamesGpu::Dedicated);
+  EXPECT_EQ(all_games_gpu_from_switches({false, false}), AllGamesGpu::Integrated);
+  EXPECT_EQ(all_games_gpu_from_switches({true, false}), AllGamesGpu::None);
+  EXPECT_EQ(all_games_gpu_from_switches({}), AllGamesGpu::None);
+}
+
+TEST(AllGamesGpu, ApplyWritesEveryGame) {
+  const std::string dir = temp_gate_dir();
+  ASSERT_TRUE(apply_all_games_gpu(kGames, AllGamesGpu::Dedicated, dir));
+  for (const SteamGame& g : kGames) EXPECT_TRUE(game_switch_get(g.appid, GameSwitch::DedicatedGpu, dir));
+  ASSERT_TRUE(apply_all_games_gpu(kGames, AllGamesGpu::Integrated, dir));
+  for (const SteamGame& g : kGames) EXPECT_FALSE(game_switch_get(g.appid, GameSwitch::DedicatedGpu, dir));
+  apply_all_games_gpu(kGames, AllGamesGpu::Dedicated, dir);
+  ASSERT_TRUE(apply_all_games_gpu(kGames, AllGamesGpu::None, dir));  // None changes nothing
+  EXPECT_TRUE(game_switch_get("10", GameSwitch::DedicatedGpu, dir));
+}
+
+TEST(AllGamesGpu, SettingsChangeIsWrittenToTuxThrottle) {
+  const std::string dir = temp_gate_dir();
+  GameConfig c;
+  c.all_games_gpu = AllGamesGpu::Dedicated;
+  c.all_games_gpu_stamp = 4000000000LL;  // changed here later than any file time
+  EXPECT_FALSE(sync_all_games_gpu(&c, kGames, 4000000001LL, dir));
+  for (const SteamGame& g : kGames) EXPECT_TRUE(game_switch_get(g.appid, GameSwitch::DedicatedGpu, dir));
+  EXPECT_EQ(c.all_games_gpu, AllGamesGpu::Dedicated);
+}
+
+TEST(AllGamesGpu, TuxThrottleChangeIsReadIntoTheSettings) {
+  const std::string dir = temp_gate_dir();
+  GameConfig c;
+  c.all_games_gpu = AllGamesGpu::Dedicated;
+  c.all_games_gpu_stamp = 1000;  // long ago: the files are newer
+  apply_all_games_gpu(kGames, AllGamesGpu::Integrated, dir);
+  game_switch_set("20", GameSwitch::DedicatedGpu, true, dir);  // one switched on in TuxThrottle
+  EXPECT_TRUE(sync_all_games_gpu(&c, kGames, 2000000000LL, dir));
+  EXPECT_EQ(c.all_games_gpu, AllGamesGpu::None);  // a mix
+  EXPECT_TRUE(game_switch_get("20", GameSwitch::DedicatedGpu, dir));  // and nothing was overwritten
+  EXPECT_FALSE(game_switch_get("10", GameSwitch::DedicatedGpu, dir));
+}
+
+TEST(AllGamesGpu, NothingChosenTakesTuxThrottlesState) {
+  const std::string dir = temp_gate_dir();
+  apply_all_games_gpu(kGames, AllGamesGpu::Dedicated, dir);
+  GameConfig c;
+  EXPECT_TRUE(sync_all_games_gpu(&c, kGames, 2000000000LL, dir));
+  EXPECT_EQ(c.all_games_gpu, AllGamesGpu::Dedicated);
+  EXPECT_FALSE(sync_all_games_gpu(&c, kGames, 2000000005LL, dir));  // settled
+}
+
+TEST(AllGamesGpu, NewGameFollowsTheChoice) {
+  const std::string dir = temp_gate_dir();
+  GameConfig c;
+  c.all_games_gpu = AllGamesGpu::Dedicated;
+  c.all_games_gpu_stamp = 4000000000LL;
+  sync_all_games_gpu(&c, kGames, 4000000001LL, dir);
+  std::vector<SteamGame> more = kGames;
+  more.push_back({"40", "D"});
+  EXPECT_FALSE(sync_all_games_gpu(&c, more, 4000000002LL, dir));
+  EXPECT_TRUE(game_switch_get("40", GameSwitch::DedicatedGpu, dir));
+}
+}  // namespace
+}  // namespace fleetwm

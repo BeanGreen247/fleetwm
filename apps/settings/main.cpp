@@ -251,6 +251,7 @@ struct Settings {
   };
   std::vector<SteamRow> steam_rows;
   bool steam_loaded = false;
+  bool gpu_sync_done = false;  // the all-games graphics card choice was reconciled with TuxThrottle for this visit of the page
   std::string steam_filter;
   std::atomic<bool> tux_reading{false};  // a background read of the readout is running
   std::thread tux_thread;
@@ -1539,6 +1540,37 @@ struct Settings {
       if (ui.toggle(&game.tuxthrottle)) save_game();
       ui.newline();
       ui.paragraph("Switches TuxThrottle's Game Mode on when the first game starts and off after the last one closes: its performance profile, fans and GPU clocks.", true);
+    }
+    {
+      ui.space(6);
+      ui.section("Graphics card for all games");
+      const bool tt = fleetwm::tuxthrottle_installed();
+      if (tt && !gpu_sync_done) {
+        gpu_sync_done = true;
+        if (fleetwm::sync_all_games_gpu(&game, fleetwm::installed_steam_games(), static_cast<long long>(std::time(nullptr)))) save_game();
+      }
+      bool integrated = game.all_games_gpu == fleetwm::AllGamesGpu::Integrated;
+      bool dedicated = game.all_games_gpu == fleetwm::AllGamesGpu::Dedicated;
+      auto choose = [&](fleetwm::AllGamesGpu mode) {
+        game.all_games_gpu = mode;
+        game.all_games_gpu_stamp = static_cast<long long>(std::time(nullptr));
+        if (tt) {
+          fleetwm::apply_all_games_gpu(fleetwm::installed_steam_games(), mode);
+          steam_loaded = false;  // the per-game list below reads the switches again
+          steam_rows.clear();
+        }
+        save_game();
+      };
+      ui.row("Integrated GPU");
+      if (ui.toggle(&integrated)) choose(integrated ? fleetwm::AllGamesGpu::Integrated : fleetwm::AllGamesGpu::None);
+      ui.label("Every game runs on the card that draws the desktop", true);
+      ui.newline();
+      ui.row("Dedicated GPU");
+      if (ui.toggle(&dedicated)) choose(dedicated ? fleetwm::AllGamesGpu::Dedicated : fleetwm::AllGamesGpu::None);
+      ui.label("Every game is offloaded to the dedicated card", true);
+      ui.newline();
+      ui.paragraph(tt ? "One choice for every Steam game, kept in step with TuxThrottle in both directions: whichever side changed last wins, so a switch flipped for a single game in TuxThrottle shows here as neither card, and a choice made here is written to every game's TuxThrottle switch (new games included). Programs started with fleetwm-game follow it too."
+                      : "One choice for every game started with fleetwm-game. With TuxThrottle installed it is also written to every Steam game's TuxThrottle switch and read back from there.", true);
     }
     if (fleetwm::tuxthrottle_mangohud_gate_installed()) {
       ui.space(6);
