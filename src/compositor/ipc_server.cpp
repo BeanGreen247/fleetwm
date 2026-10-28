@@ -59,7 +59,7 @@ IpcServer::~IpcServer() {
   if (listen_source_) {
     wl_event_source_remove(listen_source_);
   }
-  if (listen_fd_ >= 0) {
+  if (listen_fd_ >= 0) {  // only a socket this instance made: listen() returns false without one when another compositor owns the path
     close(listen_fd_);
     unlink(ipc_socket_path().c_str());
   }
@@ -67,6 +67,20 @@ IpcServer::~IpcServer() {
 
 bool IpcServer::listen() {
   const std::string path = ipc_socket_path();
+  {
+    // A socket that still answers belongs to a running compositor (a nested test instance in the same runtime directory must not take the session's
+    // taskbar connection away: it unlinked the live socket once and left the real session without IPC). Only a dead one is replaced.
+    const int probe = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    sockaddr_un probe_addr{};
+    probe_addr.sun_family = AF_UNIX;
+    std::strncpy(probe_addr.sun_path, path.c_str(), sizeof(probe_addr.sun_path) - 1);
+    const bool alive = probe >= 0 && connect(probe, reinterpret_cast<sockaddr*>(&probe_addr), sizeof(probe_addr)) == 0;
+    if (probe >= 0) close(probe);
+    if (alive) {
+      std::fprintf(stderr, "fleetwm: another compositor answers on %s; this instance runs without IPC\n", path.c_str());
+      return false;
+    }
+  }
   unlink(path.c_str());  // stale socket from an unclean previous exit
 
   listen_fd_ = socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
