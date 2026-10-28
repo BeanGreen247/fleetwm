@@ -6,6 +6,7 @@
 #include <xcb/xcb.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -267,6 +268,19 @@ struct XembedTray::Impl {
     return t;
   }
 
+  std::string window_class(xcb_window_t w) {
+    xcb_get_property_reply_t* r = xcb_get_property_reply(c, xcb_get_property(c, 0, w, XCB_ATOM_WM_CLASS, XCB_ATOM_STRING, 0, 128), nullptr);
+    std::string t;
+    if (r && xcb_get_property_value_length(r) > 0) {
+      const char* v = static_cast<const char*>(xcb_get_property_value(r));
+      const int n = xcb_get_property_value_length(r);
+      for (int i = 0; i < n; ++i) t += v[i] == '\0' ? ',' : static_cast<char>(std::tolower(static_cast<unsigned char>(v[i])));
+    }
+    std::free(r);
+    while (!t.empty() && t.back() == ',') t.pop_back();
+    return t;
+  }
+
   void dock(xcb_window_t win) {
     for (auto& e : entries)
       if (e->win == win) return;
@@ -311,6 +325,7 @@ struct XembedTray::Impl {
     xcb_send_event(c, 0, win, XCB_EVENT_MASK_NO_EVENT, reinterpret_cast<const char*>(&ev));
     xcb_flush(c);
     e->pub.title = window_title(win);
+    e->pub.wm_class = window_class(win);
     entries.push_back(std::move(e));
     grab_one(*entries.back(), true);
     changed();

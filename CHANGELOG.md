@@ -4,6 +4,8 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
 
 ## Unreleased
 
+- The taskbar could take long to appear after login: reading program icons from Xwayland ran on the compositor's own thread and stalled it while Steam mapped its many windows. The reads now run on a worker thread.
+- A program that has both a StatusNotifierItem and an XEmbed tray icon (Steam) shows one tray icon instead of two.
 - Fixed the taskbar showing no icon for Wine programs and games that set their own (`_NET_WM_ICON`): the property name was looked up with a wrong length, so no program icon was ever read. An icon kept on another top-level window of the same program (Wine does this) is found too.
 - The Task Manager's hover details open beside the hovered row instead of over the list below it, and show that GPU's details.
 - The installers start Heroic Games Launcher on X11 through `~/.local/bin/fleetwm-heroic` (`scripts/heroic-x11.sh`): started from a Wayland session it runs as a native Wayland client. Every run is logged to `~/.local/state/fleetwm/heroic.log` with Chromium's GPU and X11 logging, a system call trace (`heroic.log.strace.*`, last 1.2 GB) and, after a crash, the core dump backtrace.

@@ -7,6 +7,8 @@
 
 #include <algorithm>
 #include <memory>
+#include <chrono>
+#include <thread>
 
 #include "config.h"
 #include "output.hpp"
@@ -48,30 +50,22 @@ void x11_scene_destroyed(wl_listener* l, void*) {
   view->x_scene = nullptr;  // the surface went away first
 }
 
-// The program's own icon (_NET_WM_ICON) for the taskbar. Wine and many games set it a moment after the window maps, so it is read now and again after 1.5 s and 6 s.
+// The program's own icon (_NET_WM_ICON) for the taskbar. Wine and many games set it a moment after the window maps, so it is read after 0.3 s, 1.5 s and 6 s.
+// The reads are round trips to Xwayland, which itself waits for this compositor while it maps windows, so they run on a worker thread and never block the
+// compositor's event loop.
 void schedule_icon_export(View* view) {
-  struct Job {
-    std::string display;
-    uint32_t window, view_id;
-  };
-  Server* server = view->server;
-  const char* display = server->xwayland_display();
+  const char* display = view->server->xwayland_display();
   if (!display || !view->xwayland_surface) return;
-  const Job base{display, view->xwayland_surface->window_id, view->id};
-  export_x11_window_icon(base.display.c_str(), base.window, base.view_id);
-  for (int delay : {1500, 6000}) {
-    auto* job = new Job(base);
-    wl_event_source* timer = wl_event_loop_add_timer(
-        wl_display_get_event_loop(server->display()),
-        [](void* data) -> int {
-          std::unique_ptr<Job> j(static_cast<Job*>(data));
-          export_x11_window_icon(j->display.c_str(), j->window, j->view_id);
-          return 0;
-        },
-        job);
-    if (timer) wl_event_source_timer_update(timer, delay);   // the source is released with the loop; the job runs once
-    else delete job;
-  }
+  std::string display_name = display;
+  const uint32_t window = view->xwayland_surface->window_id, view_id = view->id;
+  std::thread([display_name, window, view_id] {
+    int waited = 0;
+    for (int at : {300, 1500, 6000}) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(at - waited));
+      waited = at;
+      export_x11_window_icon(display_name.c_str(), window, view_id);
+    }
+  }).detach();
 }
 
 void x11_map(wl_listener* l, void*) {

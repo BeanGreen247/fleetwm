@@ -9,6 +9,9 @@
 #include "icon_theme.hpp"
 #include "xembed_tray.hpp"
 
+#include <cctype>
+#include <fstream>
+
 extern "C" const sd_bus_vtable fleetwm_watcher_vtable[];
 
 namespace fleetwm::bar {
@@ -132,6 +135,8 @@ struct Tray::Impl {
   struct Entry {
     std::string menu_path;  // the item's dbusmenu object, "" when it has none
     Item pub;
+    std::string proc;  // name of the program that owns the item (its /proc comm, lower case), read once
+    bool proc_known = false;
     std::vector<std::string> theme_dirs;
     sd_bus_slot* sig_slot = nullptr;
     sd_bus_slot* props_slot = nullptr;
@@ -147,6 +152,7 @@ struct Tray::Impl {
   int watch_id = 0;
   std::vector<std::unique_ptr<Entry>> entries;
   std::vector<Item> view;
+  std::vector<size_t> xembed_map;  // for a view item past the StatusNotifierItems: the index of its icon in the XEmbed tray
   cairo_surface_t* placeholder = nullptr;
   int icon_px = 22;
   std::unique_ptr<XembedTray> xembed;  // Wine / old-style tray icons, appended after the StatusNotifierItems
@@ -176,17 +182,57 @@ struct Tray::Impl {
     e.pub.icon = nullptr;
   }
 
+  // The program behind a StatusNotifierItem, as /proc names it.
+  std::string item_program(Entry& e) {
+    if (e.proc_known) return e.proc;
+    e.proc_known = true;
+    sd_bus_creds* creds = nullptr;
+    if (bus && sd_bus_get_name_creds(bus, e.pub.bus_name.c_str(), SD_BUS_CREDS_PID, &creds) >= 0) {
+      pid_t pid = 0;
+      if (sd_bus_creds_get_pid(creds, &pid) >= 0 && pid > 0) {
+        std::ifstream in("/proc/" + std::to_string(pid) + "/comm");
+        std::getline(in, e.proc);
+        for (char& ch : e.proc) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+      }
+      sd_bus_creds_unref(creds);
+    }
+    return e.proc;
+  }
+
+  // Steam (and others) put an icon in both trays: the XEmbed one is dropped when a StatusNotifierItem of the same program exists.
+  bool xembed_duplicates_item(const XembedTray::Icon& x) {
+    if (x.wm_class.empty()) return false;
+    for (auto& e : entries) {
+      const std::string prog = item_program(*e);
+      if (prog.size() < 3) continue;
+      size_t from = 0;
+      while (from <= x.wm_class.size()) {
+        size_t comma = x.wm_class.find(',', from);
+        if (comma == std::string::npos) comma = x.wm_class.size();
+        const std::string word = x.wm_class.substr(from, comma - from);
+        if (word.size() >= 3 && (word == prog || (prog.size() == 15 && word.compare(0, 15, prog) == 0))) return true;
+        from = comma + 1;
+      }
+    }
+    return false;
+  }
+
   void rebuild_view() {
     view.clear();
+    xembed_map.clear();
     for (auto& e : entries) view.push_back(e->pub);
-    if (xembed)
-      for (const auto& x : xembed->icons()) {
+    if (xembed) {
+      const auto& icons = xembed->icons();
+      for (size_t i = 0; i < icons.size(); ++i) {
+        if (xembed_duplicates_item(icons[i])) continue;
         Item it;
-        it.icon = x.surface;
-        it.title = x.title;
+        it.icon = icons[i].surface;
+        it.title = icons[i].title;
         it.xembed = true;
         view.push_back(std::move(it));
+        xembed_map.push_back(i);
       }
+    }
   }
 
   void changed() {
@@ -413,7 +459,8 @@ struct Tray::Impl {
 
   void click(size_t index, uint32_t button, int x, int y) {
     if (index >= entries.size()) {
-      if (xembed) xembed->click(index - entries.size(), button, x, y);
+      const size_t k = index - entries.size();
+      if (xembed && k < xembed_map.size()) xembed->click(xembed_map[k], button, x, y);
       return;
     }
     if (!bus) return;
@@ -488,8 +535,9 @@ struct Tray::Impl {
 
   void tooltip(size_t index, std::function<void(std::string)> done) {
     if (index >= entries.size()) {
-      const bool ok = xembed && index - entries.size() < xembed->icons().size();
-      return done(ok ? xembed->icons()[index - entries.size()].title : "");
+      const size_t k = index - entries.size();
+      const bool ok = xembed && k < xembed_map.size() && xembed_map[k] < xembed->icons().size();
+      return done(ok ? xembed->icons()[xembed_map[k]].title : "");
     }
     if (!bus) return;
     const Entry& e = *entries[index];

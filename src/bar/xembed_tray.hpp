@@ -25,6 +25,7 @@ class XembedTray {
   struct Icon {
     cairo_surface_t* surface = nullptr;  // premultiplied ARGB32, icon_px square; owned by the tray
     std::string title;
+    std::string wm_class;  // WM_CLASS words, lower case, comma separated ("steam,steam"): how the tray tells an icon is also a StatusNotifierItem
   };
 
   XembedTray(kit::App& app, std::function<void()> on_change);

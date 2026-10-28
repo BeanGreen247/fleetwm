@@ -12,7 +12,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
-#include <map>
 #include <string>
 #include <vector>
 
@@ -23,23 +22,12 @@ namespace fleetwm {
 #if FLEETWM_XWAYLAND
 namespace {
 xcb_connection_t* connection(const char* display_name) {
-  static std::map<std::string, xcb_connection_t*> conns;
   if (!display_name) return nullptr;
-  auto it = conns.find(display_name);
-  if (it != conns.end()) {
-    if (it->second && xcb_connection_has_error(it->second)) {
-      xcb_disconnect(it->second);
-      conns.erase(it);
-    } else {
-      return it->second;
-    }
-  }
   xcb_connection_t* c = xcb_connect(display_name, nullptr);
   if (!c || xcb_connection_has_error(c)) {
     if (c) xcb_disconnect(c);
     return nullptr;
   }
-  conns[display_name] = c;
   return c;
 }
 
@@ -65,7 +53,8 @@ bool export_x11_window_icon(const char* display_name, uint32_t x11_window, uint3
   (void)display_name; (void)x11_window; (void)view_id;
   return false;
 #else
-  xcb_connection_t* c = connection(display_name);
+  xcb_connection_t* c = connection(display_name);  // a connection of its own: this runs on a worker thread, never on the compositor's
+  struct Closer { xcb_connection_t* c; ~Closer() { if (c) xcb_disconnect(c); } } closer{c};
   const std::string dir = cache_dir();
   if (!c || dir.empty()) return false;
   xcb_intern_atom_reply_t* a = xcb_intern_atom_reply(c, xcb_intern_atom(c, 1, 12, "_NET_WM_ICON"), nullptr);
