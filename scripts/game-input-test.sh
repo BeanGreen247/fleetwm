@@ -194,6 +194,23 @@ game = im.getpixel((w // 2, h // 2))
 print("PASS: the game covers the taskbar (the whole bottom edge is the game's colour)" if bar == {game} else "FAIL: the taskbar is still drawn over the game (%d colours along the bottom edge)" % len(bar))
 PY
 
+echo "== a launcher (Battle.net) maximized to the whole screen is not a game: the taskbar stays"
+session '
+python3 '"$SRC"'/perflog/2026-10-27/game-clients/xhide.py -30 "Battle.net" 1280 720 0 0 > /dev/null 2>&1 & XP=$!
+sleep 6
+grim $OUT/xlauncher.png
+kill $XP
+'
+python3 - "$OUT/xlauncher.png" <<'PY'
+import sys
+from PIL import Image
+im = Image.open(sys.argv[1]).convert("RGB")
+w, h = im.size
+bar = {p for p in im.crop((0, h - 40, w, h - 4)).getdata()}
+game = im.getpixel((w // 2, h // 2))
+print("PASS: the taskbar is still drawn under the launcher window" if len(bar) > 3 and bar != {game} else "FAIL: the launcher window hid the taskbar (%d colours along the bottom edge)" % len(bar))
+PY
+
 echo "== a Wine-style X11 tray icon (XEmbed) shows in the bar and gets clicks"
 LOG=$OUT/xtray.log; : > "$LOG"
 session '
