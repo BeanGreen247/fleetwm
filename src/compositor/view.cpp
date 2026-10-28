@@ -197,6 +197,7 @@ void View::set_fullscreen(bool fullscreen_) {
 void View::update_auto_fullscreen() {
 #if FLEETWM_XWAYLAND
   if (kind != Kind::XWayland || !xwayland_surface || !output || is_child_window() || minimized) return;
+  if (!fullscreen && server->games().is_launcher(this)) return;  // a launcher maximized by its own button is not a game: the taskbar stays
   wlr_box ob{};
   wlr_output_layout_get_box(server->output_layout(), output->wlr_output_ptr, &ob);
   const wlr_box geo = content_geometry();

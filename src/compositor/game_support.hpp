@@ -58,6 +58,8 @@ class GameSupport {
   void view_gone(View* view);
   // The window's program was started for the dedicated card (__NV_PRIME_RENDER_OFFLOAD or DRI_PRIME in its environment). Cached per process.
   bool uses_prime_offload(View* view);
+  // A launcher, store or configuration window (Battle.net, Epic, GOG, Heroic, Lutris, a game's own settings program): never a game.
+  bool is_launcher(View* view);
 
   // Real-time scheduling for the compositor's main thread while a game runs (game.toml realtime), granted by rtkit. Dropped again after the last game.
   void set_realtime(bool on);

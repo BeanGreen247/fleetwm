@@ -34,6 +34,7 @@ extern "C" {
 #include <thread>
 
 #include "bar_config.hpp"
+#include "launcher_match.hpp"
 #include "presentation_hints.hpp"
 #include "server.hpp"
 #include "tuxthrottle.hpp"
@@ -91,10 +92,27 @@ bool game_environment(pid_t pid) {
   return false;
 }
 
+// Game launchers, stores and configuration windows are not games even when they run under Wine or carry a Steam-style class (Lutris gives every window steam_app_default, Heroic
+// steam_app_0): they must not start GameMode, TuxThrottle or the fast desktop, and a launcher maximized by its own button must not turn into a fullscreen window that hides the taskbar.
+// Judged by the window title and the command line of its process.
+bool launcher_window(View* view, pid_t pid) {
+  auto matches = [](const std::string& text) { return looks_like_launcher_text(text); };
+  const char* title = view->window_title();
+  if (title && matches(title)) return true;
+  if (pid > 0) {
+    std::ifstream in("/proc/" + std::to_string(pid) + "/cmdline", std::ios::binary);
+    std::string cmd((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    for (char& c : cmd) if (c == '\0') c = ' ';
+    if (matches(cmd)) return true;
+  }
+  return false;
+}
+
 bool looks_like_game(View* view, pid_t pid, const GameConfig& gc, int content_type) {
   // wp_content_type_v1 values: 0 none, 1 photo, 2 video, 3 game. The program says so itself.
   if (content_type == 3) return true;
   if (content_type == 1 || content_type == 2) return false;
+  if (launcher_window(view, pid)) return false;
   const char* app = view->window_app_id();
   if (app && *app) {
     const std::string id = app;
@@ -430,9 +448,17 @@ void GameSupport::keyboard_focus_changed(wlr_surface* surface) {
   }
 }
 
+bool GameSupport::is_launcher(View* view) { return launcher_window(view, client_pid(view)); }
+
 bool GameSupport::shortcuts_inhibited() const {
   wlr_surface* focused = server_->seat()->keyboard_state.focused_surface;
   if (!focused) return false;
+  // Only a fullscreen window may keep Alt+Tab and the other shortcuts from the compositor: Wine launchers, Electron apps and menus take keyboard grabs that Xwayland turns into
+  // inhibitors, and then Alt+Tab did nothing in an ordinary window.
+  bool fullscreen = false;
+  for (const std::unique_ptr<View>& v : server_->views)
+    if (v->surface() == focused) fullscreen = v->fullscreen;
+  if (!fullscreen) return false;
   return std::any_of(inhibitors_.begin(), inhibitors_.end(), [focused](const Inhibitor* in) { return in->inhibitor->active && in->inhibitor->surface == focused; });
 }
 
