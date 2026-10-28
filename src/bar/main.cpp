@@ -2932,6 +2932,7 @@ int main(int argc, char** argv) {
     if (B.island) B.apply_layout();
     B.redraw();
   });
+  B.tray->set_icon_px(static_cast<int>(B.tray_px()));
   B.tray->start();
 
   B.volume = std::make_unique<VolumeSource>(B.app);

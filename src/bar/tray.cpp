@@ -7,6 +7,7 @@
 #include <cstring>
 
 #include "icon_theme.hpp"
+#include "xembed_tray.hpp"
 
 extern "C" const sd_bus_vtable fleetwm_watcher_vtable[];
 
@@ -50,6 +51,8 @@ struct Tray::Impl {
   std::vector<std::unique_ptr<Entry>> entries;
   std::vector<Item> view;
   cairo_surface_t* placeholder = nullptr;
+  int icon_px = 22;
+  std::unique_ptr<XembedTray> xembed;  // Wine / old-style tray icons, appended after the StatusNotifierItems
 
   Impl(kit::App& a, std::function<void()> cb) : app(a), on_change(std::move(cb)) {}
 
@@ -79,6 +82,14 @@ struct Tray::Impl {
   void rebuild_view() {
     view.clear();
     for (auto& e : entries) view.push_back(e->pub);
+    if (xembed)
+      for (const auto& x : xembed->icons()) {
+        Item it;
+        it.icon = x.surface;
+        it.title = x.title;
+        it.xembed = true;
+        view.push_back(std::move(it));
+      }
   }
 
   void changed() {
@@ -101,6 +112,11 @@ struct Tray::Impl {
 
   void start() {
     if (bus) return;
+    if (!xembed) {
+      xembed = std::make_unique<XembedTray>(app, [this] { changed(); });
+      xembed->set_icon_px(icon_px);
+      xembed->start();
+    }
     int r = sd_bus_open_user(&bus);
     if (r < 0) {
       std::fprintf(stderr, "fleetwm-bar: systray: cannot connect to the session bus: %s\n",
@@ -291,7 +307,11 @@ struct Tray::Impl {
   }
 
   void click(size_t index, uint32_t button, int x, int y) {
-    if (index >= entries.size() || !bus) return;
+    if (index >= entries.size()) {
+      if (xembed) xembed->click(index - entries.size(), button, x, y);
+      return;
+    }
+    if (!bus) return;
     const Entry& e = *entries[index];
     const char* method = button == 0x111 ? "ContextMenu" : "Activate";
     sd_bus_call_method_async(bus, nullptr, e.pub.bus_name.c_str(), e.pub.object_path.c_str(),
@@ -307,7 +327,11 @@ struct Tray::Impl {
   std::vector<TooltipRequest*> tooltip_requests;
 
   void tooltip(size_t index, std::function<void(std::string)> done) {
-    if (index >= entries.size() || !bus) return done("");
+    if (index >= entries.size()) {
+      const bool ok = xembed && index - entries.size() < xembed->icons().size();
+      return done(ok ? xembed->icons()[index - entries.size()].title : "");
+    }
+    if (!bus) return;
     const Entry& e = *entries[index];
     auto* req = new TooltipRequest{std::move(done), nullptr, this};
     tooltip_requests.push_back(req);
@@ -395,6 +419,10 @@ Tray::Tray(kit::App& app, std::function<void()> on_change)
     : impl_(new Impl(app, std::move(on_change))) {}
 Tray::~Tray() = default;
 void Tray::start() { impl_->start(); }
+void Tray::set_icon_px(int px) {
+  impl_->icon_px = px;
+  if (impl_->xembed) impl_->xembed->set_icon_px(px);
+}
 const std::vector<Tray::Item>& Tray::items() const { return impl_->view; }
 void Tray::click(size_t index, uint32_t button, int x, int y) { impl_->click(index, button, x, y); }
 void Tray::tooltip(size_t index, std::function<void(std::string)> done) { impl_->tooltip(index, std::move(done)); }

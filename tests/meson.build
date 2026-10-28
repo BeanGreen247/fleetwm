@@ -12,6 +12,8 @@ fleetwm_test_sources = files(
   'test_wallpaper_config.cpp',
   'test_damaged_config.cpp',
   'test_info_flags.cpp',
+  'test_xembed_tray.cpp',
+  '../src/bar/xembed_tray.cpp',
   'test_child_signals.cpp',
   'test_default_apps.cpp',
   'test_keybinds_config.cpp',
@@ -94,9 +96,9 @@ fleetwm_test_sources = files(
 fleetwm_unit_tests = executable(
   'fleetwm-unit-tests',
   fleetwm_test_sources,
-  dependencies: [gtest_dep, libcommon_core_dep, libfleetkit_dep, libnetmgr_dep, libbtmgr_dep, libfleetfm_core_dep, libfleetfm_icons_dep, libfleetfm_window_dep, libnetfs_core_dep, libfleetremote_codec_dep],
+  dependencies: [gtest_dep, xcb_dep_bar, xcb_composite_dep_bar, libcommon_core_dep, libfleetkit_dep, libnetmgr_dep, libbtmgr_dep, libfleetfm_core_dep, libfleetfm_icons_dep, libfleetfm_window_dep, libnetfs_core_dep, libfleetremote_codec_dep],
   # the power menu's header-only parts, and the source tree for the tests that read the polkit rule and install.sh
-  include_directories: include_directories('../apps/powermenu', '../src/fleetremote'),
+  include_directories: include_directories('../apps/powermenu', '../src/fleetremote', '../src/bar'),
   cpp_args: ['-DFLEETWM_SOURCE_DIR="' + meson.project_source_root() + '"'],
 )
 
@@ -106,7 +108,7 @@ test('fleetwm-unit-tests', fleetwm_unit_tests, protocol: 'gtest')
 # slices scripts/test.sh offers). The full binary above still runs everything.
 test_areas = {
   'theme': 'ParseHexColor.*:ThemeName.*:ThemeTest.*:TitlebarNames.*:WindowLayoutNames.*:ThemeHome.*',
-  'bar': 'PowerMode.*:BarLayout.*:TaskbarPosition.*:BarConfigTest.*:BatterySourceReadingTest.*',
+  'bar': 'XembedTray.*:PowerMode.*:BarLayout.*:TaskbarPosition.*:BarConfigTest.*:BatterySourceReadingTest.*',
   'keybinds': 'KeybindsConfigTest.*',
   'geometry': 'ResizeEdges.*:ResizedBox.*:Cascade.*:TitlebarLayout.*:TitlebarStrip.*:TitlebarHit.*:TitleX.*:TaskbarSlots.*:SnapZoneAt.*:SnapBox.*:CaptionButtons.*:TitlebarDraw.*:TitlebarIcon.*',
   'windows': 'WindowList.*',

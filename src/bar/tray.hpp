@@ -21,6 +21,7 @@ class Tray {
     std::string object_path;
     cairo_surface_t* icon = nullptr;  // premultiplied ARGB32, may be null until loaded
     std::string title;
+    bool xembed = false;  // an X11 (Wine) tray icon, not a StatusNotifierItem
   };
 
   Tray(kit::App& app, std::function<void()> on_change);
@@ -29,6 +30,7 @@ class Tray {
   Tray& operator=(const Tray&) = delete;
 
   void start();
+  void set_icon_px(int px);  // size the X11 tray icons are captured at
   const std::vector<Item>& items() const;
   // button: Linux evdev code (BTN_LEFT=0x110, BTN_RIGHT=0x111, BTN_MIDDLE=0x112)
   void click(size_t index, uint32_t button, int x, int y);

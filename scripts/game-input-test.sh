@@ -19,6 +19,7 @@ mkdir -p "$T/fakebin"   # a stand-in tuxthrottlectl that only writes down what i
 printf '#!/bin/sh\necho "$@" >> "%s/tux.log"\n' "$OUT" > "$T/fakebin/tuxthrottlectl"; chmod +x "$T/fakebin/tuxthrottlectl"
 cc -O1 -I"$T" "$SRC/perflog/2026-10-27/game-clients/fit.c" "$T/xdg-shell-protocol.c" -o "$T/fit" $CF || exit 1
 cc -O1 -I"$T" "$SRC/perflog/2026-10-27/game-clients/lock.c" "$T/xdg-shell-protocol.c" "$T/pointer-constraints-unstable-v1-protocol.c" "$T/relative-pointer-unstable-v1-protocol.c" -o "$T/lock" $CF || exit 1
+cc -O1 "$SRC/perflog/2026-10-27/game-clients/xtray.c" -o "$T/xtray" $(pkg-config --cflags --libs xcb) || exit 1
 cc -O1 -I"$T" "$SRC/scripts/pgo-pointer.c" "$T/wlr-virtual-pointer-unstable-v1-protocol.c" -o "$T/pointer" $CF || exit 1
 
 session() {  # session SCRIPT  -- runs SCRIPT inside a private headless compositor; $RT, $HM and the programs are set
@@ -179,6 +180,29 @@ bar = {p for p in im.crop((0, h - 40, w, h - 4)).getdata()}
 game = im.getpixel((w // 2, h // 2))
 print("PASS: the game covers the taskbar (the whole bottom edge is the game's colour)" if bar == {game} else "FAIL: the taskbar is still drawn over the game (%d colours along the bottom edge)" % len(bar))
 PY
+
+echo "== a Wine-style X11 tray icon (XEmbed) shows in the bar and gets clicks"
+LOG=$OUT/xtray.log; : > "$LOG"
+session '
+sleep 1
+$T/xtray > '"$LOG"' 2>&1 & XP=$!
+sleep 4
+grim $OUT/xtray-before.png
+XY=$(python3 -c "
+from PIL import Image
+im = Image.open(\"$OUT/xtray-before.png\").convert(\"RGB\"); w, h = im.size
+hits = [(x, y) for y in range(h - 60, h) for x in range(w // 2, w) if im.getpixel((x, y))[0] > 200 and im.getpixel((x, y))[1] < 60 and im.getpixel((x, y))[2] < 60]
+print(\"%d %d\" % (sum(p[0] for p in hits) // len(hits), sum(p[1] for p in hits) // len(hits)) if hits else \"0 0\")
+")
+echo "$XY" > $OUT/xtray-xy.txt
+$T/pointer click $XY wait 600
+sleep 2
+grim $OUT/xtray-after.png
+kill $XP
+'
+if grep -q DOCKED "$LOG"; then echo "PASS: the program found the bar's X11 tray and docked"; else echo "FAIL: no X11 tray: $(cat "$LOG")"; fi
+if [[ "$(cat $OUT/xtray-xy.txt 2>/dev/null)" != "0 0" ]]; then echo "PASS: the icon is drawn in the bar at $(cat $OUT/xtray-xy.txt)"; else echo "FAIL: no red icon in the bar"; fi
+if grep -q CLICKED "$LOG"; then echo "PASS: a click on the icon reached the program"; else echo "FAIL: the click did not reach the program"; fi
 
 rm -rf "$T"
 echo "screenshots in $OUT"
