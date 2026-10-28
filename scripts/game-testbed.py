@@ -213,6 +213,83 @@ class Meter:
     def gpu_text(self):
         return " + ".join(sorted(self.used)) + (" (RTX 3050 Ti)" if "NVIDIA" in self.used else "") if self.used else "unknown"
 
+# ---- answering Steam's dialogs (launch option, licence, install) ---------------------------------------------------------------------------------------------
+def x_window(title):
+    """(id, x, y, w, h) of the visible X11 window named exactly `title`, or None."""
+    for wid in reversed(run(["xdotool", "search", "--class", "steam"], 8).split()):
+        if run(["xdotool", "getwindowname", wid], 4).strip() != title: continue
+        g = run(["xdotool", "getwindowgeometry", "--shell", wid], 6)
+        v = dict(re.findall(r"(\w+)=(-?\d+)", g))
+        if "WIDTH" in v and int(v["WIDTH"]) > 100:
+            return wid, int(v["X"]), int(v["Y"]), int(v["WIDTH"]), int(v["HEIGHT"])
+    return None
+
+def ocr_words(path):
+    """[(text, cx, cy)] of the words tesseract reads in the picture, in the picture's own pixels."""
+    out = run(["tesseract", path, "-", "--psm", "11", "tsv"], 40)
+    words = []
+    for line in out.splitlines()[1:]:
+        f = line.split("\t")
+        if len(f) >= 12 and f[11].strip() and f[10] not in ("-1",) and float(f[10]) > 30:
+            words.append((f[11].strip(), int(f[6]) + int(f[8]) // 2, int(f[7]) + int(f[9]) // 2))
+    return words
+
+_SCREEN = None
+
+def screen_size():
+    global _SCREEN
+    if _SCREEN is None:
+        run(["grim", "/tmp/fleetwm-testbed-size.png"], 10)
+        try:
+            from PIL import Image
+            _SCREEN = Image.open("/tmp/fleetwm-testbed-size.png").size
+        except Exception:  # noqa: BLE001
+            _SCREEN = (1920, 1080)
+    return _SCREEN
+
+def xclick(x, y):
+    """A real pointer click through the compositor's virtual pointer (scripts/pgo-pointer.c built as fleetwm-pointer): X11's own XTEST events do not reach Steam's dialogs under Xwayland."""
+    w, h = screen_size()
+    env = dict(ENV, PGO_W=str(w), PGO_H=str(h))
+    subprocess.run(["fleetwm-pointer", "click", str(int(x)), str(int(y))], env=env, capture_output=True, timeout=10)
+
+def answer_steam_dialog(title, outdir, slug, say):
+    """Clicks through one Steam dialog: Accept/Agree on a licence, Install (into the Voidstride library) on an install dialog, Play on a launch option list, OK/Next/Continue otherwise."""
+    win = x_window(title)
+    if not win:
+        say(f"  dialog {title!r}: no X11 window to click in"); return False
+    _, x0, y0, w, h = win
+    full = os.path.join(outdir, f"{slug}-dialog-ocr.png")
+    run(["grim", "-g", f"{x0},{y0} {w}x{h}", full], 10)
+    words = ocr_words(full)
+    text = " ".join(t for t, _, _ in words).lower()
+    def find(*names):
+        for want in names:
+            for t, cx, cy in words:
+                if t.lower().strip(".,:") == want: return cx, cy
+        return None
+    if "install" in text and ("location" in text or "disk" in text or "space" in text or title.lower().startswith("install")):
+        if "voidstride" not in text:
+            loc = find("location", "library", "drive")
+            say(f"  install dialog: the target is not Voidstride yet; opening the location list" + ("" if loc else " (location label not found)"))
+            if loc:
+                xclick(x0 + w - 60, y0 + loc[1] + 4)   # the drop-down sits on the line below its label, at the right
+                time.sleep(1.0)
+                run(["grim", "-g", f"{x0},{y0} {w + 200}x{h + 200}", full], 10)
+                for t, cx, cy in ocr_words(full):
+                    if "voidstride" in t.lower() or "void" == t.lower():
+                        xclick(x0 + cx, y0 + cy); time.sleep(0.8); say("  install dialog: chose the Voidstride library"); break
+        run(["grim", "-g", f"{x0},{y0} {w}x{h}", full], 10)
+        words = ocr_words(full)
+    for names, label in ((("accept", "agree"), "licence: accepted"), (("install",), "install"), (("play",), "play"), (("ok", "next", "continue", "yes", "launch", "start"), "continue")):
+        hit = find(*names)
+        if hit:
+            xclick(x0 + hit[0], y0 + hit[1]); say(f"  dialog {title!r}: clicked {label}")
+            return True
+    run(["xdotool", "key", "Return"], 4)
+    say(f"  dialog {title!r}: no button text found (read: {text[:80]!r}); pressed Return")
+    return True
+
 def kill_steam_games():
     """Steam runs one game at a time: a game left over from an earlier test (even one with no window) makes every later launch do nothing. Stops every
     process of this user that carries SteamGameId (the games and their reapers, not the Steam client)."""
@@ -309,7 +386,9 @@ def main():
 
     def handle_dialogs(now_s):
         """Error dialogs are photographed and closed, install dialogs are waited out, Steam's own dialogs (launch options, first-run) are answered with Enter."""
+        now_ids = set()
         for w in windows():
+            now_ids.add(w["id"])
             k = kind_of(w)
             if k in ("game", "other") or seen_dialogs.get(w["id"]) == k: continue
             seen_dialogs[w["id"]] = k
@@ -322,7 +401,8 @@ def main():
                 install_titles.append(w["title"])
             elif k == "steam-dialog":
                 steam_dialogs.append(w["title"])
-                run(["wtype", "-k", "Return"], 5)
+                if w["title"].strip() != "Launching...":   # "Launching..." is only a progress window
+                    answer_steam_dialog(w["title"], outdir, slug, say)
         return any(kind_of(w) == "install" for w in windows())
 
     def alive():
