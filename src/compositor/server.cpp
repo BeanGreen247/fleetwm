@@ -1892,13 +1892,11 @@ bool Server::init() {
     return false;
   }
   setenv("WAYLAND_DISPLAY", socket, true);
-  // SDL2 opens X11 first when DISPLAY is set, which starts XWayland and keeps it running for as long
-  // as the program lives (measured on the dev VM: ~12 MB anon + 6 MB shm for XWayland, two X
-  // connections from an SDL2 terminal). Ask it for Wayland and keep X11 as the fallback.
-  // Not on a computer with a dedicated NVIDIA card: its Wayland EGL and Vulkan platforms do not work while the desktop runs on the integrated GPU (a game on the card
-  // never maps a window, eglInitialize fails: tested on a Ryzen + RTX 3050 Ti laptop, where the same launch options work under KDE because SDL 2 defaults to X11 there),
-  // while the X11 path through Xwayland does. There SDL is asked for X11 first.
-  setenv("SDL_VIDEODRIVER", has_nvidia_render_node() ? "x11,wayland" : "wayland,x11", false);
+  // SDL: only on a computer with a dedicated NVIDIA card, where SDL is told to use X11 (through Xwayland). NVIDIA's Wayland EGL and Vulkan platforms do not work while the
+  // desktop runs on the integrated GPU (a game on the card never maps a window, eglInitialize fails: tested on a Ryzen + RTX 3050 Ti laptop, where the same launch options work
+  // under KDE because SDL 2 defaults to X11 there). A single value, not a list: SDL 1.2 programs (POSTAL 2, Unreal Tournament) take it as one driver name and fail with
+  // "x11,wayland not available". Everywhere else SDL is left alone, as under KDE (it used to be forced to "wayland,x11", which broke those SDL 1.2 programs too).
+  if (has_nvidia_render_node()) setenv("SDL_VIDEODRIVER", "x11", false);
   // Portals and other D-Bus-activated services start outside this process; hand them the
   // session variables they need (best effort, it is fine if the tool is missing).
   setenv("XDG_CURRENT_DESKTOP", "fleetwm", false);
