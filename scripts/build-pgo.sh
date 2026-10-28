@@ -58,6 +58,8 @@ fi
 # -- unity would force recompiling every merged file in that file's
 # unity group on each touch, working against that script's whole point.
 EXTRA_OPTS=()
+# extra meson options for a build that needs them (install-alpine.sh passes -Dxwayland=false for the software-renderer build)
+if [[ -n "${FLEETWM_MESON_EXTRA:-}" ]]; then read -r -a _extra <<< "${FLEETWM_MESON_EXTRA}"; EXTRA_OPTS+=("${_extra[@]}"); fi
 if [[ "$MODE" == "use" ]]; then
   EXTRA_OPTS+=(-Dstrip=true)
 fi

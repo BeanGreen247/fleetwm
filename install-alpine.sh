@@ -7,7 +7,7 @@
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-BUILD_DIR="${SCRIPT_DIR}/build"
+BUILD_DIR="${SCRIPT_DIR}/build-pgo"
 TTY="${FLEETWM_GREETER_TTY:-tty1}"
 
 [ -r /etc/alpine-release ] || { echo "error: this script is for Alpine Linux; use install.sh on Debian and Ubuntu" >&2; exit 1; }
@@ -37,13 +37,14 @@ if [ "$PIXMAN_ONLY" = "1" ]; then
   MESON_EXTRA="-Dxwayland=false"
 fi
 
-echo "==> Building"
-if [ -d "${BUILD_DIR}" ]; then meson setup --reconfigure "${BUILD_DIR}" "${SCRIPT_DIR}" --buildtype=release $MESON_EXTRA >/dev/null; \
-else meson setup "${BUILD_DIR}" "${SCRIPT_DIR}" --buildtype=release $MESON_EXTRA; fi
-ninja -C "${BUILD_DIR}"
+echo "==> Profile-guided build (instrumented build, a training run on a virtual screen, optimized build)"
+for tool in wtype wlrctl foot grim; do command -v "$tool" >/dev/null 2>&1 || $SUDO apk add "$tool" >/dev/null 2>&1 || true; done  # the training run uses them; without one that part of the training is skipped
+BUILD_DIR="${SCRIPT_DIR}/build-pgo"
+FLEETWM_PGO_DIR="${BUILD_DIR}" FLEETWM_PREFIX=/usr/local FLEETWM_MESON_EXTRA="$MESON_EXTRA" bash "${SCRIPT_DIR}/scripts/build-pgo-auto.sh"
 
 echo "==> Installing to /usr/local"
-$SUDO ninja -C "${BUILD_DIR}" install
+# meson install --no-rebuild: root must not run ninja in the build folder (it would leave root-owned files there)
+$SUDO meson install -C "${BUILD_DIR}" --no-rebuild >/dev/null
 
 echo "==> Services: dbus, elogind and seatd at boot"
 for svc in dbus elogind seatd udev polkit; do
