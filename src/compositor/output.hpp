@@ -2,6 +2,8 @@
 
 #include <wayland-server-core.h>
 
+#include "frame_stats.hpp"
+
 extern "C" {
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_scene.h>
@@ -79,6 +81,9 @@ class Output {
   timespec last_present{};
   long present_refresh_ns = 0;
   bool have_present = false;
+  FrameStats frame_stats;  // `fleetwm-ctl frame-stats`
+  timespec stats_last_present{};
+  bool stats_have_last = false;
   wl_event_source* late_timer = nullptr;
   bool late_pass = false;  // the delayed render is running now: do not delay it again
   // Game mode switching (game.toml mode_switch): the mode to go back to, and the window that asked for the switch.

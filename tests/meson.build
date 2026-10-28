@@ -14,6 +14,7 @@ fleetwm_test_sources = files(
   'test_info_flags.cpp',
   'test_xembed_tray.cpp',
   'test_open_item.cpp',
+  'test_frame_stats.cpp',
   'test_steam_games.cpp',
   '../src/bar/xembed_tray.cpp',
   'test_child_signals.cpp',
@@ -100,7 +101,7 @@ fleetwm_unit_tests = executable(
   fleetwm_test_sources,
   dependencies: [gtest_dep, xcb_dep_bar, xcb_composite_dep_bar, libcommon_core_dep, libfleetkit_dep, libnetmgr_dep, libbtmgr_dep, libfleetfm_core_dep, libfleetfm_icons_dep, libfleetfm_window_dep, libnetfs_core_dep, libfleetremote_codec_dep],
   # the power menu's header-only parts, and the source tree for the tests that read the polkit rule and install.sh
-  include_directories: include_directories('../apps/powermenu', '../src/fleetremote', '../src/bar'),
+  include_directories: include_directories('../apps/powermenu', '../src/fleetremote', '../src/bar', '../src/compositor'),
   cpp_args: ['-DFLEETWM_SOURCE_DIR="' + meson.project_source_root() + '"'],
 )
 

@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <sstream>
 #include <cerrno>
+#include <cstdio>
 #include <cstring>
 
 #include "ipc_client.hpp"
@@ -138,6 +139,23 @@ void IpcServer::handle_line(Client& client, const std::string& line) {
 
   if (line == "WORKSPACE?") {
     std::string reply = std::to_string(active ? active->index() : 0) + "\n";
+    send(client.fd, reply.data(), reply.size(), MSG_NOSIGNAL);
+    return;
+  }
+
+  if (line == "FRAME_STATS" || line == "FRAME_STATS RESET") {
+    // One line per monitor, then END: how evenly frames reach the screen over the last ~1200 frames (frame_stats.hpp).
+    std::string reply;
+    char buf[320];
+    for (const std::unique_ptr<Output>& o : server_->outputs) {
+      const double refresh_ms = o->present_refresh_ns > 0 ? o->present_refresh_ns / 1e6 : 0;
+      const FrameSummary f = o->frame_stats.summary(refresh_ms);
+      std::snprintf(buf, sizeof buf, "FRAME_STATS %s n=%zu fps=%.1f refresh_ms=%.2f p50=%.2f p95=%.2f p99=%.2f max=%.2f late=%zu hitch=%zu work_avg=%.2f work_max=%.2f\n",
+                    o->wlr_output_ptr->name, f.frames, f.fps, refresh_ms, f.p50, f.p95, f.p99, f.max_interval, f.over_1_5, f.over_3, f.work_avg, f.work_max);
+      reply += buf;
+      if (line.size() > 11) o->frame_stats.reset();
+    }
+    reply += "END\n";
     send(client.fd, reply.data(), reply.size(), MSG_NOSIGNAL);
     return;
   }

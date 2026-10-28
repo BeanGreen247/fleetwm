@@ -264,7 +264,9 @@ void output_frame(wl_listener* listener, void*) {
   wlr_scene_output_send_frame_done(scene_output, &now);
   if (stats) grabstats::tick(output->wlr_output_ptr->width, output->wlr_output_ptr->height);
 
-  output->debug_frame_end((now.tv_sec - commit_start.tv_sec) * 1000.0 + (now.tv_nsec - commit_start.tv_nsec) / 1e6);
+  const double commit_ms = (now.tv_sec - commit_start.tv_sec) * 1000.0 + (now.tv_nsec - commit_start.tv_nsec) / 1e6;
+  output->frame_stats.add_work(commit_ms);
+  output->debug_frame_end(commit_ms);
 }
 
 void output_request_state(wl_listener* listener, void* data) {
@@ -295,6 +297,12 @@ void output_present(wl_listener* listener, void* data) {
 #endif
     output->present_refresh_ns = event->refresh;
     output->have_present = true;
+    if (output->stats_have_last) {
+      timespec t = output->last_present;
+      output->frame_stats.add_interval((t.tv_sec - output->stats_last_present.tv_sec) * 1000.0 + (t.tv_nsec - output->stats_last_present.tv_nsec) / 1e6);
+    }
+    output->stats_last_present = output->last_present;
+    output->stats_have_last = true;
   }
   if (grabstats::enabled()) {
     ++grabstats::c().present;
