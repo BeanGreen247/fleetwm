@@ -1156,7 +1156,7 @@ struct TaskMgr {
         break;
       }
     }
-    if (hovered_res >= 0) draw_resource_hover(cr, std::min(hovered_res, 4));
+    if (hovered_res >= 0) draw_resource_hover(cr, std::min(hovered_res, 4), hovered_res, h);
   }
 
   // The sidebar's GPU figure: one percentage for one GPU, "12% / 3%" for several (in the order of the GPU page).
@@ -1166,7 +1166,8 @@ struct TaskMgr {
     return t.empty() ? std::string("--") : t;
   }
 
-  void draw_resource_hover(cairo_t* cr, int index) {
+  // `item` is the sidebar row under the pointer (a GPU row for 4 and up). The panel opens beside that row, over the graphs, never over the list.
+  void draw_resource_hover(cairo_t* cr, int index, int item, int h) {
     std::array<std::string, 3> details;
     const char* title = "";
     switch (static_cast<Res>(index)) {
@@ -1215,7 +1216,8 @@ struct TaskMgr {
                            ? "Clock: " + std::to_string(nvidia.front().core_mhz) + " MHz"
                            : "Clock: unavailable";
         } else {
-          const GpuDevice& device = gpu.devices().front();
+          const size_t gi = item >= 4 && static_cast<size_t>(item - 4) < gpu.devices().size() ? static_cast<size_t>(item - 4) : 0;
+          const GpuDevice& device = gpu.devices()[gi];
           details[1] = device.vendor + " (" + device.driver + ")";
           const long long freq = device.freq_path.empty() ? -1 : GpuMonitor::read_number(device.freq_path);
           details[2] = intel_awake_proxy
@@ -1226,7 +1228,8 @@ struct TaskMgr {
       }
     }
 
-    const Rect panel{8, kTabsH + 6.0 + 5 * 66 + 10, kSideW - 16.0, 90};
+    const double row_y = item >= 0 && item < 8 ? res_rect[item].y : kTabsH + 6.0;
+    const Rect panel{kSideW + 8.0, std::clamp(row_y, kTabsH + 6.0, std::max(kTabsH + 6.0, h - 96.0)), 300, 90};
     rounded_rect(cr, panel.x + 0.5, panel.y + 0.5, panel.w - 1, panel.h - 1, pal.rounded ? 6 : 0);
     set_source(cr, alpha(pal.bg_primary, 0.9));
     cairo_fill_preserve(cr);
