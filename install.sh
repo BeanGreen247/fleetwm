@@ -460,6 +460,10 @@ sudo ninja -C "${BUILD_DIR}" install
 # next run (or fleetwm-update) can rebuild without a permission error.
 sudo chown -R "$(id -u):$(id -g)" "${BUILD_DIR}"
 
+echo "==> Pointer: GTK programs use Fleetwm's own cursor theme, so the cursor is the same in every window"
+if [[ ${EUID} -eq 0 && -n ${SUDO_USER:-} ]]; then sudo -u "${SUDO_USER}" -H bash "${SCRIPT_DIR}/scripts/set-cursor-theme.sh" || true
+else bash "${SCRIPT_DIR}/scripts/set-cursor-theme.sh" || true; fi
+
 # The install prefix is /usr/local, but display managers (GDM, SDDM, LightDM) list the
 # sessions in /usr/share/wayland-sessions, so put the session entry there too.
 if [[ -f /usr/local/share/wayland-sessions/fleetwm.desktop ]]; then

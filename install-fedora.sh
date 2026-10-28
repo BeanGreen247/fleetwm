@@ -63,6 +63,10 @@ echo "==> Installing to ${PREFIX}"
 ${SUDO} meson install -C "${BUILD_DIR}" --no-rebuild >/dev/null
 if [[ ${SUDO} == sudo ]]; then sudo chown -R "$(id -u):$(id -g)" "${BUILD_DIR}"; fi
 
+echo "==> Pointer: GTK programs use Fleetwm's own cursor theme, so the cursor is the same in every window"
+if [[ ${EUID} -eq 0 && -n ${SUDO_USER:-} ]]; then sudo -u "${SUDO_USER}" -H bash "${SCRIPT_DIR}/scripts/set-cursor-theme.sh" || true
+else bash "${SCRIPT_DIR}/scripts/set-cursor-theme.sh" || true; fi
+
 echo "==> Login session entry"
 SESSION_DIR="${PREFIX}/share/wayland-sessions"
 if [[ -f ${SESSION_DIR}/fleetwm.desktop ]]; then echo "installed: ${SESSION_DIR}/fleetwm.desktop"; fi

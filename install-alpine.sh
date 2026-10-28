@@ -46,6 +46,10 @@ echo "==> Installing to /usr/local"
 # meson install --no-rebuild: root must not run ninja in the build folder (it would leave root-owned files there)
 $SUDO meson install -C "${BUILD_DIR}" --no-rebuild >/dev/null
 
+echo "==> Pointer: GTK programs use Fleetwm's own cursor theme"
+if [ "$(id -u)" -eq 0 ] && [ -n "${SUDO_USER:-}" ]; then sudo -u "${SUDO_USER}" -H bash "${SCRIPT_DIR}/scripts/set-cursor-theme.sh" || true
+else bash "${SCRIPT_DIR}/scripts/set-cursor-theme.sh" || true; fi
+
 echo "==> Services: dbus, elogind and seatd at boot"
 for svc in dbus elogind seatd udev polkit; do
   $SUDO rc-update add "$svc" default >/dev/null 2>&1 || true
