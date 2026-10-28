@@ -1,8 +1,7 @@
 # Gaming test bed and performance notes (running log)
 
 Started 2026-10-28 on the gaming laptop (Ashblade, Nobara 44, Ryzen 7 5800H, AMD iGPU draws the desktop, RTX 3050 Ti for games, TuxThrottle installed, falcond running).
-This file is the running record of what was tried, what works, what does not, and what belongs in TuxThrottle later. Keep it current after every step; the memory
-index (`~/.claude/projects/-home-bean-git-fleetwm/memory/`) points here.
+This file is the running record of what was tried, what works, what does not, and what belongs in TuxThrottle later. Keep it current after every step;
 
 ## Plan (the owner's list, 2026-10-28)
 1. Properties dialog: a shortcut/program opens straight away (Open / Open file location buttons), like Windows. [x] done (`dialog_properties`)
