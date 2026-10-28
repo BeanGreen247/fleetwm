@@ -27,11 +27,13 @@ extern "C" {
 #include <unistd.h>
 
 #include <cctype>
+#include <chrono>
 #include <fstream>
 #include <iterator>
 #include <string>
 #include <thread>
 
+#include "bar_config.hpp"
 #include "server.hpp"
 #include "tuxthrottle.hpp"
 #include "view.hpp"
@@ -116,20 +118,113 @@ void gamemode_call(const char* method, pid_t target) {
   }).detach();
 }
 
+struct PpdName {
+  const char *service, *path;
+};
+constexpr PpdName kPpdNames[] = {{"org.freedesktop.UPower.PowerProfiles", "/org/freedesktop/UPower/PowerProfiles"}, {"net.hadess.PowerProfiles", "/net/hadess/PowerProfiles"}};
+
+// power-profiles-daemon's ActiveProfile on the system bus (either of its two names), "" when it does not answer. Short timeout: runs on a worker thread.
+std::string read_ppd_profile() {
+  sd_bus* bus = nullptr;
+  if (sd_bus_open_system(&bus) < 0) return "";
+  sd_bus_set_method_call_timeout(bus, 2000000);
+  std::string out;
+  for (const PpdName& n : kPpdNames) {
+    sd_bus_error err = SD_BUS_ERROR_NULL;
+    char* active = nullptr;
+    const int r = sd_bus_get_property_string(bus, n.service, n.path, n.service, "ActiveProfile", &err, &active);
+    sd_bus_error_free(&err);
+    if (r >= 0 && active) {
+      out = active;
+      std::free(active);
+      break;
+    }
+  }
+  sd_bus_unref(bus);
+  return out;
+}
+
+bool write_ppd_profile(const std::string& name) {
+  sd_bus* bus = nullptr;
+  if (sd_bus_open_system(&bus) < 0) return false;
+  sd_bus_set_method_call_timeout(bus, 2000000);
+  bool ok = false;
+  for (const PpdName& n : kPpdNames) {
+    sd_bus_error err = SD_BUS_ERROR_NULL;
+    const int r = sd_bus_set_property(bus, n.service, n.path, n.service, "ActiveProfile", &err, "s", name.c_str());
+    sd_bus_error_free(&err);
+    if (r >= 0) {
+      ok = true;
+      break;
+    }
+  }
+  sd_bus_unref(bus);
+  return ok;
+}
+
 }  // namespace
+
+int game_end_timer_fire(void* data) {
+  static_cast<GameSupport*>(data)->end_boost();
+  return 0;
+}
+
+void GameSupport::begin_boost(bool tuxthrottle) {
+  if (end_timer_) wl_event_source_timer_update(end_timer_, 0);  // a new game window within the grace period: the boost simply carries on
+  if (boosted_) return;
+  boosted_ = true;
+  // The profile to restore is read before TuxThrottle's helper scripts change it. A tool that got there first (falcond sets "performance" the moment a
+  // Proton process appears) must not be mistaken for the user's own choice, see everyday_power_profile().
+  const std::string configured = power_mode_to_profiles_daemon_name(load_bar_config().power_mode);
+  auto memory = profile_;
+  const bool tux = tuxthrottle;
+  std::thread([memory, configured, tux] {
+    const std::string seen = read_ppd_profile();
+    {
+      std::lock_guard<std::mutex> lock(memory->mu);
+      memory->before_game = everyday_power_profile(seen, memory->everyday, configured);
+      std::fprintf(stderr, "fleetwm: game boost on: power profile is '%s', will go back to '%s'\n", seen.c_str(), memory->before_game.c_str());
+      if (!seen.empty() && seen != "performance") memory->everyday = seen;
+    }
+    if (tux) tuxthrottle_game_mode("on");
+  }).detach();
+}
+
+void GameSupport::end_boost() {
+  if (!boosted_ || !gamemode_pids_.empty()) return;
+  boosted_ = false;
+  set_realtime(false);
+  server_->set_fast_games(false);
+  const bool tux = tuxthrottle_on_;
+  tuxthrottle_on_ = false;
+  auto memory = profile_;
+  // TuxThrottle's off scripts set "balanced" whatever it was before, and falcond puts back what it saw; the profile from before the game goes in last.
+  std::thread([memory, tux] {
+    if (tux) {
+      tuxthrottle_game_mode("off");
+      std::this_thread::sleep_for(std::chrono::seconds(5));  // its helper scripts run for a few seconds
+    }
+    std::string want;
+    {
+      std::lock_guard<std::mutex> lock(memory->mu);
+      want = memory->before_game;
+    }
+    if (want.empty()) return;
+    const std::string now = read_ppd_profile();
+    const bool changed = now != want && write_ppd_profile(want);
+    std::fprintf(stderr, "fleetwm: game boost off: power profile was '%s', wanted '%s'%s\n", now.c_str(), want.c_str(), now == want ? " (already)" : (changed ? " (restored)" : " (could not be set)"));
+  }).detach();
+}
 
 void GameSupport::view_gone(View* view) {
   auto it = gamemode_pids_.find(view);
   if (it == gamemode_pids_.end()) return;
   gamemode_call("UnregisterGameByPID", it->second);
   gamemode_pids_.erase(it);
-  // The last game is gone: TuxThrottle goes back to its everyday profile.
-  if (gamemode_pids_.empty()) set_realtime(false);
-  if (gamemode_pids_.empty()) server_->set_fast_games(false);
-  if (gamemode_pids_.empty() && tuxthrottle_on_) {
-    tuxthrottle_on_ = false;
-    tuxthrottle_game_mode("off");
-  }
+  if (!gamemode_pids_.empty()) return;
+  // The last game window is gone: wait a few seconds before the boost ends (a launcher closing as the game opens must not switch anything).
+  if (!end_timer_) end_timer_ = wl_event_loop_add_timer(wl_display_get_event_loop(server_->display()), game_end_timer_fire, this);
+  wl_event_source_timer_update(end_timer_, 6000);
 }
 
 // A headless or nested compositor (the test rigs, PGO training, a window inside another desktop) has no screen of its own to speed up: it must never switch the
@@ -156,13 +251,12 @@ void GameSupport::evaluate_game(View* view) {
   if (game && it == gamemode_pids_.end()) {
     gamemode_pids_[view] = pid;
     gamemode_call("RegisterGameByPID", pid);
-    if (gamemode_pids_.size() == 1 && gc.realtime) set_realtime(true);
+    if (gc.realtime) set_realtime(true);
     if (gamemode_pids_.size() == 1) server_->set_fast_games(true);
     // The first game: TuxThrottle's Game Mode (performance profile, fans, GPU clocks) on a gaming laptop that has it.
-    if (!tuxthrottle_on_ && gc.tuxthrottle && tuxthrottle_installed()) {
-      tuxthrottle_on_ = true;
-      tuxthrottle_game_mode("on");
-    }
+    const bool tux = gc.tuxthrottle && tuxthrottle_installed();
+    if (tux) tuxthrottle_on_ = true;
+    begin_boost(tux && !boosted_);
   } else if (!game && it != gamemode_pids_.end()) {
     view_gone(view);
   }
@@ -245,6 +339,14 @@ void GameSupport::init() {
 }
 
 void GameSupport::shutdown() {
+  if (end_timer_) {
+    wl_event_source_remove(end_timer_);
+    end_timer_ = nullptr;
+  }
+  if (tuxthrottle_on_) {  // the session ends in the middle of a game: leave TuxThrottle in its everyday state
+    tuxthrottle_on_ = false;
+    tuxthrottle_game_mode("off");
+  }
   if (!constraints_) return;
   wl_list_remove(&new_constraint_.link);
   wl_list_remove(&new_inhibitor_.link);

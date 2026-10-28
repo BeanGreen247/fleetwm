@@ -53,6 +53,7 @@
 #include "remote_tab.hpp"
 #include "autostart.hpp"
 #include "game_config.hpp"
+#include "steam_games.hpp"
 #include "tuxthrottle.hpp"
 #include "mouse_config.hpp"
 #include "user_profile.hpp"
@@ -243,6 +244,14 @@ struct Settings {
   bool startup_loaded = false;
   fleetwm::TuxThrottleStatus tux;       // TuxThrottle's readout, read when the Gaming page opens and again every two seconds while it is open
   bool tux_loaded = false;
+  // Settings -> Gaming: the Steam games and TuxThrottle's per-game MangoHud / dedicated GPU switches (read when the page first shows them)
+  struct SteamRow {
+    fleetwm::SteamGame game;
+    bool mangohud = false, dgpu = false;
+  };
+  std::vector<SteamRow> steam_rows;
+  bool steam_loaded = false;
+  std::string steam_filter;
   std::atomic<bool> tux_reading{false};  // a background read of the readout is running
   std::thread tux_thread;
   // Called every two seconds: while the Gaming page is open the TuxThrottle readout (profile, temperatures, Game Mode on/off) is read again on a
@@ -1349,11 +1358,17 @@ struct Settings {
     }
 
     ui.space(8);
+    ui.section("Glass");
+    ui.row("Light ray strength");
+    if (ui.spin(&bar.glass_ray_percent, 0, 100, 5)) save_bar();
+    ui.newline();
+    ui.paragraph("The diagonal beam of light across the glass taskbar, in percent (0 switches it off). Lower it if the bar seems to shimmer, most noticeable on a large screen.", true);
+    ui.space(8);
     ui.section("System tray");
     ui.row("Icon size");
     if (ui.spin(&bar.tray_icon_size, 16, 32, 2)) save_bar();
     ui.newline();
-    ui.paragraph("The size in pixels of the icons of programs in the tray (Steam, TuxThrottle, the lock). Programs that use the old X11 tray (many Wine programs) do not show here yet.", true);
+    ui.paragraph("The size in pixels of the icons of programs in the tray (Steam, TuxThrottle, the lock). Programs that use the old X11 tray (many Wine programs) show here too.", true);
     ui.space(8);
     ui.section("Colours");
     ui.label("Colours of the bar's parts. A grey swatch with no colour set follows the theme; \"Theme\" puts a part back to that.", true);
@@ -1516,6 +1531,38 @@ struct Settings {
       if (ui.toggle(&game.tuxthrottle)) save_game();
       ui.newline();
       ui.paragraph("Switches TuxThrottle's Game Mode on when the first game starts and off after the last one closes: its performance profile, fans and GPU clocks.", true);
+    }
+    if (fleetwm::tuxthrottle_mangohud_gate_installed()) {
+      ui.space(6);
+      ui.section("MangoHud per Steam game");
+      if (!steam_loaded) {
+        steam_loaded = true;
+        for (const fleetwm::SteamGame& g : fleetwm::installed_steam_games())
+          steam_rows.push_back({g, fleetwm::game_switch_get(g.appid, fleetwm::GameSwitch::MangoHud), fleetwm::game_switch_get(g.appid, fleetwm::GameSwitch::DedicatedGpu)});
+      }
+      ui.paragraph("TuxThrottle puts a gate in front of MangoHud: a Steam game started with \"mangohud %command%\" only shows the overlay when it is switched on here, and only runs on the dedicated graphics card when that is. That is why the overlay can seem to be ignored; it reads the settings in ~/.config/MangoHud. The same switches are in TuxThrottle's MangoHud tab.", true);
+      ui.row("Find a game");
+      ui.text_entry(&steam_filter, 260);
+      ui.newline();
+      std::string needle = steam_filter;
+      for (char& c : needle) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+      int shown = 0;
+      for (SteamRow& r : steam_rows) {
+        if (!needle.empty()) {
+          std::string n = r.game.name;
+          for (char& c : n) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+          if (n.find(needle) == std::string::npos) continue;
+        }
+        ++shown;
+        ui.row(r.game.name);
+        if (ui.toggle(&r.mangohud)) fleetwm::game_switch_set(r.game.appid, fleetwm::GameSwitch::MangoHud, r.mangohud);
+        ui.label("Overlay", true);
+        if (ui.toggle(&r.dgpu)) fleetwm::game_switch_set(r.game.appid, fleetwm::GameSwitch::DedicatedGpu, r.dgpu);
+        ui.label("Dedicated GPU", true);
+        ui.newline();
+      }
+      if (steam_rows.empty()) ui.paragraph("No Steam games were found.", true);
+      else if (shown == 0) ui.paragraph("No game matches.", true);
     }
     ui.space(6);
     ui.section("Graphics card");

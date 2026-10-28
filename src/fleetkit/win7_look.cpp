@@ -63,18 +63,27 @@ void draw_taskbar_tile(cairo_t* cr, double x, double y, double w, double h, cons
   cairo_stroke(cr);
 }
 
-void draw_start_orb(cairo_t* cr, double cx, double cy, double r, const Color& accent, bool hover, bool pressed) {
+namespace {
+void paint_orb(cairo_t* cr, double cx, double cy, double r, const Color& accent, bool hover, bool pressed) {
   cairo_save(cr);
   // shadow ring and dark rim
   cairo_arc(cr, cx, cy, r + 1.2, 0, 2 * M_PI);
   cairo_set_source_rgba(cr, 0, 0, 0, 0.62);
   cairo_fill(cr);
-  // body: bright cyan low, deep blue high and at the rim
+  // body: light low, deep at the rim, in the detected colour (a third of the classic blue is kept so the orb still reads as glass)
+  const Color blue_lo{0.55, 0.86, 1.0, 1}, blue_mid{0.16, 0.52, 0.86, 1}, blue_hi{0.02, 0.16, 0.42, 1};
+  const Color white{1, 1, 1, 1}, black{0, 0, 0, 1};
+  const Color lo = w7_mix(w7_mix(accent, white, 0.30), blue_lo, 0.25);
+  const Color mid = w7_mix(w7_mix(accent, black, 0.12), blue_mid, 0.25);
+  const Color hi = w7_mix(w7_mix(accent, black, 0.72), blue_hi, 0.25);
   cairo_pattern_t* body = cairo_pattern_create_radial(cx, cy + r * 0.55, r * 0.05, cx, cy + r * 0.1, r * 1.05);
   const double k = pressed ? 0.78 : (hover ? 1.18 : 1.0);
-  cairo_pattern_add_color_stop_rgba(body, 0.0, std::min(1.0, 0.55 * k), std::min(1.0, 0.86 * k), std::min(1.0, 1.0 * k), 1);
-  cairo_pattern_add_color_stop_rgba(body, 0.45, std::min(1.0, 0.16 * k), std::min(1.0, 0.52 * k), std::min(1.0, 0.86 * k), 1);
-  cairo_pattern_add_color_stop_rgba(body, 1.0, 0.02, 0.16 * k, 0.42 * k, 1);
+  auto stop = [&](double at, const Color& c) {
+    cairo_pattern_add_color_stop_rgba(body, at, std::min(1.0, c.r * k), std::min(1.0, c.g * k), std::min(1.0, c.b * k), 1);
+  };
+  stop(0.0, lo);
+  stop(0.45, mid);
+  stop(1.0, hi);
   cairo_arc(cr, cx, cy, r, 0, 2 * M_PI);
   cairo_set_source(cr, body);
   cairo_fill(cr);
@@ -84,33 +93,13 @@ void draw_start_orb(cairo_t* cr, double cx, double cy, double r, const Color& ac
   cairo_set_source_rgba(cr, 1, 1, 1, 0.55);
   cairo_set_line_width(cr, 1);
   cairo_stroke(cr);
-  // the mark: four panes, slightly tilted, in light and dark variants of the theme colour
+  // gloss over the top half, under the mark so the four panes stay crisp
   cairo_save(cr);
-  cairo_translate(cr, cx, cy - 0.5);
-  cairo_rotate(cr, -0.14);
-  const double sq = r * 0.40, gap = r * 0.08;
-  const Color white{1, 1, 1, 1}, black{0, 0, 0, 1};
-  const Color cols[4] = {w7_mix(accent, white, 0.55), w7_mix(accent, white, 0.22), w7_mix(accent, black, 0.18), w7_mix(accent, white, 0.38)};
-  for (int i = 0; i < 4; ++i) {
-    const double px = (i % 2 ? gap / 2 : -sq - gap / 2), py = (i / 2 ? gap / 2 : -sq - gap / 2);
-    cairo_pattern_t* pane = cairo_pattern_create_linear(0, py, 0, py + sq);
-    cairo_pattern_add_color_stop_rgba(pane, 0, std::min(1.0, cols[i].r + 0.25), std::min(1.0, cols[i].g + 0.25), std::min(1.0, cols[i].b + 0.25), 1);
-    cairo_pattern_add_color_stop_rgba(pane, 1, cols[i].r, cols[i].g, cols[i].b, 1);
-    w7_rrect(cr, px, py, sq, sq, 1.5);
-    cairo_set_source(cr, pane);
-    cairo_fill_preserve(cr);
-    cairo_set_source_rgba(cr, 1, 1, 1, 0.45);
-    cairo_set_line_width(cr, 0.8);
-    cairo_stroke(cr);
-    cairo_pattern_destroy(pane);
-  }
-  cairo_restore(cr);
-  // gloss over the top half
   cairo_arc(cr, cx, cy, r - 1.5, 0, 2 * M_PI);
   cairo_clip(cr);
   cairo_pattern_t* gloss = cairo_pattern_create_linear(0, cy - r, 0, cy + r * 0.15);
-  cairo_pattern_add_color_stop_rgba(gloss, 0, 1, 1, 1, 0.50);
-  cairo_pattern_add_color_stop_rgba(gloss, 1, 1, 1, 1, 0.04);
+  cairo_pattern_add_color_stop_rgba(gloss, 0, 1, 1, 1, 0.42);
+  cairo_pattern_add_color_stop_rgba(gloss, 1, 1, 1, 1, 0.03);
   cairo_set_source(cr, gloss);
   cairo_new_path(cr);
   cairo_save(cr);
@@ -120,6 +109,75 @@ void draw_start_orb(cairo_t* cr, double cx, double cy, double r, const Color& ac
   cairo_restore(cr);
   cairo_fill(cr);
   cairo_pattern_destroy(gloss);
+  cairo_restore(cr);
+  // the mark: four panes, slightly tilted, larger than before and with a dark edge and shadow so they stand out from the orb in every colour
+  cairo_save(cr);
+  cairo_translate(cr, cx, cy - 0.5);
+  cairo_rotate(cr, -0.14);
+  const double sq = r * 0.46, gap = r * 0.07;
+  const Color cols[4] = {w7_mix(accent, white, 0.78), w7_mix(accent, white, 0.42), w7_mix(accent, black, 0.12), w7_mix(accent, white, 0.60)};
+  for (int i = 0; i < 4; ++i) {
+    const double px = (i % 2 ? gap / 2 : -sq - gap / 2), py = (i / 2 ? gap / 2 : -sq - gap / 2);
+    w7_rrect(cr, px + 0.5, py + 0.8, sq, sq, 1.5);  // shadow
+    cairo_set_source_rgba(cr, 0, 0, 0, 0.45);
+    cairo_fill(cr);
+    cairo_pattern_t* pane = cairo_pattern_create_linear(0, py, 0, py + sq);
+    cairo_pattern_add_color_stop_rgba(pane, 0, std::min(1.0, cols[i].r + 0.14), std::min(1.0, cols[i].g + 0.14), std::min(1.0, cols[i].b + 0.14), 1);
+    cairo_pattern_add_color_stop_rgba(pane, 1, cols[i].r * 0.92, cols[i].g * 0.92, cols[i].b * 0.92, 1);
+    w7_rrect(cr, px, py, sq, sq, 1.5);
+    cairo_set_source(cr, pane);
+    cairo_fill_preserve(cr);
+    cairo_set_source_rgba(cr, 1, 1, 1, 0.80);
+    cairo_set_line_width(cr, 0.9);
+    cairo_stroke(cr);
+    cairo_pattern_destroy(pane);
+  }
+  cairo_restore(cr);
+  cairo_restore(cr);
+}
+
+// The orb is five gradients, four panes and their shadows: about half a millisecond, painted on every repaint of the bar (every clock tick and every
+// hover). One picture of it is kept and blitted; it is redrawn only when the size, colour, state or the output's scale changes.
+struct OrbCache {
+  cairo_surface_t* image = nullptr;
+  double r = 0, sx = 0, sy = 0, cr_, cg, cb;
+  bool hover = false, pressed = false;
+  ~OrbCache() {
+    if (image) cairo_surface_destroy(image);
+  }
+};
+}  // namespace
+
+void draw_start_orb(cairo_t* cr, double cx, double cy, double r, const Color& accent, bool hover, bool pressed) {
+  static OrbCache cache;
+  cairo_matrix_t m;
+  cairo_get_matrix(cr, &m);
+  const bool plain = std::fabs(m.xy) < 1e-9 && std::fabs(m.yx) < 1e-9 && m.xx > 0 && m.yy > 0;  // scaled only: the usual case, even with fractional scale
+  if (!plain) return paint_orb(cr, cx, cy, r, accent, hover, pressed);
+  const double half = r + 3;  // the shadow ring is r + 1.2 wide; a little room for the antialiasing
+  if (!cache.image || cache.r != r || cache.sx != m.xx || cache.sy != m.yy || cache.cr_ != accent.r || cache.cg != accent.g || cache.cb != accent.b || cache.hover != hover ||
+      cache.pressed != pressed) {
+    if (cache.image) cairo_surface_destroy(cache.image);
+    cache.image = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, static_cast<int>(std::ceil(2 * half * m.xx)), static_cast<int>(std::ceil(2 * half * m.yy)));
+    cairo_t* c = cairo_create(cache.image);
+    cairo_scale(c, m.xx, m.yy);
+    paint_orb(c, half, half, r, accent, hover, pressed);
+    cairo_destroy(c);
+    cache.r = r;
+    cache.sx = m.xx;
+    cache.sy = m.yy;
+    cache.cr_ = accent.r;
+    cache.cg = accent.g;
+    cache.cb = accent.b;
+    cache.hover = hover;
+    cache.pressed = pressed;
+  }
+  // whole device pixels, so the blit is a copy and not a resample
+  const double dx = std::round((cx - half) * m.xx + m.x0) , dy = std::round((cy - half) * m.yy + m.y0);
+  cairo_save(cr);
+  cairo_identity_matrix(cr);
+  cairo_set_source_surface(cr, cache.image, dx, dy);
+  cairo_paint(cr);
   cairo_restore(cr);
 }
 

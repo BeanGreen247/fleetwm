@@ -81,7 +81,7 @@ FIT_APP_ID=steam_app_999 $T/fit & FP=$!
 sleep 3
 echo "during: $(gamemoded -s 2>&1)" >> '"$GM"'
 kill $FP
-sleep 1.5
+sleep 8   # the boost ends six seconds after the last game window
 echo "after: $(gamemoded -s 2>&1)" >> '"$GM"'
 kill $GP
 '
@@ -94,6 +94,19 @@ PRE='mkdir -p $HM/.config/autostart
 printf "[Desktop Entry]\nType=Application\nName=A\nExec=touch '"$MK"' %%U\n" > $HM/.config/autostart/a.desktop
 printf "[Desktop Entry]\nType=Application\nName=B\nExec=touch '"$MK"'.hidden\nHidden=true\n" > $HM/.config/autostart/b.desktop' session 'sleep 3'
 if [[ -e "$MK" && ! -e "$MK.hidden" ]]; then echo "PASS: the enabled startup app ran, the hidden one did not"; else echo "FAIL: ran=$([[ -e $MK ]] && echo yes || echo no) hidden_ran=$([[ -e $MK.hidden ]] && echo yes || echo no)"; fi
+echo "== a launcher window closing as the game opens (several game windows in a row) must switch TuxThrottle once, not on and off each time"
+: > "$OUT/tux.log"
+session '
+FIT_APP_ID=steam_app_999 $T/fit & FP=$!
+sleep 2.5
+kill $FP
+sleep 1.5
+FIT_APP_ID=steam_app_999 $T/fit & FP=$!
+sleep 2.5
+kill $FP
+sleep 8
+'
+if [[ "$(grep '^gamemode' "$OUT/tux.log" | tr '\n' ' ')" == "gamemode on gamemode off " ]]; then echo "PASS: two game windows in a row switched Game Mode on once and off once"; else echo "FAIL: tuxthrottlectl calls: $(tr '\n' '|' < "$OUT/tux.log")"; fi
 echo "== real-time priority while a game runs (rtkit), normal again afterwards"
 RTL=$OUT/realtime.log; : > "$RTL"
 CFG='realtime = true' session '
@@ -101,7 +114,7 @@ FIT_APP_ID=steam_app_999 $T/fit & FP=$!
 sleep 3
 echo "during: $(chrt -p $CP 2>&1 | tail -2 | tr "\n" " ")" >> '"$RTL"'
 kill $FP
-sleep 1.5
+sleep 8
 echo "after: $(chrt -p $CP 2>&1 | tail -2 | tr "\n" " ")" >> '"$RTL"'
 '
 cat "$RTL"
@@ -146,12 +159,12 @@ gone = set(a.crop(box).getdata()) == {bg}
 print("PASS: the hidden window and its title bar are gone" if shown and gone else "FAIL: window shown before=%s, empty after=%s" % (shown, gone))
 PY
 echo "== fast desktop (opt-in): the bar drops its glass while a game runs and gets it back afterwards"
-CFG='fast_desktop = true' session '
+PRE='printf "glass_ray_percent = 100\n" > $HM/.config/fleetwm/bar.toml' CFG='fast_desktop = true' session '
 FIT_APP_ID=steam_app_999 $T/fit & FP=$!
 sleep 3
 grim $OUT/fast-during.png
 kill $FP
-sleep 3
+sleep 9   # the boost ends six seconds after the last game window
 grim $OUT/fast-after.png
 '
 python3 - "$OUT/fast-during.png" "$OUT/fast-after.png" <<'PY'

@@ -65,6 +65,7 @@ libcommon_core = static_library(
     'mouse_config.cpp',
     'game_config.cpp',
     'tuxthrottle.cpp',
+    'steam_games.cpp',
     'autostart.cpp',
     'gpu_policy.cpp',
     'user_profile.cpp',

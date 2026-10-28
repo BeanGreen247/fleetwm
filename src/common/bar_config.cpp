@@ -175,6 +175,7 @@ BarConfig load_bar_config() {
   read_names("pinned", &config.pinned_apps);
   if (auto v = table["taskbar_autohide"].value<bool>()) config.taskbar_autohide = *v;
   if (auto v = table["tray_icon_size"].value<int64_t>()) config.tray_icon_size = std::clamp(static_cast<int>(*v), 16, 32);
+  if (auto v = table["glass_ray_percent"].value<int64_t>()) config.glass_ray_percent = std::clamp(static_cast<int>(*v), 0, 100);
   if (auto v = table["start_centered"].value<bool>()) config.start_centered = *v;
   if (auto v = table["taskbar_labels"].value<bool>()) config.taskbar_labels = *v;
   if (auto v = table["media_player"].value<std::string>()) config.media_player = *v;
@@ -238,6 +239,7 @@ void save_bar_config(const BarConfig& config) {
   write_names("pinned", config.pinned_apps);
   table.insert_or_assign("taskbar_autohide", config.taskbar_autohide);
   table.insert_or_assign("tray_icon_size", static_cast<int64_t>(std::clamp(config.tray_icon_size, 16, 32)));
+  table.insert_or_assign("glass_ray_percent", static_cast<int64_t>(std::clamp(config.glass_ray_percent, 0, 100)));
   table.insert_or_assign("start_centered", config.start_centered);
   table.insert_or_assign("taskbar_labels", config.taskbar_labels);
   table.insert_or_assign("media_player", config.media_player);

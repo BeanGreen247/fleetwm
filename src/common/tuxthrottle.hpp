@@ -34,3 +34,11 @@ void tuxthrottle_game_mode(const std::string& action);
 bool tuxthrottle_bridged_through_gamemode();
 
 }  // namespace fleetwm
+
+namespace fleetwm {
+// The power profile (power-profiles-daemon name) to put back when the last game closes. `observed` is the profile in force when the first game
+// started, `remembered` the last everyday one seen earlier, `configured` the one chosen in Settings -> Power. A profile of "performance" at that
+// moment is most likely a game tool (falcond, GameMode, TuxThrottle) that was quicker than the compositor, not what the user runs every day, so it
+// is skipped in favour of the remembered or configured one. Never returns "" (balanced is the last resort).
+std::string everyday_power_profile(const std::string& observed, const std::string& remembered, const std::string& configured);
+}  // namespace fleetwm

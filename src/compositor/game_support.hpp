@@ -5,6 +5,9 @@
 #include <sys/types.h>
 
 #include <map>
+#include <memory>
+#include <mutex>
+#include <string>
 #include <vector>
 
 extern "C" {
@@ -88,6 +91,19 @@ class GameSupport {
   wlr_content_type_manager_v1* content_type_ = nullptr;
 #endif
   bool tuxthrottle_on_ = false;  // we switched TuxThrottle's Game Mode on and owe it an off
+  // The boost (TuxThrottle, real-time priority, fast desktop) is dropped a few seconds after the last game window goes, not at once: launchers and
+  // old games open and close several windows in a row, and each switch ran TuxThrottle's helper scripts (fans, governor, GPU clocks) again.
+  struct ProfileMemory {
+    std::mutex mu;
+    std::string before_game;  // the power profile to go back to
+    std::string everyday;     // the last profile seen that was not "performance"
+  };
+  std::shared_ptr<ProfileMemory> profile_ = std::make_shared<ProfileMemory>();
+  wl_event_source* end_timer_ = nullptr;
+  bool boosted_ = false;
+  void begin_boost(bool tuxthrottle);
+  void end_boost();
+  friend int game_end_timer_fire(void*);
   double origin_x_ = 0, origin_y_ = 0;
 };
 

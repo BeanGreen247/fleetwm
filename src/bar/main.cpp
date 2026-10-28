@@ -103,6 +103,10 @@ void spawn(const char* prog) {
 // Hands the saved power mode to power-profiles-daemon. The bar runs in every session, so a mode chosen in Settings (or kept from
 // the last session) is in force again after a login; without the daemon installed the call fails and the mode stays cosmetic.
 void apply_power_mode(PowerMode mode) {
+  {  // a headless or nested session (a test, a window inside another desktop) must not change the real machine's profile
+    const char* backends = std::getenv("WLR_BACKENDS");
+    if (backends && *backends && !std::strstr(backends, "drm")) return;
+  }
   const std::string name = power_mode_to_profiles_daemon_name(mode);
   // A direct D-Bus property write on a short-lived thread: `powerprofilesctl` is a Python script, and starting it cost more CPU at login than
   // the whole compositor and bar together (perf, docs/HOTSPOT_PROFILING.md). The thread keeps a slow or absent daemon off the bar's loop.
@@ -188,7 +192,7 @@ struct Bar {
       st.tint = themed(config.taskbar_colors.bg, pal.glass_surface);
       st.tint_alpha = pal.glass_surface_alpha;  // 0.60 by default: measured on the Windows 7 taskbar (backdrop weight 0.39-0.4)
       st.radius = radius;
-      st.ray = w >= 160 && h >= 24 ? 0.75 : 0.0;  // the light ray of the Windows 7 taskbar, on the wide surfaces only
+      st.ray = w >= 160 && h >= 24 ? 0.75 * config.glass_ray_percent / 100.0 : 0.0;  // the light ray of the Windows 7 taskbar, on the wide surfaces only; bar.toml glass_ray_percent (30 by default: the full beam looked like a white shimmer, most of all on a big screen)
       paint_glass(cr, backdrop, monitor_width(), monitor_height(), sx, sy, x, y, w, h, st);
       return;
     }

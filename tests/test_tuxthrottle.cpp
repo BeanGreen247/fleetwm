@@ -48,3 +48,21 @@ TEST(TuxThrottle, StringsWithEscapesAndNullsDoNotBreakIt) {
 
 }  // namespace
 }  // namespace fleetwm
+
+TEST(EverydayPowerProfile, KeepsWhatWasInForceBeforeTheGame) {
+  EXPECT_EQ(fleetwm::everyday_power_profile("balanced", "", "power-saver"), "balanced");
+  EXPECT_EQ(fleetwm::everyday_power_profile("power-saver", "balanced", "balanced"), "power-saver");
+}
+
+TEST(EverydayPowerProfile, PerformanceSeenAtGameStartIsNotTheEverydayOne) {
+  // a game tool raised it before the compositor looked: go back to what was remembered, else to the Settings choice
+  EXPECT_EQ(fleetwm::everyday_power_profile("performance", "balanced", "power-saver"), "balanced");
+  EXPECT_EQ(fleetwm::everyday_power_profile("performance", "", "power-saver"), "power-saver");
+  EXPECT_EQ(fleetwm::everyday_power_profile("performance", "performance", "balanced"), "balanced");
+}
+
+TEST(EverydayPowerProfile, FallsBackToBalancedOrPerformance) {
+  EXPECT_EQ(fleetwm::everyday_power_profile("", "", ""), "balanced");
+  EXPECT_EQ(fleetwm::everyday_power_profile("junk", "", "junk"), "balanced");
+  EXPECT_EQ(fleetwm::everyday_power_profile("performance", "", "performance"), "performance");  // the user really runs performance
+}

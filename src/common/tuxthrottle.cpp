@@ -208,3 +208,14 @@ bool tuxthrottle_bridged_through_gamemode() {
 }
 
 }  // namespace fleetwm
+
+namespace fleetwm {
+std::string everyday_power_profile(const std::string& observed, const std::string& remembered, const std::string& configured) {
+  auto valid = [](const std::string& p) { return p == "balanced" || p == "power-saver" || p == "performance"; };
+  if (valid(observed) && observed != "performance") return observed;
+  if (valid(remembered) && remembered != "performance") return remembered;
+  if (valid(configured) && configured != "performance") return configured;
+  if (observed == "performance" || remembered == "performance" || configured == "performance") return "performance";  // only ever seen performance: nothing else to go back to
+  return "balanced";
+}
+}  // namespace fleetwm
