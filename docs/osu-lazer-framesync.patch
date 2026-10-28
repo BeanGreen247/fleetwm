@@ -1,0 +1,45 @@
+--- a/osu-lazer-launcher.sh
++++ b/osu-lazer-launcher.sh
+@@ -45,6 +45,7 @@
+ FLAT_MOUSE="${FLAT_MOUSE:-yes}"              # yes | no
+ PERFORMANCE_PROFILE="${PERFORMANCE_PROFILE:-yes}"
+ DISABLE_DRIVER_VSYNC="${DISABLE_DRIVER_VSYNC:-yes}"
++FRAME_SYNC="${FRAME_SYNC:-limit4x}"          # keep | vsync | limit2x | limit4x | limit8x | unlimited: osu!'s frame limiter while playing (see frame_sync)
+ SHOW_MANGOHUD="${SHOW_MANGOHUD:-no}"        # no = force the MangoHud overlay off for osu!
+ SHADER_CACHE_DIR="${SHADER_CACHE_DIR:-$HOME/.cache/osu-lazer-launcher/shader-cache}"
+ SHADER_CACHE_SIZE="${SHADER_CACHE_SIZE:-120000000000}"
+@@ -177,6 +178,26 @@
+     [[ $changed == 1 ]] && say "mouse acceleration off while playing" || true
+ }
+ 
++# ---- osu!'s frame limiter (restored on exit) ---------------------------------------------------------------
++# "Unlimited" makes osu! draw thousands of frames a second. On a laptop whose screen is driven by the integrated GPU while osu! renders on the NVIDIA card
++# (USE_DGPU=yes), every frame is copied across and composited, the NVIDIA card sits at 99 % and the compositor can only present about 2 frames a second with
++# 600 ms gaps: the whole desktop lags, worst while osu! is closing. Measured with Fleetwm's `fleetwm-ctl frame-stats` on a Ryzen 7 5800H + RTX 3050 Ti:
++#   FrameSync = Unlimited : 2 fps presented, p99 590 ms, 17-19 hitched frames per 10 s
++#   FrameSync = Limit4x   : 144 fps presented, p99 7.0 ms, 0 hitched frames (osu! still ~570 fps, NVIDIA 86 %)
++frame_sync() {
++    [[ "$FRAME_SYNC" == keep ]] && return 0
++    local ini="${XDG_DATA_HOME:-$HOME/.local/share}/osu/framework.ini" want
++    [[ -f "$ini" ]] || return 0
++    case "$FRAME_SYNC" in
++        vsync) want=VSync ;; limit2x) want=Limit2x ;; limit4x) want=Limit4x ;; limit8x) want=Limit8x ;; unlimited) want=Unlimited ;;
++        *) warn "FRAME_SYNC=$FRAME_SYNC is not one of keep vsync limit2x limit4x limit8x unlimited"; return 0 ;;
++    esac
++    local old; old="$(sed -n 's/^FrameSync = //p' "$ini" | head -1)"
++    [[ -n "$old" && "$old" != "$want" ]] || return 0
++    sed -i "s/^FrameSync = .*/FrameSync = $want/" "$ini" \
++        && { restore_cmds+=("sed -i 's/^FrameSync = .*/FrameSync = $old/' '$ini'"); say "frame limiter: $old -> $want while playing"; }
++}
++
+ # ---- power profile (restored on exit) -------------------------------------------------------
+ performance_profile() {
+     [[ "$PERFORMANCE_PROFILE" == yes ]] && have powerprofilesctl || return 0
+@@ -205,6 +226,7 @@
+     trap 'exit 130' INT TERM
+     performance_profile
+     flatten_mouse
++    frame_sync
+     no_mangohud
+     set_overlay
+     local extra_env; mapfile -t extra_env < <(shader_env; latency_env)
