@@ -68,14 +68,47 @@ bool export_x11_window_icon(const char* display_name, uint32_t x11_window, uint3
   xcb_connection_t* c = connection(display_name);
   const std::string dir = cache_dir();
   if (!c || dir.empty()) return false;
-  xcb_intern_atom_reply_t* a = xcb_intern_atom_reply(c, xcb_intern_atom(c, 1, 13, "_NET_WM_ICON"), nullptr);
+  xcb_intern_atom_reply_t* a = xcb_intern_atom_reply(c, xcb_intern_atom(c, 1, 12, "_NET_WM_ICON"), nullptr);
   if (!a || a->atom == XCB_ATOM_NONE) {
     std::free(a);
     return false;
   }
   const xcb_atom_t atom = a->atom;
   std::free(a);
-  xcb_get_property_reply_t* r = xcb_get_property_reply(c, xcb_get_property(c, 0, x11_window, atom, XCB_ATOM_CARDINAL, 0, 1u << 20), nullptr);
+  auto read_icon = [&](xcb_window_t w) {
+    return xcb_get_property_reply(c, xcb_get_property(c, 0, w, atom, XCB_ATOM_CARDINAL, 0, 1u << 20), nullptr);
+  };
+  xcb_get_property_reply_t* r = read_icon(x11_window);
+  if (r && xcb_get_property_value_length(r) == 0) {
+    // Wine keeps the icon on one of the program's other top-level windows (an owner or a hidden frame), so look at the others of the same process.
+    auto pid_of = [&](xcb_window_t w) -> uint32_t {
+      xcb_intern_atom_reply_t* pa = xcb_intern_atom_reply(c, xcb_intern_atom(c, 1, 11, "_NET_WM_PID"), nullptr);
+      if (!pa) return 0;
+      xcb_get_property_reply_t* pr = xcb_get_property_reply(c, xcb_get_property(c, 0, w, pa->atom, XCB_ATOM_CARDINAL, 0, 1), nullptr);
+      std::free(pa);
+      uint32_t pid = 0;
+      if (pr && xcb_get_property_value_length(pr) >= 4) pid = *static_cast<const uint32_t*>(xcb_get_property_value(pr));
+      std::free(pr);
+      return pid;
+    };
+    const uint32_t pid = pid_of(x11_window);
+    xcb_screen_t* screen = xcb_setup_roots_iterator(xcb_get_setup(c)).data;
+    xcb_query_tree_reply_t* tree = pid && screen ? xcb_query_tree_reply(c, xcb_query_tree(c, screen->root), nullptr) : nullptr;
+    if (tree) {
+      const xcb_window_t* kids = xcb_query_tree_children(tree);
+      for (int i = 0; i < xcb_query_tree_children_length(tree); ++i) {
+        if (kids[i] == x11_window || pid_of(kids[i]) != pid) continue;
+        xcb_get_property_reply_t* other = read_icon(kids[i]);
+        if (other && xcb_get_property_value_length(other) > 0) {
+          std::free(r);
+          r = other;
+          break;
+        }
+        std::free(other);
+      }
+      std::free(tree);
+    }
+  }
   if (!r) return false;
   const uint32_t* data = static_cast<const uint32_t*>(xcb_get_property_value(r));
   const size_t count = static_cast<size_t>(xcb_get_property_value_length(r)) / 4;
