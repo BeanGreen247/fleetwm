@@ -21,6 +21,7 @@ std::string format_window_list(const std::vector<WindowEntry>& windows) {
     if (w.focused) flags += 'F';
     if (w.minimized) flags += 'M';
     if (w.pinned) flags += 'P';
+    if (w.urgent) flags += 'U';
     line += '\t' + (flags.empty() ? std::string("-") : flags);
     line += '\t' + std::to_string(w.workspace) + (w.output.empty() ? std::string() : '@' + clean(w.output));
     line += '\t' + clean(w.app_id);
@@ -50,13 +51,14 @@ bool parse_window_list(const std::string& line, std::vector<WindowEntry>* out) {
     }
     w.id = static_cast<uint32_t>(std::stoul(id));
     const std::string& flags = fields[i + 1];
-    if (flags.find_first_not_of("-FMP") != std::string::npos) {
+    if (flags.find_first_not_of("-FMPU") != std::string::npos) {
       out->clear();
       return false;
     }
     w.focused = flags.find('F') != std::string::npos;
     w.minimized = flags.find('M') != std::string::npos;
     w.pinned = flags.find('P') != std::string::npos;
+    w.urgent = flags.find('U') != std::string::npos;
     const std::string& ws = fields[i + 2];
     if (ws.empty() || ws[0] < '0' || ws[0] > '9' || (ws.size() > 1 && (ws[1] != '@' || ws.size() == 2))) {
       out->clear();

@@ -283,6 +283,8 @@ struct Bar {
   bool taskbar = false;  // Desktop window layout: taskbar instead of capsules/island/strip
   TaskbarPosition tb_pos = TaskbarPosition::Bottom;
   std::vector<WindowEntry> windows;  // every window the compositor reported
+  bool urgent_phase = false;         // blinks while a window asks for attention (WindowEntry::urgent)
+  int urgent_timer = 0;
   std::vector<WindowEntry> shown;    // the ones the taskbar lists: this workspace's, plus pinned
   std::vector<WindowEntry> shown_unpinned;  // `shown` without the windows a pinned-app button stands for: what the window list draws
 
@@ -292,7 +294,7 @@ struct Bar {
     std::string name;
     std::string icon_key;  // the app id kit::app_icon() resolves to the icon
     kit::DesktopEntry entry;
-    bool running = false, focused = false, minimized = false;
+    bool running = false, focused = false, minimized = false, urgent = false;
     uint32_t win_id = 0;
   };
   std::vector<PinnedApp> pinned;
@@ -366,6 +368,7 @@ struct Bar {
         claimed[i] = taken = true;
         pinned[i].running = true;
         pinned[i].focused = w.focused;
+      pinned[i].urgent = w.urgent;
         pinned[i].minimized = w.minimized;
         pinned[i].win_id = w.id;
       }
@@ -1440,6 +1443,7 @@ struct Bar {
       t.running = true;  // every window button is a tile; the active one is brighter
       t.focused = active;
       t.hover = hover;
+      t.attention = w.urgent ? (urgent_phase ? 1.0 : 0.3) : 0.0;
       kit::draw_taskbar_tile(cr, r.x, r.y, r.w, r.h, t, hover_glow_x);
     } else if (active || hover) {
       rounded_rect(cr, r.x, r.y, r.w, r.h, radius);
@@ -1830,6 +1834,7 @@ struct Bar {
       t.running = pa.running;  // an idle pin has no tile until the pointer is on it
       t.focused = active;
       t.hover = hover;
+      t.attention = pa.urgent ? (urgent_phase ? 1.0 : 0.3) : 0.0;
       kit::draw_taskbar_tile(cr, r.x, r.y, r.w, r.h, t, hover_glow_x);
     } else if (active || hover) {
       rounded_rect(cr, r.x, r.y, r.w, r.h, radius);
@@ -2624,6 +2629,7 @@ struct Bar {
       std::vector<WindowEntry> parsed;
       if (parse_window_list(line, &parsed) && parsed != windows) {
         windows = std::move(parsed);
+        update_urgent_blink();
         prune_own_icons(windows);
         hover_win = -1;
         ws_list_changed();
@@ -2642,6 +2648,23 @@ struct Bar {
       active_workspace = ws;
       ws_list_changed();
       redraw();
+    }
+  }
+
+  // The blink runs only while some window is urgent.
+  void update_urgent_blink() {
+    bool any = false;
+    for (const WindowEntry& w : windows) any = any || w.urgent;
+    if (any && !urgent_timer) {
+      urgent_phase = true;
+      urgent_timer = app.add_timer(600, [this] {
+        urgent_phase = !urgent_phase;
+        redraw();
+      });
+    } else if (!any && urgent_timer) {
+      app.unwatch(urgent_timer);
+      urgent_timer = 0;
+      urgent_phase = false;
     }
   }
 

@@ -290,6 +290,9 @@ class Server {
   // Coalesces any number of changes within one event-loop iteration into a
   // single WINDOWS broadcast.
   void schedule_windows_broadcast();
+  // A program wants attention (a notification came from it): its windows blink in the taskbar and, in the Tiling layout, in their borders, until focused.
+  void mark_urgent(const std::string& program);
+  bool urgent_phase() const { return urgent_phase_; }
   void broadcast_windows_now();
   std::vector<WindowEntry> window_snapshot() const;
   // Titlebar double-click detection (button press time, ms).
@@ -622,6 +625,8 @@ class Server {
   void stop_cursor_spin();
   std::string cursor_name_storage_;    // keeps the name alive across refresh_cursor()
   BorderColors border_colors_{{0.9f, 0.9f, 0.95f, 1.0f}, {0.9f, 0.9f, 0.95f, 1.0f}, {0.9f, 0.9f, 0.95f, 1.0f}};
+  wl_event_source* urgent_timer_ = nullptr;
+  bool urgent_phase_ = false;
   bool appearance_applied_ = false, appearance_dark_ = true;
   bool frames_applied_ = false, frames_desktop_ = false;  // browsers' own window buttons follow the layout
   PowerConfig power_config_;

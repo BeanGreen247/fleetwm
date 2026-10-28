@@ -53,8 +53,8 @@ int View::border_thickness() const {
   if (pinned) {
     return server->theme_config().pinned_border_thickness_px;
   }
-  if (focused) {
-    return server->theme_config().focus_border_thickness_px;
+  if (focused || urgent) {
+    return server->theme_config().focus_border_thickness_px;  // an urgent window gets its (blinking) border even without focus
   }
   return 0;
 }
@@ -294,7 +294,9 @@ void View::update_fullscreen_fit() {
 void View::resize_border() {
   int thickness = border_thickness();
   const Server::BorderColors& colors = server->border_colors();
+  static const float kUrgentColor[4] = {1.0f, 0.62f, 0.12f, 1.0f};
   const float* color = desktop_mode()      ? kNoBorderColor  // the frame is drawn by update_frame()
+                       : urgent && !focused && server->urgent_phase() ? kUrgentColor
                        : pinned && focused ? colors.pinned_focused
                        : pinned          ? colors.pinned
                        : focused         ? colors.focus

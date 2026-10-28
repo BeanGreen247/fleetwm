@@ -1981,6 +1981,8 @@ bool Server::init() {
   }
 
   autostart_done_ = true;
+  // first: any program that sends a notification before the service is on the bus waits for D-Bus to give up (25 s)
+  spawn_autostart("fleetwm-notifyd", FLEETWM_BINDIR "/fleetwm-notifyd");
   for (const std::unique_ptr<Output>& o : outputs) start_output_helpers(o->wlr_output_ptr);
   spawn_autostart("fleetwm-lockapplet", FLEETWM_BINDIR "/fleetwm-lockapplet");
   spawn_autostart("fleetwm-remote", FLEETWM_BINDIR "/fleetwm-remote");  // exits at once unless Settings -> Remote Desktop has a server on
@@ -2091,6 +2093,10 @@ void Server::focus_view(View* view) {
 
   view->set_activated(true);
   view->focused = true;
+  if (view->urgent) {
+    view->urgent = false;
+    schedule_windows_broadcast();
+  }
   view->resize_border();
 
   // Always send the enter, even when the seat has no keyboard yet (hot-plugged
@@ -2632,6 +2638,7 @@ std::vector<WindowEntry> Server::window_snapshot() const {
     entry.focused = focused && view->surface() == focused;
     entry.minimized = view->minimized;
     entry.pinned = view->pinned;
+    entry.urgent = view->urgent && !entry.focused;
     entry.workspace = view->workspace ? view->workspace->index() : 0;
     if (view->output && view->output->wlr_output_ptr->name) entry.output = view->output->wlr_output_ptr->name;
     if (view->window_app_id()) entry.app_id = view->window_app_id();
@@ -2649,6 +2656,52 @@ void windows_idle_cb(void* data) {
   server->broadcast_windows_now();
 }
 }  // namespace
+
+void Server::mark_urgent(const std::string& program) {
+  if (program.size() < 3) return;
+  auto lower = [](std::string v) {
+    for (char& c : v) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return v;
+  };
+  const std::string want = lower(program);
+  wlr_surface* focused = seat_->keyboard_state.focused_surface;
+  bool any = false;
+  for (const std::unique_ptr<View>& view : views) {
+    if (!view->workspace || !view->is_window() || view->is_child_window() || (focused && view->surface() == focused)) continue;
+    const char* id = view->window_app_id();
+    if (!id) continue;
+    const std::string have = lower(id);
+    if (have.size() < 3 || (have != want && have.find(want) == std::string::npos && want.find(have) == std::string::npos)) continue;
+    view->urgent = true;
+    view->resize_border();
+    any = true;
+  }
+  if (!any) return;
+  schedule_windows_broadcast();
+  if (urgent_timer_) return;
+  urgent_timer_ = wl_event_loop_add_timer(
+      wl_display_get_event_loop(display_),
+      [](void* data) -> int {
+        Server* self = static_cast<Server*>(data);
+        bool left = false;
+        self->urgent_phase_ = !self->urgent_phase_;
+        for (const std::unique_ptr<View>& v : self->views)
+          if (v->urgent) {
+            left = true;
+            v->resize_border();
+          }
+        if (!left) {
+          self->urgent_phase_ = false;
+          wl_event_source_remove(self->urgent_timer_);
+          self->urgent_timer_ = nullptr;
+          return 0;
+        }
+        wl_event_source_timer_update(self->urgent_timer_, 600);
+        return 0;
+      },
+      this);
+  if (urgent_timer_) wl_event_source_timer_update(urgent_timer_, 600);
+}
 
 void Server::schedule_windows_broadcast() {
   refresh_all_glass();  // a window appeared, went, was minimized or restacked: what the glass shows behind it may differ

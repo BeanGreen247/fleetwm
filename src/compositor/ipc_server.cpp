@@ -276,6 +276,10 @@ void IpcServer::handle_line(Client& client, const std::string& line) {
     return;
   }
 
+  if (line.rfind("URGENT ", 0) == 0) {  // URGENT <program>: a notification came from it
+    server_->mark_urgent(line.substr(7));
+    return;
+  }
   if (line.rfind("WINDOW_", 0) == 0) {
     // WINDOW_ACTIVATE|TOGGLE|MINIMIZE|CLOSE <id>
     const size_t sp = line.find(' ');

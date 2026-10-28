@@ -15,6 +15,7 @@ struct TaskbarTile {
   bool focused = false;  // the active window: a brighter tile
   bool hover = false;
   bool pressed = false;
+  double attention = 0;  // 0..1: the program wants attention (a notification came); the button is washed orange, as Windows 7 flashes it
 };
 
 // One taskbar button: a 1 px dark outline, a 1 px light line inside it and a glass gradient that is light in the top half. Over the taskbar

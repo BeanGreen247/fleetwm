@@ -216,6 +216,7 @@ class View {
   uint32_t id = 0;
   // Hidden by the user (titlebar button or taskbar); restored from the taskbar.
   bool minimized = false;
+  bool urgent = false;  // asked for attention (a notification, a window that wants the user): blinks until the window is focused
   void set_minimized(bool minimized);
   bool maximized = false;
   wlr_box pre_fullscreen_box{};  // same, for leaving fullscreen

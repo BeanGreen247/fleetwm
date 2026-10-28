@@ -113,3 +113,22 @@ TEST(WindowList, ManyWindowsKeepOrder) {
   ASSERT_TRUE(parse_window_list(format_window_list(in), &out));
   EXPECT_EQ(out, in);
 }
+
+namespace fleetwm {
+namespace {
+TEST(WindowListUrgent, FlagRoundTrips) {
+  WindowEntry w;
+  w.id = 7;
+  w.urgent = true;
+  w.app_id = "steam";
+  w.title = "Steam";
+  const std::string line = format_window_list({w});
+  EXPECT_NE(line.find("\tU\t"), std::string::npos);
+  std::vector<WindowEntry> back;
+  ASSERT_TRUE(parse_window_list(line, &back));
+  ASSERT_EQ(back.size(), 1u);
+  EXPECT_TRUE(back[0].urgent);
+  EXPECT_FALSE(back[0].focused);
+}
+}  // namespace
+}  // namespace fleetwm

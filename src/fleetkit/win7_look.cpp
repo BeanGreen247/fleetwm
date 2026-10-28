@@ -43,6 +43,15 @@ void draw_taskbar_tile(cairo_t* cr, double x, double y, double w, double h, cons
   cairo_set_source(cr, g);
   cairo_paint(cr);
   cairo_pattern_destroy(g);
+  if (st.attention > 0) {
+    cairo_pattern_t* o = cairo_pattern_create_linear(0, y, 0, y + h);
+    cairo_pattern_add_color_stop_rgba(o, 0.0, 1.0, 0.74, 0.28, 0.95 * st.attention);
+    cairo_pattern_add_color_stop_rgba(o, 0.5, 1.0, 0.52, 0.06, 0.88 * st.attention);
+    cairo_pattern_add_color_stop_rgba(o, 1.0, 0.95, 0.38, 0.0, 0.75 * st.attention);
+    cairo_set_source(cr, o);
+    cairo_paint(cr);
+    cairo_pattern_destroy(o);
+  }
   if (st.hover && !st.pressed) {  // the light that follows the pointer along the tile
     const double gx = std::clamp(x + glow_x, x, x + w), gy = y + h * 0.9;
     cairo_pattern_t* r = cairo_pattern_create_radial(gx, gy, 0, gx, gy, std::max(20.0, w * 0.75));
