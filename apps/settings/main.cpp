@@ -2182,6 +2182,9 @@ struct Settings {
     ui.newline();
     ui.label("License: MIT", true);
     ui.newline();
+    ui.space(6);
+    if (ui.button("Version details")) spawn_detached({"fleetwm-about"});
+    ui.newline();
     ui.space(10);
     ui.section("Backup");
     ui.paragraph("All settings are saved to one tar.gz file and can be loaded back. An import keeps the previous settings in a fleetwm.bak-DATE folder next to the settings folder.");

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=About Fleetwm
+GenericName=Version information
+Comment=The exact version, build, project links and license of this desktop
+Exec=fleetwm-about
+Icon=fleetwm
+Terminal=false
+Categories=System;
+Keywords=version;winver;about;license;
+StartupWMClass=dev.fleetwm.About

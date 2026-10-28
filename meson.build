@@ -146,6 +146,7 @@ subdir('apps/powermenu')
 subdir('apps/osd')
 subdir('apps/audiomixer')
 subdir('apps/shortcuts')
+subdir('apps/about')
 subdir('apps/fleetfm')
 subdir('apps/desktop')
 subdir('apps/lockapplet')
@@ -195,6 +196,11 @@ install_data(
 )
 
 # The file manager: a desktop entry for launchers, Default apps (it handles inode/directory) and the network schemes.
+install_data(
+  'packaging/fleetwm-about.desktop',
+  install_dir: get_option('prefix') / 'share' / 'applications',
+)
+
 install_data(
   'packaging/fleetwm-fm.desktop',
   install_dir: get_option('prefix') / 'share' / 'applications',
