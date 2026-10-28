@@ -198,6 +198,7 @@ void view_mapped(View* view) {
   view->server->games().evaluate_game(view);
 
   view->update_size_policy();
+  view->retry_icon_soon();  // an icon the program sets after mapping shows up in the titlebar
   // Border rects are sized off the surface's real geometry, only known
   // once the client has actually mapped (it picks its own size -- see
   // xdg_toplevel_surface_commit's size-0,0 "client decides" configure).

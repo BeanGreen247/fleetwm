@@ -323,6 +323,13 @@ class View {
   std::string icon_app_id_;
   cairo_surface_t* icon_ = nullptr;
   bool icon_known_ = false;
+  bool icon_from_export_ = false;  // icon_ is the picture the program itself set (kit::exported_window_icon), looked for again while it is missing
+  int icon_retries_ = 0;
+  wl_event_source* icon_timer_ = nullptr;
+ public:
+  // Looks for the icon again soon (a Wine or X11 program sets its own a moment after mapping): called when the window maps and by the timer.
+  void retry_icon_soon();
+ private:
   // The sides and bottom of the Windows 7 style frame (the top is part of the titlebar buffer).
   wlr_scene_buffer* frame_left_ = nullptr;
   wlr_scene_buffer* frame_right_ = nullptr;

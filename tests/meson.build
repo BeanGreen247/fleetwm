@@ -35,6 +35,7 @@ fleetwm_test_sources = files(
   'test_hw_stats.cpp',
   'test_osd.cpp',
   'test_app_icon_draw.cpp',
+  'test_app_icon_names.cpp',
   'test_prewarm.cpp',
   'test_page_release.cpp',
   'test_fleetkit.cpp',

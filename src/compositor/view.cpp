@@ -75,6 +75,29 @@ View::~View() {
   if (server && output) server->leave_game_mode(output, this);
   for (GlassPicture& p : dyn_) glass_picture_release(&p);
   if (server) server->glass_forget(this);
+  if (icon_timer_) wl_event_source_remove(icon_timer_);
+  fleetwm::kit::forget_exported_window_icon(id);
+}
+
+void View::retry_icon_soon() {
+  if (!server || icon_retries_ >= 4 || icon_timer_) return;
+  static const int delays_ms[] = {400, 1600, 5000, 12000};
+  icon_timer_ = wl_event_loop_add_timer(
+      wl_display_get_event_loop(server->display()),
+      [](void* data) -> int {
+        View* v = static_cast<View*>(data);
+        wl_event_source_remove(v->icon_timer_);
+        v->icon_timer_ = nullptr;
+        ++v->icon_retries_;
+        if (!v->icon_) {
+          v->icon_known_ = false;  // look again
+          v->resize_border();
+          if (!v->icon_) v->retry_icon_soon();
+        }
+        return 0;
+      },
+      this);
+  if (icon_timer_) wl_event_source_timer_update(icon_timer_, delays_ms[icon_retries_]);
 }
 
 void View::set_pinned(bool pinned_) {
@@ -425,6 +448,11 @@ void View::update_titlebar() {
       icon_known_ = true;
       icon_app_id_ = app_id;
       icon_ = icon_app_id_.empty() ? nullptr : fleetwm::kit::app_icon(icon_app_id_, 48);
+      icon_from_export_ = false;
+      if (!icon_) {  // no desktop entry or theme icon: the picture the program set itself (Wine, X11 and Wayland programs)
+        icon_ = fleetwm::kit::exported_window_icon(id, 48);
+        icon_from_export_ = icon_ != nullptr;
+      }
     }
     icon = icon_;
   }

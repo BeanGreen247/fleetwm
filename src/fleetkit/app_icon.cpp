@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <utility>
 #include <vector>
 
@@ -61,6 +62,85 @@ std::string lower_ascii(std::string v) {
   return v;
 }
 
+
+std::vector<std::string> icon_name_candidates(const std::string& app_id) {
+  std::vector<std::string> out;
+  auto add = [&](std::string v) {
+    if (v.size() < 2) return;
+    if (std::find(out.begin(), out.end(), v) == out.end()) out.push_back(std::move(v));
+  };
+  auto strip_suffix = [](std::string v, const char* suffix) {
+    const std::string sfx = suffix;
+    if (v.size() > sfx.size() && v.compare(v.size() - sfx.size(), sfx.size(), sfx) == 0) v.resize(v.size() - sfx.size());
+    return v;
+  };
+  const std::string full = lower_ascii(app_id);
+  add(full);
+  std::string base = strip_suffix(strip_suffix(full, ".desktop"), ".exe");
+  for (const char* sfx : {"-bin", "_bin", "-stable", "-launcher"}) base = strip_suffix(base, sfx);
+  add(base);
+  std::string slug;  // punctuation as hyphens: "battle.net" -> "battle-net", "my game" -> "my-game"
+  std::string flat;  // and with none: "battlenet"
+  for (char c : base) {
+    const bool alnum = std::isalnum(static_cast<unsigned char>(c)) != 0;
+    if (alnum) {
+      slug += c;
+      flat += c;
+    } else if (!slug.empty() && slug.back() != '-') {
+      slug += '-';
+    }
+  }
+  while (!slug.empty() && slug.back() == '-') slug.pop_back();
+  add(slug);
+  add(flat);
+  // reverse-DNS: org.gnome.Calculator -> calculator, gnome-calculator; com.valvesoftware.Steam -> steam
+  std::vector<std::string> parts;
+  for (size_t at = 0; at <= base.size();) {
+    size_t dot = base.find('.', at);
+    if (dot == std::string::npos) dot = base.size();
+    if (dot > at) parts.push_back(base.substr(at, dot - at));
+    at = dot + 1;
+  }
+  if (parts.size() >= 3) {
+    add(parts.back());
+    add(parts[parts.size() - 2] + "-" + parts.back());
+  } else if (parts.size() == 2 && parts[0].size() <= 4) {
+    add(parts.back());
+  }
+  return out;
+}
+
+std::vector<std::string> wine_builtin_icon_names(const std::string& app_id) {
+  static const std::vector<std::pair<std::string, std::vector<std::string>>> table = {
+      {"notepad", {"wine-notepad", "accessories-text-editor", "text-editor", "wine"}},
+      {"wordpad", {"wine-wordpad", "accessories-text-editor", "libreoffice-writer", "wine"}},
+      {"write", {"wine-wordpad", "accessories-text-editor", "wine"}},
+      {"winecfg", {"wine-winecfg", "wine-configuration", "preferences-system", "wine"}},
+      {"regedit", {"wine-regedit", "preferences-system", "wine"}},
+      {"explorer", {"wine-explorer", "system-file-manager", "folder", "wine"}},
+      {"winefile", {"wine-winefile", "system-file-manager", "folder", "wine"}},
+      {"control", {"wine-control", "preferences-system", "wine"}},
+      {"cmd", {"wine-cmd", "utilities-terminal", "terminal", "wine"}},
+      {"wineconsole", {"wine-wineconsole", "utilities-terminal", "terminal", "wine"}},
+      {"taskmgr", {"wine-taskmgr", "utilities-system-monitor", "wine"}},
+      {"uninstaller", {"wine-uninstaller", "system-software-install", "wine"}},
+      {"msiexec", {"wine-msiexec", "system-software-install", "wine"}},
+      {"iexplore", {"wine-iexplore", "web-browser", "internet-web-browser", "wine"}},
+      {"winebrowser", {"wine-winebrowser", "web-browser", "internet-web-browser", "wine"}},
+      {"winemine", {"wine-winemine", "applications-games", "wine"}},
+      {"clock", {"wine-clock", "clock", "wine"}},
+      {"oleview", {"wine-oleview", "wine"}},
+      {"eject", {"wine-eject", "media-eject", "wine"}},
+  };
+  std::string id = lower_ascii(app_id);
+  const size_t slash = id.find_last_of("\\/");
+  if (slash != std::string::npos) id = id.substr(slash + 1);
+  if (id.size() > 4 && id.compare(id.size() - 4, 4, ".exe") == 0) id.resize(id.size() - 4);
+  for (const auto& row : table)
+    if (row.first == id) return row.second;
+  return {};
+}
+
 // A Steam game's window has the app id steam_app_<id> and no desktop entry. Steam keeps the game's icon in its library cache (a small hash-named jpg beside the header and
 // library pictures) and, for games with a shortcut, as steam_icon_<id> in the icon theme.
 static cairo_surface_t* steam_game_icon(const std::string& app_id, int size) {
@@ -99,11 +179,24 @@ cairo_surface_t* app_icon(const std::string& app_id, int size) {
       names.emplace(id, de.icon);
       names.emplace(lower_ascii(exec_basename(de)), de.icon);
       names.emplace(lower_ascii(de.name), de.icon);
+      if (!de.startup_wm_class.empty()) names.emplace(lower_ascii(de.startup_wm_class), de.icon);
+      // a Wine / Proton shortcut starts "env WINEPREFIX=... wine start /unix .../Game.exe": the program's file name is how its window is known (Game.exe)
+      for (const std::string& arg : exec_argv(de)) {
+        const std::string a = lower_ascii(arg);
+        if (a.size() > 4 && a.compare(a.size() - 4, 4, ".exe") == 0) {
+          const size_t slash = a.find_last_of("\\/");
+          names.emplace(slash == std::string::npos ? a : a.substr(slash + 1), de.icon);
+        }
+      }
+      for (const std::string& c : icon_name_candidates(id)) names.emplace(c, de.icon);
     }
   }
   cairo_surface_t* icon = nullptr;
-  const auto named = names.find(lower_ascii(app_id));
-  if (named != names.end()) icon = load_icon(named->second, size);
+  const std::vector<std::string> candidates = icon_name_candidates(app_id);
+  for (const std::string& c : candidates) {
+    const auto named = names.find(c);
+    if (named != names.end() && (icon = load_icon(named->second, size))) break;
+  }
   if (!icon) {
     const std::string id = lower_ascii(app_id);
     if (id.find("taskmgr") != std::string::npos || id.find("taskmanager") != std::string::npos)
@@ -114,9 +207,56 @@ cairo_surface_t* app_icon(const std::string& app_id, int size) {
       icon = load_icon("fleetwm-fm", size);
   }
   if (!icon && !app_id.empty()) icon = load_icon(app_id, size);
+  for (size_t i = 1; !icon && i < candidates.size(); ++i) icon = load_icon(candidates[i], size);  // the app id as an icon name, in its other spellings
   if (!icon) icon = steam_game_icon(app_id, size);
+  if (!icon) {  // Wine's own programs (notepad.exe, winecfg.exe ...), then any Windows program without an icon of its own
+    for (const std::string& n : wine_builtin_icon_names(app_id))
+      if ((icon = load_icon(n, size))) break;
+    const std::string low = lower_ascii(app_id);
+    if (!icon && low.size() > 4 && low.compare(low.size() - 4, 4, ".exe") == 0) {
+      for (const char* n : {"wine", "application-x-wine-extension-exe", "application-x-ms-dos-executable", "application-x-executable"})
+        if ((icon = load_icon(n, size))) break;
+    }
+  }
   icons[app_id] = icon;
   return icon;
+}
+
+namespace {
+std::map<unsigned, cairo_surface_t*>& exported_icons() {
+  static std::map<unsigned, cairo_surface_t*> m;
+  return m;
+}
+}  // namespace
+
+cairo_surface_t* exported_window_icon(unsigned view_id, int size) {
+  auto& cache = exported_icons();
+  const auto hit = cache.find(view_id);
+  if (hit != cache.end()) return hit->second;
+  const char* xdg = std::getenv("XDG_CACHE_HOME");
+  const char* home = std::getenv("HOME");
+  const std::string base = xdg && *xdg ? std::string(xdg) : (home ? std::string(home) + "/.cache" : std::string());
+  if (base.empty()) return nullptr;
+  const std::string stem = base + "/fleetwm/window-icons/" + std::to_string(view_id);
+  cairo_surface_t* png = cairo_image_surface_create_from_png((stem + ".png").c_str());
+  if (cairo_surface_status(png) == CAIRO_STATUS_SUCCESS) {
+    cache[view_id] = png;
+    return png;
+  }
+  cairo_surface_destroy(png);
+  std::ifstream named(stem + ".name");
+  std::string icon_name;
+  if (named && std::getline(named, icon_name) && !icon_name.empty())
+    if (cairo_surface_t* themed = app_icon(icon_name, size)) return themed;  // owned by app_icon's cache; not remembered here, a later PNG may replace it
+  return nullptr;
+}
+
+void forget_exported_window_icon(unsigned view_id) {
+  auto& cache = exported_icons();
+  const auto it = cache.find(view_id);
+  if (it == cache.end()) return;
+  cairo_surface_destroy(it->second);
+  cache.erase(it);
 }
 
 namespace {

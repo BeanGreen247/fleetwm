@@ -4,6 +4,7 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
 
 ## Unreleased
 
+- Window icons are found much more reliably, in the titlebar as well as the taskbar: an app id is tried in every spelling (Battle.net.exe as battle-net, org.gnome.Calculator as gnome-calculator), desktop entries are matched by StartupWMClass and by the .exe a Wine shortcut starts, Wine's own programs (notepad, winecfg, regedit, explorer ...) have theme icons, any other .exe falls back to Wine's icon, and the picture a program sets itself (X11/Wine _NET_WM_ICON, Wayland xdg-toplevel-icon) is used in the titlebar too, looked for again while it is missing.
 - Settings -> Gaming: "Graphics card for all games" has two toggles, Integrated GPU and Dedicated GPU, for every game at once. With TuxThrottle installed the choice is written to every Steam game's TuxThrottle switch and read back from them: whichever side changed last wins. `fleetwm-game` follows it too.
 - The round profile picture shows one letter for a single name and the first letters of the name and surname otherwise.
 - The media applet's fallback icon (a player with no icon of its own) is a clean eighth note.

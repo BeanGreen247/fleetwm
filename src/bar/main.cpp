@@ -1322,32 +1322,15 @@ struct Bar {
     std::chrono::steady_clock::time_point checked{};
   };
   std::map<int, OwnIcon> own_icons;
+  // The picture the program itself set (kit::exported_window_icon); a missing one is looked for again every 3 s.
   cairo_surface_t* own_window_icon(int window_id) {
     OwnIcon& e = own_icons[window_id];
+    if (e.surface) return e.surface;
     const auto now = std::chrono::steady_clock::now();
-    if (e.surface || (e.checked.time_since_epoch().count() != 0 && now - e.checked < std::chrono::seconds(3))) return e.surface;
+    if (e.checked.time_since_epoch().count() != 0 && now - e.checked < std::chrono::seconds(3)) return nullptr;
     e.checked = now;
-    const char* xdg = std::getenv("XDG_CACHE_HOME");
-    const char* home = std::getenv("HOME");
-    const std::string base = xdg && *xdg ? std::string(xdg) : (home ? std::string(home) + "/.cache" : std::string());
-    if (base.empty()) return nullptr;
-    const std::string stem = base + "/fleetwm/window-icons/" + std::to_string(window_id);
-    cairo_surface_t* s = cairo_image_surface_create_from_png((stem + ".png").c_str());
-    if (cairo_surface_status(s) != CAIRO_STATUS_SUCCESS) {
-      cairo_surface_destroy(s);
-      // a program that named its icon (xdg-toplevel-icon with a name) instead of drawing it
-      std::ifstream named(stem + ".name");
-      std::string icon_name;
-      if (named && std::getline(named, icon_name) && !icon_name.empty()) {
-        if (cairo_surface_t* themed = app_icon(icon_name, 48)) {
-          e.surface = nullptr;  // owned by app_icon's cache, never freed here
-          return themed;
-        }
-      }
-      return nullptr;
-    }
-    e.surface = s;
-    return s;
+    e.surface = kit::exported_window_icon(static_cast<unsigned>(window_id), 48);  // owned by the kit's cache
+    return e.surface;
   }
   void prune_own_icons(const std::vector<WindowEntry>& windows) {
     for (auto it = own_icons.begin(); it != own_icons.end();) {
@@ -1356,7 +1339,7 @@ struct Bar {
       if (open) {
         ++it;
       } else {
-        if (it->second.surface) cairo_surface_destroy(it->second.surface);
+        kit::forget_exported_window_icon(static_cast<unsigned>(it->first));
         it = own_icons.erase(it);
       }
     }
