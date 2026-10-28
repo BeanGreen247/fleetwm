@@ -358,7 +358,7 @@ class View {
   // `layout_changed` is set when it is more than a repaint of a window below.
   unsigned glass_stale_parts(const GlassKeys& keys, const wlr_box rects[4], const wlr_box& area, bool* layout_changed) const;
   // The drop shadow: four corners and four edges around the window's outer rectangle, all cut from one small blurred picture.
-  wlr_scene_buffer* shadow_[8] = {};
+  wlr_scene_buffer* shadow_[9] = {};
   void update_shadow();
   void update_frame(int content_h);
   // Rounded outer corners: the theme asks for them and the window is a free-floating one, not filling the screen.

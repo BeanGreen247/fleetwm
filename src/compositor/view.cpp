@@ -526,12 +526,15 @@ void View::update_shadow() {
   const int W = frame_key_.w + 2 * frame_key_.px, H = top_border() + frame_key_.th + frame_key_.h + frame_key_.px;
   // x, y, w, h of each piece around the window, and the part of the picture it shows. A corner is two reaches square, so the blurred
   // fade along the edge near the corner is part of it (the picture is clear where the window is); an edge is a 1 px strip, stretched.
-  struct Piece { wlr_box dst; wlr_fbox src; } pieces[8] = {
+  struct Piece { wlr_box dst; wlr_fbox src; } pieces[9] = {
       {{-E, -E + kDown, 2 * E, 2 * E}, {0, 0, 2 * E, 2 * E}},               {{W - E, -E + kDown, 2 * E, 2 * E}, {M - 2 * E, 0, 2 * E, 2 * E}},
       {{-E, H - E + kDown, 2 * E, 2 * E}, {0, M - 2 * E, 2 * E, 2 * E}},    {{W - E, H - E + kDown, 2 * E, 2 * E}, {M - 2 * E, M - 2 * E, 2 * E, 2 * E}},
       {{E, -E + kDown, std::max(1, W - 2 * E), E}, {M / 2.0, 0, 1, E}},     {{E, H + kDown, std::max(1, W - 2 * E), E}, {M / 2.0, M - E, 1, E}},
-      {{-E, E + kDown, E, std::max(1, H - 2 * E)}, {0, M / 2.0, E, 1}},     {{W, E + kDown, E, std::max(1, H - 2 * E)}, {M - E, M / 2.0, E, 1}}};
-  for (int i = 0; i < 8; ++i) {
+      {{-E, E + kDown, E, std::max(1, H - 2 * E)}, {0, M / 2.0, E, 1}},     {{W, E + kDown, E, std::max(1, H - 2 * E)}, {M - E, M / 2.0, E, 1}},
+      // the shadow is the window's shape moved down by kDown, so the strip kDown tall under the window is inside that shape and as dark as its edge: without this piece
+      // a bare line of the background showed between the window and its shadow
+      {{E, H, std::max(1, W - 2 * E), kDown}, {M / 2.0, M - E, 1, 1}}};
+  for (int i = 0; i < 9; ++i) {
     if (!shadow_[i]) {
       shadow_[i] = wlr_scene_buffer_create(container_tree, nullptr);
       wlr_scene_node_lower_to_bottom(&shadow_[i]->node);
