@@ -625,6 +625,7 @@ class Server {
   void stop_cursor_spin();
   std::string cursor_name_storage_;    // keeps the name alive across refresh_cursor()
   BorderColors border_colors_{{0.9f, 0.9f, 0.95f, 1.0f}, {0.9f, 0.9f, 0.95f, 1.0f}, {0.9f, 0.9f, 0.95f, 1.0f}};
+  bool helpers_early_ = false;
   wl_event_source* urgent_timer_ = nullptr;
   bool urgent_phase_ = false;
   bool appearance_applied_ = false, appearance_dark_ = true;
@@ -663,6 +664,9 @@ class Server {
   void start_output_helpers(wlr_output* out);
   void stop_output_helpers(const char* name);
   bool autostart_done() const { return autostart_done_; }
+  bool helpers_early() const { return helpers_early_; }
+  // The bar, wallpaper and desktop of the first screen start the moment that screen is found, while its mode is still being set, not after the rest of start-up.
+  void start_first_output_helpers(wlr_output* out);
   bool debug_add_output(int width, int height);
   bool debug_remove_output(const std::string& name);
 

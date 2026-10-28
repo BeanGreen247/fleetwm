@@ -141,6 +141,14 @@ void spawn_settings_page(const char* page) {
     std::fprintf(stderr, "fleetwm-bar: failed to launch fleetwm-settings\n");
 }
 
+// FLEETWM_BAR_TRACE=1 prints how long each start-up step took (ms since the program began), to find what delays the first frame.
+void startup_trace(const char* step) {
+  static const bool on = std::getenv("FLEETWM_BAR_TRACE") != nullptr;
+  if (!on) return;
+  static const auto t0 = std::chrono::steady_clock::now();
+  std::fprintf(stderr, "fleetwm-bar: +%lld ms %s\n", static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count()), step);
+}
+
 struct Bar {
   App app;
   ThemeConfig theme;
@@ -339,7 +347,9 @@ struct Bar {
   void resolve_pinned() {
     if (!desktop_entries_loaded) {
       desktop_entries_loaded = true;
+      startup_trace("loading desktop entries (pinned programs)");
       desktop_entries = kit::load_desktop_entries();
+      startup_trace("desktop entries loaded");
     }
     pinned.clear();
     for (const std::string& id : config.pinned_apps) {
@@ -2953,6 +2963,7 @@ struct Bar {
 }  // namespace
 
 int main(int argc, char** argv) {
+  startup_trace("start");
   fleetwm::block_quit_signals();  // before any thread exists, see quit_signals.hpp
   if (fleetwm::handle_info_flags(argc, argv, "fleetwm-bar", "[--output NAME]")) return 0;
   fleetwm::tune_malloc_for_low_rss();
@@ -2965,10 +2976,12 @@ int main(int argc, char** argv) {
   apply_power_mode(B.config.power_mode);
   B.pal = load_palette(B.theme);
   B.refresh_glass();
+  startup_trace("config, theme, palette");
   // `fleetwm-bar --output DP-1`: the compositor starts one bar per screen; without it the compositor picks the screen.
   for (int i = 1; i + 1 < argc; ++i)
     if (std::string(argv[i]) == "--output") B.app.set_preferred_output(argv[i + 1]);
   if (!B.app.connect()) return 1;
+  startup_trace("wayland connected");
 
   B.media = std::make_unique<fleetwm::bar::Mpris>(B.app, [&B] { B.media_changed(); });
   B.media->start(B.config.media_player);
@@ -2982,7 +2995,14 @@ int main(int argc, char** argv) {
   cfg.keyboard_mode = ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_NONE;
   cfg.name = "fleetwm-bar";
   B.surface = std::make_unique<Surface>(B.app, cfg);
-  B.surface->on_draw = [&B](cairo_t* cr, int w, int h) { B.draw(cr, w, h); };
+  startup_trace("surface created");
+  B.surface->on_draw = [&B](cairo_t* cr, int w, int h) {
+    static bool first = true;
+    if (first) startup_trace("first draw begins");
+    B.draw(cr, w, h);
+    if (first) startup_trace("first draw done");
+    first = false;
+  };
   B.surface->on_button = [&B](double x, double y, uint32_t b, bool p) { B.on_button(x, y, b, p); };
   B.surface->on_motion = [&B](double x, double y) { B.on_motion(x, y); };
   B.surface->on_leave = [&B] {
@@ -3042,19 +3062,30 @@ int main(int argc, char** argv) {
     }
   });
 
+  startup_trace("handlers set");
   B.start_ppd_watch();
+  startup_trace("ppd watch");
   B.init_gpu();
+  startup_trace("gpu init");
   B.update_disk();
+  startup_trace("disk");
   B.update_ram();
+  startup_trace("ram");
   B.battery_dir = find_battery_dir();
   if (const char* d = std::getenv("FLEETWM_BATTERY_DIR")) B.battery_dir = d;  // test hook
   B.update_battery();
+  startup_trace("battery");
   B.update_network();
+  startup_trace("network");
   B.start_bluetooth();
+  startup_trace("bluetooth");
   B.start_remote();
+  startup_trace("remote");
   B.clock_tick();
   B.apply_layout();
+  startup_trace("layout");
   B.try_connect();
+  startup_trace("ipc connect");
 
   B.sync_stats_timers();
   B.app.add_timer(15000, [&B] {
@@ -3080,6 +3111,7 @@ int main(int argc, char** argv) {
   const int sfd = signalfd(-1, &mask, SFD_CLOEXEC | SFD_NONBLOCK);
   B.app.watch_fd(sfd, [&B] { B.app.quit(); });
 
+  startup_trace("entering the event loop");
   B.app.run();
   B.volume.reset();
   return 0;

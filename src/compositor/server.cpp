@@ -117,6 +117,7 @@ void server_new_output(wl_listener* listener, void* data) {
   auto* wlr_out = static_cast<wlr_output*>(data);
 
   wlr_output_init_render(wlr_out, server->allocator_, server->renderer_);
+  if (server->helpers_early() && !server->autostart_done()) server->start_first_output_helpers(wlr_out);
 
   const OutputSetting* setting = nullptr;
   auto saved = server->output_settings_.find(wlr_out->name);
@@ -1228,12 +1229,20 @@ bool Server::debug_remove_output(const std::string& name) {
   return false;
 }
 
+void Server::start_first_output_helpers(wlr_output* out) {
+  if (!out || !out->name || !outputs.empty()) return;
+  // a screen picked as the primary one in Settings -> Displays gets them when it is found; this one is the primary only by being first
+  if (!display_settings_.primary_output.empty() && display_settings_.primary_output != out->name) return;
+  start_output_helpers(out);
+}
+
 void Server::start_output_helpers(wlr_output* out) {
   if (!out || !out->name || output_helper_pids_.count(out->name)) return;
   std::vector<pid_t>& pids = output_helper_pids_[out->name];
   for (const char* program : {"fleetwm-bar", "fleetwm-wallpaper", "fleetwm-desktop"}) {
-    if (std::strcmp(program, "fleetwm-bar") == 0 && !display_settings_.taskbar_all_displays &&
-        out != primary_output()->wlr_output_ptr) continue;
+    const Output* primary = primary_output();  // none yet while the first screen is still being set up: it is the primary one
+    if (std::strcmp(program, "fleetwm-bar") == 0 && !display_settings_.taskbar_all_displays && primary &&
+        out != primary->wlr_output_ptr) continue;
     const pid_t pid = spawn_with_output(program, out->name);
     if (pid > 0) pids.push_back(pid);
   }
@@ -1930,13 +1939,24 @@ bool Server::init() {
     _exit(127);
   }
 
-  if (!wlr_backend_start(backend_)) {
-    return false;
+#if FLEETWM_XWAYLAND
+  if (xwayland_) setenv("DISPLAY", xwayland_->display_name, true);  // the programs started below see the X server
+#endif
+  {  // and the terminal's default config, as the programs started below inherit this
+    const char* current = std::getenv("XDG_CONFIG_DIRS");
+    const std::string dirs = std::string(FLEETWM_SYSCONF_DIR) + "/xdg:" + (current && *current ? current : "/etc/xdg");
+    setenv("XDG_CONFIG_DIRS", dirs.c_str(), 1);
   }
-
+  // the bar connects to this socket the moment it starts
   ipc_server = std::make_unique<IpcServer>(this);
   if (!ipc_server->listen()) {
     wlr_log(WLR_ERROR, "failed to start IPC socket; workspace switching via bar will not work");
+  }
+  helpers_early_ = true;
+  spawn_autostart("fleetwm-notifyd", FLEETWM_BINDIR "/fleetwm-notifyd");  // before anything that notifies; the bar follows as soon as the first screen is found
+
+  if (!wlr_backend_start(backend_)) {
+    return false;
   }
 
   start_signal_handlers();
@@ -1965,24 +1985,7 @@ bool Server::init() {
             "failed to start theme.toml inotify watch; live theme reload will not work");
   }
 
-#if FLEETWM_XWAYLAND
-  if (xwayland_) {
-    setenv("DISPLAY", xwayland_->display_name, true);
-  }
-#endif
-
-  // Fleetwm's default foot config lives in <sysconf>/xdg/foot/foot.ini; putting that folder first in
-  // XDG_CONFIG_DIRS makes every terminal started from this session use it unless the user has their
-  // own ~/.config/foot/foot.ini (foot reads the user's file first).
-  {
-    const char* current = std::getenv("XDG_CONFIG_DIRS");
-    const std::string dirs = std::string(FLEETWM_SYSCONF_DIR) + "/xdg:" + (current && *current ? current : "/etc/xdg");
-    setenv("XDG_CONFIG_DIRS", dirs.c_str(), 1);
-  }
-
-  autostart_done_ = true;
-  // first: any program that sends a notification before the service is on the bus waits for D-Bus to give up (25 s)
-  spawn_autostart("fleetwm-notifyd", FLEETWM_BINDIR "/fleetwm-notifyd");
+  autostart_done_ = true;  // (DISPLAY and XDG_CONFIG_DIRS were set before the first screen was found, see helpers_early_)
   for (const std::unique_ptr<Output>& o : outputs) start_output_helpers(o->wlr_output_ptr);
   spawn_autostart("fleetwm-lockapplet", FLEETWM_BINDIR "/fleetwm-lockapplet");
   spawn_autostart("fleetwm-remote", FLEETWM_BINDIR "/fleetwm-remote");  // exits at once unless Settings -> Remote Desktop has a server on
