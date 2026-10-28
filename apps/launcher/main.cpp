@@ -36,6 +36,7 @@
 #include "prewarm.hpp"
 #include "mimeapps.hpp"
 #include "theme.hpp"
+#include "user_profile.hpp"
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
 #include "version.hpp"
 
@@ -253,11 +254,8 @@ struct Launcher {
     }
     places.push_back({"Settings", {"fleetwm-settings"}});
     places.push_back({"Keyboard shortcuts", {"fleetwm-shortcuts"}});
-    if (const passwd* pw = getpwuid(getuid())) {
-      std::string n = pw->pw_gecos ? pw->pw_gecos : "";
-      n = n.substr(0, n.find(','));
-      user_name = !n.empty() ? n : pw->pw_name ? pw->pw_name : "user";
-    }
+    user_name = load_user_profile().display_name;  // the name from Settings -> Account (the account's real name until one is typed there)
+    if (user_name.empty()) user_name = "user";
   }
 
   void refresh() {
@@ -664,7 +662,7 @@ struct Launcher {
       rounded_rect(cr, rx + 2, ry, ts, ts, pal.rounded ? ts / 2 : 4);
       set_source(cr, pal.accent);
       cairo_fill(cr);
-      const std::string letter = user_name.empty() ? "?" : user_name.substr(0, next_char_len(user_name, 0));
+      const std::string letter = profile_initials(user_name);  // one letter for one name, name and surname initials otherwise
       const TextExtents le = measure_text(cr, letter, 20, true);
       draw_text(cr, letter, rx + 2 + (ts - le.width) / 2, ry + (ts - le.height) / 2 + le.ascent, 20, pal.bg_primary, true);
       std::string name = user_name;
