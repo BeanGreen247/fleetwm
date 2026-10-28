@@ -1,0 +1,9 @@
+# name|heroic:<runner>/<appName>  or  name|lutris:<id or slug>   (read by game-testbed-all.sh)
+Loria|heroic:gog/1604161214
+Rayman 2|heroic:gog/1207658940
+Rayman 3|heroic:gog/1207658947
+Rayman Origins|heroic:gog/1207659234
+Rayman Raving Rabbids|heroic:gog/1453737805
+Rayman Forever|heroic:gog/1207658919
+Worms Revolution|heroic:gog/1421309312
+Battle.net (World of Warcraft)|lutris:1

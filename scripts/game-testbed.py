@@ -99,16 +99,47 @@ def gpu():
     out = run(["nvidia-smi", "--query-gpu=utilization.gpu,power.draw,temperature.gpu", "--format=csv,noheader"], 6)
     return out.strip() or "-"
 
+def steam_games():
+    """[(kind, appid, name)] of the installed Steam games: kind is "native" when the folder has no .exe within three levels, else "proton". Tools are left out."""
+    libs = [os.path.expanduser("~/.local/share/Steam")]
+    try:
+        text = open(os.path.expanduser("~/.local/share/Steam/steamapps/libraryfolders.vdf")).read()
+        libs += re.findall(r'"path"\s+"([^"]+)"', text)
+    except OSError:
+        pass
+    seen, out = set(), []
+    for lib in dict.fromkeys(libs):
+        for f in glob.glob(os.path.join(lib, "steamapps", "appmanifest_*.acf")):
+            t = open(f, errors="replace").read()
+            m_id, m_nm, m_dir = (re.search(r'"%s"\s+"([^"]*)"' % k, t) for k in ("appid", "name", "installdir"))
+            if not (m_id and m_nm and m_dir) or m_id.group(1) in seen: continue
+            name = m_nm.group(1)
+            if name.startswith(("Proton", "Steam Linux", "Steamworks", "Steam Controller", "Steam.dll", "Steam Deck")): continue
+            path = os.path.join(lib, "steamapps", "common", m_dir.group(1))
+            if not os.path.isdir(path): continue
+            seen.add(m_id.group(1))
+            has_exe = False
+            for root, dirs, files in os.walk(path):
+                if root[len(path):].count(os.sep) >= 3: dirs[:] = []
+                if any(x.lower().endswith(".exe") for x in files): has_exe = True; break
+            out.append(("proton" if has_exe else "native", m_id.group(1), name))
+    return sorted(out, key=lambda r: (r[0], r[2].lower()))
+
 def main():
+    if "--list-steam" in sys.argv:
+        for k, i, n in steam_games(): print(f"{k}|{i}|{n}")
+        return
     ap = argparse.ArgumentParser()
     ap.add_argument("--name", required=True)
     ap.add_argument("--steam"); ap.add_argument("--heroic"); ap.add_argument("--lutris"); ap.add_argument("--cmd")
     ap.add_argument("--window-match", help="substring of the app id or title that identifies the game's window (default: any new window)")
-    ap.add_argument("--minutes", type=float, default=5)
+    ap.add_argument("--kind", choices=["native", "proton"], default="proton", help="native Linux games are only checked that they start and stay up (1 minute); Proton and Wine games get 2 minutes")
+    ap.add_argument("--minutes", type=float, default=None)
     ap.add_argument("--start-timeout", type=int, default=150)
     ap.add_argument("--out", default=None)
     ap.add_argument("--attach", action="store_true", help="the game is already running: do not launch it, watch the windows that match --window-match")
     a = ap.parse_args()
+    if a.minutes is None: a.minutes = 1.0 if a.kind == "native" else 2.0
 
     outdir = a.out or os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "perflog", "testbed", datetime.date.today().isoformat())
     os.makedirs(outdir, exist_ok=True)
@@ -141,7 +172,7 @@ def main():
     def mine(w):
         if w["id"] in before_windows: return False
         if a.window_match: return a.window_match.lower() in (w["app"] + " " + w["title"]).lower()
-        return w["app"].lower() not in ("steamwebhelper", "steam")
+        return w["app"].lower() not in ("steamwebhelper", "steam", "heroic", "lutris", "net.lutris.lutris")
 
     def alive():
         return [w for w in windows() if mine(w)]
@@ -158,6 +189,8 @@ def main():
     else:
         say(f"window after {time.time() - t0:.0f}s: id={game['id']} flags={game['flags']} {game['where']} app={game['app']!r} title={game['title']!r}")
 
+    ERR = re.compile(r"unsupported|error|crash|fatal|failed|cannot|can't|could not|exception|not found|unable", re.I)
+    error_titles = []
     samples = []
     black = 0
     end = time.time() + a.minutes * 60
@@ -182,6 +215,10 @@ def main():
             say(f"t={time.time() - t0:5.0f}s window now: id={new_game['id']} app={new_game['app']!r} title={new_game['title']!r}")
         game = new_game
         ids = {w["id"]: w for w in cur}
+        for w in cur:
+            if ERR.search(w["title"]) and w["title"] not in error_titles:
+                error_titles.append(w["title"])
+                say(f"t={time.time() - t0:5.0f}s ERROR WINDOW: app={w['app']!r} title={w['title']!r}")
         fs = frame_stats(True)
         mean, colours = shot(os.path.join(outdir, f"{slug}-{n:03d}.png")) if n % 3 == 1 else (None, None)
         if mean is not None and (mean < 4 or colours < 6): black += 1
@@ -225,8 +262,8 @@ def main():
         hitch = sum(int(s.get("hitch", 0)) for s in samples)
         late = sum(int(s.get("late", 0)) for s in samples)
         say(f"summary: windows ok for {len(samples) * 10}s, avg fps {sum(fps) / max(1, len(fps)):.1f}, late frames {late}, hitched frames {hitch}, black screenshots {black}, log problems {len(bad)}")
-        verdict = "PASS" if crashed_at is None and black == 0 else "FAIL"
-        say(f"RESULT: {verdict}" + ("" if verdict == "PASS" else " (black screen or crash)"))
+        verdict = "PASS" if crashed_at is None and black == 0 and not error_titles else "FAIL"
+        say(f"RESULT: {verdict}" + ("" if verdict == "PASS" else " (" + ("black screen " if black else "") + ("crash " if crashed_at is not None else "") + (f"error window: {error_titles[0]!r}" if error_titles else "") + ")"))
     with open(os.path.join(outdir, slug + ".txt"), "w") as f:
         f.write("\n".join(report) + "\n")
 
