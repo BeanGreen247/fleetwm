@@ -15,6 +15,7 @@ extern "C" {
 #include "server.hpp"
 
 extern "C" const sd_bus_vtable fleetwm_kwin_input_vtable[];
+extern "C" const sd_bus_vtable fleetwm_kwin_manager_vtable[];
 
 namespace fleetwm {
 
@@ -24,13 +25,15 @@ struct KwinInput::Impl {
     libinput_device* li = nullptr;
     std::string path, name, sysname;
     bool touchpad = false, pointer = false;
-    std::optional<bool> enabled, tap, natural, dwt, left;  // set from outside; kept and re-applied
+    std::optional<bool> enabled, tap, natural, dwt, left, flat;  // set from outside; kept and re-applied
+    std::optional<double> accel;
     sd_bus_slot* slot = nullptr;
   };
   Server* server = nullptr;
   sd_bus* bus = nullptr;
   wl_event_source* source = nullptr;
   std::vector<std::unique_ptr<Dev>> devices;
+  sd_bus_slot* manager_slot = nullptr;
 
   Dev* find(wlr_input_device* d) {
     for (auto& p : devices)
@@ -49,6 +52,8 @@ struct KwinInput::Impl {
     if (prop == "naturalScroll") return libinput_device_config_scroll_has_natural_scroll(li) && libinput_device_config_scroll_get_natural_scroll_enabled(li);
     if (prop == "disableWhileTyping") return libinput_device_config_dwt_is_available(li) && libinput_device_config_dwt_get_enabled(li) == LIBINPUT_CONFIG_DWT_ENABLED;
     if (prop == "leftHanded") return libinput_device_config_left_handed_is_available(li) && libinput_device_config_left_handed_get(li);
+    if (prop == "pointerAccelerationProfileFlat") return libinput_device_config_accel_is_available(li) && libinput_device_config_accel_get_profile(li) == LIBINPUT_CONFIG_ACCEL_PROFILE_FLAT;
+    if (prop == "pointerAccelerationProfileAdaptive") return libinput_device_config_accel_is_available(li) && libinput_device_config_accel_get_profile(li) == LIBINPUT_CONFIG_ACCEL_PROFILE_ADAPTIVE;
     return false;
   }
 
@@ -66,6 +71,11 @@ struct KwinInput::Impl {
     } else if (prop == "disableWhileTyping") {
       d->dwt = v;
       if (libinput_device_config_dwt_is_available(li)) libinput_device_config_dwt_set_enabled(li, v ? LIBINPUT_CONFIG_DWT_ENABLED : LIBINPUT_CONFIG_DWT_DISABLED);
+    } else if (prop == "pointerAccelerationProfileFlat" || prop == "pointerAccelerationProfileAdaptive") {
+      const bool flat = prop == "pointerAccelerationProfileFlat" ? v : !v;  // one switch seen from both names
+      d->flat = flat;
+      if (libinput_device_config_accel_is_available(li))
+        libinput_device_config_accel_set_profile(li, flat ? LIBINPUT_CONFIG_ACCEL_PROFILE_FLAT : LIBINPUT_CONFIG_ACCEL_PROFILE_ADAPTIVE);
     } else if (prop == "leftHanded") {
       d->left = v;
       if (libinput_device_config_left_handed_is_available(li)) libinput_device_config_left_handed_set(li, v ? 1 : 0);
@@ -84,6 +94,33 @@ extern "C" int fleetwm_kwin_prop_get(sd_bus*, const char*, const char*, const ch
   return sd_bus_message_append(reply, "b", KwinInput::Impl::read(d, prop) ? 1 : 0);
 }
 
+extern "C" int fleetwm_kwin_accel_get(sd_bus*, const char*, const char*, const char*, sd_bus_message* reply, void* userdata, sd_bus_error*) {
+  auto* d = static_cast<KwinInput::Impl::Dev*>(userdata);
+  return sd_bus_message_append(reply, "d", libinput_device_config_accel_is_available(d->li) ? libinput_device_config_accel_get_speed(d->li) : 0.0);
+}
+
+extern "C" int fleetwm_kwin_accel_set(sd_bus*, const char*, const char*, const char*, sd_bus_message* value, void* userdata, sd_bus_error*) {
+  auto* d = static_cast<KwinInput::Impl::Dev*>(userdata);
+  double v = 0;
+  const int r = sd_bus_message_read(value, "d", &v);
+  if (r < 0) return r;
+  v = v < -1 ? -1 : (v > 1 ? 1 : v);
+  d->accel = v;
+  if (libinput_device_config_accel_is_available(d->li)) libinput_device_config_accel_set_speed(d->li, v);
+  return 1;
+}
+
+extern "C" int fleetwm_kwin_names_get(sd_bus*, const char*, const char*, const char*, sd_bus_message* reply, void* userdata, sd_bus_error*) {
+  auto* impl = static_cast<KwinInput::Impl*>(userdata);
+  int r = sd_bus_message_open_container(reply, 'a', "s");
+  if (r < 0) return r;
+  for (auto& d : impl->devices) {
+    r = sd_bus_message_append(reply, "s", d->sysname.c_str());
+    if (r < 0) return r;
+  }
+  return sd_bus_message_close_container(reply);
+}
+
 extern "C" int fleetwm_kwin_prop_set(sd_bus*, const char*, const char*, const char* prop, sd_bus_message* value, void* userdata, sd_bus_error*) {
   auto* d = static_cast<KwinInput::Impl::Dev*>(userdata);
   int v = 0;
@@ -100,6 +137,7 @@ KwinInput::KwinInput(Server* server) : impl_(new Impl) { impl_->server = server;
 KwinInput::~KwinInput() {
   for (auto& d : impl_->devices)
     if (d->slot) sd_bus_slot_unref(d->slot);
+  if (impl_->manager_slot) sd_bus_slot_unref(impl_->manager_slot);
   if (impl_->source) wl_event_source_remove(impl_->source);
   if (impl_->bus) sd_bus_flush_close_unref(impl_->bus);
 }
@@ -114,6 +152,7 @@ bool KwinInput::start() {
     impl_->bus = nullptr;
     return false;
   }
+  sd_bus_add_object_vtable(impl_->bus, &impl_->manager_slot, "/org/kde/KWin/InputDevice", "org.kde.KWin.InputDeviceManager", fleetwm_kwin_manager_vtable, impl_.get());
   impl_->source = wl_event_loop_add_fd(
       wl_display_get_event_loop(impl_->server->display()), sd_bus_get_fd(impl_->bus), WL_EVENT_READABLE,
       [](int, uint32_t, void* data) -> int {
@@ -161,6 +200,8 @@ void KwinInput::reapply(wlr_input_device* device) {
   if (d->natural) Impl::write(d, "naturalScroll", *d->natural);
   if (d->dwt) Impl::write(d, "disableWhileTyping", *d->dwt);
   if (d->left) Impl::write(d, "leftHanded", *d->left);
+  if (d->flat) Impl::write(d, "pointerAccelerationProfileFlat", *d->flat);
+  if (d->accel && libinput_device_config_accel_is_available(d->li)) libinput_device_config_accel_set_speed(d->li, *d->accel);
 }
 
 }  // namespace fleetwm

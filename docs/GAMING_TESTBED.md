@@ -38,5 +38,13 @@ every installer builds PGO only, installer root-owned build files fix.
 * Mount and Blade (22100): exits by itself after ~13 s; prefix "Upgrading prefix from GE-Proton11-6 to 11.0-100 ... invalid version".
 * The test rig on the gaming laptop must never leave TuxThrottle's Game Mode on (check `tuxthrottlectl status --json`).
 
+## osu!lazer (read from the launcher, not yet measured)
+* `/opt/tuxthrottle/osu_lazer_tools/osu-lazer-launcher.sh` (config `~/.config/osu-lazer-launcher/config`): USE_DGPU=yes, so osu! runs on the NVIDIA card through Xwayland (`SDL_VIDEODRIVER=x11`, PRIME offload) while the AMD iGPU draws the desktop; its own header says this "adds a frame copy (more latency) and can cause rendering glitches". `FrameSync = Unlimited` and driver vsync off make osu! draw as fast as it can, and every frame is copied across to the iGPU and composited. A likely source of the lag, to confirm with `fleetwm-ctl frame-stats` after a re-login (compositor CPU while osu! runs, hitched frames).
+* The launcher sets `performance` with `powerprofilesctl` and restores the old profile at exit with `powerprofilesctl set <old>` (a Python start-up, a CPU spike at the moment of exit), changes the PipeWire quantum, and calls `kwin_set` on `org.kde.KWin.InputDevice` to switch pointer acceleration to flat. Fleetwm's KWin bridge had no `devicesSysNames` list and no `pointerAccelerationProfileFlat`, so acceleration was never switched off under Fleetwm: added now (both, plus `pointerAcceleration` speed); untested on real hardware.
+* To measure: run the launcher, play a map, quit with the menu, with `fleetwm-ctl frame-stats reset` before and `frame-stats` right after quitting; compare with `USE_DGPU=no`.
+
 ## For TuxThrottle later
+* Game Mode helper scripts (`gaming-balanced`) always set ppd `balanced`; they should restore what was in force before `gaming-performance` ran (Fleetwm now does this itself, a TuxThrottle-side version would stop the two fighting). falcond restores its own snapshot 3 s after the last process, which can overwrite either.
+* The osu launcher and Fleetwm both change the power profile: whoever restores last wins.
+* `tuxthrottlectl gamemode on/off` is slow (sudo scripts, ~5 s) and cannot be asked "is it on" cheaply from a script; `status --json` takes 0.3 s.
 (filled as found)
