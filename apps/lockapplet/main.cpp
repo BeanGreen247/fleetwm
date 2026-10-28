@@ -73,21 +73,36 @@ struct Applet {
     cairo_t* cr = cairo_create(s);
     const double size = kIconPx;
     cairo_set_line_cap(cr, CAIRO_LINE_CAP_ROUND);
-    cairo_set_source_rgb(cr, 0.85, 0.85, 0.85);
+    cairo_set_line_join(cr, CAIRO_LINE_JOIN_ROUND);
 
     const double body_w = size * 0.56, body_h = size * 0.42;
     const double body_x = (size - body_w) / 2, body_y = size * 0.46;
-    cairo_set_line_width(cr, std::max(1.5, size * 0.09));
-    cairo_arc(cr, size / 2, body_y, body_w * 0.42, M_PI, 0);  // shackle
+    const double line_w = std::max(1.5, size * 0.09);
+    const double r = size * 0.06;  // body: rounded rectangle
+    auto body_path = [&] {
+      cairo_new_sub_path(cr);
+      cairo_arc(cr, body_x + body_w - r, body_y + r, r, -M_PI / 2, 0);
+      cairo_arc(cr, body_x + body_w - r, body_y + body_h - r, r, 0, M_PI / 2);
+      cairo_arc(cr, body_x + r, body_y + body_h - r, r, M_PI / 2, M_PI);
+      cairo_arc(cr, body_x + r, body_y + r, r, M_PI, 3 * M_PI / 2);
+      cairo_close_path(cr);
+    };
+    // A dark halo first, then the light padlock: the grey padlock alone vanished on a light wallpaper or tint (only the red crossed one, after a click, showed).
+    const double halo = std::max(1.2, size * 0.07);
+    cairo_set_source_rgba(cr, 0.06, 0.06, 0.08, 0.80);
+    cairo_set_line_width(cr, line_w + 2 * halo);
+    cairo_arc(cr, size / 2, body_y, body_w * 0.42, M_PI, 0);
+    cairo_stroke(cr);
+    body_path();
+    cairo_fill_preserve(cr);
+    cairo_set_line_width(cr, 2 * halo);
     cairo_stroke(cr);
 
-    const double r = size * 0.06;  // body: rounded rectangle
-    cairo_new_sub_path(cr);
-    cairo_arc(cr, body_x + body_w - r, body_y + r, r, -M_PI / 2, 0);
-    cairo_arc(cr, body_x + body_w - r, body_y + body_h - r, r, 0, M_PI / 2);
-    cairo_arc(cr, body_x + r, body_y + body_h - r, r, M_PI / 2, M_PI);
-    cairo_arc(cr, body_x + r, body_y + r, r, M_PI, 3 * M_PI / 2);
-    cairo_close_path(cr);
+    cairo_set_source_rgb(cr, 0.96, 0.96, 0.96);
+    cairo_set_line_width(cr, line_w);
+    cairo_arc(cr, size / 2, body_y, body_w * 0.42, M_PI, 0);  // shackle
+    cairo_stroke(cr);
+    body_path();
     cairo_fill(cr);
 
     cairo_set_source_rgb(cr, 0.12, 0.12, 0.12);  // keyhole
@@ -96,7 +111,7 @@ struct Applet {
 
     if (crossed) {
       cairo_set_line_width(cr, std::max(2.0, size * 0.11));
-      cairo_set_source_rgb(cr, 0.90, 0.25, 0.20);
+      cairo_set_source_rgb(cr, 0.93, 0.27, 0.22);
       const double m = size * 0.08;
       cairo_move_to(cr, size - m, m);
       cairo_line_to(cr, m, size - m);

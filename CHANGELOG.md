@@ -4,6 +4,7 @@ All notable changes to Fleetwm. Versions follow `meson.build`; the dated tags ar
 
 ## Unreleased
 
+- The keep-awake padlock in the tray no longer seems to disappear: its normal state was a light grey padlock with no outline, invisible on a light wallpaper or tint, so only the red crossed one (after a click) showed. It now has a dark halo and a brighter fill, readable on dark, green and light bars.
 - New `fleetwm-notifyd`: Fleetwm now has a notification service (org.freedesktop.Notifications), started by the compositor at login. Before, nothing owned that name on the session bus, so every program that sent a notification (Heroic, Steam, ...) froze for the 25 seconds D-Bus took to give up starting one; Heroic stopped reading its Wayland connection meanwhile and the compositor dropped it ("error in client communication"), which was the Heroic crash. The cards are a hybrid of a Windows 7 balloon (glass, light rim), a Windows 10 toast (accent bar, close cross) and a macOS banner (soft shadow, header with the app, large icon). A click dismisses (and runs the default action); critical ones stay and show red.
 - A notification makes the program's taskbar button blink orange (Windows 7 style) until its window is focused, and in the Tiling layout the window's border blinks.
 - Fixed the thin bare line under every windowed window: the drop shadow is the window's shape moved 4 px down, and the 4 px strip directly under the window was left unshaded, so the background showed between the frame and its shadow (white on a light wallpaper).
