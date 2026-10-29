@@ -73,6 +73,12 @@ NLA/CredSSP, clipboard, sound, drive and printer redirection, multiple monitors 
 shape updates, RDP scroll orders and codecs beyond 16 bit run-length coding, resizing the screen from the viewer, one
 encode shared between several viewers (each viewer is encoded on its own, which only costs with more than one).
 
+## Clients that ask for a desktop size
+
+The RDP server always sends the screen at its own size (for example 1360x768) and says "desktop resize not supported" in its bitmap capability. A client that asked for a larger desktop (the portinaio gateway asks for the browser window size, FreeRDP-based clients can ask for anything) keeps the requested size and shows the rest blank. portinaio works around it by cropping to the area the server paints (per-connection `crop` switch) and can ask for a fixed size (`res=WIDTHxHEIGHT`); see its `docs/RDP_NOTES.md`.
+
+Planned fix on this side: read `desktopWidth`/`desktopHeight` from the client core data and either follow it (render resolution = what the client asked for, clamped to the screen) or keep the fixed render resolution, chosen by a switch in Settings > Remote Desktop ("Follow the client's resolution" / "Fixed resolution"), and set the desktop-resize flag in the bitmap capability so clients take the server size when it is fixed.
+
 ## Code
 
 `src/fleetremote/`: `capture.*` (Wayland), `hub.*` (shared frame, per-viewer dirty 64x64 tiles, input queue),
